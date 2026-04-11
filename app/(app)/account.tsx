@@ -131,18 +131,21 @@ export default function AccountScreen() {
 			allowsEditing: true,
 			aspect: [1, 1],
 			quality: 0.7,
+			base64: true,
 		})
-		if (result.canceled || !result.assets[0]) return
+		if (result.canceled || !result.assets[0]?.base64) return
 
 		setUploading(true)
 		try {
-			const asset = result.assets[0]
-			const res = await fetch(asset.uri)
-			const blob = await res.blob()
+			const binary = atob(result.assets[0].base64)
+			const bytes = new Uint8Array(binary.length)
+			for (let i = 0; i < binary.length; i++) {
+				bytes[i] = binary.charCodeAt(i)
+			}
 			const path = `${user.id}/avatar.jpg`
 			const { error: uploadErr } = await supabase.storage
 				.from('avatars')
-				.upload(path, blob, {
+				.upload(path, bytes, {
 					contentType: 'image/jpeg',
 					upsert: true,
 				})
