@@ -2,6 +2,7 @@ import { useAuth } from '@/lib/auth'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
+import { clearAllUserStores } from '@/lib/stores'
 import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
 import { colors, font, radius, spacing } from '@/lib/theme'
@@ -167,6 +168,7 @@ export default function AccountScreen() {
 				style: 'destructive',
 				onPress: async () => {
 					clearProfile()
+					clearAllUserStores()
 					await signOut()
 					router.replace('/')
 				},

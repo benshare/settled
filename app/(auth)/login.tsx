@@ -1,4 +1,6 @@
 import { useAuth } from '@/lib/auth'
+import { useProfileStore } from '@/lib/stores/useProfileStore'
+import { supabase } from '@/lib/supabase'
 import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import {
@@ -11,6 +13,11 @@ import {
 	View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+
+// Dev-only: set this to the testuser you want to sign in as. Must exist in
+// the profiles table and have its password set by dev/set-test-passwords.mjs.
+const DEV_TEST_USERNAME = 'testuser2'
+const DEV_TEST_PASSWORD = 'testpassword'
 
 export default function LoginScreen() {
 	const [phone, setPhone] = useState('')
@@ -26,6 +33,36 @@ export default function LoginScreen() {
 		if (canContinue && !loading) handleContinue()
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [canContinue])
+
+	async function handleDevSignIn() {
+		setLoading(true)
+		setError(null)
+		const n = parseInt(DEV_TEST_USERNAME.replace(/\D/g, ''), 10)
+		if (Number.isNaN(n)) {
+			setLoading(false)
+			setError('DEV_TEST_USERNAME must end in a number')
+			return
+		}
+		const phone = `+1555${String(n).padStart(7, '0')}`
+		const { data, error } = await supabase.auth.signInWithPassword({
+			phone,
+			password: DEV_TEST_PASSWORD,
+		})
+		if (error || !data.session?.user) {
+			setLoading(false)
+			setError(error?.message ?? 'dev sign-in failed')
+			return
+		}
+		const profile = await useProfileStore
+			.getState()
+			.loadProfile(data.session.user.id)
+		setLoading(false)
+		if (profile) {
+			router.replace('/(app)/play')
+		} else {
+			router.replace('/(auth)/set-username')
+		}
+	}
 
 	async function handleContinue() {
 		setLoading(true)
@@ -96,6 +133,21 @@ export default function LoginScreen() {
 						By continuing you agree to our Terms of Service and
 						Privacy Policy.
 					</Text>
+
+					{__DEV__ && (
+						<Pressable
+							style={({ pressed }) => [
+								styles.devButton,
+								pressed && styles.buttonPressed,
+							]}
+							onPress={handleDevSignIn}
+							disabled={loading}
+						>
+							<Text style={styles.devButtonText}>
+								Dev: sign in as {DEV_TEST_USERNAME}
+							</Text>
+						</Pressable>
+					)}
 				</View>
 			</KeyboardAvoidingView>
 		</SafeAreaView>
@@ -167,5 +219,19 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		color: '#999',
 		textAlign: 'center',
+	},
+	devButton: {
+		marginTop: 16,
+		paddingVertical: 10,
+		borderRadius: 8,
+		borderWidth: 1,
+		borderColor: '#ccc',
+		backgroundColor: '#f5f5f7',
+		alignItems: 'center',
+	},
+	devButtonText: {
+		fontSize: 13,
+		color: '#666',
+		fontWeight: '600',
 	},
 })

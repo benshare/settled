@@ -1,12 +1,25 @@
+import { TabBarIcon } from '@/lib/modules/TabBarIcon'
+import { useAuth } from '@/lib/auth'
+import { loadAllUserStores } from '@/lib/stores'
+import { useFriendsStore } from '@/lib/stores/useFriendsStore'
 import { colors } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
+import { useEffect } from 'react'
 
 export const unstable_settings = {
 	initialRouteName: 'play',
 }
 
 export default function AppLayout() {
+	const { user } = useAuth()
+
+	useEffect(() => {
+		if (user?.id) {
+			loadAllUserStores(user.id)
+		}
+	}, [user?.id])
+
 	return (
 		<Tabs
 			screenOptions={{
@@ -46,6 +59,15 @@ export default function AppLayout() {
 				}}
 			/>
 			<Tabs.Screen
+				name="friends"
+				options={{
+					title: 'Friends',
+					tabBarIcon: ({ color, size }) => (
+						<FriendsTabIcon color={color} size={size} />
+					),
+				}}
+			/>
+			<Tabs.Screen
 				name="account"
 				options={{
 					title: 'Account',
@@ -59,5 +81,17 @@ export default function AppLayout() {
 				}}
 			/>
 		</Tabs>
+	)
+}
+
+function FriendsTabIcon({ color, size }: { color: string; size: number }) {
+	const incomingCount = useFriendsStore((s) => s.pendingIncoming.length)
+	return (
+		<TabBarIcon
+			name="people-outline"
+			color={color}
+			size={size}
+			showDot={incomingCount > 0}
+		/>
 	)
 }

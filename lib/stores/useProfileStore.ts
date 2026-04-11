@@ -23,7 +23,7 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 		set({ loading: true })
 		const { data, error } = await supabase
 			.from('profiles')
-			.select('id, username, avatar_path, created_at, updated_at')
+			.select('id, username, avatar_path, created_at, updated_at, dev')
 			.eq('id', userId)
 			.maybeSingle()
 		set({ loading: false })
@@ -50,7 +50,7 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 			.from('profiles')
 			.update({ username })
 			.eq('id', current.id)
-			.select('id, username, avatar_path, created_at, updated_at')
+			.select('id, username, avatar_path, created_at, updated_at, dev')
 			.single()
 
 		if (error) {
@@ -72,7 +72,7 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 			.from('profiles')
 			.update({ avatar_path: path })
 			.eq('id', current.id)
-			.select('id, username, avatar_path, created_at, updated_at')
+			.select('id, username, avatar_path, created_at, updated_at, dev')
 			.single()
 
 		if (error) {
