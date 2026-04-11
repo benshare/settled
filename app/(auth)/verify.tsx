@@ -42,7 +42,7 @@ export default function VerifyScreen() {
 			.loadProfile(session.user.id)
 		setLoading(false)
 		if (profile) {
-			router.replace('/(app)')
+			router.replace('/(app)/play')
 		} else {
 			router.replace('/(auth)/set-username')
 		}

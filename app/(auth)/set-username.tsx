@@ -59,7 +59,7 @@ export default function SetUsernameScreen() {
 
 		await useProfileStore.getState().loadProfile(user.id)
 		setLoading(false)
-		router.replace('/(app)')
+		router.replace('/(app)/play')
 	}
 
 	return (
