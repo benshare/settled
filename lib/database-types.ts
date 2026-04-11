@@ -14,10 +14,86 @@ export type Database = {
 	}
 	public: {
 		Tables: {
+			friend_requests: {
+				Row: {
+					created_at: string
+					id: string
+					receiver_id: string
+					sender_id: string
+					status: Database['public']['Enums']['friend_request_status']
+					updated_at: string
+				}
+				Insert: {
+					created_at?: string
+					id?: string
+					receiver_id: string
+					sender_id: string
+					status?: Database['public']['Enums']['friend_request_status']
+					updated_at?: string
+				}
+				Update: {
+					created_at?: string
+					id?: string
+					receiver_id?: string
+					sender_id?: string
+					status?: Database['public']['Enums']['friend_request_status']
+					updated_at?: string
+				}
+				Relationships: [
+					{
+						foreignKeyName: 'friend_requests_receiver_profiles_fkey'
+						columns: ['receiver_id']
+						isOneToOne: false
+						referencedRelation: 'profiles'
+						referencedColumns: ['id']
+					},
+					{
+						foreignKeyName: 'friend_requests_sender_profiles_fkey'
+						columns: ['sender_id']
+						isOneToOne: false
+						referencedRelation: 'profiles'
+						referencedColumns: ['id']
+					},
+				]
+			}
+			friends: {
+				Row: {
+					time_added: string
+					user_id_a: string
+					user_id_b: string
+				}
+				Insert: {
+					time_added?: string
+					user_id_a: string
+					user_id_b: string
+				}
+				Update: {
+					time_added?: string
+					user_id_a?: string
+					user_id_b?: string
+				}
+				Relationships: [
+					{
+						foreignKeyName: 'friends_user_id_a_profiles_fkey'
+						columns: ['user_id_a']
+						isOneToOne: false
+						referencedRelation: 'profiles'
+						referencedColumns: ['id']
+					},
+					{
+						foreignKeyName: 'friends_user_id_b_profiles_fkey'
+						columns: ['user_id_b']
+						isOneToOne: false
+						referencedRelation: 'profiles'
+						referencedColumns: ['id']
+					},
+				]
+			}
 			profiles: {
 				Row: {
 					avatar_path: string | null
 					created_at: string
+					dev: boolean
 					id: string
 					updated_at: string
 					username: string
@@ -25,6 +101,7 @@ export type Database = {
 				Insert: {
 					avatar_path?: string | null
 					created_at?: string
+					dev?: boolean
 					id: string
 					updated_at?: string
 					username: string
@@ -32,6 +109,7 @@ export type Database = {
 				Update: {
 					avatar_path?: string | null
 					created_at?: string
+					dev?: boolean
 					id?: string
 					updated_at?: string
 					username?: string
@@ -43,10 +121,13 @@ export type Database = {
 			[_ in never]: never
 		}
 		Functions: {
-			[_ in never]: never
+			accept_friend_request: {
+				Args: { request_id: string }
+				Returns: undefined
+			}
 		}
 		Enums: {
-			[_ in never]: never
+			friend_request_status: 'pending' | 'accepted' | 'rejected'
 		}
 		CompositeTypes: {
 			[_ in never]: never
@@ -173,6 +254,8 @@ export type CompositeTypes<
 
 export const Constants = {
 	public: {
-		Enums: {},
+		Enums: {
+			friend_request_status: ['pending', 'accepted', 'rejected'],
+		},
 	},
 } as const
