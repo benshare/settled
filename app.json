@@ -10,7 +10,10 @@
 		"newArchEnabled": true,
 		"ios": {
 			"bundleIdentifier": "com.benjaminshare.settled",
-			"supportsTablet": true
+			"supportsTablet": true,
+			"infoPlist": {
+				"NSPhotoLibraryUsageDescription": "Allow settled to access your photos so you can set a profile picture."
+			}
 		},
 		"android": {
 			"package": "com.benjaminshare.settled",

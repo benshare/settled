@@ -6,6 +6,7 @@ profile/username step.
 ## Scope
 
 In:
+
 - Supabase client wired with `expo-secure-store` session persistence
 - `AuthProvider` (React Context) holding session/user, exposing `signInWithPhone`,
   `verifyOtp`, `signOut`
@@ -14,6 +15,7 @@ In:
 - Sign-out wired up on a placeholder home screen so we can test the round-trip
 
 Out:
+
 - `profiles` table, `set-username` screen, post-verify profile lookup
 - Real design system / theme — plain RN primitives only
 - expo-updates check, splash hiding tied to update flow
@@ -39,6 +41,7 @@ lib/
 ```
 
 To delete from the scaffold (template demo, not needed):
+
 - `app/(tabs)/`
 - `app/modal.tsx`
 - `components/` (all template UI)
@@ -56,13 +59,16 @@ To delete from the scaffold (template demo, not needed):
 ## Implementation details
 
 ### `lib/supabase.ts`
+
 Direct port of `missinglink/lib/supabase.ts`. Reads `supabaseUrl` and
 `supabasePublicKey` from `Constants.expoConfig?.extra`. Uses a SecureStore adapter
 on the auth config with `autoRefreshToken: true`, `persistSession: true`,
 `detectSessionInUrl: false`.
 
 ### `lib/auth.tsx`
+
 Direct port of `missinglink/lib/auth.tsx`:
+
 - Context with `session`, `user`, `isLoggedIn`, `loading`, `signInWithPhone`,
   `verifyOtp`, `signOut`
 - `useEffect` calls `getSession()` then sets up `onAuthStateChange` subscription;
@@ -73,6 +79,7 @@ Direct port of `missinglink/lib/auth.tsx`:
 - `useAuth` hook exported
 
 ### `app/_layout.tsx`
+
 Simpler than missinglink — no theme provider, no updates check.
 
 ```
@@ -89,12 +96,14 @@ Keep `SplashScreen.preventAutoHideAsync()` and `hideAsync()` once `loading` is
 false so we don't get a flash of unstyled content during session restore.
 
 ### `app/index.tsx`
+
 ```
 const { isLoggedIn } = useAuth()
 return <Redirect href={isLoggedIn ? '/(app)' : '/(auth)/login'} />
 ```
 
 ### `app/(auth)/login.tsx`
+
 Plain RN port of missinglink's login screen. State: `phone`, `loading`, `error`.
 
 - `digits = phone.replace(/\D/g, '')`
@@ -103,13 +112,14 @@ Plain RN port of missinglink's login screen. State: `phone`, `loading`, `error`.
   disable for exhaustive-deps)
 - `handleContinue`: normalize as `digits.length === 10 ? '+1'+digits : '+'+digits`,
   call `signInWithPhone`, on success `router.push({ pathname: '/(auth)/verify',
-  params: { phone: normalized } })`
+params: { phone: normalized } })`
 - UI: SafeAreaView + KeyboardAvoidingView, title "Welcome", subtitle, `TextInput`
   (`keyboardType="phone-pad"`, `textContentType="telephoneNumber"`, `autoFocus`),
   Continue `Pressable`, error text if any
 - Use `StyleSheet.create` with the project's tab indentation
 
 ### `app/(auth)/verify.tsx`
+
 Plain RN port of missinglink's verify screen, with the profile lookup removed.
 
 - State: `code`, `loading`, `error`. `phone` from `useLocalSearchParams`.
@@ -123,10 +133,13 @@ Plain RN port of missinglink's verify screen, with the profile lookup removed.
   button, Resend pressable
 
 ### `app/(app)/_layout.tsx`
+
 Plain `<Stack screenOptions={{ headerShown: false }} />`.
 
 ### `app/(app)/index.tsx`
+
 Placeholder so we can prove the round-trip works:
+
 - `useAuth` for `user` and `signOut`
 - Show "Signed in as {user?.phone}"
 - Sign out button calling `signOut()` — onAuthStateChange will fire, root index
@@ -135,6 +148,7 @@ Placeholder so we can prove the round-trip works:
 ## Auth state-driven navigation
 
 Two layers, identical to missinglink:
+
 1. **`app/index.tsx`** — only entry point that branches on `isLoggedIn`. Used on
    cold start.
 2. **Imperative `router.replace`** in verify success and after sign-out (no
@@ -160,6 +174,7 @@ fires and lands on login. Simpler than adding a global guard.
 ## Verification
 
 After implementation:
+
 1. `npm run check` clean
 2. `npm run format` clean
 3. Manual: `npm run ios`, enter a real phone number (Twilio is configured per

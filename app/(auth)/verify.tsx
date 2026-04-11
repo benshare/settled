@@ -1,4 +1,5 @@
 import { useAuth } from '@/lib/auth'
+import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import {
@@ -30,13 +31,21 @@ export default function VerifyScreen() {
 	async function handleVerify() {
 		setLoading(true)
 		setError(null)
-		const { error } = await verifyOtp(phone ?? '', code)
-		setLoading(false)
-		if (error) {
-			setError(error)
+		const { error, session } = await verifyOtp(phone ?? '', code)
+		if (error || !session?.user) {
+			setLoading(false)
+			setError(error ?? 'Verification failed')
 			return
 		}
-		router.replace('/(app)')
+		const profile = await useProfileStore
+			.getState()
+			.loadProfile(session.user.id)
+		setLoading(false)
+		if (profile) {
+			router.replace('/(app)')
+		} else {
+			router.replace('/(auth)/set-username')
+		}
 	}
 
 	useEffect(() => {

@@ -7,6 +7,13 @@ export default function AuthLayout() {
 				headerShown: false,
 				animation: 'slide_from_right',
 			}}
-		/>
+		>
+			<Stack.Screen name="login" />
+			<Stack.Screen name="verify" />
+			<Stack.Screen
+				name="set-username"
+				options={{ gestureEnabled: false }}
+			/>
+		</Stack>
 	)
 }
