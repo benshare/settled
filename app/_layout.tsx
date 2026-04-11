@@ -1,33 +1,45 @@
-import {
-	DarkTheme,
-	DefaultTheme,
-	ThemeProvider,
-} from '@react-navigation/native'
+import { AuthProvider, useAuth } from '@/lib/auth'
 import { Stack } from 'expo-router'
+import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
+import { useEffect } from 'react'
 import 'react-native-reanimated'
 
-import { useColorScheme } from '@/hooks/use-color-scheme'
+export { ErrorBoundary } from 'expo-router'
 
 export const unstable_settings = {
-	anchor: '(tabs)',
+	initialRouteName: 'index',
 }
 
+SplashScreen.preventAutoHideAsync()
+
 export default function RootLayout() {
-	const colorScheme = useColorScheme()
+	return (
+		<AuthProvider>
+			<RootNav />
+		</AuthProvider>
+	)
+}
+
+function RootNav() {
+	const { loading } = useAuth()
+
+	useEffect(() => {
+		if (!loading) {
+			SplashScreen.hideAsync()
+		}
+	}, [loading])
+
+	if (loading) return null
 
 	return (
-		<ThemeProvider
-			value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}
-		>
-			<Stack>
-				<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-				<Stack.Screen
-					name="modal"
-					options={{ presentation: 'modal', title: 'Modal' }}
-				/>
-			</Stack>
+		<>
 			<StatusBar style="auto" />
-		</ThemeProvider>
+			<Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+				<Stack.Screen name="index" />
+				<Stack.Screen name="(auth)" />
+				<Stack.Screen name="(app)" />
+			</Stack>
+		</>
 	)
 }
