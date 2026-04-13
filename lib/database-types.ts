@@ -89,6 +89,56 @@ export type Database = {
 					},
 				]
 			}
+			game_requests: {
+				Row: {
+					created_at: string
+					id: string
+					invited: Json
+					proposer: string
+				}
+				Insert: {
+					created_at?: string
+					id?: string
+					invited: Json
+					proposer: string
+				}
+				Update: {
+					created_at?: string
+					id?: string
+					invited?: Json
+					proposer?: string
+				}
+				Relationships: [
+					{
+						foreignKeyName: 'game_requests_proposer_profiles_fkey'
+						columns: ['proposer']
+						isOneToOne: false
+						referencedRelation: 'profiles'
+						referencedColumns: ['id']
+					},
+				]
+			}
+			games: {
+				Row: {
+					created_at: string
+					id: string
+					participants: string[]
+					status: string
+				}
+				Insert: {
+					created_at?: string
+					id?: string
+					participants: string[]
+					status?: string
+				}
+				Update: {
+					created_at?: string
+					id?: string
+					participants?: string[]
+					status?: string
+				}
+				Relationships: []
+			}
 			profiles: {
 				Row: {
 					avatar_path: string | null
@@ -123,6 +173,15 @@ export type Database = {
 		Functions: {
 			accept_friend_request: {
 				Args: { request_id: string }
+				Returns: undefined
+			}
+			complete_game: { Args: { game_id: string }; Returns: undefined }
+			propose_game: {
+				Args: { invited_user_ids: string[] }
+				Returns: string
+			}
+			respond_to_game_request: {
+				Args: { accept: boolean; request_id: string }
 				Returns: undefined
 			}
 		}

@@ -9,8 +9,8 @@ import {
 import type { Profile } from '@/lib/stores/useProfileStore'
 import { colors, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
-import { useFocusEffect, useRouter } from 'expo-router'
-import { useCallback, useState } from 'react'
+import { useRouter } from 'expo-router'
+import { useState } from 'react'
 import {
 	ActivityIndicator,
 	Pressable,
@@ -22,19 +22,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function FriendsScreen() {
-	const { user } = useAuth()
 	const router = useRouter()
 	const friends = useFriendsStore((s) => s.friends)
 	const pendingIncoming = useFriendsStore((s) => s.pendingIncoming)
 	const pendingOutgoing = useFriendsStore((s) => s.pendingOutgoing)
 	const loading = useFriendsStore((s) => s.loading)
-	const loadForUser = useFriendsStore((s) => s.loadForUser)
-
-	useFocusEffect(
-		useCallback(() => {
-			if (user) loadForUser(user.id)
-		}, [user, loadForUser])
-	)
 
 	const showBanner = pendingIncoming.length + pendingOutgoing.length > 0
 

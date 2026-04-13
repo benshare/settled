@@ -5,8 +5,12 @@ export type AutoLoadedStore = {
 }
 
 import { friendsStoreRegistration } from './useFriendsStore'
+import { gamesStoreRegistration } from './useGamesStore'
 
-export const autoLoadedStores: AutoLoadedStore[] = [friendsStoreRegistration]
+export const autoLoadedStores: AutoLoadedStore[] = [
+	friendsStoreRegistration,
+	gamesStoreRegistration,
+]
 
 export async function loadAllUserStores(userId: string): Promise<void> {
 	await Promise.all(
