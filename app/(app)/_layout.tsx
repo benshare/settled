@@ -1,7 +1,8 @@
-import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import { useAuth } from '@/lib/auth'
+import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import { loadAllUserStores } from '@/lib/stores'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
+import { useGamesStore } from '@/lib/stores/useGamesStore'
 import { colors } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
@@ -37,11 +38,7 @@ export default function AppLayout() {
 				options={{
 					title: 'Play',
 					tabBarIcon: ({ color, size }) => (
-						<Ionicons
-							name="game-controller-outline"
-							color={color}
-							size={size}
-						/>
+						<PlayTabIcon color={color} size={size} />
 					),
 				}}
 			/>
@@ -80,6 +77,7 @@ export default function AppLayout() {
 					),
 				}}
 			/>
+			<Tabs.Screen name="create-game" options={{ href: null }} />
 		</Tabs>
 	)
 }
@@ -92,6 +90,27 @@ function FriendsTabIcon({ color, size }: { color: string; size: number }) {
 			color={color}
 			size={size}
 			showDot={incomingCount > 0}
+		/>
+	)
+}
+
+function PlayTabIcon({ color, size }: { color: string; size: number }) {
+	const { user } = useAuth()
+	const meId = user?.id
+	const showDot = useGamesStore((s) => {
+		if (!meId) return false
+		return s.pendingRequests.some((r) => {
+			const mine = r.invited.find((i) => i.user === meId)
+			if (!mine || mine.status !== 'pending') return false
+			return !r.invited.some((i) => i.status === 'rejected')
+		})
+	})
+	return (
+		<TabBarIcon
+			name="game-controller-outline"
+			color={color}
+			size={size}
+			showDot={showDot}
 		/>
 	)
 }
