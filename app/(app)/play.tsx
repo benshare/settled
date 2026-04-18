@@ -26,10 +26,11 @@ export default function PlayScreen() {
 	const pendingRequests = useGamesStore((s) => s.pendingRequests)
 	const activeGames = useGamesStore((s) => s.activeGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
-	const loading = useGamesStore((s) => s.loading)
 
+	const storeLoaded =
+		pendingRequests !== undefined && activeGames !== undefined
 	const showEmpty =
-		!loading && pendingRequests.length === 0 && activeGames.length === 0
+		storeLoaded && pendingRequests.length === 0 && activeGames.length === 0
 
 	return (
 		<SafeAreaView style={styles.safe}>
@@ -52,16 +53,14 @@ export default function PlayScreen() {
 					</Pressable>
 				</View>
 
-				{loading &&
-				pendingRequests.length === 0 &&
-				activeGames.length === 0 ? (
+				{!storeLoaded ? (
 					<ActivityIndicator color={colors.textMuted} />
 				) : null}
 
-				{pendingRequests.length > 0 && (
+				{(pendingRequests ?? []).length > 0 && (
 					<View style={styles.section}>
 						<Text style={styles.sectionHeading}>Invites</Text>
-						{pendingRequests.map((r) => (
+						{(pendingRequests ?? []).map((r) => (
 							<PendingRow
 								key={r.id}
 								request={r}
@@ -75,10 +74,10 @@ export default function PlayScreen() {
 					</View>
 				)}
 
-				{activeGames.length > 0 && (
+				{(activeGames ?? []).length > 0 && (
 					<View style={styles.section}>
 						<Text style={styles.sectionHeading}>Active</Text>
-						{activeGames.map((g) => (
+						{(activeGames ?? []).map((g) => (
 							<GameRow
 								key={g.id}
 								game={g}

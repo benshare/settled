@@ -26,9 +26,13 @@ export default function HistoryScreen() {
 	const activeGames = useGamesStore((s) => s.activeGames)
 	const completeGames = useGamesStore((s) => s.completeGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
-	const loading = useGamesStore((s) => s.loading)
+	const storeLoaded =
+		pendingRequests !== undefined &&
+		activeGames !== undefined &&
+		completeGames !== undefined
 
 	const allEmpty =
+		storeLoaded &&
 		pendingRequests.length === 0 &&
 		activeGames.length === 0 &&
 		completeGames.length === 0
@@ -38,14 +42,14 @@ export default function HistoryScreen() {
 			<ScrollView contentContainerStyle={styles.container}>
 				<Text style={styles.title}>History</Text>
 
-				{loading && allEmpty ? (
+				{!storeLoaded ? (
 					<ActivityIndicator color={colors.textMuted} />
 				) : null}
 
-				{pendingRequests.length > 0 && (
+				{(pendingRequests ?? []).length > 0 && (
 					<View style={styles.section}>
 						<Text style={styles.sectionHeading}>Pending</Text>
-						{pendingRequests.map((r) => (
+						{(pendingRequests ?? []).map((r) => (
 							<PendingRow
 								key={r.id}
 								request={r}
@@ -59,10 +63,10 @@ export default function HistoryScreen() {
 					</View>
 				)}
 
-				{activeGames.length > 0 && (
+				{(activeGames ?? []).length > 0 && (
 					<View style={styles.section}>
 						<Text style={styles.sectionHeading}>Active</Text>
-						{activeGames.map((g) => (
+						{(activeGames ?? []).map((g) => (
 							<GameHistoryRow
 								key={g.id}
 								game={g}
@@ -74,10 +78,10 @@ export default function HistoryScreen() {
 					</View>
 				)}
 
-				{completeGames.length > 0 && (
+				{(completeGames ?? []).length > 0 && (
 					<View style={styles.section}>
 						<Text style={styles.sectionHeading}>Complete</Text>
-						{completeGames.map((g) => (
+						{(completeGames ?? []).map((g) => (
 							<GameHistoryRow
 								key={g.id}
 								game={g}
@@ -89,7 +93,7 @@ export default function HistoryScreen() {
 					</View>
 				)}
 
-				{!loading && allEmpty && (
+				{allEmpty && (
 					<Text style={styles.emptyText}>No games yet.</Text>
 				)}
 			</ScrollView>

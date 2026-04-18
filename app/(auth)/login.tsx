@@ -14,9 +14,9 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-// Dev-only: set this to the testuser you want to sign in as. Must exist in
-// the profiles table and have its password set by dev/set-test-passwords.mjs.
-const DEV_TEST_USERNAME = 'testuser2'
+// Dev-only: each entry must exist in the profiles table and have its password
+// set by dev/set-test-passwords.mjs. Each renders as its own sign-in button.
+const DEV_TEST_USERNAMES = ['ben', 'testuser1', 'testuser2', 'testuser3']
 const DEV_TEST_PASSWORD = 'testpassword'
 
 export default function LoginScreen() {
@@ -34,13 +34,13 @@ export default function LoginScreen() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [canContinue])
 
-	async function handleDevSignIn() {
+	async function handleDevSignIn(username: string) {
 		setLoading(true)
 		setError(null)
-		const n = parseInt(DEV_TEST_USERNAME.replace(/\D/g, ''), 10)
+		const n = parseInt(username.replace(/\D/g, ''), 10)
 		if (Number.isNaN(n)) {
 			setLoading(false)
-			setError('DEV_TEST_USERNAME must end in a number')
+			setError(`${username} must end in a number`)
 			return
 		}
 		const phone = `+1555${String(n).padStart(7, '0')}`
@@ -135,18 +135,23 @@ export default function LoginScreen() {
 					</Text>
 
 					{__DEV__ && (
-						<Pressable
-							style={({ pressed }) => [
-								styles.devButton,
-								pressed && styles.buttonPressed,
-							]}
-							onPress={handleDevSignIn}
-							disabled={loading}
-						>
-							<Text style={styles.devButtonText}>
-								Dev: sign in as {DEV_TEST_USERNAME}
-							</Text>
-						</Pressable>
+						<View style={styles.devGroup}>
+							{DEV_TEST_USERNAMES.map((u) => (
+								<Pressable
+									key={u}
+									style={({ pressed }) => [
+										styles.devButton,
+										pressed && styles.buttonPressed,
+									]}
+									onPress={() => handleDevSignIn(u)}
+									disabled={loading}
+								>
+									<Text style={styles.devButtonText}>
+										Dev: sign in as {u}
+									</Text>
+								</Pressable>
+							))}
+						</View>
 					)}
 				</View>
 			</KeyboardAvoidingView>
@@ -220,8 +225,11 @@ const styles = StyleSheet.create({
 		color: '#999',
 		textAlign: 'center',
 	},
-	devButton: {
+	devGroup: {
 		marginTop: 16,
+		gap: 8,
+	},
+	devButton: {
 		paddingVertical: 10,
 		borderRadius: 8,
 		borderWidth: 1,

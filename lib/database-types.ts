@@ -121,21 +121,36 @@ export type Database = {
 			games: {
 				Row: {
 					created_at: string
+					current_turn: number | null
+					events: Json[]
 					id: string
 					participants: string[]
+					player_order: string[]
+					scores: number[]
 					status: string
+					winner: number | null
 				}
 				Insert: {
 					created_at?: string
+					current_turn?: number | null
+					events?: Json[]
 					id?: string
 					participants: string[]
+					player_order?: string[]
+					scores?: number[]
 					status?: string
+					winner?: number | null
 				}
 				Update: {
 					created_at?: string
+					current_turn?: number | null
+					events?: Json[]
 					id?: string
 					participants?: string[]
+					player_order?: string[]
+					scores?: number[]
 					status?: string
+					winner?: number | null
 				}
 				Relationships: []
 			}
@@ -175,14 +190,9 @@ export type Database = {
 				Args: { request_id: string }
 				Returns: undefined
 			}
-			complete_game: { Args: { game_id: string }; Returns: undefined }
 			propose_game: {
 				Args: { invited_user_ids: string[] }
 				Returns: string
-			}
-			respond_to_game_request: {
-				Args: { accept: boolean; request_id: string }
-				Returns: undefined
 			}
 		}
 		Enums: {

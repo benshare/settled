@@ -1,26 +1,16 @@
 import { useAuth } from '@/lib/auth'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
-import { loadAllUserStores } from '@/lib/stores'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import { colors } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
-import { useEffect } from 'react'
 
 export const unstable_settings = {
 	initialRouteName: 'play',
 }
 
 export default function AppLayout() {
-	const { user } = useAuth()
-
-	useEffect(() => {
-		if (user?.id) {
-			loadAllUserStores(user.id)
-		}
-	}, [user?.id])
-
 	return (
 		<Tabs
 			screenOptions={{
@@ -99,7 +89,7 @@ function PlayTabIcon({ color, size }: { color: string; size: number }) {
 	const meId = user?.id
 	const showDot = useGamesStore((s) => {
 		if (!meId) return false
-		return s.pendingRequests.some((r) => {
+		return (s.pendingRequests ?? []).some((r) => {
 			const mine = r.invited.find((i) => i.user === meId)
 			if (!mine || mine.status !== 'pending') return false
 			return !r.invited.some((i) => i.status === 'rejected')

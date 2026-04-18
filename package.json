@@ -11,6 +11,7 @@
 		"check": "npx tsc -p tsconfig.json --noEmit && eslint . --fix && npx expo-doctor",
 		"format": "prettier --write .",
 		"migrate": "npx supabase db push",
+		"edge": "npx supabase functions deploy",
 		"types": "supabase gen types typescript --project-id ymbtisbqwehsgpidntag > lib/database-types.ts"
 	},
 	"dependencies": {

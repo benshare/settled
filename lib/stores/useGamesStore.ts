@@ -1,3 +1,4 @@
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
 import type { Database } from '../database-types'
 import { supabase } from '../supabase'
@@ -8,6 +9,9 @@ type GameRow = Database['public']['Tables']['games']['Row']
 type GameRequestRow = Database['public']['Tables']['game_requests']['Row']
 
 const PROFILE_COLS = 'id, username, avatar_path, created_at, updated_at, dev'
+
+let requestsChannel: RealtimeChannel | null = null
+let gamesChannel: RealtimeChannel | null = null
 
 export type InvitedEntry = {
 	user: string
@@ -20,12 +24,24 @@ export type GameRequest = Omit<GameRequestRow, 'invited'> & {
 
 export type Game = GameRow
 
+export type GameEvent =
+	| { kind: 'setup_complete'; at: string }
+	| {
+			kind: 'roll'
+			player_index: number
+			value: number
+			new_score: number
+			at: string
+	  }
+	| { kind: 'game_complete'; winner_index: number; at: string }
+
 type ActionResult = { error: string | null }
+type RespondResult = { error: string | null; gameId?: string }
 
 type GamesStore = {
-	pendingRequests: GameRequest[]
-	activeGames: Game[]
-	completeGames: Game[]
+	pendingRequests: GameRequest[] | undefined
+	activeGames: Game[] | undefined
+	completeGames: Game[] | undefined
 	profilesById: Record<string, Profile>
 	loading: boolean
 
@@ -37,8 +53,8 @@ type GamesStore = {
 		meId: string,
 		requestId: string,
 		accept: boolean
-	) => Promise<ActionResult>
-	complete: (meId: string, gameId: string) => Promise<ActionResult>
+	) => Promise<RespondResult>
+	rollDice: (gameId: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -68,9 +84,9 @@ function decodeInvited(raw: unknown): InvitedEntry[] {
 }
 
 export const useGamesStore = create<GamesStore>((set, get) => ({
-	pendingRequests: [],
-	activeGames: [],
-	completeGames: [],
+	pendingRequests: undefined,
+	activeGames: undefined,
+	completeGames: undefined,
 	profilesById: {},
 	loading: false,
 
@@ -85,7 +101,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		const activePromise = supabase
 			.from('games')
 			.select('*')
-			.eq('status', 'active')
+			.in('status', ['setup', 'active'])
 			.order('created_at', { ascending: false })
 
 		const completePromise = supabase
@@ -141,13 +157,42 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			profilesById,
 			loading: false,
 		})
+
+		// Subscribe to game_requests and games changes for live updates.
+		if (requestsChannel) supabase.removeChannel(requestsChannel)
+		requestsChannel = supabase
+			.channel('game_requests_rtu')
+			.on(
+				'postgres_changes',
+				{ event: '*', schema: 'public', table: 'game_requests' },
+				(payload) => handleRequestChange(payload, get, set)
+			)
+			.subscribe()
+
+		if (gamesChannel) supabase.removeChannel(gamesChannel)
+		gamesChannel = supabase
+			.channel('games_rtu')
+			.on(
+				'postgres_changes',
+				{ event: '*', schema: 'public', table: 'games' },
+				(payload) => handleGameChange(payload, get, set)
+			)
+			.subscribe()
 	},
 
 	clear() {
+		if (requestsChannel) {
+			supabase.removeChannel(requestsChannel)
+			requestsChannel = null
+		}
+		if (gamesChannel) {
+			supabase.removeChannel(gamesChannel)
+			gamesChannel = null
+		}
 		set({
-			pendingRequests: [],
-			activeGames: [],
-			completeGames: [],
+			pendingRequests: undefined,
+			activeGames: undefined,
+			completeGames: undefined,
 			profilesById: {},
 			loading: false,
 		})
@@ -161,28 +206,141 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 	},
 
 	async respond(meId, requestId, accept) {
-		const { error } = await supabase.rpc('respond_to_game_request', {
-			request_id: requestId,
-			accept,
-		})
-		if (error) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'respond', request_id: requestId, accept },
+			}
+		)
+		if (error || !data?.ok) {
 			return { error: "Couldn't respond" }
 		}
 		await get().loadForUser(meId)
-		return { error: null }
+		return { error: null, gameId: data.game_id }
 	},
 
-	async complete(meId, gameId) {
-		const { error } = await supabase.rpc('complete_game', {
-			game_id: gameId,
-		})
-		if (error) {
-			return { error: "Couldn't complete game" }
+	async rollDice(gameId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'roll', game_id: gameId },
+			}
+		)
+		if (error || !data?.ok) {
+			return { error: "Couldn't roll" }
 		}
-		await get().loadForUser(meId)
 		return { error: null }
 	},
 }))
+
+function handleGameChange(
+	payload: {
+		eventType: string
+		new: Record<string, unknown>
+		old: Record<string, unknown>
+	},
+	get: () => GamesStore,
+	set: (partial: Partial<GamesStore>) => void
+) {
+	const active = get().activeGames
+	const complete = get().completeGames
+	if (!active || !complete) return
+
+	if (payload.eventType === 'DELETE') {
+		const oldId = (payload.old as { id?: string }).id
+		if (!oldId) return
+		set({
+			activeGames: active.filter((g) => g.id !== oldId),
+			completeGames: complete.filter((g) => g.id !== oldId),
+		})
+		return
+	}
+
+	const game = payload.new as Game
+
+	if (payload.eventType === 'INSERT') {
+		if (game.status === 'complete') {
+			set({ completeGames: [game, ...complete] })
+		} else {
+			set({ activeGames: [game, ...active] })
+		}
+		return
+	}
+
+	// UPDATE — game may have moved from active to complete.
+	if (payload.eventType === 'UPDATE') {
+		if (game.status === 'complete') {
+			set({
+				activeGames: active.filter((g) => g.id !== game.id),
+				completeGames: [
+					game,
+					...complete.filter((g) => g.id !== game.id),
+				],
+			})
+		} else {
+			set({
+				activeGames: active.map((g) => (g.id === game.id ? game : g)),
+			})
+		}
+	}
+}
+
+async function handleRequestChange(
+	payload: {
+		eventType: string
+		new: Record<string, unknown>
+		old: Record<string, unknown>
+	},
+	get: () => GamesStore,
+	set: (partial: Partial<GamesStore>) => void
+) {
+	const current = get().pendingRequests
+	if (!current) return
+
+	if (payload.eventType === 'DELETE') {
+		const oldId = (payload.old as { id?: string }).id
+		if (!oldId) return
+		set({ pendingRequests: current.filter((r) => r.id !== oldId) })
+		return
+	}
+
+	const raw = payload.new as GameRequestRow
+	const decoded: GameRequest = {
+		...raw,
+		invited: decodeInvited(raw.invited),
+	}
+
+	if (payload.eventType === 'UPDATE') {
+		set({
+			pendingRequests: current.map((r) =>
+				r.id === decoded.id ? decoded : r
+			),
+		})
+		return
+	}
+
+	if (payload.eventType === 'INSERT') {
+		// Fetch profiles for any user IDs we don't already have.
+		const known = get().profilesById
+		const missing: string[] = []
+		if (!known[decoded.proposer]) missing.push(decoded.proposer)
+		for (const inv of decoded.invited) {
+			if (!known[inv.user]) missing.push(inv.user)
+		}
+		if (missing.length > 0) {
+			const { data: profiles } = await supabase
+				.from('profiles')
+				.select(PROFILE_COLS)
+				.in('id', missing)
+			if (profiles) {
+				const next = { ...get().profilesById }
+				for (const p of profiles) next[p.id] = p
+				set({ profilesById: next })
+			}
+		}
+		set({ pendingRequests: [decoded, ...(get().pendingRequests ?? [])] })
+	}
+}
 
 export function describePendingRequest(
 	request: GameRequest,

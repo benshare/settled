@@ -15,7 +15,7 @@ export default function PendingGameScreen() {
 	const { user } = useAuth()
 	const router = useRouter()
 	const request = useGamesStore((s) =>
-		s.pendingRequests.find((r) => r.id === id)
+		(s.pendingRequests ?? []).find((r) => r.id === id)
 	)
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const respond = useGamesStore((s) => s.respond)
@@ -27,13 +27,17 @@ export default function PendingGameScreen() {
 		if (!user?.id || !request) return
 		setBusy(accept ? 'accept' : 'reject')
 		setError(null)
-		const { error } = await respond(user.id, request.id, accept)
+		const { error, gameId } = await respond(user.id, request.id, accept)
 		setBusy(null)
 		if (error) {
 			setError(error)
 			return
 		}
-		router.back()
+		if (gameId) {
+			router.replace(`/game/${gameId}`)
+		} else {
+			router.back()
+		}
 	}
 
 	return (

@@ -1,4 +1,5 @@
 import { AuthProvider, useAuth } from '@/lib/auth'
+import { loadAllUserStores } from '@/lib/stores'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
@@ -22,7 +23,13 @@ export default function RootLayout() {
 }
 
 function RootNav() {
-	const { loading } = useAuth()
+	const { loading, user } = useAuth()
+
+	useEffect(() => {
+		if (user?.id) {
+			loadAllUserStores(user.id)
+		}
+	}, [user?.id])
 
 	useEffect(() => {
 		if (!loading) {

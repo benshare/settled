@@ -368,6 +368,13 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Gateway-level JWT verification is disabled for this function because the
+# Supabase Edge Function gateway does not yet support ES256-signed user tokens
+# (emitted by projects on asymmetric JWT signing keys). The function itself
+# authenticates the caller via auth.getUser(), so requests are still verified.
+[functions.game-service]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
