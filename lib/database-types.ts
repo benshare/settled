@@ -118,6 +118,47 @@ export type Database = {
 					},
 				]
 			}
+			game_states: {
+				Row: {
+					edges: Json
+					game_id: string
+					hexes: Json
+					phase: Json
+					players: Json
+					updated_at: string
+					variant: string
+					vertices: Json
+				}
+				Insert: {
+					edges?: Json
+					game_id: string
+					hexes: Json
+					phase: Json
+					players: Json
+					updated_at?: string
+					variant: string
+					vertices?: Json
+				}
+				Update: {
+					edges?: Json
+					game_id?: string
+					hexes?: Json
+					phase?: Json
+					players?: Json
+					updated_at?: string
+					variant?: string
+					vertices?: Json
+				}
+				Relationships: [
+					{
+						foreignKeyName: 'game_states_game_id_fkey'
+						columns: ['game_id']
+						isOneToOne: true
+						referencedRelation: 'games'
+						referencedColumns: ['id']
+					},
+				]
+			}
 			games: {
 				Row: {
 					created_at: string
@@ -126,7 +167,6 @@ export type Database = {
 					id: string
 					participants: string[]
 					player_order: string[]
-					scores: number[]
 					status: string
 					winner: number | null
 				}
@@ -137,7 +177,6 @@ export type Database = {
 					id?: string
 					participants: string[]
 					player_order?: string[]
-					scores?: number[]
 					status?: string
 					winner?: number | null
 				}
@@ -148,7 +187,6 @@ export type Database = {
 					id?: string
 					participants?: string[]
 					player_order?: string[]
-					scores?: number[]
 					status?: string
 					winner?: number | null
 				}

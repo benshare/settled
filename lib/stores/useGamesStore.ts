@@ -24,16 +24,11 @@ export type GameRequest = Omit<GameRequestRow, 'invited'> & {
 
 export type Game = GameRow
 
-export type GameEvent =
-	| { kind: 'setup_complete'; at: string }
-	| {
-			kind: 'roll'
-			player_index: number
-			value: number
-			new_score: number
-			at: string
-	  }
-	| { kind: 'game_complete'; winner_index: number; at: string }
+export type GameEvent = {
+	kind: 'game_complete'
+	winner_index: number
+	at: string
+}
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
@@ -54,7 +49,6 @@ type GamesStore = {
 		requestId: string,
 		accept: boolean
 	) => Promise<RespondResult>
-	rollDice: (gameId: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -101,7 +95,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		const activePromise = supabase
 			.from('games')
 			.select('*')
-			.in('status', ['setup', 'active'])
+			.in('status', ['placement', 'active'])
 			.order('created_at', { ascending: false })
 
 		const completePromise = supabase
@@ -217,19 +211,6 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		}
 		await get().loadForUser(meId)
 		return { error: null, gameId: data.game_id }
-	},
-
-	async rollDice(gameId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'roll', game_id: gameId },
-			}
-		)
-		if (error || !data?.ok) {
-			return { error: "Couldn't roll" }
-		}
-		return { error: null }
 	},
 }))
 

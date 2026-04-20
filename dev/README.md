@@ -28,3 +28,11 @@ Deletes every auth user whose profile username starts with `testuser`. Because `
 ```sh
 node --env-file=.env dev/clear-test-users.mjs
 ```
+
+### `check-catan-board.ts`
+
+Sanity-checks the hand-authored adjacency tables in `lib/catan/board.ts` — hex/vertex/edge counts, mutual adjacency, derived-edges-match-authored. Run after editing the board constants.
+
+```sh
+npx tsx dev/check-catan-board.ts
+```

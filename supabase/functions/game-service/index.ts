@@ -1,44 +1,30 @@
-// game-service: a single edge function that handles every write to the games
-// subsystem. Actions dispatch on `body.action`. All mutations go through the
-// service-role admin client (bypassing RLS) after we authenticate the caller
-// from their forwarded JWT.
+// game-service: single edge function for every write to the games subsystem.
+// Dispatches on body.action. Authenticates the caller via their JWT, then
+// mutates via the service-role admin client (bypassing RLS).
 //
 // Actions:
-//   - respond: update a game_request's invited[] entry; if fully accepted,
-//     materialize the games row and kick off the setup finalizer.
-//   - roll: on the caller's turn, roll 1-6 and advance / complete the game.
+//   - respond: update a game_request's invited[] entry; on full acceptance,
+//     insert both the games row (status='placement', shuffled player_order)
+//     and the game_states row (generated standard board, blank placements,
+//     zeroed hands, initial-placement phase), and delete the request.
 //
-// Internal helper (not an external action):
-//   - finalizeSetup: after a 3s delay, shuffle player_order and go active.
+// The board/resource/number constants below are duplicated from lib/catan
+// because the Supabase functions directory lives outside the TS project and
+// imports up-tree aren't reliable under the Deno bundler.
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { delay } from 'https://deno.land/std@0.177.0/async/delay.ts'
 import {
 	createClient,
 	SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2'
-
-declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void }
 
 type InvitedEntry = {
 	user: string
 	status: 'pending' | 'accepted' | 'rejected'
 }
 
-type GameEvent =
-	| { kind: 'setup_complete'; at: string }
-	| {
-			kind: 'roll'
-			player_index: number
-			value: number
-			new_score: number
-			at: string
-	  }
-	| { kind: 'game_complete'; winner_index: number; at: string }
-
 type RespondBody = { action: 'respond'; request_id: string; accept: boolean }
-type RollBody = { action: 'roll'; game_id: string }
-type Body = RespondBody | RollBody
+type Body = RespondBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -84,7 +70,7 @@ async function callerUserId(req: Request): Promise<string | null> {
 	return user.id ?? null
 }
 
-function shuffle<T>(xs: T[]): T[] {
+function shuffle<T>(xs: readonly T[]): T[] {
 	const a = [...xs]
 	for (let i = a.length - 1; i > 0; i--) {
 		const j = Math.floor(Math.random() * (i + 1))
@@ -93,11 +79,86 @@ function shuffle<T>(xs: T[]): T[] {
 	return a
 }
 
-function rollDie(): number {
-	const buf = new Uint32Array(1)
-	crypto.getRandomValues(buf)
-	return (buf[0] % 6) + 1
+// --- Catan constants (duplicated from lib/catan) ---------------------------
+
+const HEXES = [
+	'1A',
+	'1B',
+	'1C',
+	'2A',
+	'2B',
+	'2C',
+	'2D',
+	'3A',
+	'3B',
+	'3C',
+	'3D',
+	'3E',
+	'4A',
+	'4B',
+	'4C',
+	'4D',
+	'5A',
+	'5B',
+	'5C',
+] as const
+
+type Resource = 'wood' | 'wheat' | 'sheep' | 'brick' | 'ore'
+
+const RESOURCES: readonly Resource[] = [
+	'wood',
+	'wheat',
+	'sheep',
+	'brick',
+	'ore',
+]
+
+const STANDARD_RESOURCE_COUNTS: Record<Resource, number> = {
+	wood: 4,
+	wheat: 4,
+	sheep: 4,
+	brick: 3,
+	ore: 3,
 }
+
+const STANDARD_NUMBERS = [
+	2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12,
+] as const
+
+type HexData = { resource: null } | { resource: Resource; number: number }
+
+function generateHexes(): Record<string, HexData> {
+	const bag: (Resource | null)[] = [null]
+	for (const r of RESOURCES) {
+		for (let i = 0; i < STANDARD_RESOURCE_COUNTS[r]; i++) bag.push(r)
+	}
+	const resources = shuffle(bag)
+	const numbers = shuffle(STANDARD_NUMBERS)
+
+	const out: Record<string, HexData> = {}
+	let numIdx = 0
+	for (let i = 0; i < HEXES.length; i++) {
+		const hex = HEXES[i]
+		const r = resources[i]
+		if (r === null) out[hex] = { resource: null }
+		else out[hex] = { resource: r, number: numbers[numIdx++] }
+	}
+	return out
+}
+
+function initialPlayers(count: number) {
+	return Array.from({ length: count }, () => ({
+		resources: { wood: 0, wheat: 0, sheep: 0, brick: 0, ore: 0 },
+	}))
+}
+
+const INITIAL_PHASE = {
+	kind: 'initial_placement',
+	round: 1,
+	step: 'settlement',
+}
+
+// --- Actions ---------------------------------------------------------------
 
 async function handleRespond(
 	admin: SupabaseClient,
@@ -133,12 +194,30 @@ async function handleRespond(
 			request.proposer,
 			...nextInvited.map((e) => e.user),
 		]
+		const playerOrder = shuffle(participants)
+
 		const { data: inserted, error: insertErr } = await admin
 			.from('games')
-			.insert({ participants, status: 'setup' })
+			.insert({
+				participants,
+				player_order: playerOrder,
+				current_turn: 0,
+				status: 'placement',
+			})
 			.select('id')
 			.single()
 		if (insertErr || !inserted) return err(500, 'could not create game')
+
+		const { error: stateErr } = await admin.from('game_states').insert({
+			game_id: inserted.id,
+			variant: 'standard',
+			hexes: generateHexes(),
+			vertices: {},
+			edges: {},
+			players: initialPlayers(playerOrder.length),
+			phase: INITIAL_PHASE,
+		})
+		if (stateErr) return err(500, 'could not create game state')
 
 		const { error: delErr } = await admin
 			.from('game_requests')
@@ -146,7 +225,6 @@ async function handleRespond(
 			.eq('id', body.request_id)
 		if (delErr) return err(500, 'could not clear request')
 
-		EdgeRuntime.waitUntil(finalizeSetup(inserted.id))
 		return json({ ok: true, game_id: inserted.id })
 	}
 
@@ -155,101 +233,6 @@ async function handleRespond(
 		.update({ invited: nextInvited })
 		.eq('id', body.request_id)
 	if (updateErr) return err(500, 'could not update request')
-
-	return json({ ok: true })
-}
-
-async function finalizeSetup(gameId: string): Promise<void> {
-	await delay(3000)
-	const admin = adminClient()
-	const { data: game, error: loadErr } = await admin
-		.from('games')
-		.select('*')
-		.eq('id', gameId)
-		.maybeSingle()
-	if (loadErr || !game) return
-	if (game.status !== 'setup') return
-
-	const playerOrder = shuffle(game.participants as string[])
-	const scores = playerOrder.map(() => 0)
-	const events = [
-		...(game.events as GameEvent[]),
-		{
-			kind: 'setup_complete',
-			at: new Date().toISOString(),
-		} satisfies GameEvent,
-	]
-
-	await admin
-		.from('games')
-		.update({
-			player_order: playerOrder,
-			scores,
-			current_turn: 0,
-			events,
-			status: 'active',
-		})
-		.eq('id', gameId)
-		.eq('status', 'setup')
-}
-
-async function handleRoll(
-	admin: SupabaseClient,
-	me: string,
-	body: RollBody
-): Promise<Response> {
-	const { data: game, error: loadErr } = await admin
-		.from('games')
-		.select('*')
-		.eq('id', body.game_id)
-		.maybeSingle()
-	if (loadErr) return err(500, 'load failed')
-	if (!game) return err(404, 'game not found')
-	if (game.status !== 'active') return err(400, 'game not active')
-
-	const playerOrder = game.player_order as string[]
-	const currentTurn = game.current_turn as number | null
-	if (currentTurn === null || playerOrder[currentTurn] !== me) {
-		return err(400, 'not your turn')
-	}
-
-	const value = rollDie()
-	const scores = [...(game.scores as number[])]
-	scores[currentTurn] = scores[currentTurn] + value
-	const newScore = scores[currentTurn]
-	const at = new Date().toISOString()
-
-	const events = [
-		...(game.events as GameEvent[]),
-		{
-			kind: 'roll',
-			player_index: currentTurn,
-			value,
-			new_score: newScore,
-			at,
-		} satisfies GameEvent,
-	]
-
-	if (newScore >= 10) {
-		events.push({ kind: 'game_complete', winner_index: currentTurn, at })
-		const { error: updErr } = await admin
-			.from('games')
-			.update({
-				scores,
-				events,
-				status: 'complete',
-				winner: currentTurn,
-			})
-			.eq('id', body.game_id)
-		if (updErr) return err(500, 'update failed')
-	} else {
-		const nextTurn = (currentTurn + 1) % playerOrder.length
-		const { error: updErr } = await admin
-			.from('games')
-			.update({ scores, events, current_turn: nextTurn })
-			.eq('id', body.game_id)
-		if (updErr) return err(500, 'update failed')
-	}
 
 	return json({ ok: true })
 }
@@ -275,8 +258,6 @@ serve(async (req) => {
 	switch (body.action) {
 		case 'respond':
 			return handleRespond(admin, me, body)
-		case 'roll':
-			return handleRoll(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}
