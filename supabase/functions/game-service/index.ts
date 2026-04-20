@@ -1545,31 +1545,72 @@ async function handleMoveRobber(
 	if (hex === state.robber) return err(400, 'robber must move')
 
 	const candidates = stealCandidates(state, hex, meIdx)
-	const nextPhase: Phase =
-		candidates.length > 0
-			? {
-					kind: 'steal',
-					roll: state.phase.roll,
-					hex,
-					candidates,
+	const now = new Date().toISOString()
+	const events: unknown[] = [
+		{ kind: 'robber_moved', player: meIdx, hex, at: now },
+	]
+
+	// Three cases:
+	//   0 candidates → straight to main, no steal.
+	//   1 candidate  → auto-steal (skip the extra selection step).
+	//   2+ candidates → steal phase with a picker.
+	let nextPlayers: PlayerState[] = state.players
+	let nextPhase: Phase = {
+		kind: 'main',
+		roll: state.phase.roll,
+		trade: null,
+	}
+
+	if (candidates.length === 1) {
+		const victim = candidates[0]
+		const stolen = pickStolenResource(state.players[victim].resources)
+		if (stolen) {
+			nextPlayers = state.players.map((p, i) => {
+				if (i === victim) {
+					return {
+						...p,
+						resources: {
+							...p.resources,
+							[stolen]: p.resources[stolen] - 1,
+						},
+					}
 				}
-			: { kind: 'main', roll: state.phase.roll, trade: null }
+				if (i === meIdx) {
+					return {
+						...p,
+						resources: {
+							...p.resources,
+							[stolen]: p.resources[stolen] + 1,
+						},
+					}
+				}
+				return p
+			})
+			events.push({
+				kind: 'stolen',
+				thief: meIdx,
+				victim,
+				at: now,
+			})
+		}
+	} else if (candidates.length > 1) {
+		nextPhase = {
+			kind: 'steal',
+			roll: state.phase.roll,
+			hex,
+			candidates,
+		}
+	}
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ robber: hex, phase: nextPhase })
+		.update({ robber: hex, phase: nextPhase, players: nextPlayers })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
-	const event = {
-		kind: 'robber_moved',
-		player: meIdx,
-		hex,
-		at: new Date().toISOString(),
-	}
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
+		.update({ events: [...(game.events ?? []), ...events] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 

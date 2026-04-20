@@ -31,12 +31,26 @@ import { useEffect, useMemo, useState } from 'react'
 import {
 	ActivityIndicator,
 	Alert,
+	Platform,
 	Pressable,
 	StyleSheet,
 	Text,
 	View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+
+// Best-effort error notice. Alert.alert is a no-op on react-native-web;
+// fall back to window.alert there. Confirms live inline in the game view
+// (see ConfirmBar) rather than as a modal.
+function notify(title: string, message?: string) {
+	if (Platform.OS === 'web') {
+		if (typeof window !== 'undefined') {
+			window.alert(message ? `${title}\n\n${message}` : title)
+		}
+		return
+	}
+	Alert.alert(title, message)
+}
 
 export default function GameDetailScreen() {
 	const { id } = useLocalSearchParams<{ id: string }>()
@@ -92,6 +106,21 @@ function GameBody() {
 	const [submitting, setSubmitting] = useState(false)
 	const [buildTool, setBuildTool] = useState<BuildKind | null>(null)
 	const [tradePanelOpen, setTradePanelOpen] = useState(false)
+	const [pendingConfirm, setPendingConfirm] = useState<{
+		title: string
+		run: () => void | Promise<void>
+	} | null>(null)
+
+	function confirmAction(title: string, run: () => void | Promise<void>) {
+		setPendingConfirm({ title, run })
+	}
+
+	async function runPendingConfirm() {
+		if (!pendingConfirm) return
+		const { run } = pendingConfirm
+		setPendingConfirm(null)
+		await run()
+	}
 
 	const meIdx = useMemo(() => {
 		if (!game || !user) return -1
@@ -139,6 +168,14 @@ function GameBody() {
 		setTradePanelOpen(false)
 	}, [liveTradeId])
 
+	// Any pending confirm is tied to the current phase/turn. If either flips
+	// under us (realtime), drop the stale confirm so its closure doesn't
+	// fire against the wrong state.
+	const confirmScopeKey = `${game?.current_turn ?? 'x'}:${gameState?.phase.kind ?? 'x'}`
+	useEffect(() => {
+		setPendingConfirm(null)
+	}, [confirmScopeKey])
+
 	if (!ready && !game) {
 		return (
 			<View style={styles.center}>
@@ -176,7 +213,7 @@ function GameBody() {
 				: await placeRoad(game.id, selection.edge)
 		setSubmitting(false)
 		if (res.error) {
-			Alert.alert('Placement failed', res.error)
+			notify('Placement failed', res.error)
 			return
 		}
 		setSelection(null)
@@ -187,7 +224,7 @@ function GameBody() {
 		setSubmitting(true)
 		const res = await roll(game.id)
 		setSubmitting(false)
-		if (res.error) Alert.alert('Roll failed', res.error)
+		if (res.error) notify('Roll failed', res.error)
 	}
 
 	async function onEndTurn() {
@@ -195,7 +232,7 @@ function GameBody() {
 		setSubmitting(true)
 		const res = await endTurn(game.id)
 		setSubmitting(false)
-		if (res.error) Alert.alert(res.error)
+		if (res.error) notify(res.error)
 	}
 
 	function onBuildToolSelect(tool: BuildKind) {
@@ -203,10 +240,7 @@ function GameBody() {
 	}
 
 	function onBuildSpotSelect(sel: BuildSelection) {
-		Alert.alert(confirmBuildTitle(sel.kind), undefined, [
-			{ text: 'Cancel', style: 'cancel' },
-			{ text: 'Confirm', onPress: () => commitBuild(sel) },
-		])
+		confirmAction(confirmBuildTitle(sel.kind), () => commitBuild(sel))
 	}
 
 	async function commitBuild(sel: BuildSelection) {
@@ -220,7 +254,7 @@ function GameBody() {
 					: await buildCity(game.id, sel.vertex)
 		setSubmitting(false)
 		if (res.error) {
-			Alert.alert('Build failed', res.error)
+			notify('Build failed', res.error)
 			return
 		}
 		setBuildTool(null)
@@ -231,41 +265,29 @@ function GameBody() {
 		setSubmitting(true)
 		const res = await discard(game.id, selection)
 		setSubmitting(false)
-		if (res.error) Alert.alert('Discard failed', res.error)
+		if (res.error) notify('Discard failed', res.error)
 	}
 
 	function onMoveRobberRequest(hex: Hex) {
 		if (!game) return
-		Alert.alert('Move robber here?', undefined, [
-			{ text: 'Cancel', style: 'cancel' },
-			{
-				text: 'Confirm',
-				onPress: async () => {
-					setSubmitting(true)
-					const res = await moveRobber(game.id, hex)
-					setSubmitting(false)
-					if (res.error) Alert.alert('Move failed', res.error)
-				},
-			},
-		])
+		confirmAction('Move robber here?', async () => {
+			setSubmitting(true)
+			const res = await moveRobber(game.id, hex)
+			setSubmitting(false)
+			if (res.error) notify('Move failed', res.error)
+		})
 	}
 
 	function onStealRequest(victim: number) {
 		if (!game) return
 		const victimId = game.player_order[victim]
 		const name = profilesById[victimId]?.username ?? 'player'
-		Alert.alert(`Steal from ${name}?`, undefined, [
-			{ text: 'Cancel', style: 'cancel' },
-			{
-				text: 'Confirm',
-				onPress: async () => {
-					setSubmitting(true)
-					const res = await steal(game.id, victim)
-					setSubmitting(false)
-					if (res.error) Alert.alert('Steal failed', res.error)
-				},
-			},
-		])
+		confirmAction(`Steal from ${name}?`, async () => {
+			setSubmitting(true)
+			const res = await steal(game.id, victim)
+			setSubmitting(false)
+			if (res.error) notify('Steal failed', res.error)
+		})
 	}
 
 	function onTradePress() {
@@ -277,7 +299,7 @@ function GameBody() {
 				setSubmitting(true)
 				const res = await cancelTrade(game.id, liveOffer.id)
 				setSubmitting(false)
-				if (res.error) Alert.alert(res.error)
+				if (res.error) notify(res.error)
 			})()
 			return
 		}
@@ -293,7 +315,7 @@ function GameBody() {
 		setSubmitting(true)
 		const res = await proposeTrade(game.id, give, receive, to)
 		setSubmitting(false)
-		if (res.error) Alert.alert('Trade failed', res.error)
+		if (res.error) notify('Trade failed', res.error)
 	}
 
 	async function onAcceptTrade() {
@@ -301,7 +323,7 @@ function GameBody() {
 		setSubmitting(true)
 		const res = await acceptTrade(game.id, liveOffer.id)
 		setSubmitting(false)
-		if (res.error) Alert.alert('Accept failed', res.error)
+		if (res.error) notify('Accept failed', res.error)
 	}
 
 	async function onCancelTrade() {
@@ -309,7 +331,7 @@ function GameBody() {
 		setSubmitting(true)
 		const res = await cancelTrade(game.id, liveOffer.id)
 		setSubmitting(false)
-		if (res.error) Alert.alert(res.error)
+		if (res.error) notify(res.error)
 	}
 
 	// Button enablement: only when it's my main-phase turn, I can afford the
@@ -444,6 +466,14 @@ function GameBody() {
 						<ActivityIndicator color={colors.brand} />
 					</View>
 				)}
+				{pendingConfirm && (
+					<ConfirmBar
+						title={pendingConfirm.title}
+						submitting={submitting}
+						onConfirm={runPendingConfirm}
+						onCancel={() => setPendingConfirm(null)}
+					/>
+				)}
 			</View>
 
 			{inPlacement && isMyPlacementTurn && (
@@ -486,6 +516,50 @@ function GameBody() {
 			{gameState && meIdx >= 0 && gameState.players[meIdx] && (
 				<ResourceHand hand={gameState.players[meIdx].resources} />
 			)}
+		</View>
+	)
+}
+
+function ConfirmBar({
+	title,
+	submitting,
+	onConfirm,
+	onCancel,
+}: {
+	title: string
+	submitting: boolean
+	onConfirm: () => void
+	onCancel: () => void
+}) {
+	return (
+		<View style={styles.confirmFloat}>
+			<Text style={styles.confirmTitle}>{title}</Text>
+			<View style={styles.confirmRow}>
+				<Pressable
+					onPress={onCancel}
+					disabled={submitting}
+					style={({ pressed }) => [
+						styles.confirmBtn,
+						styles.confirmCancel,
+						pressed && !submitting && styles.pressed,
+					]}
+				>
+					<Text style={styles.confirmCancelText}>Cancel</Text>
+				</Pressable>
+				<Pressable
+					onPress={onConfirm}
+					disabled={submitting}
+					style={({ pressed }) => [
+						styles.confirmBtn,
+						styles.confirmOk,
+						pressed && !submitting && styles.pressed,
+					]}
+				>
+					<Text style={styles.confirmOkText}>
+						{submitting ? '…' : 'Confirm'}
+					</Text>
+				</Pressable>
+			</View>
 		</View>
 	)
 }
@@ -806,6 +880,56 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.md,
 		paddingTop: spacing.sm,
 		paddingBottom: spacing.md,
+	},
+	confirmFloat: {
+		position: 'absolute',
+		top: spacing.sm,
+		right: spacing.sm,
+		backgroundColor: colors.card,
+		borderWidth: 1,
+		borderColor: colors.border,
+		borderRadius: radius.md,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+		gap: spacing.xs,
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.12,
+		shadowRadius: 6,
+		elevation: 3,
+		maxWidth: 220,
+	},
+	confirmTitle: {
+		fontSize: font.sm,
+		fontWeight: '600',
+		color: colors.text,
+	},
+	confirmRow: {
+		flexDirection: 'row',
+		gap: spacing.xs,
+	},
+	confirmBtn: {
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 4,
+		borderRadius: radius.sm,
+		borderWidth: 1,
+	},
+	confirmCancel: {
+		borderColor: colors.border,
+		backgroundColor: colors.white,
+	},
+	confirmCancelText: {
+		fontSize: font.sm,
+		color: colors.text,
+	},
+	confirmOk: {
+		borderColor: colors.brand,
+		backgroundColor: colors.brand,
+	},
+	confirmOkText: {
+		fontSize: font.sm,
+		fontWeight: '600',
+		color: colors.white,
 	},
 	mainLoopRow: {
 		flexDirection: 'row',

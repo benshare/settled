@@ -47,8 +47,9 @@ export function RobberLayer({
 							<Circle
 								cx={h.cx}
 								cy={h.cy}
-								r={layoutS * 0.9}
-								fill="transparent"
+								r={layoutS * 0.55}
+								fill="#000"
+								fillOpacity={0.001}
 								onPress={() => onMoveRobber(h.id)}
 							/>
 						</Fragment>
