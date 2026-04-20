@@ -148,7 +148,7 @@ function rowToState(row: Record<string, unknown>): GameState {
 
 // Temporary: visual test data for building rendering. Remove once real
 // placement flow lands.
-const DEV_DUMMY_PLACEMENTS = true
+const DEV_DUMMY_PLACEMENTS = false
 
 const DUMMY_VERTICES: GameState['vertices'] = {
 	'1A': { occupied: true, player: 0, building: 'settlement' },
