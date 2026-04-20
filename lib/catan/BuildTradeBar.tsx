@@ -23,13 +23,21 @@ export function BuildTradeBar({
 	active,
 	enabled,
 	meIdx,
+	tradeEnabled,
+	tradeActive,
 	onSelect,
+	onTradePress,
 }: {
 	active: BuildKind | null
 	enabled: BuildEnablement
 	meIdx: number
+	tradeEnabled: boolean
+	tradeActive: boolean
 	onSelect: (tool: BuildKind) => void
+	onTradePress: () => void
 }) {
+	const color = playerColors[meIdx] ?? playerColors[0]
+	const tradeInteractive = tradeEnabled || tradeActive
 	return (
 		<View style={styles.row}>
 			<View style={[styles.panel, styles.buildPanel]}>
@@ -53,18 +61,33 @@ export function BuildTradeBar({
 				</View>
 			</View>
 
-			<View
-				style={[styles.panel, styles.tradePanel, styles.panelDisabled]}
+			<Pressable
+				disabled={!tradeInteractive}
+				onPress={onTradePress}
+				style={({ pressed }) => [
+					styles.panel,
+					styles.tradePanel,
+					!tradeInteractive && styles.panelDisabled,
+					tradeActive && { borderColor: color, borderWidth: 2 },
+					pressed && tradeInteractive && styles.pressed,
+				]}
 			>
 				<Text style={styles.title}>Trade</Text>
 				<View style={styles.tradeBody}>
 					<Ionicons
 						name="swap-horizontal"
 						size={24}
-						color={colors.textMuted}
+						color={
+							tradeInteractive ? colors.text : colors.textMuted
+						}
 					/>
 				</View>
-			</View>
+				{tradeActive && (
+					<View style={styles.cancelBadge}>
+						<Ionicons name="close" size={12} color={colors.white} />
+					</View>
+				)}
+			</Pressable>
 		</View>
 	)
 }

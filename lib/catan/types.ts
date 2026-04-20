@@ -34,6 +34,16 @@ export type Phase =
 	| { kind: 'main'; roll: DiceRoll }
 	| { kind: 'game_over' }
 
+export type TradeOffer = {
+	id: string
+	from: number
+	// Empty means "all other players". Never contains `from`.
+	to: number[]
+	give: ResourceHand
+	receive: ResourceHand
+	createdAt: string
+}
+
 // vertices / edges are Partial — a missing key means the default
 // `{ occupied: false }`. Keeps storage for a fresh game tiny and avoids
 // needing to pre-populate 54 + 72 empty entries at insert time.
@@ -44,6 +54,9 @@ export type GameState = {
 	edges: Partial<Record<Edge, EdgeState>>
 	players: PlayerState[]
 	phase: Phase
+	// At most one open trade offer at a time. Only the current main-phase
+	// player can propose. Cleared on accept, cancel, or end_turn.
+	trade: TradeOffer | null
 }
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }

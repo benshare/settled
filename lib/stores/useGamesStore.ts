@@ -1,6 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
-import type { DiceRoll } from '../catan/types'
+import type { DiceRoll, ResourceHand } from '../catan/types'
 import type { Database } from '../database-types'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
@@ -53,6 +53,25 @@ export type GameEvent =
 	| { kind: 'road_built'; player: number; edge: string; at: string }
 	| { kind: 'settlement_built'; player: number; vertex: string; at: string }
 	| { kind: 'city_built'; player: number; vertex: string; at: string }
+	| {
+			kind: 'trade_proposed'
+			offer_id: string
+			from: number
+			to: number[]
+			give: ResourceHand
+			receive: ResourceHand
+			at: string
+	  }
+	| {
+			kind: 'trade_accepted'
+			offer_id: string
+			from: number
+			to: number
+			give: ResourceHand
+			receive: ResourceHand
+			at: string
+	  }
+	| { kind: 'trade_canceled'; offer_id: string; from: number; at: string }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
@@ -84,6 +103,15 @@ type GamesStore = {
 	buildRoad: (gameId: string, edge: string) => Promise<ActionResult>
 	buildSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
 	buildCity: (gameId: string, vertex: string) => Promise<ActionResult>
+
+	proposeTrade: (
+		gameId: string,
+		give: ResourceHand,
+		receive: ResourceHand,
+		to: number[]
+	) => Promise<ActionResult & { offerId?: string }>
+	acceptTrade: (gameId: string, offerId: string) => Promise<ActionResult>
+	cancelTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -322,6 +350,53 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't build city" }
+		return { error: null }
+	},
+
+	async proposeTrade(gameId, give, receive, to) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'propose_trade',
+					game_id: gameId,
+					give,
+					receive,
+					to,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't propose trade" }
+		return { error: null, offerId: data.offer_id }
+	},
+
+	async acceptTrade(gameId, offerId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'accept_trade',
+					game_id: gameId,
+					offer_id: offerId,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't accept trade" }
+		return { error: null }
+	},
+
+	async cancelTrade(gameId, offerId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'cancel_trade',
+					game_id: gameId,
+					offer_id: offerId,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't cancel trade" }
 		return { error: null }
 	},
 }))

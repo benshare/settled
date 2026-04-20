@@ -8,13 +8,14 @@ Everything Catan-specific lives here. Split by what it describes:
 - `placement.ts` — pure rules for the initial-placement phase (validity, target-settlement derivation, snake-order turn advance, starting-resource grant). No I/O; callable from UI helpers and tests.
 - `roll.ts` — pure rules for the main-phase loop (dice roll, per-hex resource distribution, forward turn rotation). No I/O; callable from UI helpers and tests.
 - `build.ts` — pure rules for main-phase builds (road, settlement, city): costs, affordability, validity (including the "no road through opponent settlement" rule). No I/O; callable from UI helpers and tests.
+- `trade.ts` — pure rules for player-to-player trade offers: shape validity, affordability, offer-addressing, hand swap. A game carries at most one open `TradeOffer` at a time. No I/O.
 - `gameContext.tsx` — React context that loads the per-game `games` row + `game_states` row and subscribes to realtime. Use `useGame()` in any subtree under `<GameProvider>`.
 
 ## Constants are duplicated in the edge function
 
-`supabase/functions/game-service/index.ts` re-declares `HEXES`, `VERTICES`, `EDGES`, `adjacentVertices`, and the derived adjacency IIFEs from `board.ts`, plus the placement rules from `placement.ts`, the roll/distribution rules from `roll.ts`, and the build rules from `build.ts`. The Deno bundler can't reliably import up-tree from `supabase/functions/`, so we accept a single redundancy: change both when rules or board data change. The source of truth is `lib/catan/`; the edge function is the copy.
+`supabase/functions/game-service/index.ts` re-declares `HEXES`, `VERTICES`, `EDGES`, `adjacentVertices`, and the derived adjacency IIFEs from `board.ts`, plus the placement rules from `placement.ts`, the roll/distribution rules from `roll.ts`, the build rules from `build.ts`, and the trade rules from `trade.ts`. The Deno bundler can't reliably import up-tree from `supabase/functions/`, so we accept a single redundancy: change both when rules or board data change. The source of truth is `lib/catan/`; the edge function is the copy.
 
-When in doubt, run the four check scripts — `npx tsx dev/check-catan-board.ts`, `check-catan-placement.ts`, `check-catan-roll.ts`, `check-catan-build.ts` — after edits. The edge function is only validated at deploy time (`npm run edge`).
+When in doubt, run the five check scripts — `npx tsx dev/check-catan-board.ts`, `check-catan-placement.ts`, `check-catan-roll.ts`, `check-catan-build.ts`, `check-catan-trade.ts` — after edits. The edge function is only validated at deploy time (`npm run edge`).
 
 ## Sparse storage
 
