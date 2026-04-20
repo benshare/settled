@@ -1,6 +1,8 @@
 import { useAuth } from '@/lib/auth'
 import { BoardView } from '@/lib/catan/BoardView'
+import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
+import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import { playerColors } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
@@ -128,6 +130,19 @@ function GameBody() {
 					isMyTurn={isMyTurn}
 					profilesById={profilesById}
 				/>
+			)}
+
+			{!inPlacement && gameState && (
+				<>
+					<PlayerStrip
+						playerOrder={game.player_order}
+						currentTurn={game.current_turn}
+						meIdx={meIdx}
+						profilesById={profilesById}
+						gameState={gameState}
+					/>
+					<BuildTradeBar />
+				</>
 			)}
 
 			<View style={styles.boardContainer}>
