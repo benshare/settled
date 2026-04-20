@@ -33,6 +33,9 @@
 //   - steal: during phase='steal' and on the caller's turn, picks a random
 //     resource from the chosen victim (must be in phase.candidates), moves
 //     one card, transitions to phase='main'.
+//   - propose_trade / accept_trade / cancel_trade: single open trade offer
+//     per game, proposed by the current main-phase player. Accept or cancel
+//     clears the offer; end_turn clears it too.
 //
 // The board/resource/number constants below are duplicated from lib/catan
 // because the Supabase functions directory lives outside the TS project and
@@ -82,6 +85,23 @@ type DiscardBody = {
 }
 type MoveRobberBody = { action: 'move_robber'; game_id: string; hex: string }
 type StealBody = { action: 'steal'; game_id: string; victim: number }
+type ProposeTradeBody = {
+	action: 'propose_trade'
+	game_id: string
+	give: ResourceHand
+	receive: ResourceHand
+	to: number[]
+}
+type AcceptTradeBody = {
+	action: 'accept_trade'
+	game_id: string
+	offer_id: string
+}
+type CancelTradeBody = {
+	action: 'cancel_trade'
+	game_id: string
+	offer_id: string
+}
 type Body =
 	| RespondBody
 	| PlaceSettlementBody
@@ -94,6 +114,9 @@ type Body =
 	| DiscardBody
 	| MoveRobberBody
 	| StealBody
+	| ProposeTradeBody
+	| AcceptTradeBody
+	| CancelTradeBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -409,6 +432,15 @@ type PlayerState = { resources: ResourceHand }
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
 type DiceRoll = { a: DieFace; b: DieFace }
 
+type TradeOffer = {
+	id: string
+	from: number
+	to: number[]
+	give: ResourceHand
+	receive: ResourceHand
+	createdAt: string
+}
+
 type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
@@ -419,7 +451,7 @@ type Phase =
 	  }
 	| { kind: 'move_robber'; roll: DiceRoll }
 	| { kind: 'steal'; roll: DiceRoll; hex: Hex; candidates: number[] }
-	| { kind: 'main'; roll: DiceRoll }
+	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
 	| { kind: 'game_over' }
 
 type GameState = {
@@ -672,8 +704,23 @@ function stealCandidates(state: GameState, hex: Hex, meIdx: number): number[] {
 	return Array.from(set)
 }
 
-function sanitizeDiscard(raw: unknown): ResourceHand | null {
-	if (!raw || typeof raw !== 'object') return null
+// --- Trade rules (must match lib/catan/trade) ------------------------------
+
+function isValidTradeShape(give: ResourceHand, receive: ResourceHand): boolean {
+	let giveTotal = 0
+	let receiveTotal = 0
+	for (const r of RESOURCES) {
+		if (give[r] < 0 || receive[r] < 0) return false
+		if (give[r] > 0 && receive[r] > 0) return false
+		giveTotal += give[r]
+		receiveTotal += receive[r]
+	}
+	return giveTotal > 0 && receiveTotal > 0
+}
+
+function normalizeHand(input: unknown): ResourceHand | null {
+	if (!input || typeof input !== 'object') return null
+	const src = input as Record<string, unknown>
 	const out: ResourceHand = {
 		brick: 0,
 		wood: 0,
@@ -682,11 +729,48 @@ function sanitizeDiscard(raw: unknown): ResourceHand | null {
 		ore: 0,
 	}
 	for (const r of RESOURCES) {
-		const v = (raw as Record<string, unknown>)[r]
-		if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) return null
+		const v = src[r]
+		if (v === undefined) continue
+		if (
+			typeof v !== 'number' ||
+			!Number.isFinite(v) ||
+			!Number.isInteger(v) ||
+			v < 0
+		) {
+			return null
+		}
 		out[r] = v
 	}
 	return out
+}
+
+function applyTradeToPlayers(
+	players: PlayerState[],
+	fromIdx: number,
+	toIdx: number,
+	give: ResourceHand,
+	receive: ResourceHand
+): PlayerState[] {
+	return players.map((p, i) => {
+		if (i !== fromIdx && i !== toIdx) return p
+		const deltaIn = i === fromIdx ? receive : give
+		const deltaOut = i === fromIdx ? give : receive
+		const next: ResourceHand = { ...p.resources }
+		for (const r of RESOURCES) {
+			next[r] = next[r] + deltaIn[r] - deltaOut[r]
+		}
+		return { ...p, resources: next }
+	})
+}
+
+function isOfferAddressedTo(offer: TradeOffer, meIdx: number): boolean {
+	if (meIdx === offer.from) return false
+	if (offer.to.length === 0) return true
+	return offer.to.includes(meIdx)
+}
+
+function newTradeId(): string {
+	return Math.random().toString(36).slice(2, 10)
 }
 
 // --- Game generation -------------------------------------------------------
@@ -757,13 +841,20 @@ async function loadGame(
 	if (!stateRow)
 		return { ok: false, response: err(404, 'game state not found') }
 
+	// Normalize phase.main.trade for rows written before trade existed.
+	const rawPhase = stateRow.phase as Phase
+	const phase: Phase =
+		rawPhase.kind === 'main' && rawPhase.trade === undefined
+			? { ...rawPhase, trade: null }
+			: rawPhase
+
 	const state: GameState = {
 		variant: stateRow.variant,
 		hexes: stateRow.hexes,
 		vertices: stateRow.vertices,
 		edges: stateRow.edges,
 		players: stateRow.players,
-		phase: stateRow.phase,
+		phase,
 		robber: stateRow.robber,
 	}
 	return { ok: true, game: game as GameRow, state }
@@ -1115,7 +1206,11 @@ async function handleRoll(
 		.from('game_states')
 		.update({
 			players: nextPlayers,
-			phase: { kind: 'main', roll: dice } satisfies Phase,
+			phase: {
+				kind: 'main',
+				roll: dice,
+				trade: null,
+			} satisfies Phase,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
@@ -1368,7 +1463,7 @@ async function handleDiscard(
 	const required = state.phase.pending[meIdx]
 	if (required === undefined) return err(400, 'nothing to discard')
 
-	const selection = sanitizeDiscard(body.discard)
+	const selection = normalizeHand(body.discard)
 	if (!selection) return err(400, 'invalid discard shape')
 
 	const hand = state.players[meIdx].resources
@@ -1458,7 +1553,7 @@ async function handleMoveRobber(
 					hex,
 					candidates,
 				}
-			: { kind: 'main', roll: state.phase.roll }
+			: { kind: 'main', roll: state.phase.roll, trade: null }
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -1537,7 +1632,11 @@ async function handleSteal(
 		return p
 	})
 
-	const nextPhase: Phase = { kind: 'main', roll: state.phase.roll }
+	const nextPhase: Phase = {
+		kind: 'main',
+		roll: state.phase.roll,
+		trade: null,
+	}
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -1549,6 +1648,178 @@ async function handleSteal(
 		kind: 'stolen',
 		thief: meIdx,
 		victim: body.victim,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
+async function handleProposeTrade(
+	admin: SupabaseClient,
+	me: string,
+	body: ProposeTradeBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const phase = state.phase
+	if (phase.kind !== 'main') return err(400, 'expected main phase')
+	if (phase.trade !== null) return err(400, 'trade already open')
+
+	const give = normalizeHand(body.give)
+	const receive = normalizeHand(body.receive)
+	if (!give || !receive) return err(400, 'invalid resource hand')
+	if (!isValidTradeShape(give, receive))
+		return err(400, 'invalid trade shape')
+	if (!canAfford(state.players[meIdx].resources, give))
+		return err(400, 'insufficient resources')
+
+	const playerCount = game.player_order.length
+	if (!Array.isArray(body.to)) return err(400, 'invalid to list')
+	const to: number[] = []
+	for (const t of body.to) {
+		if (typeof t !== 'number' || !Number.isInteger(t)) {
+			return err(400, 'invalid to list')
+		}
+		if (t < 0 || t >= playerCount) return err(400, 'invalid to list')
+		if (t === meIdx) return err(400, 'cannot address self')
+		if (to.includes(t)) continue
+		to.push(t)
+	}
+
+	const offer: TradeOffer = {
+		id: newTradeId(),
+		from: meIdx,
+		to,
+		give,
+		receive,
+		createdAt: new Date().toISOString(),
+	}
+
+	const nextPhase: Phase = { ...phase, trade: offer }
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'trade_proposed',
+		offer_id: offer.id,
+		from: meIdx,
+		to,
+		give,
+		receive,
+		at: offer.createdAt,
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true, offer_id: offer.id })
+}
+
+async function handleAcceptTrade(
+	admin: SupabaseClient,
+	me: string,
+	body: AcceptTradeBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	const phase = state.phase
+	if (phase.kind !== 'main') return err(400, 'expected main phase')
+	const offer = phase.trade
+	if (!offer || offer.id !== body.offer_id) return err(404, 'offer not found')
+
+	const meIdx = game.player_order.indexOf(me)
+	if (meIdx < 0) return err(403, 'not a participant')
+	if (!isOfferAddressedTo(offer, meIdx))
+		return err(403, 'not addressed to you')
+	if (!canAfford(state.players[offer.from].resources, offer.give))
+		return err(400, 'proposer can no longer afford')
+	if (!canAfford(state.players[meIdx].resources, offer.receive))
+		return err(400, 'you cannot afford')
+
+	const nextPlayers = applyTradeToPlayers(
+		state.players,
+		offer.from,
+		meIdx,
+		offer.give,
+		offer.receive
+	)
+	const nextPhase: Phase = { ...phase, trade: null }
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers, phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'trade_accepted',
+		offer_id: offer.id,
+		from: offer.from,
+		to: meIdx,
+		give: offer.give,
+		receive: offer.receive,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
+async function handleCancelTrade(
+	admin: SupabaseClient,
+	me: string,
+	body: CancelTradeBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	const phase = state.phase
+	if (phase.kind !== 'main') return err(400, 'expected main phase')
+	const offer = phase.trade
+	if (!offer || offer.id !== body.offer_id) return err(404, 'offer not found')
+
+	const meIdx = game.player_order.indexOf(me)
+	if (meIdx < 0) return err(403, 'not a participant')
+	if (offer.from !== meIdx) return err(403, 'not your offer')
+
+	const nextPhase: Phase = { ...phase, trade: null }
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'trade_canceled',
+		offer_id: offer.id,
+		from: meIdx,
 		at: new Date().toISOString(),
 	}
 	const { error: gameErr } = await admin
@@ -1601,6 +1872,12 @@ serve(async (req) => {
 			return handleMoveRobber(admin, me, body)
 		case 'steal':
 			return handleSteal(admin, me, body)
+		case 'propose_trade':
+			return handleProposeTrade(admin, me, body)
+		case 'accept_trade':
+			return handleAcceptTrade(admin, me, body)
+		case 'cancel_trade':
+			return handleCancelTrade(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}

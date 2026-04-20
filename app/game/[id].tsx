@@ -1,7 +1,6 @@
 import { useAuth } from '@/lib/auth'
 import type { Hex } from '@/lib/catan/board'
 import { BoardView } from '@/lib/catan/BoardView'
-import type { BuildSelection } from '@/lib/catan/BuildLayer'
 import {
 	BUILD_COSTS,
 	canAfford,
@@ -10,13 +9,16 @@ import {
 	validBuildSettlementVertices,
 	type BuildKind,
 } from '@/lib/catan/build'
+import type { BuildSelection } from '@/lib/catan/BuildLayer'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
-import { PlayerStrip } from '@/lib/catan/PlayerStrip'
-import { playerColors } from '@/lib/catan/palette'
+import { playerColors, waterColor } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
+import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
+import { TradeBanner } from '@/lib/catan/TradeBanner'
+import { TradePanel } from '@/lib/catan/TradePanel'
 import type { ResourceHand as ResourceHandType } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
@@ -82,10 +84,14 @@ function GameBody() {
 	const discard = useGamesStore((s) => s.discard)
 	const moveRobber = useGamesStore((s) => s.moveRobber)
 	const steal = useGamesStore((s) => s.steal)
+	const proposeTrade = useGamesStore((s) => s.proposeTrade)
+	const acceptTrade = useGamesStore((s) => s.acceptTrade)
+	const cancelTrade = useGamesStore((s) => s.cancelTrade)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
 	const [buildTool, setBuildTool] = useState<BuildKind | null>(null)
+	const [tradePanelOpen, setTradePanelOpen] = useState(false)
 
 	const meIdx = useMemo(() => {
 		if (!game || !user) return -1
@@ -110,14 +116,28 @@ function GameBody() {
 		setSelection(null)
 	}, [placementKey])
 
-	// Clear build tool when the turn flips away from us or when we leave main.
+	// Clear build tool + trade panel when the turn flips away or we leave main.
 	const mainTurnKey =
 		gameState?.phase.kind === 'main' && isMyActiveTurn
 			? `${game?.current_turn}`
 			: 'off'
 	useEffect(() => {
-		if (mainTurnKey === 'off') setBuildTool(null)
+		if (mainTurnKey === 'off') {
+			setBuildTool(null)
+			setTradePanelOpen(false)
+		}
 	}, [mainTurnKey])
+
+	// Trade rides on the main phase — there's no top-level field for it.
+	const liveOffer =
+		gameState?.phase.kind === 'main' ? gameState.phase.trade : null
+
+	// Close the compose panel if a live offer appears (we just sent it) or
+	// disappears (someone accepted/cancelled).
+	const liveTradeId = liveOffer?.id ?? null
+	useEffect(() => {
+		setTradePanelOpen(false)
+	}, [liveTradeId])
 
 	if (!ready && !game) {
 		return (
@@ -248,6 +268,50 @@ function GameBody() {
 		])
 	}
 
+	function onTradePress() {
+		if (!game) return
+		// If we have a live offer we proposed, tapping the Trade button cancels
+		// it outright. Otherwise we toggle the compose panel.
+		if (liveOffer && liveOffer.from === meIdx) {
+			;(async () => {
+				setSubmitting(true)
+				const res = await cancelTrade(game.id, liveOffer.id)
+				setSubmitting(false)
+				if (res.error) Alert.alert(res.error)
+			})()
+			return
+		}
+		setTradePanelOpen((prev) => !prev)
+	}
+
+	async function onProposeTrade(
+		give: ResourceHandType,
+		receive: ResourceHandType,
+		to: number[]
+	) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await proposeTrade(game.id, give, receive, to)
+		setSubmitting(false)
+		if (res.error) Alert.alert('Trade failed', res.error)
+	}
+
+	async function onAcceptTrade() {
+		if (!game || !liveOffer) return
+		setSubmitting(true)
+		const res = await acceptTrade(game.id, liveOffer.id)
+		setSubmitting(false)
+		if (res.error) Alert.alert('Accept failed', res.error)
+	}
+
+	async function onCancelTrade() {
+		if (!game || !liveOffer) return
+		setSubmitting(true)
+		const res = await cancelTrade(game.id, liveOffer.id)
+		setSubmitting(false)
+		if (res.error) Alert.alert(res.error)
+	}
+
 	// Button enablement: only when it's my main-phase turn, I can afford the
 	// cost, AND there is at least one valid spot on the board.
 	const myHand = gameState?.players[meIdx]?.resources ?? null
@@ -271,6 +335,12 @@ function GameBody() {
 			validBuildCityVertices(gameState!, meIdx).length > 0,
 		dev_card: false,
 	}
+
+	const hasLiveTrade = !!liveOffer
+	const liveTradeIsMine = !!liveOffer && liveOffer.from === meIdx
+	const tradeButtonEnabled =
+		canBuildThisTurn && !hasLiveTrade && !tradePanelOpen
+	const tradeButtonActive = tradePanelOpen || liveTradeIsMine
 
 	return (
 		<View style={styles.bodyRoot}>
@@ -297,7 +367,10 @@ function GameBody() {
 						active={buildTool}
 						enabled={buildEnabled}
 						meIdx={meIdx}
+						tradeEnabled={tradeButtonEnabled}
+						tradeActive={tradeButtonActive}
 						onSelect={onBuildToolSelect}
+						onTradePress={onTradePress}
 					/>
 					{inRobberFlow && (
 						<RobberStatus
@@ -321,6 +394,18 @@ function GameBody() {
 			)}
 
 			<View style={styles.boardContainer}>
+				{liveOffer && (
+					<TradeBanner
+						offer={liveOffer}
+						meIdx={meIdx}
+						myHand={myHand}
+						playerOrder={game.player_order}
+						profilesById={profilesById}
+						submitting={submitting}
+						onAccept={onAcceptTrade}
+						onCancel={onCancelTrade}
+					/>
+				)}
 				{gameState ? (
 					<BoardView
 						state={gameState}
@@ -334,7 +419,7 @@ function GameBody() {
 								: undefined
 						}
 						build={
-							buildTool && isMyActiveTurn
+							buildTool && isMyActiveTurn && !tradePanelOpen
 								? {
 										meIdx,
 										tool: buildTool,
@@ -355,7 +440,9 @@ function GameBody() {
 						}
 					/>
 				) : (
-					<ActivityIndicator color={colors.brand} />
+					<View style={styles.loadingFill}>
+						<ActivityIndicator color={colors.brand} />
+					</View>
 				)}
 			</View>
 
@@ -371,7 +458,7 @@ function GameBody() {
 				</View>
 			)}
 
-			{inMainLoop && gameState && (
+			{inMainLoop && gameState && !tradePanelOpen && (
 				<MainLoopBar
 					game={game}
 					gameState={gameState}
@@ -381,6 +468,18 @@ function GameBody() {
 					submitting={submitting}
 					onRoll={onRoll}
 					onEndTurn={onEndTurn}
+				/>
+			)}
+
+			{tradePanelOpen && myHand && (
+				<TradePanel
+					meIdx={meIdx}
+					myHand={myHand}
+					playerOrder={game.player_order}
+					profilesById={profilesById}
+					submitting={submitting}
+					onSend={onProposeTrade}
+					onCancel={() => setTradePanelOpen(false)}
 				/>
 			)}
 
@@ -695,6 +794,10 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.border,
 	},
 	boardContainer: {
+		flex: 1,
+		backgroundColor: waterColor,
+	},
+	loadingFill: {
 		flex: 1,
 		alignItems: 'center',
 		justifyContent: 'center',

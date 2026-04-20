@@ -28,6 +28,16 @@ export type PlayerState = {
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6
 export type DiceRoll = { a: DieFace; b: DieFace }
 
+export type TradeOffer = {
+	id: string
+	from: number
+	// Empty means "all other players". Never contains `from`.
+	to: number[]
+	give: ResourceHand
+	receive: ResourceHand
+	createdAt: string
+}
+
 export type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
@@ -39,7 +49,9 @@ export type Phase =
 	  }
 	| { kind: 'move_robber'; roll: DiceRoll }
 	| { kind: 'steal'; roll: DiceRoll; hex: Hex; candidates: number[] }
-	| { kind: 'main'; roll: DiceRoll }
+	// `trade` piggy-backs on the main phase so we don't need a separate
+	// top-level field (and a DB column). It's always cleared when leaving main.
+	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
 	| { kind: 'game_over' }
 
 // vertices / edges are Partial — a missing key means the default

@@ -56,6 +56,25 @@ export type GameEvent =
 	| { kind: 'discarded'; player: number; count: number; at: string }
 	| { kind: 'robber_moved'; player: number; hex: string; at: string }
 	| { kind: 'stolen'; thief: number; victim: number; at: string }
+	| {
+			kind: 'trade_proposed'
+			offer_id: string
+			from: number
+			to: number[]
+			give: ResourceHand
+			receive: ResourceHand
+			at: string
+	  }
+	| {
+			kind: 'trade_accepted'
+			offer_id: string
+			from: number
+			to: number
+			give: ResourceHand
+			receive: ResourceHand
+			at: string
+	  }
+	| { kind: 'trade_canceled'; offer_id: string; from: number; at: string }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
@@ -91,6 +110,15 @@ type GamesStore = {
 	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
 	moveRobber: (gameId: string, hex: string) => Promise<ActionResult>
 	steal: (gameId: string, victim: number) => Promise<ActionResult>
+
+	proposeTrade: (
+		gameId: string,
+		give: ResourceHand,
+		receive: ResourceHand,
+		to: number[]
+	) => Promise<ActionResult & { offerId?: string }>
+	acceptTrade: (gameId: string, offerId: string) => Promise<ActionResult>
+	cancelTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -362,6 +390,53 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't steal" }
+		return { error: null }
+	},
+
+	async proposeTrade(gameId, give, receive, to) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'propose_trade',
+					game_id: gameId,
+					give,
+					receive,
+					to,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't propose trade" }
+		return { error: null, offerId: data.offer_id }
+	},
+
+	async acceptTrade(gameId, offerId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'accept_trade',
+					game_id: gameId,
+					offer_id: offerId,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't accept trade" }
+		return { error: null }
+	},
+
+	async cancelTrade(gameId, offerId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'cancel_trade',
+					game_id: gameId,
+					offer_id: offerId,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't cancel trade" }
 		return { error: null }
 	},
 }))
