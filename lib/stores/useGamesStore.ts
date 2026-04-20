@@ -24,11 +24,23 @@ export type GameRequest = Omit<GameRequestRow, 'invited'> & {
 
 export type Game = GameRow
 
-export type GameEvent = {
-	kind: 'game_complete'
-	winner_index: number
-	at: string
-}
+export type GameEvent =
+	| { kind: 'game_complete'; winner_index: number; at: string }
+	| {
+			kind: 'settlement_placed'
+			player: number
+			vertex: string
+			round: 1 | 2
+			at: string
+	  }
+	| {
+			kind: 'road_placed'
+			player: number
+			edge: string
+			round: 1 | 2
+			at: string
+	  }
+	| { kind: 'placement_complete'; at: string }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
@@ -49,6 +61,9 @@ type GamesStore = {
 		requestId: string,
 		accept: boolean
 	) => Promise<RespondResult>
+
+	placeSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
+	placeRoad: (gameId: string, edge: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -211,6 +226,28 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		}
 		await get().loadForUser(meId)
 		return { error: null, gameId: data.game_id }
+	},
+
+	async placeSettlement(gameId, vertex) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'place_settlement', game_id: gameId, vertex },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't place settlement" }
+		return { error: null }
+	},
+
+	async placeRoad(gameId, edge) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'place_road', game_id: gameId, edge },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't place road" }
+		return { error: null }
 	},
 }))
 

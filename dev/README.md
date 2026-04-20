@@ -36,3 +36,11 @@ Sanity-checks the hand-authored adjacency tables in `lib/catan/board.ts` — hex
 ```sh
 npx tsx dev/check-catan-board.ts
 ```
+
+### `check-catan-placement.ts`
+
+Unit-style checks for `lib/catan/placement.ts` — distance rule, target-settlement derivation, valid road edges, snake-order turn advance, starting-resource grant. Run after editing placement logic.
+
+```sh
+npx tsx dev/check-catan-placement.ts
+```
