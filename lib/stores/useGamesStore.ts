@@ -1,6 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
-import type { DiceRoll } from '../catan/types'
+import type { DiceRoll, ResourceHand } from '../catan/types'
 import type { Database } from '../database-types'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
@@ -53,6 +53,9 @@ export type GameEvent =
 	| { kind: 'road_built'; player: number; edge: string; at: string }
 	| { kind: 'settlement_built'; player: number; vertex: string; at: string }
 	| { kind: 'city_built'; player: number; vertex: string; at: string }
+	| { kind: 'discarded'; player: number; count: number; at: string }
+	| { kind: 'robber_moved'; player: number; hex: string; at: string }
+	| { kind: 'stolen'; thief: number; victim: number; at: string }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
@@ -84,6 +87,10 @@ type GamesStore = {
 	buildRoad: (gameId: string, edge: string) => Promise<ActionResult>
 	buildSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
 	buildCity: (gameId: string, vertex: string) => Promise<ActionResult>
+
+	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
+	moveRobber: (gameId: string, hex: string) => Promise<ActionResult>
+	steal: (gameId: string, victim: number) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -322,6 +329,39 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't build city" }
+		return { error: null }
+	},
+
+	async discard(gameId, discard) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'discard', game_id: gameId, discard },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't discard" }
+		return { error: null }
+	},
+
+	async moveRobber(gameId, hex) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'move_robber', game_id: gameId, hex },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't move robber" }
+		return { error: null }
+	},
+
+	async steal(gameId, victim) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'steal', game_id: gameId, victim },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't steal" }
 		return { error: null }
 	},
 }))

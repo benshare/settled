@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { type LayoutChangeEvent, View } from 'react-native'
 import Svg, { G, Rect } from 'react-native-svg'
-import { edgeEndpoints, type Edge, type Vertex } from './board'
+import { edgeEndpoints, type Edge, type Hex, type Vertex } from './board'
 import { BuildLayer, type BuildSelection } from './BuildLayer'
 import { type BuildKind } from './build'
 import { EdgePiece } from './EdgePiece'
@@ -9,6 +9,8 @@ import { HexTile } from './HexTile'
 import { computeBoardLayout, computeVertexPositions } from './layout'
 import { waterColor } from './palette'
 import { PlacementLayer, type PlacementSelection } from './PlacementLayer'
+import { RobberLayer } from './RobberLayer'
+import { RobberPiece } from './RobberPiece'
 import type { GameState } from './types'
 import { VertexPiece } from './VertexPiece'
 
@@ -26,14 +28,22 @@ export type BuildInteraction = {
 	onSelect: (selection: BuildSelection) => void
 }
 
+export type RobberInteraction = {
+	meIdx: number
+	onMoveRobber: (hex: Hex) => void
+	onSteal: (victim: number) => void
+}
+
 export function BoardView({
 	state,
 	interaction,
 	build,
+	robber,
 }: {
 	state: GameState
 	interaction?: BoardInteraction
 	build?: BuildInteraction
+	robber?: RobberInteraction
 }) {
 	const [box, setBox] = useState<{ w: number; h: number } | null>(null)
 
@@ -51,6 +61,7 @@ export function BoardView({
 					boxH={box.h}
 					interaction={interaction}
 					build={build}
+					robber={robber}
 				/>
 			)}
 		</View>
@@ -63,12 +74,14 @@ function BoardSvg({
 	boxH,
 	interaction,
 	build,
+	robber,
 }: {
 	state: GameState
 	boxW: number
 	boxH: number
 	interaction?: BoardInteraction
 	build?: BuildInteraction
+	robber?: RobberInteraction
 }) {
 	const layout = computeBoardLayout(boxW * 0.9, boxH * 0.9)
 	const vertexPositions = computeVertexPositions(layout)
@@ -118,6 +131,19 @@ function BoardSvg({
 						/>
 					)
 				})}
+				{(() => {
+					const robberHex = layout.hexes.find(
+						(h) => h.id === state.robber
+					)
+					if (!robberHex) return null
+					return (
+						<RobberPiece
+							cx={robberHex.cx}
+							cy={robberHex.cy}
+							size={layout.s}
+						/>
+					)
+				})()}
 				{interaction && (
 					<PlacementLayer
 						state={state}
@@ -136,6 +162,17 @@ function BoardSvg({
 						vertexPositions={vertexPositions}
 						tool={build.tool}
 						onSelect={build.onSelect}
+					/>
+				)}
+				{robber && (
+					<RobberLayer
+						state={state}
+						meIdx={robber.meIdx}
+						layoutS={layout.s}
+						hexLayouts={layout.hexes}
+						vertexPositions={vertexPositions}
+						onMoveRobber={robber.onMoveRobber}
+						onSteal={robber.onSteal}
 					/>
 				)}
 			</G>

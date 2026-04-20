@@ -25,7 +25,8 @@ export function totalDice(r: DiceRoll): number {
 // For every hex whose number token equals `total`, every settlement/city
 // adjacent to it pays 1 (settlement) or 2 (city) of that hex's resource to
 // the building's owner. Returns a sparse per-player gain map. On a 7 the
-// result is empty — robber handling is deferred.
+// result is empty — robber handling flows through its own phase chain.
+// A hex that the robber sits on is skipped — it produces nothing.
 export function distributeResources(
 	state: GameState,
 	total: number
@@ -33,6 +34,7 @@ export function distributeResources(
 	const result: Record<number, ResourceHand> = {}
 	if (total === 7) return result
 	for (const hex of HEXES) {
+		if (hex === state.robber) continue
 		const hd = state.hexes[hex]
 		if (hd.resource === null) continue
 		if (hd.number !== total) continue

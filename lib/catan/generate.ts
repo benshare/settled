@@ -51,14 +51,18 @@ export function initialGameState(
 	variant: Variant,
 	playerCount: number
 ): GameState {
+	const hexes = generateHexes(variant)
+	const desert = HEXES.find((h) => hexes[h].resource === null)
+	if (!desert) throw new Error('no desert in generated board')
 	return {
 		variant,
-		hexes: generateHexes(variant),
+		hexes,
 		vertices: {},
 		edges: {},
 		players: Array.from({ length: playerCount }, () => ({
 			resources: { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 },
 		})),
 		phase: { kind: 'initial_placement', round: 1, step: 'settlement' },
+		robber: desert,
 	}
 }

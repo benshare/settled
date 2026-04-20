@@ -31,6 +31,14 @@ export type DiceRoll = { a: DieFace; b: DieFace }
 export type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
+	| {
+			kind: 'discard'
+			roll: DiceRoll
+			// Amount each player still owes. Entries are removed as players submit.
+			pending: Partial<Record<number, number>>
+	  }
+	| { kind: 'move_robber'; roll: DiceRoll }
+	| { kind: 'steal'; roll: DiceRoll; hex: Hex; candidates: number[] }
 	| { kind: 'main'; roll: DiceRoll }
 	| { kind: 'game_over' }
 
@@ -44,6 +52,7 @@ export type GameState = {
 	edges: Partial<Record<Edge, EdgeState>>
 	players: PlayerState[]
 	phase: Phase
+	robber: Hex
 }
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }

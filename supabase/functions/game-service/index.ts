@@ -13,14 +13,26 @@
 //   - place_road: place the current player's road on `edge` incident to
 //     their just-placed settlement. Advances snake-order turn; on the final
 //     road, transitions the game to status='active' / phase='roll'.
-//   - roll: during phase='roll', rolls 2d6, distributes resources to every
-//     settlement/city adjacent to a matching hex, transitions to phase='main'.
-//     A 7 is a no-op (robber deferred).
+//   - roll: during phase='roll', rolls 2d6. On a non-7, distributes resources
+//     to every settlement/city adjacent to a matching hex (except the hex the
+//     robber sits on), transitions to phase='main'. On a 7, transitions to
+//     phase='discard' (if any hand >7) or directly to phase='move_robber'.
 //   - end_turn: during phase='main', clears lastRoll, transitions phase to
 //     'roll', and advances current_turn to the next player (wrap-around).
 //   - build_road / build_settlement / build_city: during phase='main' and on
 //     the caller's turn, validates the spot + resources, deducts cost, and
 //     writes the piece. No victory check in this pass.
+//   - discard: during phase='discard' and for any player that still owes a
+//     discard, validates the submitted selection sums to the required count
+//     and every resource is available, then deducts. When the last pending
+//     discard is submitted, transitions to phase='move_robber'.
+//   - move_robber: during phase='move_robber' and on the caller's turn,
+//     validates the target hex (must be different from current), writes
+//     state.robber, computes steal candidates. Transitions to phase='steal'
+//     (if ≥1 candidate) or directly to phase='main'.
+//   - steal: during phase='steal' and on the caller's turn, picks a random
+//     resource from the chosen victim (must be in phase.candidates), moves
+//     one card, transitions to phase='main'.
 //
 // The board/resource/number constants below are duplicated from lib/catan
 // because the Supabase functions directory lives outside the TS project and
@@ -63,6 +75,13 @@ type BuildCityBody = {
 	game_id: string
 	vertex: string
 }
+type DiscardBody = {
+	action: 'discard'
+	game_id: string
+	discard: ResourceHand
+}
+type MoveRobberBody = { action: 'move_robber'; game_id: string; hex: string }
+type StealBody = { action: 'steal'; game_id: string; victim: number }
 type Body =
 	| RespondBody
 	| PlaceSettlementBody
@@ -72,6 +91,9 @@ type Body =
 	| BuildRoadBody
 	| BuildSettlementBody
 	| BuildCityBody
+	| DiscardBody
+	| MoveRobberBody
+	| StealBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -390,6 +412,13 @@ type DiceRoll = { a: DieFace; b: DieFace }
 type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
+	| {
+			kind: 'discard'
+			roll: DiceRoll
+			pending: Partial<Record<number, number>>
+	  }
+	| { kind: 'move_robber'; roll: DiceRoll }
+	| { kind: 'steal'; roll: DiceRoll; hex: Hex; candidates: number[] }
 	| { kind: 'main'; roll: DiceRoll }
 	| { kind: 'game_over' }
 
@@ -400,6 +429,7 @@ type GameState = {
 	edges: Partial<Record<Edge, EdgeState>>
 	players: PlayerState[]
 	phase: Phase
+	robber: Hex
 }
 
 function vertexStateOf(state: GameState, v: Vertex): VertexState {
@@ -497,6 +527,7 @@ function distributeResources(
 	const result: Record<number, ResourceHand> = {}
 	if (total === 7) return result
 	for (const hex of HEXES) {
+		if (hex === state.robber) continue
 		const hd = state.hexes[hex]
 		if (hd.resource === null) continue
 		if (hd.number !== total) continue
@@ -599,9 +630,71 @@ function isValidBuildCityVertex(
 	)
 }
 
+// --- Robber rules (must match lib/catan/robber) ----------------------------
+
+function handSize(hand: ResourceHand): number {
+	let n = 0
+	for (const r of RESOURCES) n += hand[r]
+	return n
+}
+
+function requiredDiscards(players: PlayerState[]): Record<number, number> {
+	const out: Record<number, number> = {}
+	players.forEach((p, i) => {
+		const total = handSize(p.resources)
+		if (total > 7) out[i] = Math.floor(total / 2)
+	})
+	return out
+}
+
+function isValidDiscardSelection(
+	hand: ResourceHand,
+	selection: ResourceHand,
+	required: number
+): boolean {
+	if (handSize(selection) !== required) return false
+	for (const r of RESOURCES) {
+		if (selection[r] < 0) return false
+		if (selection[r] > hand[r]) return false
+	}
+	return true
+}
+
+function stealCandidates(state: GameState, hex: Hex, meIdx: number): number[] {
+	const set = new Set<number>()
+	for (const v of adjacentVertices[hex]) {
+		const vs = vertexStateOf(state, v)
+		if (!vs.occupied) continue
+		if (vs.player === meIdx) continue
+		if (handSize(state.players[vs.player].resources) <= 0) continue
+		set.add(vs.player)
+	}
+	return Array.from(set)
+}
+
+function sanitizeDiscard(raw: unknown): ResourceHand | null {
+	if (!raw || typeof raw !== 'object') return null
+	const out: ResourceHand = {
+		brick: 0,
+		wood: 0,
+		sheep: 0,
+		wheat: 0,
+		ore: 0,
+	}
+	for (const r of RESOURCES) {
+		const v = (raw as Record<string, unknown>)[r]
+		if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) return null
+		out[r] = v
+	}
+	return out
+}
+
 // --- Game generation -------------------------------------------------------
 
-function generateHexes(): Record<Hex, HexData> {
+function generateHexes(): {
+	hexes: Record<Hex, HexData>
+	desert: Hex
+} {
 	const bag: (Resource | null)[] = [null]
 	for (const r of RESOURCES) {
 		for (let i = 0; i < STANDARD_RESOURCE_COUNTS[r]; i++) bag.push(r)
@@ -610,14 +703,20 @@ function generateHexes(): Record<Hex, HexData> {
 	const numbers = shuffle(STANDARD_NUMBERS)
 
 	const out = {} as Record<Hex, HexData>
+	let desert: Hex | null = null
 	let numIdx = 0
 	for (let i = 0; i < HEXES.length; i++) {
 		const hex = HEXES[i]
 		const r = resources[i]
-		if (r === null) out[hex] = { resource: null }
-		else out[hex] = { resource: r, number: numbers[numIdx++] }
+		if (r === null) {
+			out[hex] = { resource: null }
+			desert = hex
+		} else {
+			out[hex] = { resource: r, number: numbers[numIdx++] }
+		}
 	}
-	return out
+	if (!desert) throw new Error('no desert generated')
+	return { hexes: out, desert }
 }
 
 function initialPlayers(count: number): PlayerState[] {
@@ -665,6 +764,7 @@ async function loadGame(
 		edges: stateRow.edges,
 		players: stateRow.players,
 		phase: stateRow.phase,
+		robber: stateRow.robber,
 	}
 	return { ok: true, game: game as GameRow, state }
 }
@@ -734,14 +834,16 @@ async function handleRespond(
 			.single()
 		if (insertErr || !inserted) return err(500, 'could not create game')
 
+		const { hexes: generatedHexes, desert } = generateHexes()
 		const { error: stateErr } = await admin.from('game_states').insert({
 			game_id: inserted.id,
 			variant: 'standard',
-			hexes: generateHexes(),
+			hexes: generatedHexes,
 			vertices: {},
 			edges: {},
 			players: initialPlayers(playerOrder.length),
 			phase: INITIAL_PHASE,
+			robber: desert,
 		})
 		if (stateErr) return err(500, 'could not create game state')
 
@@ -962,6 +1064,36 @@ async function handleRoll(
 	const dice = rollDice()
 	const total = dice.a + dice.b
 
+	const rollEvent = {
+		kind: 'rolled',
+		player: meIdx,
+		dice: [dice.a, dice.b],
+		total,
+		at: new Date().toISOString(),
+	}
+
+	if (total === 7) {
+		const pending = requiredDiscards(state.players)
+		const nextPhase: Phase =
+			Object.keys(pending).length > 0
+				? { kind: 'discard', roll: dice, pending }
+				: { kind: 'move_robber', roll: dice }
+
+		const { error: stateErr } = await admin
+			.from('game_states')
+			.update({ phase: nextPhase })
+			.eq('game_id', game.id)
+		if (stateErr) return err(500, 'could not update state')
+
+		const { error: gameErr } = await admin
+			.from('games')
+			.update({ events: [...(game.events ?? []), rollEvent] })
+			.eq('id', game.id)
+		if (gameErr) return err(500, 'could not log event')
+
+		return json({ ok: true, dice, total })
+	}
+
 	const gains = distributeResources(state, total)
 	const nextPlayers = state.players.map((p, i) => {
 		const g = gains[i]
@@ -988,13 +1120,6 @@ async function handleRoll(
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
-	const rollEvent = {
-		kind: 'rolled',
-		player: meIdx,
-		dice: [dice.a, dice.b],
-		total,
-		at: new Date().toISOString(),
-	}
 	const { error: gameErr } = await admin
 		.from('games')
 		.update({ events: [...(game.events ?? []), rollEvent] })
@@ -1224,6 +1349,217 @@ async function handleBuildCity(
 	return json({ ok: true })
 }
 
+async function handleDiscard(
+	admin: SupabaseClient,
+	me: string,
+	body: DiscardBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'discard')
+		return err(400, 'expected discard phase')
+
+	const meIdx = game.player_order.indexOf(me)
+	if (meIdx < 0) return err(403, 'not a participant')
+
+	const required = state.phase.pending[meIdx]
+	if (required === undefined) return err(400, 'nothing to discard')
+
+	const selection = sanitizeDiscard(body.discard)
+	if (!selection) return err(400, 'invalid discard shape')
+
+	const hand = state.players[meIdx].resources
+	if (!isValidDiscardSelection(hand, selection, required))
+		return err(400, 'invalid discard selection')
+
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		const r = p.resources
+		return {
+			...p,
+			resources: {
+				brick: r.brick - selection.brick,
+				wood: r.wood - selection.wood,
+				sheep: r.sheep - selection.sheep,
+				wheat: r.wheat - selection.wheat,
+				ore: r.ore - selection.ore,
+			},
+		}
+	})
+
+	const nextPending: Partial<Record<number, number>> = {
+		...state.phase.pending,
+	}
+	delete nextPending[meIdx]
+
+	const nextPhase: Phase =
+		Object.keys(nextPending).length > 0
+			? { kind: 'discard', roll: state.phase.roll, pending: nextPending }
+			: { kind: 'move_robber', roll: state.phase.roll }
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers, phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const count =
+		selection.brick +
+		selection.wood +
+		selection.sheep +
+		selection.wheat +
+		selection.ore
+	const event = {
+		kind: 'discarded',
+		player: meIdx,
+		count,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
+async function handleMoveRobber(
+	admin: SupabaseClient,
+	me: string,
+	body: MoveRobberBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'move_robber')
+		return err(400, 'expected move_robber phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	if (!(HEXES as readonly string[]).includes(body.hex))
+		return err(400, 'unknown hex')
+	const hex = body.hex as Hex
+	if (hex === state.robber) return err(400, 'robber must move')
+
+	const candidates = stealCandidates(state, hex, meIdx)
+	const nextPhase: Phase =
+		candidates.length > 0
+			? {
+					kind: 'steal',
+					roll: state.phase.roll,
+					hex,
+					candidates,
+				}
+			: { kind: 'main', roll: state.phase.roll }
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ robber: hex, phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'robber_moved',
+		player: meIdx,
+		hex,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
+function pickStolenResource(hand: ResourceHand): Resource | null {
+	const total = handSize(hand)
+	if (total <= 0) return null
+	let pick = Math.floor(Math.random() * total)
+	for (const r of RESOURCES) {
+		if (pick < hand[r]) return r
+		pick -= hand[r]
+	}
+	return null
+}
+
+async function handleSteal(
+	admin: SupabaseClient,
+	me: string,
+	body: StealBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'steal') return err(400, 'expected steal phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	if (!state.phase.candidates.includes(body.victim))
+		return err(400, 'invalid victim')
+
+	const victimHand = state.players[body.victim].resources
+	const stolen = pickStolenResource(victimHand)
+	if (!stolen) return err(400, 'victim has no cards')
+
+	const nextPlayers = state.players.map((p, i) => {
+		if (i === body.victim) {
+			return {
+				...p,
+				resources: {
+					...p.resources,
+					[stolen]: p.resources[stolen] - 1,
+				},
+			}
+		}
+		if (i === meIdx) {
+			return {
+				...p,
+				resources: {
+					...p.resources,
+					[stolen]: p.resources[stolen] + 1,
+				},
+			}
+		}
+		return p
+	})
+
+	const nextPhase: Phase = { kind: 'main', roll: state.phase.roll }
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers, phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'stolen',
+		thief: meIdx,
+		victim: body.victim,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
 serve(async (req) => {
 	if (req.method === 'OPTIONS') {
 		return new Response('ok', { headers: CORS_HEADERS })
@@ -1259,6 +1595,12 @@ serve(async (req) => {
 			return handleBuildSettlement(admin, me, body)
 		case 'build_city':
 			return handleBuildCity(admin, me, body)
+		case 'discard':
+			return handleDiscard(admin, me, body)
+		case 'move_robber':
+			return handleMoveRobber(admin, me, body)
+		case 'steal':
+			return handleSteal(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}

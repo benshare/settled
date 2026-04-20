@@ -1,4 +1,5 @@
 import { useAuth } from '@/lib/auth'
+import type { Hex } from '@/lib/catan/board'
 import { BoardView } from '@/lib/catan/BoardView'
 import type { BuildSelection } from '@/lib/catan/BuildLayer'
 import {
@@ -10,11 +11,13 @@ import {
 	type BuildKind,
 } from '@/lib/catan/build'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
+import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import { playerColors } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
+import type { ResourceHand as ResourceHandType } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
@@ -76,6 +79,9 @@ function GameBody() {
 	const buildRoad = useGamesStore((s) => s.buildRoad)
 	const buildSettlement = useGamesStore((s) => s.buildSettlement)
 	const buildCity = useGamesStore((s) => s.buildCity)
+	const discard = useGamesStore((s) => s.discard)
+	const moveRobber = useGamesStore((s) => s.moveRobber)
+	const steal = useGamesStore((s) => s.steal)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
@@ -134,6 +140,12 @@ function GameBody() {
 	const inMainLoop =
 		game.status === 'active' &&
 		(gameState?.phase.kind === 'roll' || gameState?.phase.kind === 'main')
+	const phaseKind = gameState?.phase.kind
+	const inRobberFlow =
+		game.status === 'active' &&
+		(phaseKind === 'discard' ||
+			phaseKind === 'move_robber' ||
+			phaseKind === 'steal')
 
 	async function onConfirm() {
 		if (!selection || !game) return
@@ -194,6 +206,48 @@ function GameBody() {
 		setBuildTool(null)
 	}
 
+	async function onDiscard(selection: ResourceHandType) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await discard(game.id, selection)
+		setSubmitting(false)
+		if (res.error) Alert.alert('Discard failed', res.error)
+	}
+
+	function onMoveRobberRequest(hex: Hex) {
+		if (!game) return
+		Alert.alert('Move robber here?', undefined, [
+			{ text: 'Cancel', style: 'cancel' },
+			{
+				text: 'Confirm',
+				onPress: async () => {
+					setSubmitting(true)
+					const res = await moveRobber(game.id, hex)
+					setSubmitting(false)
+					if (res.error) Alert.alert('Move failed', res.error)
+				},
+			},
+		])
+	}
+
+	function onStealRequest(victim: number) {
+		if (!game) return
+		const victimId = game.player_order[victim]
+		const name = profilesById[victimId]?.username ?? 'player'
+		Alert.alert(`Steal from ${name}?`, undefined, [
+			{ text: 'Cancel', style: 'cancel' },
+			{
+				text: 'Confirm',
+				onPress: async () => {
+					setSubmitting(true)
+					const res = await steal(game.id, victim)
+					setSubmitting(false)
+					if (res.error) Alert.alert('Steal failed', res.error)
+				},
+			},
+		])
+	}
+
 	// Button enablement: only when it's my main-phase turn, I can afford the
 	// cost, AND there is at least one valid spot on the board.
 	const myHand = gameState?.players[meIdx]?.resources ?? null
@@ -245,6 +299,24 @@ function GameBody() {
 						meIdx={meIdx}
 						onSelect={onBuildToolSelect}
 					/>
+					{inRobberFlow && (
+						<RobberStatus
+							game={game}
+							gameState={gameState}
+							meIdx={meIdx}
+							profilesById={profilesById}
+						/>
+					)}
+					{gameState.phase.kind === 'discard' &&
+						meIdx >= 0 &&
+						gameState.phase.pending[meIdx] !== undefined && (
+							<DiscardBar
+								hand={gameState.players[meIdx].resources}
+								required={gameState.phase.pending[meIdx]!}
+								submitting={submitting}
+								onSubmit={onDiscard}
+							/>
+						)}
 				</>
 			)}
 
@@ -267,6 +339,17 @@ function GameBody() {
 										meIdx,
 										tool: buildTool,
 										onSelect: onBuildSpotSelect,
+									}
+								: undefined
+						}
+						robber={
+							isMyActiveTurn &&
+							(gameState.phase.kind === 'move_robber' ||
+								gameState.phase.kind === 'steal')
+								? {
+										meIdx,
+										onMoveRobber: onMoveRobberRequest,
+										onSteal: onStealRequest,
 									}
 								: undefined
 						}
@@ -380,6 +463,74 @@ function DieFaceView({ value }: { value: number }) {
 	return (
 		<View style={styles.die}>
 			<Text style={styles.dieText}>{value}</Text>
+		</View>
+	)
+}
+
+function RobberStatus({
+	game,
+	gameState,
+	meIdx,
+	profilesById,
+}: {
+	game: NonNullable<ReturnType<typeof useGame>['game']>
+	gameState: NonNullable<ReturnType<typeof useGame>['gameState']>
+	meIdx: number
+	profilesById: Record<string, Profile>
+}) {
+	const phase = gameState.phase
+	if (
+		phase.kind !== 'discard' &&
+		phase.kind !== 'move_robber' &&
+		phase.kind !== 'steal'
+	)
+		return null
+
+	const currentIdx = game.current_turn ?? 0
+	const currentId = game.player_order[currentIdx]
+	const currentName =
+		meIdx === currentIdx
+			? 'You'
+			: (profilesById[currentId]?.username ?? 'Player')
+
+	let status: string
+	if (phase.kind === 'discard') {
+		const pendingIdxs = Object.keys(phase.pending)
+			.map((k) => Number(k))
+			.sort((a, b) => a - b)
+		const iOwe = meIdx >= 0 && phase.pending[meIdx] !== undefined
+		if (iOwe) {
+			status = `You rolled 7 — discard ${phase.pending[meIdx]!}`
+		} else {
+			const names = pendingIdxs.map((i) =>
+				i === meIdx
+					? 'You'
+					: (profilesById[game.player_order[i]]?.username ?? 'Player')
+			)
+			status = `Waiting for ${names.join(', ')} to discard`
+		}
+	} else if (phase.kind === 'move_robber') {
+		status =
+			meIdx === currentIdx
+				? 'You rolled 7 — move the robber'
+				: `${currentName} is moving the robber`
+	} else {
+		status =
+			meIdx === currentIdx
+				? 'Pick a player to steal from'
+				: `${currentName} is stealing`
+	}
+
+	const dice = phase.roll
+	return (
+		<View style={styles.actionBar}>
+			<View style={styles.mainLoopRow}>
+				<View style={styles.diceRow}>
+					<DieFaceView value={dice.a} />
+					<DieFaceView value={dice.b} />
+				</View>
+				<Text style={styles.mainLoopStatus}>{status}</Text>
+			</View>
 		</View>
 	)
 }
