@@ -256,21 +256,21 @@ const EDGES = [
 ] as const
 type Edge = (typeof EDGES)[number]
 
-type Resource = 'wood' | 'wheat' | 'sheep' | 'brick' | 'ore'
+type Resource = 'brick' | 'wood' | 'sheep' | 'wheat' | 'ore'
 
 const RESOURCES: readonly Resource[] = [
-	'wood',
-	'wheat',
-	'sheep',
 	'brick',
+	'wood',
+	'sheep',
+	'wheat',
 	'ore',
 ]
 
 const STANDARD_RESOURCE_COUNTS: Record<Resource, number> = {
-	wood: 4,
-	wheat: 4,
-	sheep: 4,
 	brick: 3,
+	wood: 4,
+	sheep: 4,
+	wheat: 4,
 	ore: 3,
 }
 
@@ -420,10 +420,10 @@ function startingResourcesForVertex(
 	vertex: Vertex
 ): ResourceHand {
 	const hand: ResourceHand = {
-		wood: 0,
-		wheat: 0,
-		sheep: 0,
 		brick: 0,
+		wood: 0,
+		sheep: 0,
+		wheat: 0,
 		ore: 0,
 	}
 	for (const h of adjacentHexes[vertex]) {
@@ -474,7 +474,7 @@ function generateHexes(): Record<Hex, HexData> {
 
 function initialPlayers(count: number): PlayerState[] {
 	return Array.from({ length: count }, () => ({
-		resources: { wood: 0, wheat: 0, sheep: 0, brick: 0, ore: 0 },
+		resources: { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 },
 	}))
 }
 

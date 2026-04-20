@@ -57,7 +57,7 @@ export function initialGameState(
 		vertices: {},
 		edges: {},
 		players: Array.from({ length: playerCount }, () => ({
-			resources: { wood: 0, wheat: 0, sheep: 0, brick: 0, ore: 0 },
+			resources: { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 },
 		})),
 		phase: { kind: 'initial_placement', round: 1, step: 'settlement' },
 	}

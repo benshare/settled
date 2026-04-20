@@ -166,15 +166,18 @@ export type Edge = (typeof EDGES)[number]
 
 // --- Resources, numbers, buildings -----------------------------------------
 
-export const RESOURCES = ['wood', 'wheat', 'sheep', 'brick', 'ore'] as const
+// Canonical display order: brick, wood, sheep, wheat, ore. Iteration order is
+// not semantically meaningful (bags are shuffled, hands are summed), but UI
+// that renders resources in sequence should rely on this order.
+export const RESOURCES = ['brick', 'wood', 'sheep', 'wheat', 'ore'] as const
 export type Resource = (typeof RESOURCES)[number]
 
-// Standard board: 4/4/4/3/3 + 1 desert = 19 hexes.
+// Standard board: 3/4/4/4/3 + 1 desert = 19 hexes.
 export const STANDARD_RESOURCE_COUNTS: Record<Resource, number> = {
-	wood: 4,
-	wheat: 4,
-	sheep: 4,
 	brick: 3,
+	wood: 4,
+	sheep: 4,
+	wheat: 4,
 	ore: 3,
 }
 

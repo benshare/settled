@@ -125,10 +125,10 @@ export function startingResourcesForVertex(
 	vertex: Vertex
 ): ResourceHand {
 	const hand: ResourceHand = {
-		wood: 0,
-		wheat: 0,
-		sheep: 0,
 		brick: 0,
+		wood: 0,
+		sheep: 0,
+		wheat: 0,
 		ore: 0,
 	}
 	for (const h of adjacentHexes[vertex]) {
