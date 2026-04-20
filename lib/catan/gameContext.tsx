@@ -129,9 +129,52 @@ function rowToState(row: Record<string, unknown>): GameState {
 	return {
 		variant: row.variant as GameState['variant'],
 		hexes: row.hexes as GameState['hexes'],
-		vertices: row.vertices as GameState['vertices'],
-		edges: row.edges as GameState['edges'],
+		vertices: DEV_DUMMY_PLACEMENTS
+			? {
+					...(row.vertices as GameState['vertices']),
+					...DUMMY_VERTICES,
+				}
+			: (row.vertices as GameState['vertices']),
+		edges: DEV_DUMMY_PLACEMENTS
+			? {
+					...(row.edges as GameState['edges']),
+					...DUMMY_EDGES,
+				}
+			: (row.edges as GameState['edges']),
 		players: row.players as GameState['players'],
 		phase: row.phase as GameState['phase'],
 	}
+}
+
+// Temporary: visual test data for building rendering. Remove once real
+// placement flow lands.
+const DEV_DUMMY_PLACEMENTS = true
+
+const DUMMY_VERTICES: GameState['vertices'] = {
+	'1A': { occupied: true, player: 0, building: 'settlement' },
+	'1F': { occupied: true, player: 1, building: 'city' },
+	'2D': { occupied: true, player: 2, building: 'settlement' },
+	'3B': { occupied: true, player: 0, building: 'city' },
+	'3H': { occupied: true, player: 1, building: 'settlement' },
+	'4D': { occupied: true, player: 3, building: 'city' },
+	'4I': { occupied: true, player: 2, building: 'settlement' },
+	'5A': { occupied: true, player: 1, building: 'city' },
+	'5F': { occupied: true, player: 3, building: 'settlement' },
+	'6D': { occupied: true, player: 0, building: 'settlement' },
+}
+
+const DUMMY_EDGES: GameState['edges'] = {
+	'1A - 1B': { occupied: true, player: 0 },
+	'1E - 1F': { occupied: true, player: 1 },
+	'2D - 2E': { occupied: true, player: 2 },
+	'3A - 3B': { occupied: true, player: 0 },
+	'3B - 3C': { occupied: true, player: 0 },
+	'3H - 3I': { occupied: true, player: 1 },
+	'4C - 4D': { occupied: true, player: 3 },
+	'4D - 5C': { occupied: true, player: 3 },
+	'4I - 4J': { occupied: true, player: 2 },
+	'4B - 5A': { occupied: true, player: 1 },
+	'5A - 5B': { occupied: true, player: 1 },
+	'5F - 6E': { occupied: true, player: 3 },
+	'6C - 6D': { occupied: true, player: 0 },
 }
