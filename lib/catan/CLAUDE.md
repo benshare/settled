@@ -6,13 +6,14 @@ Everything Catan-specific lives here. Split by what it describes:
 - `types.ts` — `GameState`, `Phase`, sparse-storage helpers (`vertexStateOf`, `edgeStateOf`). All persisted shapes.
 - `generate.ts` — fresh-game initialization: variant-keyed hex generation, `initialGameState`.
 - `placement.ts` — pure rules for the initial-placement phase (validity, target-settlement derivation, snake-order turn advance, starting-resource grant). No I/O; callable from UI helpers and tests.
+- `roll.ts` — pure rules for the main-phase loop (dice roll, per-hex resource distribution, forward turn rotation). No I/O; callable from UI helpers and tests.
 - `gameContext.tsx` — React context that loads the per-game `games` row + `game_states` row and subscribes to realtime. Use `useGame()` in any subtree under `<GameProvider>`.
 
 ## Constants are duplicated in the edge function
 
-`supabase/functions/game-service/index.ts` re-declares `HEXES`, `VERTICES`, `EDGES`, `adjacentVertices`, and the derived adjacency IIFEs from `board.ts`, plus the placement rules from `placement.ts`. The Deno bundler can't reliably import up-tree from `supabase/functions/`, so we accept a single redundancy: change both when rules or board data change. The source of truth is `lib/catan/`; the edge function is the copy.
+`supabase/functions/game-service/index.ts` re-declares `HEXES`, `VERTICES`, `EDGES`, `adjacentVertices`, and the derived adjacency IIFEs from `board.ts`, plus the placement rules from `placement.ts` and the roll/distribution rules from `roll.ts`. The Deno bundler can't reliably import up-tree from `supabase/functions/`, so we accept a single redundancy: change both when rules or board data change. The source of truth is `lib/catan/`; the edge function is the copy.
 
-When in doubt, run `npx tsx dev/check-catan-board.ts` (board) and `npx tsx dev/check-catan-placement.ts` (placement) after edits. The edge function is only validated at deploy time (`npm run edge`).
+When in doubt, run `npx tsx dev/check-catan-board.ts` (board), `npx tsx dev/check-catan-placement.ts` (placement), and `npx tsx dev/check-catan-roll.ts` (roll) after edits. The edge function is only validated at deploy time (`npm run edge`).
 
 ## Sparse storage
 

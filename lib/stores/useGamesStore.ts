@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
+import type { DiceRoll } from '../catan/types'
 import type { Database } from '../database-types'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
@@ -41,9 +42,18 @@ export type GameEvent =
 			at: string
 	  }
 	| { kind: 'placement_complete'; at: string }
+	| {
+			kind: 'rolled'
+			player: number
+			dice: [number, number]
+			total: number
+			at: string
+	  }
+	| { kind: 'turn_ended'; player: number; at: string }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
+type RollResult = ActionResult & { dice?: DiceRoll; total?: number }
 
 type GamesStore = {
 	pendingRequests: GameRequest[] | undefined
@@ -64,6 +74,9 @@ type GamesStore = {
 
 	placeSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
 	placeRoad: (gameId: string, edge: string) => Promise<ActionResult>
+
+	roll: (gameId: string) => Promise<RollResult>
+	endTurn: (gameId: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -247,6 +260,28 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't place road" }
+		return { error: null }
+	},
+
+	async roll(gameId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'roll', game_id: gameId },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't roll" }
+		return { error: null, dice: data.dice, total: data.total }
+	},
+
+	async endTurn(gameId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'end_turn', game_id: gameId },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't end turn" }
 		return { error: null }
 	},
 }))

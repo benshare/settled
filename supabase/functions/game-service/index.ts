@@ -13,6 +13,11 @@
 //   - place_road: place the current player's road on `edge` incident to
 //     their just-placed settlement. Advances snake-order turn; on the final
 //     road, transitions the game to status='active' / phase='roll'.
+//   - roll: during phase='roll', rolls 2d6, distributes resources to every
+//     settlement/city adjacent to a matching hex, transitions to phase='main'.
+//     A 7 is a no-op (robber deferred).
+//   - end_turn: during phase='main', clears lastRoll, transitions phase to
+//     'roll', and advances current_turn to the next player (wrap-around).
 //
 // The board/resource/number constants below are duplicated from lib/catan
 // because the Supabase functions directory lives outside the TS project and
@@ -42,7 +47,14 @@ type PlaceRoadBody = {
 	game_id: string
 	edge: string
 }
-type Body = RespondBody | PlaceSettlementBody | PlaceRoadBody
+type RollBody = { action: 'roll'; game_id: string }
+type EndTurnBody = { action: 'end_turn'; game_id: string }
+type Body =
+	| RespondBody
+	| PlaceSettlementBody
+	| PlaceRoadBody
+	| RollBody
+	| EndTurnBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -355,10 +367,13 @@ type ResourceHand = Record<Resource, number>
 
 type PlayerState = { resources: ResourceHand }
 
+type DieFace = 1 | 2 | 3 | 4 | 5 | 6
+type DiceRoll = { a: DieFace; b: DieFace }
+
 type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
-	| { kind: 'main' }
+	| { kind: 'main'; roll: DiceRoll }
 	| { kind: 'game_over' }
 
 type GameState = {
@@ -449,6 +464,46 @@ function nextPlacementTurn(
 		return { round: 2, currentTurn: currentTurn - 1 }
 	}
 	return null
+}
+
+// --- Roll / main-phase rules (must match lib/catan/roll) ------------------
+
+function rollDice(): DiceRoll {
+	const d = () => (1 + Math.floor(Math.random() * 6)) as DieFace
+	return { a: d(), b: d() }
+}
+
+function distributeResources(
+	state: GameState,
+	total: number
+): Record<number, ResourceHand> {
+	const result: Record<number, ResourceHand> = {}
+	if (total === 7) return result
+	for (const hex of HEXES) {
+		const hd = state.hexes[hex]
+		if (hd.resource === null) continue
+		if (hd.number !== total) continue
+		for (const v of adjacentVertices[hex]) {
+			const vs = vertexStateOf(state, v)
+			if (!vs.occupied) continue
+			const gain = vs.building === 'city' ? 2 : 1
+			const hand =
+				result[vs.player] ??
+				(result[vs.player] = {
+					brick: 0,
+					wood: 0,
+					sheep: 0,
+					wheat: 0,
+					ore: 0,
+				})
+			hand[hd.resource] += gain
+		}
+	}
+	return result
+}
+
+function nextMainTurn(currentTurn: number, playerCount: number): number {
+	return (currentTurn + 1) % playerCount
 }
 
 // --- Game generation -------------------------------------------------------
@@ -795,6 +850,108 @@ async function handlePlaceRoad(
 	return json({ ok: true })
 }
 
+async function handleRoll(
+	admin: SupabaseClient,
+	me: string,
+	body: RollBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const dice = rollDice()
+	const total = dice.a + dice.b
+
+	const gains = distributeResources(state, total)
+	const nextPlayers = state.players.map((p, i) => {
+		const g = gains[i]
+		if (!g) return p
+		const r = p.resources
+		return {
+			...p,
+			resources: {
+				wood: r.wood + g.wood,
+				wheat: r.wheat + g.wheat,
+				sheep: r.sheep + g.sheep,
+				brick: r.brick + g.brick,
+				ore: r.ore + g.ore,
+			},
+		}
+	})
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({
+			players: nextPlayers,
+			phase: { kind: 'main', roll: dice } satisfies Phase,
+		})
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const rollEvent = {
+		kind: 'rolled',
+		player: meIdx,
+		dice: [dice.a, dice.b],
+		total,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), rollEvent] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true, dice, total })
+}
+
+async function handleEndTurn(
+	admin: SupabaseClient,
+	me: string,
+	body: EndTurnBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const nextTurn = nextMainTurn(game.current_turn!, game.player_order.length)
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ phase: { kind: 'roll' } satisfies Phase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const endEvent = {
+		kind: 'turn_ended',
+		player: meIdx,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({
+			current_turn: nextTurn,
+			events: [...(game.events ?? []), endEvent],
+		})
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not update game')
+
+	return json({ ok: true })
+}
+
 serve(async (req) => {
 	if (req.method === 'OPTIONS') {
 		return new Response('ok', { headers: CORS_HEADERS })
@@ -820,6 +977,10 @@ serve(async (req) => {
 			return handlePlaceSettlement(admin, me, body)
 		case 'place_road':
 			return handlePlaceRoad(admin, me, body)
+		case 'roll':
+			return handleRoll(admin, me, body)
+		case 'end_turn':
+			return handleEndTurn(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}

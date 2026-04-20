@@ -25,10 +25,13 @@ export type PlayerState = {
 	resources: ResourceHand
 }
 
+export type DieFace = 1 | 2 | 3 | 4 | 5 | 6
+export type DiceRoll = { a: DieFace; b: DieFace }
+
 export type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
-	| { kind: 'main' }
+	| { kind: 'main'; roll: DiceRoll }
 	| { kind: 'game_over' }
 
 // vertices / edges are Partial — a missing key means the default

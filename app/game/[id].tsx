@@ -62,6 +62,8 @@ function GameBody() {
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const placeSettlement = useGamesStore((s) => s.placeSettlement)
 	const placeRoad = useGamesStore((s) => s.placeRoad)
+	const roll = useGamesStore((s) => s.roll)
+	const endTurn = useGamesStore((s) => s.endTurn)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
@@ -71,11 +73,14 @@ function GameBody() {
 		return game.player_order.indexOf(user.id)
 	}, [game, user])
 
-	const isMyTurn =
+	const isCurrentPlayer =
 		!!game &&
-		game.status === 'placement' &&
 		game.current_turn !== null &&
-		game.current_turn === meIdx
+		game.current_turn === meIdx &&
+		meIdx >= 0
+
+	const isMyPlacementTurn = isCurrentPlayer && game?.status === 'placement'
+	const isMyActiveTurn = isCurrentPlayer && game?.status === 'active'
 
 	// Reset selection when the turn or phase step changes under us.
 	const placementKey =
@@ -104,6 +109,9 @@ function GameBody() {
 	const inPlacement =
 		game.status === 'placement' &&
 		gameState?.phase.kind === 'initial_placement'
+	const inMainLoop =
+		game.status === 'active' &&
+		(gameState?.phase.kind === 'roll' || gameState?.phase.kind === 'main')
 
 	async function onConfirm() {
 		if (!selection || !game) return
@@ -120,6 +128,22 @@ function GameBody() {
 		setSelection(null)
 	}
 
+	async function onRoll() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await roll(game.id)
+		setSubmitting(false)
+		if (res.error) Alert.alert('Roll failed', res.error)
+	}
+
+	async function onEndTurn() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await endTurn(game.id)
+		setSubmitting(false)
+		if (res.error) Alert.alert(res.error)
+	}
+
 	return (
 		<View style={styles.bodyRoot}>
 			{inPlacement && gameState && (
@@ -127,7 +151,7 @@ function GameBody() {
 					game={game}
 					gameState={gameState}
 					meIdx={meIdx}
-					isMyTurn={isMyTurn}
+					isMyTurn={isMyPlacementTurn}
 					profilesById={profilesById}
 				/>
 			)}
@@ -150,7 +174,7 @@ function GameBody() {
 					<BoardView
 						state={gameState}
 						interaction={
-							inPlacement && isMyTurn
+							inPlacement && isMyPlacementTurn
 								? {
 										meIdx,
 										selection,
@@ -164,7 +188,7 @@ function GameBody() {
 				)}
 			</View>
 
-			{inPlacement && isMyTurn && (
+			{inPlacement && isMyPlacementTurn && (
 				<View style={styles.actionBar}>
 					<Button
 						onPress={onConfirm}
@@ -176,9 +200,98 @@ function GameBody() {
 				</View>
 			)}
 
+			{inMainLoop && gameState && (
+				<MainLoopBar
+					game={game}
+					gameState={gameState}
+					meIdx={meIdx}
+					isMyTurn={isMyActiveTurn}
+					profilesById={profilesById}
+					submitting={submitting}
+					onRoll={onRoll}
+					onEndTurn={onEndTurn}
+				/>
+			)}
+
 			{gameState && meIdx >= 0 && gameState.players[meIdx] && (
 				<ResourceHand hand={gameState.players[meIdx].resources} />
 			)}
+		</View>
+	)
+}
+
+function MainLoopBar({
+	game,
+	gameState,
+	meIdx,
+	isMyTurn,
+	profilesById,
+	submitting,
+	onRoll,
+	onEndTurn,
+}: {
+	game: NonNullable<ReturnType<typeof useGame>['game']>
+	gameState: NonNullable<ReturnType<typeof useGame>['gameState']>
+	meIdx: number
+	isMyTurn: boolean
+	profilesById: Record<string, Profile>
+	submitting: boolean
+	onRoll: () => void
+	onEndTurn: () => void
+}) {
+	const phase = gameState.phase
+	if (phase.kind !== 'roll' && phase.kind !== 'main') return null
+
+	const currentIdx = game.current_turn ?? 0
+	const currentId = game.player_order[currentIdx]
+	const currentName =
+		meIdx === currentIdx
+			? 'You'
+			: (profilesById[currentId]?.username ?? 'Player')
+
+	const dice = phase.kind === 'main' ? phase.roll : null
+	const total = dice ? dice.a + dice.b : null
+
+	let status: string
+	if (phase.kind === 'roll') {
+		status = isMyTurn
+			? 'Your turn — roll the dice'
+			: `${currentName} to roll`
+	} else {
+		status = isMyTurn
+			? `You rolled ${total}`
+			: `${currentName} rolled ${total}`
+	}
+
+	return (
+		<View style={styles.actionBar}>
+			<View style={styles.mainLoopRow}>
+				{dice && (
+					<View style={styles.diceRow}>
+						<DieFaceView value={dice.a} />
+						<DieFaceView value={dice.b} />
+					</View>
+				)}
+				<Text style={styles.mainLoopStatus}>{status}</Text>
+				{isMyTurn && phase.kind === 'roll' && (
+					<Button onPress={onRoll} loading={submitting}>
+						Roll
+					</Button>
+				)}
+				{isMyTurn && phase.kind === 'main' && (
+					<Button onPress={onEndTurn} loading={submitting}>
+						End turn
+					</Button>
+				)}
+			</View>
+		</View>
+	)
+}
+
+function DieFaceView({ value }: { value: number }) {
+	return (
+		<View style={styles.die}>
+			<Text style={styles.dieText}>{value}</Text>
 		</View>
 	)
 }
@@ -340,5 +453,35 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.md,
 		paddingTop: spacing.sm,
 		paddingBottom: spacing.md,
+	},
+	mainLoopRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+	},
+	diceRow: {
+		flexDirection: 'row',
+		gap: spacing.xs,
+	},
+	die: {
+		width: 32,
+		height: 32,
+		borderRadius: radius.sm,
+		borderWidth: 1,
+		borderColor: colors.border,
+		backgroundColor: colors.white,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	dieText: {
+		fontSize: font.base,
+		fontWeight: '700',
+		color: colors.text,
+	},
+	mainLoopStatus: {
+		flex: 1,
+		fontSize: font.base,
+		color: colors.text,
+		fontWeight: '600',
 	},
 })
