@@ -28,12 +28,6 @@ export type PlayerState = {
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6
 export type DiceRoll = { a: DieFace; b: DieFace }
 
-export type Phase =
-	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
-	| { kind: 'roll' }
-	| { kind: 'main'; roll: DiceRoll }
-	| { kind: 'game_over' }
-
 export type TradeOffer = {
 	id: string
 	from: number
@@ -43,6 +37,14 @@ export type TradeOffer = {
 	receive: ResourceHand
 	createdAt: string
 }
+
+export type Phase =
+	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
+	| { kind: 'roll' }
+	// `trade` piggy-backs on the main phase so we don't need a separate
+	// top-level field (and a DB column). It's always cleared when leaving main.
+	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
+	| { kind: 'game_over' }
 
 // vertices / edges are Partial — a missing key means the default
 // `{ occupied: false }`. Keeps storage for a fresh game tiny and avoids
@@ -54,9 +56,6 @@ export type GameState = {
 	edges: Partial<Record<Edge, EdgeState>>
 	players: PlayerState[]
 	phase: Phase
-	// At most one open trade offer at a time. Only the current main-phase
-	// player can propose. Cleared on accept, cancel, or end_turn.
-	trade: TradeOffer | null
 }
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }

@@ -39,9 +39,6 @@ export function TradePanel({
 	const otherIndices = playerOrder.map((_, i) => i).filter((i) => i !== meIdx)
 	const allSelected = addressed.length === otherIndices.length
 
-	function toggleAll() {
-		setAddressed(allSelected ? [] : otherIndices)
-	}
 	function toggle(idx: number) {
 		setAddressed((prev) =>
 			prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
@@ -94,11 +91,6 @@ export function TradePanel({
 			/>
 			<Text style={styles.sectionLabel}>To</Text>
 			<View style={styles.chipRow}>
-				<PlayerChip
-					label="All"
-					active={allSelected}
-					onPress={toggleAll}
-				/>
 				{otherIndices.map((i) => {
 					const profile = profilesById[playerOrder[i]]
 					const name = profile?.username ?? `P${i + 1}`
@@ -153,27 +145,31 @@ function ResourceRow({
 				const blockedByOverlap = otherSide[r] > 0
 				const canPlus = !atCap && !blockedByOverlap
 				const canMinus = hand[r] > 0
+				// A capped row (the "give" row) with zero available for this
+				// resource is fully disabled — not even the +/- are meaningful.
+				const cellDisabled = cap !== null && cap[r] === 0
 				return (
 					<View
 						key={r}
 						style={[
 							styles.resourceCell,
 							{ backgroundColor: resourceColor[r] },
+							cellDisabled && styles.resourceCellDisabled,
 						]}
 					>
 						<Text style={styles.resourceLabel}>
-							{RESOURCE_SHORT[r]}
+							{RESOURCE_LABELS[r]}
 						</Text>
 						<View style={styles.stepper}>
 							<StepperBtn
 								sign="-"
-								disabled={!canMinus}
+								disabled={!canMinus || cellDisabled}
 								onPress={() => onBump(r, -1)}
 							/>
 							<Text style={styles.count}>{hand[r]}</Text>
 							<StepperBtn
 								sign="+"
-								disabled={!canPlus}
+								disabled={!canPlus || cellDisabled}
 								onPress={() => onBump(r, 1)}
 							/>
 						</View>
@@ -246,12 +242,12 @@ function PlayerChip({
 	)
 }
 
-const RESOURCE_SHORT: Record<Resource, string> = {
-	wood: 'Wd',
-	wheat: 'Wh',
-	sheep: 'Sh',
-	brick: 'Br',
-	ore: 'Or',
+const RESOURCE_LABELS: Record<Resource, string> = {
+	wood: 'Wood',
+	wheat: 'Wheat',
+	sheep: 'Sheep',
+	brick: 'Brick',
+	ore: 'Ore',
 }
 
 const styles = StyleSheet.create({
@@ -279,8 +275,11 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		gap: 2,
 	},
+	resourceCellDisabled: {
+		opacity: 0.35,
+	},
 	resourceLabel: {
-		fontSize: 10,
+		fontSize: 11,
 		fontWeight: '700',
 		color: '#1A1A1A',
 	},

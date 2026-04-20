@@ -1,6 +1,5 @@
 import { useAuth } from '@/lib/auth'
 import { BoardView } from '@/lib/catan/BoardView'
-import type { BuildSelection } from '@/lib/catan/BuildLayer'
 import {
 	BUILD_COSTS,
 	canAfford,
@@ -9,11 +8,12 @@ import {
 	validBuildSettlementVertices,
 	type BuildKind,
 } from '@/lib/catan/build'
+import type { BuildSelection } from '@/lib/catan/BuildLayer'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
-import { PlayerStrip } from '@/lib/catan/PlayerStrip'
-import { playerColors } from '@/lib/catan/palette'
+import { playerColors, waterColor } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
+import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
 import { TradePanel } from '@/lib/catan/TradePanel'
@@ -123,9 +123,13 @@ function GameBody() {
 		}
 	}, [mainTurnKey])
 
+	// Trade rides on the main phase — there's no top-level field for it.
+	const liveOffer =
+		gameState?.phase.kind === 'main' ? gameState.phase.trade : null
+
 	// Close the compose panel if a live offer appears (we just sent it) or
 	// disappears (someone accepted/cancelled).
-	const liveTradeId = gameState?.trade?.id ?? null
+	const liveTradeId = liveOffer?.id ?? null
 	useEffect(() => {
 		setTradePanelOpen(false)
 	}, [liveTradeId])
@@ -213,7 +217,6 @@ function GameBody() {
 
 	function onTradePress() {
 		if (!game) return
-		const liveOffer = gameState?.trade
 		// If we have a live offer we proposed, tapping the Trade button cancels
 		// it outright. Otherwise we toggle the compose panel.
 		if (liveOffer && liveOffer.from === meIdx) {
@@ -241,17 +244,17 @@ function GameBody() {
 	}
 
 	async function onAcceptTrade() {
-		if (!game || !gameState?.trade) return
+		if (!game || !liveOffer) return
 		setSubmitting(true)
-		const res = await acceptTrade(game.id, gameState.trade.id)
+		const res = await acceptTrade(game.id, liveOffer.id)
 		setSubmitting(false)
 		if (res.error) Alert.alert('Accept failed', res.error)
 	}
 
 	async function onCancelTrade() {
-		if (!game || !gameState?.trade) return
+		if (!game || !liveOffer) return
 		setSubmitting(true)
-		const res = await cancelTrade(game.id, gameState.trade.id)
+		const res = await cancelTrade(game.id, liveOffer.id)
 		setSubmitting(false)
 		if (res.error) Alert.alert(res.error)
 	}
@@ -280,8 +283,8 @@ function GameBody() {
 		dev_card: false,
 	}
 
-	const hasLiveTrade = !!gameState?.trade
-	const liveTradeIsMine = hasLiveTrade && gameState!.trade!.from === meIdx
+	const hasLiveTrade = !!liveOffer
+	const liveTradeIsMine = !!liveOffer && liveOffer.from === meIdx
 	const tradeButtonEnabled =
 		canBuildThisTurn && !hasLiveTrade && !tradePanelOpen
 	const tradeButtonActive = tradePanelOpen || liveTradeIsMine
@@ -316,22 +319,22 @@ function GameBody() {
 						onSelect={onBuildToolSelect}
 						onTradePress={onTradePress}
 					/>
-					{gameState.trade && (
-						<TradeBanner
-							offer={gameState.trade}
-							meIdx={meIdx}
-							myHand={myHand}
-							playerOrder={game.player_order}
-							profilesById={profilesById}
-							submitting={submitting}
-							onAccept={onAcceptTrade}
-							onCancel={onCancelTrade}
-						/>
-					)}
 				</>
 			)}
 
 			<View style={styles.boardContainer}>
+				{liveOffer && (
+					<TradeBanner
+						offer={liveOffer}
+						meIdx={meIdx}
+						myHand={myHand}
+						playerOrder={game.player_order}
+						profilesById={profilesById}
+						submitting={submitting}
+						onAccept={onAcceptTrade}
+						onCancel={onCancelTrade}
+					/>
+				)}
 				{gameState ? (
 					<BoardView
 						state={gameState}
@@ -355,7 +358,9 @@ function GameBody() {
 						}
 					/>
 				) : (
-					<ActivityIndicator color={colors.brand} />
+					<View style={styles.loadingFill}>
+						<ActivityIndicator color={colors.brand} />
+					</View>
 				)}
 			</View>
 
@@ -639,6 +644,10 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.border,
 	},
 	boardContainer: {
+		flex: 1,
+		backgroundColor: waterColor,
+	},
+	loadingFill: {
 		flex: 1,
 		alignItems: 'center',
 		justifyContent: 'center',

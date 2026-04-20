@@ -410,12 +410,6 @@ type PlayerState = { resources: ResourceHand }
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
 type DiceRoll = { a: DieFace; b: DieFace }
 
-type Phase =
-	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
-	| { kind: 'roll' }
-	| { kind: 'main'; roll: DiceRoll }
-	| { kind: 'game_over' }
-
 type TradeOffer = {
 	id: string
 	from: number
@@ -425,6 +419,12 @@ type TradeOffer = {
 	createdAt: string
 }
 
+type Phase =
+	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
+	| { kind: 'roll' }
+	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
+	| { kind: 'game_over' }
+
 type GameState = {
 	variant: string
 	hexes: Record<Hex, HexData>
@@ -432,7 +432,6 @@ type GameState = {
 	edges: Partial<Record<Edge, EdgeState>>
 	players: PlayerState[]
 	phase: Phase
-	trade: TradeOffer | null
 }
 
 function vertexStateOf(state: GameState, v: Vertex): VertexState {
@@ -759,14 +758,20 @@ async function loadGame(
 	if (!stateRow)
 		return { ok: false, response: err(404, 'game state not found') }
 
+	// Normalize phase.main.trade for rows written before trade existed.
+	const rawPhase = stateRow.phase as Phase
+	const phase: Phase =
+		rawPhase.kind === 'main' && rawPhase.trade === undefined
+			? { ...rawPhase, trade: null }
+			: rawPhase
+
 	const state: GameState = {
 		variant: stateRow.variant,
 		hexes: stateRow.hexes,
 		vertices: stateRow.vertices,
 		edges: stateRow.edges,
 		players: stateRow.players,
-		phase: stateRow.phase,
-		trade: stateRow.trade ?? null,
+		phase,
 	}
 	return { ok: true, game: game as GameRow, state }
 }
@@ -844,7 +849,6 @@ async function handleRespond(
 			edges: {},
 			players: initialPlayers(playerOrder.length),
 			phase: INITIAL_PHASE,
-			trade: null,
 		})
 		if (stateErr) return err(500, 'could not create game state')
 
@@ -1086,7 +1090,11 @@ async function handleRoll(
 		.from('game_states')
 		.update({
 			players: nextPlayers,
-			phase: { kind: 'main', roll: dice } satisfies Phase,
+			phase: {
+				kind: 'main',
+				roll: dice,
+				trade: null,
+			} satisfies Phase,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
@@ -1127,7 +1135,7 @@ async function handleEndTurn(
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ phase: { kind: 'roll' } satisfies Phase, trade: null })
+		.update({ phase: { kind: 'roll' } satisfies Phase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -1343,7 +1351,9 @@ async function handleProposeTrade(
 	if (meIdx === null) return err(403, 'not a participant')
 	if (game.current_turn !== meIdx) return err(403, 'not your turn')
 
-	if (state.trade !== null) return err(400, 'trade already open')
+	const phase = state.phase
+	if (phase.kind !== 'main') return err(400, 'expected main phase')
+	if (phase.trade !== null) return err(400, 'trade already open')
 
 	const give = normalizeHand(body.give)
 	const receive = normalizeHand(body.receive)
@@ -1375,9 +1385,10 @@ async function handleProposeTrade(
 		createdAt: new Date().toISOString(),
 	}
 
+	const nextPhase: Phase = { ...phase, trade: offer }
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ trade: offer })
+		.update({ phase: nextPhase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -1409,7 +1420,9 @@ async function handleAcceptTrade(
 	const { game, state } = loaded
 
 	if (game.status !== 'active') return err(400, 'not active')
-	const offer = state.trade
+	const phase = state.phase
+	if (phase.kind !== 'main') return err(400, 'expected main phase')
+	const offer = phase.trade
 	if (!offer || offer.id !== body.offer_id) return err(404, 'offer not found')
 
 	const meIdx = game.player_order.indexOf(me)
@@ -1428,10 +1441,11 @@ async function handleAcceptTrade(
 		offer.give,
 		offer.receive
 	)
+	const nextPhase: Phase = { ...phase, trade: null }
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ players: nextPlayers, trade: null })
+		.update({ players: nextPlayers, phase: nextPhase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -1462,16 +1476,19 @@ async function handleCancelTrade(
 	if (!loaded.ok) return loaded.response
 	const { game, state } = loaded
 
-	const offer = state.trade
+	const phase = state.phase
+	if (phase.kind !== 'main') return err(400, 'expected main phase')
+	const offer = phase.trade
 	if (!offer || offer.id !== body.offer_id) return err(404, 'offer not found')
 
 	const meIdx = game.player_order.indexOf(me)
 	if (meIdx < 0) return err(403, 'not a participant')
 	if (offer.from !== meIdx) return err(403, 'not your offer')
 
+	const nextPhase: Phase = { ...phase, trade: null }
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ trade: null })
+		.update({ phase: nextPhase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 

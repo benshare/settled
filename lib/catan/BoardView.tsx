@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { type LayoutChangeEvent, View } from 'react-native'
-import Svg, { G, Rect } from 'react-native-svg'
+import Svg, { G } from 'react-native-svg'
 import { edgeEndpoints, type Edge, type Vertex } from './board'
 import { BuildLayer, type BuildSelection } from './BuildLayer'
 import { type BuildKind } from './build'
 import { EdgePiece } from './EdgePiece'
 import { HexTile } from './HexTile'
 import { computeBoardLayout, computeVertexPositions } from './layout'
-import { waterColor } from './palette'
 import { PlacementLayer, type PlacementSelection } from './PlacementLayer'
 import type { GameState } from './types'
 import { VertexPiece } from './VertexPiece'
@@ -77,7 +76,6 @@ function BoardSvg({
 
 	return (
 		<Svg width={boxW} height={boxH}>
-			<Rect x={0} y={0} width={boxW} height={boxH} fill={waterColor} />
 			<G x={offsetX} y={offsetY}>
 				{layout.hexes.map((h) => (
 					<HexTile

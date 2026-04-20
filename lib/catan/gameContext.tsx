@@ -143,7 +143,6 @@ function rowToState(row: Record<string, unknown>): GameState {
 			: (row.edges as GameState['edges']),
 		players: row.players as GameState['players'],
 		phase: row.phase as GameState['phase'],
-		trade: (row.trade ?? null) as GameState['trade'],
 	}
 }
 
