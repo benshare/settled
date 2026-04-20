@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors, font, radius, spacing } from '../theme'
+import type { BuildKind } from './build'
+import { playerColors } from './palette'
 
 type BuildOption = {
-	key: 'road' | 'settlement' | 'city' | 'dev_card'
+	key: BuildKind | 'dev_card'
 	label: string
 	icon: React.ComponentProps<typeof Ionicons>['name']
 }
@@ -15,45 +17,97 @@ const BUILD_OPTIONS: readonly BuildOption[] = [
 	{ key: 'dev_card', label: 'Dev card', icon: 'albums-outline' },
 ]
 
-export function BuildTradeBar() {
+export type BuildEnablement = Record<BuildKind | 'dev_card', boolean>
+
+export function BuildTradeBar({
+	active,
+	enabled,
+	meIdx,
+	onSelect,
+}: {
+	active: BuildKind | null
+	enabled: BuildEnablement
+	meIdx: number
+	onSelect: (tool: BuildKind) => void
+}) {
 	return (
 		<View style={styles.row}>
 			<View style={[styles.panel, styles.buildPanel]}>
 				<Text style={styles.title}>Build</Text>
 				<View style={styles.iconRow}>
 					{BUILD_OPTIONS.map((opt) => (
-						<BuildIconButton key={opt.key} option={opt} />
+						<BuildIconButton
+							key={opt.key}
+							option={opt}
+							enabled={enabled[opt.key]}
+							active={
+								opt.key !== 'dev_card' && active === opt.key
+							}
+							meIdx={meIdx}
+							onPress={() => {
+								if (opt.key === 'dev_card') return
+								onSelect(opt.key)
+							}}
+						/>
 					))}
 				</View>
 			</View>
 
-			<Pressable
-				style={({ pressed }) => [
-					styles.panel,
-					styles.tradePanel,
-					pressed && styles.pressed,
-				]}
+			<View
+				style={[styles.panel, styles.tradePanel, styles.panelDisabled]}
 			>
 				<Text style={styles.title}>Trade</Text>
 				<View style={styles.tradeBody}>
 					<Ionicons
 						name="swap-horizontal"
 						size={24}
-						color={colors.text}
+						color={colors.textMuted}
 					/>
 				</View>
-			</Pressable>
+			</View>
 		</View>
 	)
 }
 
-function BuildIconButton({ option }: { option: BuildOption }) {
+function BuildIconButton({
+	option,
+	enabled,
+	active,
+	meIdx,
+	onPress,
+}: {
+	option: BuildOption
+	enabled: boolean
+	active: boolean
+	meIdx: number
+	onPress: () => void
+}) {
+	const color = playerColors[meIdx] ?? playerColors[0]
+	const interactive = enabled || active
 	return (
 		<Pressable
-			style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed]}
-			accessibilityLabel={option.label}
+			disabled={!interactive}
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.iconBtn,
+				active && { borderColor: color, borderWidth: 2 },
+				!interactive && styles.iconBtnDisabled,
+				pressed && interactive && styles.pressed,
+			]}
+			accessibilityLabel={
+				active ? `Cancel ${option.label}` : option.label
+			}
 		>
-			<Ionicons name={option.icon} size={22} color={colors.text} />
+			<Ionicons
+				name={option.icon}
+				size={22}
+				color={interactive ? colors.text : colors.textMuted}
+			/>
+			{active && (
+				<View style={styles.cancelBadge}>
+					<Ionicons name="close" size={12} color={colors.white} />
+				</View>
+			)}
 		</Pressable>
 	)
 }
@@ -82,6 +136,9 @@ const styles = StyleSheet.create({
 		shadowRadius: 6,
 		elevation: 2,
 	},
+	panelDisabled: {
+		opacity: 0.45,
+	},
 	buildPanel: {
 		flex: 1,
 	},
@@ -107,6 +164,20 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.white,
 		borderWidth: 1,
 		borderColor: colors.border,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	iconBtnDisabled: {
+		opacity: 0.4,
+	},
+	cancelBadge: {
+		position: 'absolute',
+		top: -6,
+		right: -6,
+		width: 18,
+		height: 18,
+		borderRadius: 9,
+		backgroundColor: colors.error,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},

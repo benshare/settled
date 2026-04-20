@@ -1,5 +1,14 @@
 import { useAuth } from '@/lib/auth'
 import { BoardView } from '@/lib/catan/BoardView'
+import type { BuildSelection } from '@/lib/catan/BuildLayer'
+import {
+	BUILD_COSTS,
+	canAfford,
+	validBuildCityVertices,
+	validBuildRoadEdges,
+	validBuildSettlementVertices,
+	type BuildKind,
+} from '@/lib/catan/build'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
@@ -64,9 +73,13 @@ function GameBody() {
 	const placeRoad = useGamesStore((s) => s.placeRoad)
 	const roll = useGamesStore((s) => s.roll)
 	const endTurn = useGamesStore((s) => s.endTurn)
+	const buildRoad = useGamesStore((s) => s.buildRoad)
+	const buildSettlement = useGamesStore((s) => s.buildSettlement)
+	const buildCity = useGamesStore((s) => s.buildCity)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
+	const [buildTool, setBuildTool] = useState<BuildKind | null>(null)
 
 	const meIdx = useMemo(() => {
 		if (!game || !user) return -1
@@ -90,6 +103,15 @@ function GameBody() {
 	useEffect(() => {
 		setSelection(null)
 	}, [placementKey])
+
+	// Clear build tool when the turn flips away from us or when we leave main.
+	const mainTurnKey =
+		gameState?.phase.kind === 'main' && isMyActiveTurn
+			? `${game?.current_turn}`
+			: 'off'
+	useEffect(() => {
+		if (mainTurnKey === 'off') setBuildTool(null)
+	}, [mainTurnKey])
 
 	if (!ready && !game) {
 		return (
@@ -144,6 +166,58 @@ function GameBody() {
 		if (res.error) Alert.alert(res.error)
 	}
 
+	function onBuildToolSelect(tool: BuildKind) {
+		setBuildTool((prev) => (prev === tool ? null : tool))
+	}
+
+	function onBuildSpotSelect(sel: BuildSelection) {
+		Alert.alert(confirmBuildTitle(sel.kind), undefined, [
+			{ text: 'Cancel', style: 'cancel' },
+			{ text: 'Confirm', onPress: () => commitBuild(sel) },
+		])
+	}
+
+	async function commitBuild(sel: BuildSelection) {
+		if (!game) return
+		setSubmitting(true)
+		const res =
+			sel.kind === 'road'
+				? await buildRoad(game.id, sel.edge)
+				: sel.kind === 'settlement'
+					? await buildSettlement(game.id, sel.vertex)
+					: await buildCity(game.id, sel.vertex)
+		setSubmitting(false)
+		if (res.error) {
+			Alert.alert('Build failed', res.error)
+			return
+		}
+		setBuildTool(null)
+	}
+
+	// Button enablement: only when it's my main-phase turn, I can afford the
+	// cost, AND there is at least one valid spot on the board.
+	const myHand = gameState?.players[meIdx]?.resources ?? null
+	const canBuildThisTurn =
+		isMyActiveTurn && gameState?.phase.kind === 'main' && !!myHand
+	const buildEnabled = {
+		road:
+			canBuildThisTurn &&
+			!!myHand &&
+			canAfford(myHand, BUILD_COSTS.road) &&
+			validBuildRoadEdges(gameState!, meIdx).length > 0,
+		settlement:
+			canBuildThisTurn &&
+			!!myHand &&
+			canAfford(myHand, BUILD_COSTS.settlement) &&
+			validBuildSettlementVertices(gameState!, meIdx).length > 0,
+		city:
+			canBuildThisTurn &&
+			!!myHand &&
+			canAfford(myHand, BUILD_COSTS.city) &&
+			validBuildCityVertices(gameState!, meIdx).length > 0,
+		dev_card: false,
+	}
+
 	return (
 		<View style={styles.bodyRoot}>
 			{inPlacement && gameState && (
@@ -165,7 +239,12 @@ function GameBody() {
 						profilesById={profilesById}
 						gameState={gameState}
 					/>
-					<BuildTradeBar />
+					<BuildTradeBar
+						active={buildTool}
+						enabled={buildEnabled}
+						meIdx={meIdx}
+						onSelect={onBuildToolSelect}
+					/>
 				</>
 			)}
 
@@ -179,6 +258,15 @@ function GameBody() {
 										meIdx,
 										selection,
 										onSelect: setSelection,
+									}
+								: undefined
+						}
+						build={
+							buildTool && isMyActiveTurn
+								? {
+										meIdx,
+										tool: buildTool,
+										onSelect: onBuildSpotSelect,
 									}
 								: undefined
 						}
@@ -373,6 +461,17 @@ function PlacementHeader({
 
 function prefix(word: string): string {
 	return /^[aeiou]/i.test(word) ? 'an' : 'a'
+}
+
+function confirmBuildTitle(kind: BuildKind): string {
+	switch (kind) {
+		case 'road':
+			return 'Confirm road placement'
+		case 'settlement':
+			return 'Confirm settlement placement'
+		case 'city':
+			return 'Confirm city placement'
+	}
 }
 
 const styles = StyleSheet.create({

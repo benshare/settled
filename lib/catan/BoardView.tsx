@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { type LayoutChangeEvent, View } from 'react-native'
 import Svg, { G, Rect } from 'react-native-svg'
 import { edgeEndpoints, type Edge, type Vertex } from './board'
+import { BuildLayer, type BuildSelection } from './BuildLayer'
+import { type BuildKind } from './build'
 import { EdgePiece } from './EdgePiece'
 import { HexTile } from './HexTile'
 import { computeBoardLayout, computeVertexPositions } from './layout'
@@ -18,12 +20,20 @@ export type BoardInteraction = {
 	onSelect: (s: PlacementSelection) => void
 }
 
+export type BuildInteraction = {
+	meIdx: number
+	tool: BuildKind | null
+	onSelect: (selection: BuildSelection) => void
+}
+
 export function BoardView({
 	state,
 	interaction,
+	build,
 }: {
 	state: GameState
 	interaction?: BoardInteraction
+	build?: BuildInteraction
 }) {
 	const [box, setBox] = useState<{ w: number; h: number } | null>(null)
 
@@ -40,6 +50,7 @@ export function BoardView({
 					boxW={box.w}
 					boxH={box.h}
 					interaction={interaction}
+					build={build}
 				/>
 			)}
 		</View>
@@ -51,11 +62,13 @@ function BoardSvg({
 	boxW,
 	boxH,
 	interaction,
+	build,
 }: {
 	state: GameState
 	boxW: number
 	boxH: number
 	interaction?: BoardInteraction
+	build?: BuildInteraction
 }) {
 	const layout = computeBoardLayout(boxW * 0.9, boxH * 0.9)
 	const vertexPositions = computeVertexPositions(layout)
@@ -113,6 +126,16 @@ function BoardSvg({
 						vertexPositions={vertexPositions}
 						selection={interaction.selection}
 						onSelect={interaction.onSelect}
+					/>
+				)}
+				{build && (
+					<BuildLayer
+						state={state}
+						meIdx={build.meIdx}
+						layoutS={layout.s}
+						vertexPositions={vertexPositions}
+						tool={build.tool}
+						onSelect={build.onSelect}
 					/>
 				)}
 			</G>

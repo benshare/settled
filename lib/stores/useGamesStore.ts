@@ -50,6 +50,9 @@ export type GameEvent =
 			at: string
 	  }
 	| { kind: 'turn_ended'; player: number; at: string }
+	| { kind: 'road_built'; player: number; edge: string; at: string }
+	| { kind: 'settlement_built'; player: number; vertex: string; at: string }
+	| { kind: 'city_built'; player: number; vertex: string; at: string }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
@@ -77,6 +80,10 @@ type GamesStore = {
 
 	roll: (gameId: string) => Promise<RollResult>
 	endTurn: (gameId: string) => Promise<ActionResult>
+
+	buildRoad: (gameId: string, edge: string) => Promise<ActionResult>
+	buildSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
+	buildCity: (gameId: string, vertex: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -282,6 +289,39 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't end turn" }
+		return { error: null }
+	},
+
+	async buildRoad(gameId, edge) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'build_road', game_id: gameId, edge },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't build road" }
+		return { error: null }
+	},
+
+	async buildSettlement(gameId, vertex) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'build_settlement', game_id: gameId, vertex },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't build settlement" }
+		return { error: null }
+	},
+
+	async buildCity(gameId, vertex) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'build_city', game_id: gameId, vertex },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't build city" }
 		return { error: null }
 	},
 }))

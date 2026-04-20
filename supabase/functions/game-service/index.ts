@@ -18,6 +18,9 @@
 //     A 7 is a no-op (robber deferred).
 //   - end_turn: during phase='main', clears lastRoll, transitions phase to
 //     'roll', and advances current_turn to the next player (wrap-around).
+//   - build_road / build_settlement / build_city: during phase='main' and on
+//     the caller's turn, validates the spot + resources, deducts cost, and
+//     writes the piece. No victory check in this pass.
 //
 // The board/resource/number constants below are duplicated from lib/catan
 // because the Supabase functions directory lives outside the TS project and
@@ -49,12 +52,26 @@ type PlaceRoadBody = {
 }
 type RollBody = { action: 'roll'; game_id: string }
 type EndTurnBody = { action: 'end_turn'; game_id: string }
+type BuildRoadBody = { action: 'build_road'; game_id: string; edge: string }
+type BuildSettlementBody = {
+	action: 'build_settlement'
+	game_id: string
+	vertex: string
+}
+type BuildCityBody = {
+	action: 'build_city'
+	game_id: string
+	vertex: string
+}
 type Body =
 	| RespondBody
 	| PlaceSettlementBody
 	| PlaceRoadBody
 	| RollBody
 	| EndTurnBody
+	| BuildRoadBody
+	| BuildSettlementBody
+	| BuildCityBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -506,6 +523,82 @@ function nextMainTurn(currentTurn: number, playerCount: number): number {
 	return (currentTurn + 1) % playerCount
 }
 
+// --- Build rules (must match lib/catan/build) ------------------------------
+
+type BuildKind = 'road' | 'settlement' | 'city'
+
+const BUILD_COSTS: Record<BuildKind, ResourceHand> = {
+	road: { brick: 1, wood: 1, sheep: 0, wheat: 0, ore: 0 },
+	settlement: { brick: 1, wood: 1, sheep: 1, wheat: 1, ore: 0 },
+	city: { brick: 0, wood: 0, sheep: 0, wheat: 2, ore: 3 },
+}
+
+function canAfford(hand: ResourceHand, cost: ResourceHand): boolean {
+	for (const r of RESOURCES) if (hand[r] < cost[r]) return false
+	return true
+}
+
+function deductHand(hand: ResourceHand, cost: ResourceHand): ResourceHand {
+	const out = { ...hand }
+	for (const r of RESOURCES) out[r] = hand[r] - cost[r]
+	return out
+}
+
+function roadConnectsVia(
+	state: GameState,
+	playerIdx: number,
+	edge: Edge,
+	vertex: Vertex
+): boolean {
+	const vs = vertexStateOf(state, vertex)
+	if (vs.occupied) return vs.player === playerIdx
+	for (const e of adjacentEdges[vertex]) {
+		if (e === edge) continue
+		const es = edgeStateOf(state, e)
+		if (es.occupied && es.player === playerIdx) return true
+	}
+	return false
+}
+
+function isValidBuildRoadEdge(
+	state: GameState,
+	playerIdx: number,
+	edge: Edge
+): boolean {
+	if (edgeStateOf(state, edge).occupied) return false
+	const [a, b] = edgeEndpoints(edge)
+	return (
+		roadConnectsVia(state, playerIdx, edge, a) ||
+		roadConnectsVia(state, playerIdx, edge, b)
+	)
+}
+
+function isValidBuildSettlementVertex(
+	state: GameState,
+	playerIdx: number,
+	vertex: Vertex
+): boolean {
+	if (vertexStateOf(state, vertex).occupied) return false
+	for (const n of neighborVertices[vertex]) {
+		if (vertexStateOf(state, n).occupied) return false
+	}
+	return adjacentEdges[vertex].some((e) => {
+		const es = edgeStateOf(state, e)
+		return es.occupied && es.player === playerIdx
+	})
+}
+
+function isValidBuildCityVertex(
+	state: GameState,
+	playerIdx: number,
+	vertex: Vertex
+): boolean {
+	const vs = vertexStateOf(state, vertex)
+	return (
+		vs.occupied && vs.player === playerIdx && vs.building === 'settlement'
+	)
+}
+
 // --- Game generation -------------------------------------------------------
 
 function generateHexes(): Record<Hex, HexData> {
@@ -952,6 +1045,185 @@ async function handleEndTurn(
 	return json({ ok: true })
 }
 
+async function preflightBuild(
+	admin: SupabaseClient,
+	me: string,
+	gameId: string
+): Promise<
+	| { ok: true; game: GameRow; state: GameState; meIdx: number }
+	| { ok: false; response: Response }
+> {
+	const loaded = await loadGame(admin, gameId)
+	if (!loaded.ok) return loaded
+	const { game, state } = loaded
+	if (game.status !== 'active')
+		return { ok: false, response: err(400, 'not active') }
+	if (state.phase.kind !== 'main')
+		return { ok: false, response: err(400, 'expected main phase') }
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null)
+		return { ok: false, response: err(403, 'not a participant') }
+	if (game.current_turn !== meIdx)
+		return { ok: false, response: err(403, 'not your turn') }
+	return { ok: true, game, state, meIdx }
+}
+
+function applyCost(
+	players: PlayerState[],
+	meIdx: number,
+	cost: ResourceHand
+): PlayerState[] {
+	return players.map((p, i) =>
+		i === meIdx ? { ...p, resources: deductHand(p.resources, cost) } : p
+	)
+}
+
+async function handleBuildRoad(
+	admin: SupabaseClient,
+	me: string,
+	body: BuildRoadBody
+): Promise<Response> {
+	const pre = await preflightBuild(admin, me, body.game_id)
+	if (!pre.ok) return pre.response
+	const { game, state, meIdx } = pre
+
+	if (!(EDGES as readonly string[]).includes(body.edge))
+		return err(400, 'unknown edge')
+	const edge = body.edge as Edge
+
+	if (!isValidBuildRoadEdge(state, meIdx, edge))
+		return err(400, 'invalid road')
+	const cost = BUILD_COSTS.road
+	if (!canAfford(state.players[meIdx].resources, cost))
+		return err(400, 'insufficient resources')
+
+	const nextEdges = {
+		...state.edges,
+		[edge]: { occupied: true as const, player: meIdx },
+	}
+	const nextPlayers = applyCost(state.players, meIdx, cost)
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ edges: nextEdges, players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'road_built',
+		player: meIdx,
+		edge,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
+async function handleBuildSettlement(
+	admin: SupabaseClient,
+	me: string,
+	body: BuildSettlementBody
+): Promise<Response> {
+	const pre = await preflightBuild(admin, me, body.game_id)
+	if (!pre.ok) return pre.response
+	const { game, state, meIdx } = pre
+
+	if (!(VERTICES as readonly string[]).includes(body.vertex))
+		return err(400, 'unknown vertex')
+	const vertex = body.vertex as Vertex
+
+	if (!isValidBuildSettlementVertex(state, meIdx, vertex))
+		return err(400, 'invalid settlement')
+	const cost = BUILD_COSTS.settlement
+	if (!canAfford(state.players[meIdx].resources, cost))
+		return err(400, 'insufficient resources')
+
+	const nextVertices = {
+		...state.vertices,
+		[vertex]: {
+			occupied: true as const,
+			player: meIdx,
+			building: 'settlement' as const,
+		},
+	}
+	const nextPlayers = applyCost(state.players, meIdx, cost)
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ vertices: nextVertices, players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'settlement_built',
+		player: meIdx,
+		vertex,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
+async function handleBuildCity(
+	admin: SupabaseClient,
+	me: string,
+	body: BuildCityBody
+): Promise<Response> {
+	const pre = await preflightBuild(admin, me, body.game_id)
+	if (!pre.ok) return pre.response
+	const { game, state, meIdx } = pre
+
+	if (!(VERTICES as readonly string[]).includes(body.vertex))
+		return err(400, 'unknown vertex')
+	const vertex = body.vertex as Vertex
+
+	if (!isValidBuildCityVertex(state, meIdx, vertex))
+		return err(400, 'invalid city target')
+	const cost = BUILD_COSTS.city
+	if (!canAfford(state.players[meIdx].resources, cost))
+		return err(400, 'insufficient resources')
+
+	const nextVertices = {
+		...state.vertices,
+		[vertex]: {
+			occupied: true as const,
+			player: meIdx,
+			building: 'city' as const,
+		},
+	}
+	const nextPlayers = applyCost(state.players, meIdx, cost)
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ vertices: nextVertices, players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'city_built',
+		player: meIdx,
+		vertex,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
 serve(async (req) => {
 	if (req.method === 'OPTIONS') {
 		return new Response('ok', { headers: CORS_HEADERS })
@@ -981,6 +1253,12 @@ serve(async (req) => {
 			return handleRoll(admin, me, body)
 		case 'end_turn':
 			return handleEndTurn(admin, me, body)
+		case 'build_road':
+			return handleBuildRoad(admin, me, body)
+		case 'build_settlement':
+			return handleBuildSettlement(admin, me, body)
+		case 'build_city':
+			return handleBuildCity(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}
