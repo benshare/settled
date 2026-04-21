@@ -7,10 +7,11 @@ import {
 	useFriendsStore,
 } from '@/lib/stores/useFriendsStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
-import { colors, font, radius, spacing } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
 	ActivityIndicator,
 	Pressable,
@@ -23,6 +24,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function FriendsScreen() {
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const friends = useFriendsStore((s) => s.friends)
 	const pendingIncoming = useFriendsStore((s) => s.pendingIncoming)
 	const pendingOutgoing = useFriendsStore((s) => s.pendingOutgoing)
@@ -83,6 +86,8 @@ function ManageRequestsBanner({
 	incoming: IncomingRequest[]
 	outgoing: OutgoingRequest[]
 }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
 		<View style={styles.banner}>
 			{incoming.length > 0 && (
@@ -107,6 +112,8 @@ function ManageRequestsBanner({
 
 function IncomingRow({ incoming }: { incoming: IncomingRequest }) {
 	const { user } = useAuth()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const acceptRequest = useFriendsStore((s) => s.acceptRequest)
 	const rejectRequest = useFriendsStore((s) => s.rejectRequest)
 	const [busy, setBusy] = useState<'accept' | 'reject' | null>(null)
@@ -160,6 +167,8 @@ function IncomingRow({ incoming }: { incoming: IncomingRequest }) {
 }
 
 function OutgoingRow({ outgoing }: { outgoing: OutgoingRequest }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const cancelRequest = useFriendsStore((s) => s.cancelRequest)
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<string | null>(null)
@@ -195,6 +204,8 @@ function OutgoingRow({ outgoing }: { outgoing: OutgoingRequest }) {
 }
 
 function FriendRow({ profile }: { profile: Profile }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
 		<View style={styles.row}>
 			<Avatar profile={profile} size={40} />
@@ -205,83 +216,85 @@ function FriendRow({ profile }: { profile: Profile }) {
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: colors.background,
-	},
-	container: {
-		padding: spacing.lg,
-		gap: spacing.lg,
-	},
-	header: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-	},
-	title: {
-		fontSize: font.xl,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	addButton: {
-		width: 40,
-		height: 40,
-		borderRadius: 999,
-		alignItems: 'center',
-		justifyContent: 'center',
-		backgroundColor: colors.card,
-		borderWidth: 1,
-		borderColor: colors.border,
-	},
-	pressed: {
-		opacity: 0.7,
-	},
-	banner: {
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-		borderRadius: radius.md,
-		padding: spacing.md,
-		gap: spacing.md,
-	},
-	bannerSection: {
-		gap: spacing.sm,
-	},
-	bannerHeading: {
-		fontSize: font.sm,
-		fontWeight: '600',
-		letterSpacing: 0.5,
-		textTransform: 'uppercase',
-		color: colors.textSecondary,
-	},
-	list: {
-		gap: spacing.sm,
-	},
-	row: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.sm,
-	},
-	rowUsername: {
-		flex: 1,
-		fontSize: font.md,
-		color: colors.text,
-	},
-	rowAction: {
-		paddingHorizontal: spacing.md,
-		minHeight: 40,
-		paddingVertical: 0,
-	},
-	emptyText: {
-		fontSize: font.base,
-		color: colors.textMuted,
-		textAlign: 'center',
-		marginTop: spacing.xl,
-	},
-	errorText: {
-		color: colors.error,
-		fontSize: font.sm,
-		marginTop: spacing.xs,
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		container: {
+			padding: spacing.lg,
+			gap: spacing.lg,
+		},
+		header: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+		},
+		title: {
+			fontSize: font.xl,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		addButton: {
+			width: 40,
+			height: 40,
+			borderRadius: 999,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: colors.card,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		pressed: {
+			opacity: 0.7,
+		},
+		banner: {
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.card,
+			borderRadius: radius.md,
+			padding: spacing.md,
+			gap: spacing.md,
+		},
+		bannerSection: {
+			gap: spacing.sm,
+		},
+		bannerHeading: {
+			fontSize: font.sm,
+			fontWeight: '600',
+			letterSpacing: 0.5,
+			textTransform: 'uppercase',
+			color: colors.textSecondary,
+		},
+		list: {
+			gap: spacing.sm,
+		},
+		row: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+		},
+		rowUsername: {
+			flex: 1,
+			fontSize: font.md,
+			color: colors.text,
+		},
+		rowAction: {
+			paddingHorizontal: spacing.md,
+			minHeight: 40,
+			paddingVertical: 0,
+		},
+		emptyText: {
+			fontSize: font.base,
+			color: colors.textMuted,
+			textAlign: 'center',
+			marginTop: spacing.xl,
+		},
+		errorText: {
+			color: colors.error,
+			fontSize: font.sm,
+			marginTop: spacing.xs,
+		},
+	})
+}

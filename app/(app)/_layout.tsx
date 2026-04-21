@@ -2,7 +2,7 @@ import { useAuth } from '@/lib/auth'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
-import { colors } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
 
@@ -11,6 +11,7 @@ export const unstable_settings = {
 }
 
 export default function AppLayout() {
+	const { colors } = useTheme()
 	return (
 		<Tabs
 			screenOptions={{

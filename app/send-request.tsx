@@ -7,10 +7,11 @@ import {
 	SearchResult,
 	useFriendsStore,
 } from '@/lib/stores/useFriendsStore'
-import { colors, font, spacing } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
 	KeyboardAvoidingView,
 	Platform,
@@ -25,6 +26,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function SendRequestScreen() {
 	const { user } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const search = useFriendsStore((s) => s.search)
 
 	const [query, setQuery] = useState('')
@@ -137,6 +140,8 @@ function SearchRow({
 	) => void
 }) {
 	const { user } = useAuth()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const sendRequest = useFriendsStore((s) => s.sendRequest)
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<string | null>(null)
@@ -189,67 +194,69 @@ function SearchRow({
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: colors.background,
-	},
-	flex: {
-		flex: 1,
-	},
-	header: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		paddingHorizontal: spacing.md,
-		paddingTop: spacing.sm,
-		paddingBottom: spacing.sm,
-	},
-	back: {
-		width: 40,
-		height: 40,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	pressed: {
-		opacity: 0.7,
-	},
-	title: {
-		fontSize: font.md,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	container: {
-		padding: spacing.lg,
-		gap: spacing.md,
-	},
-	hint: {
-		fontSize: font.base,
-		color: colors.textMuted,
-		textAlign: 'center',
-		marginTop: spacing.lg,
-	},
-	list: {
-		gap: spacing.md,
-	},
-	row: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.sm,
-	},
-	rowUsername: {
-		flex: 1,
-		fontSize: font.md,
-		color: colors.text,
-	},
-	rowAction: {
-		paddingHorizontal: spacing.md,
-		minHeight: 40,
-		paddingVertical: 0,
-	},
-	errorText: {
-		color: colors.error,
-		fontSize: font.sm,
-		marginTop: spacing.xs,
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		flex: {
+			flex: 1,
+		},
+		header: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			paddingHorizontal: spacing.md,
+			paddingTop: spacing.sm,
+			paddingBottom: spacing.sm,
+		},
+		back: {
+			width: 40,
+			height: 40,
+			alignItems: 'center',
+			justifyContent: 'center',
+		},
+		pressed: {
+			opacity: 0.7,
+		},
+		title: {
+			fontSize: font.md,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		container: {
+			padding: spacing.lg,
+			gap: spacing.md,
+		},
+		hint: {
+			fontSize: font.base,
+			color: colors.textMuted,
+			textAlign: 'center',
+			marginTop: spacing.lg,
+		},
+		list: {
+			gap: spacing.md,
+		},
+		row: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+		},
+		rowUsername: {
+			flex: 1,
+			fontSize: font.md,
+			color: colors.text,
+		},
+		rowAction: {
+			paddingHorizontal: spacing.md,
+			minHeight: 40,
+			paddingVertical: 0,
+		},
+		errorText: {
+			color: colors.error,
+			fontSize: font.sm,
+			marginTop: spacing.xs,
+		},
+	})
+}

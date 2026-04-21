@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react'
+import React, { forwardRef, useMemo } from 'react'
 import {
 	StyleProp,
 	StyleSheet,
@@ -8,7 +8,8 @@ import {
 	View,
 	ViewStyle,
 } from 'react-native'
-import { colors, font, radius, spacing } from '../theme'
+import { useTheme } from '../ThemeContext'
+import { ColorScheme, font, radius, spacing } from '../theme'
 
 interface InputProps extends TextInputProps {
 	label?: string
@@ -21,6 +22,9 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
 	{ label, hint, error, containerStyle, style, ...rest },
 	ref
 ) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+
 	return (
 		<View style={[styles.container, containerStyle]}>
 			{label && <Text style={styles.label}>{label}</Text>}
@@ -40,36 +44,38 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
 	)
 })
 
-const styles = StyleSheet.create({
-	container: {
-		gap: spacing.xs,
-	},
-	label: {
-		fontSize: font.sm,
-		fontWeight: '600',
-		letterSpacing: 0.5,
-		textTransform: 'uppercase',
-		color: colors.textSecondary,
-	},
-	input: {
-		minHeight: 52,
-		borderWidth: 1,
-		borderColor: colors.border,
-		borderRadius: radius.md,
-		paddingHorizontal: spacing.md,
-		paddingVertical: 14,
-		fontSize: font.md,
-		color: colors.text,
-		backgroundColor: colors.card,
-	},
-	inputError: {
-		borderColor: colors.error,
-	},
-	hint: {
-		fontSize: font.sm,
-		color: colors.textMuted,
-	},
-	hintError: {
-		color: colors.error,
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		container: {
+			gap: spacing.xs,
+		},
+		label: {
+			fontSize: font.sm,
+			fontWeight: '600',
+			letterSpacing: 0.5,
+			textTransform: 'uppercase',
+			color: colors.textSecondary,
+		},
+		input: {
+			minHeight: 52,
+			borderWidth: 1,
+			borderColor: colors.border,
+			borderRadius: radius.md,
+			paddingHorizontal: spacing.md,
+			paddingVertical: 14,
+			fontSize: font.md,
+			color: colors.text,
+			backgroundColor: colors.card,
+		},
+		inputError: {
+			borderColor: colors.error,
+		},
+		hint: {
+			fontSize: font.sm,
+			color: colors.textMuted,
+		},
+		hintError: {
+			color: colors.error,
+		},
+	})
+}
