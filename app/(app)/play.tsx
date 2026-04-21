@@ -7,9 +7,11 @@ import {
 	type GameRequest,
 } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
-import { colors, font, radius, spacing } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import { useMemo } from 'react'
 import {
 	ActivityIndicator,
 	Pressable,
@@ -23,6 +25,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function PlayScreen() {
 	const { user } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const pendingRequests = useGamesStore((s) => s.pendingRequests)
 	const activeGames = useGamesStore((s) => s.activeGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
@@ -110,6 +114,8 @@ function PendingRow({
 	profilesById: Record<string, Profile>
 	onPress: () => void
 }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const { label, proposerProfile, mineIsProposer } = describePendingRequest(
 		request,
 		meId,
@@ -155,6 +161,8 @@ function GameRow({
 	meId: string | undefined
 	onPress: () => void
 }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const names = game.participants
 		.map((id) => {
 			if (id === meId) return 'me'
@@ -184,76 +192,78 @@ function GameRow({
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: colors.background,
-	},
-	container: {
-		padding: spacing.lg,
-		gap: spacing.lg,
-	},
-	header: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-	},
-	title: {
-		fontSize: font.xl,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	addButton: {
-		width: 40,
-		height: 40,
-		borderRadius: 999,
-		alignItems: 'center',
-		justifyContent: 'center',
-		backgroundColor: colors.card,
-		borderWidth: 1,
-		borderColor: colors.border,
-	},
-	pressed: {
-		opacity: 0.7,
-	},
-	section: {
-		gap: spacing.sm,
-	},
-	sectionHeading: {
-		fontSize: font.sm,
-		fontWeight: '600',
-		letterSpacing: 0.5,
-		textTransform: 'uppercase',
-		color: colors.textSecondary,
-	},
-	row: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.sm,
-		paddingVertical: spacing.sm,
-		paddingHorizontal: spacing.md,
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-		borderRadius: radius.md,
-	},
-	rowIcon: {
-		width: 40,
-		textAlign: 'center',
-	},
-	avatarPlaceholder: {
-		width: 40,
-		height: 40,
-	},
-	rowText: {
-		flex: 1,
-		fontSize: font.md,
-		color: colors.text,
-	},
-	emptyText: {
-		fontSize: font.base,
-		color: colors.textMuted,
-		textAlign: 'center',
-		marginTop: spacing.xl,
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		container: {
+			padding: spacing.lg,
+			gap: spacing.lg,
+		},
+		header: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+		},
+		title: {
+			fontSize: font.xl,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		addButton: {
+			width: 40,
+			height: 40,
+			borderRadius: 999,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: colors.card,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		pressed: {
+			opacity: 0.7,
+		},
+		section: {
+			gap: spacing.sm,
+		},
+		sectionHeading: {
+			fontSize: font.sm,
+			fontWeight: '600',
+			letterSpacing: 0.5,
+			textTransform: 'uppercase',
+			color: colors.textSecondary,
+		},
+		row: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+			paddingVertical: spacing.sm,
+			paddingHorizontal: spacing.md,
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.card,
+			borderRadius: radius.md,
+		},
+		rowIcon: {
+			width: 40,
+			textAlign: 'center',
+		},
+		avatarPlaceholder: {
+			width: 40,
+			height: 40,
+		},
+		rowText: {
+			flex: 1,
+			fontSize: font.md,
+			color: colors.text,
+		},
+		emptyText: {
+			fontSize: font.base,
+			color: colors.textMuted,
+			textAlign: 'center',
+			marginTop: spacing.xl,
+		},
+	})
+}

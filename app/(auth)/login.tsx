@@ -1,8 +1,10 @@
 import { useAuth } from '@/lib/auth'
 import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
 	KeyboardAvoidingView,
 	Platform,
@@ -25,6 +27,8 @@ export default function LoginScreen() {
 	const [error, setError] = useState<string | null>(null)
 	const { signInWithPhone } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 
 	const digits = phone.replace(/\D/g, '')
 	const canContinue = digits.length >= 10
@@ -100,7 +104,7 @@ export default function LoginScreen() {
 						<TextInput
 							style={styles.input}
 							placeholder="+1 (555) 000-0000"
-							placeholderTextColor="#999"
+							placeholderTextColor={colors.textMuted}
 							keyboardType="phone-pad"
 							textContentType="telephoneNumber"
 							value={phone}
@@ -159,87 +163,91 @@ export default function LoginScreen() {
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: '#fff',
-	},
-	flex: {
-		flex: 1,
-	},
-	container: {
-		flex: 1,
-		justifyContent: 'space-between',
-		paddingHorizontal: 24,
-		paddingVertical: 32,
-	},
-	intro: {
-		gap: 8,
-		marginTop: 32,
-	},
-	title: {
-		fontSize: 28,
-		fontWeight: '700',
-		color: '#111',
-	},
-	subtitle: {
-		fontSize: 16,
-		color: '#666',
-	},
-	form: {
-		gap: 12,
-	},
-	input: {
-		height: 48,
-		borderWidth: 1,
-		borderColor: '#ddd',
-		borderRadius: 8,
-		paddingHorizontal: 16,
-		fontSize: 16,
-		color: '#111',
-	},
-	error: {
-		color: '#d00',
-		fontSize: 14,
-	},
-	button: {
-		height: 48,
-		borderRadius: 8,
-		backgroundColor: '#111',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	buttonDisabled: {
-		backgroundColor: '#ccc',
-	},
-	buttonPressed: {
-		opacity: 0.85,
-	},
-	buttonText: {
-		color: '#fff',
-		fontSize: 16,
-		fontWeight: '600',
-	},
-	footer: {
-		fontSize: 12,
-		color: '#999',
-		textAlign: 'center',
-	},
-	devGroup: {
-		marginTop: 16,
-		gap: 8,
-	},
-	devButton: {
-		paddingVertical: 10,
-		borderRadius: 8,
-		borderWidth: 1,
-		borderColor: '#ccc',
-		backgroundColor: '#f5f5f7',
-		alignItems: 'center',
-	},
-	devButtonText: {
-		fontSize: 13,
-		color: '#666',
-		fontWeight: '600',
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		flex: {
+			flex: 1,
+		},
+		container: {
+			flex: 1,
+			justifyContent: 'space-between',
+			paddingHorizontal: spacing.lg,
+			paddingVertical: spacing.xl,
+		},
+		intro: {
+			gap: spacing.sm,
+			marginTop: spacing.xl,
+		},
+		title: {
+			fontSize: font.xl,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		subtitle: {
+			fontSize: font.md,
+			color: colors.textSecondary,
+		},
+		form: {
+			gap: spacing.sm,
+		},
+		input: {
+			minHeight: 52,
+			borderWidth: 1,
+			borderColor: colors.border,
+			borderRadius: radius.md,
+			paddingHorizontal: spacing.md,
+			paddingVertical: 14,
+			fontSize: font.md,
+			color: colors.text,
+			backgroundColor: colors.card,
+		},
+		error: {
+			color: colors.error,
+			fontSize: font.sm,
+		},
+		button: {
+			minHeight: 52,
+			borderRadius: radius.md,
+			backgroundColor: colors.brand,
+			alignItems: 'center',
+			justifyContent: 'center',
+		},
+		buttonDisabled: {
+			opacity: 0.4,
+		},
+		buttonPressed: {
+			opacity: 0.85,
+		},
+		buttonText: {
+			color: colors.white,
+			fontSize: font.md,
+			fontWeight: '600',
+		},
+		footer: {
+			fontSize: font.xs,
+			color: colors.textMuted,
+			textAlign: 'center',
+		},
+		devGroup: {
+			marginTop: spacing.md,
+			gap: spacing.sm,
+		},
+		devButton: {
+			paddingVertical: 10,
+			borderRadius: radius.sm,
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.card,
+			alignItems: 'center',
+		},
+		devButtonText: {
+			fontSize: font.sm,
+			color: colors.textSecondary,
+			fontWeight: '600',
+		},
+	})
+}

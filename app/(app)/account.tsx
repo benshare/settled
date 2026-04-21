@@ -5,13 +5,14 @@ import { Input } from '@/lib/modules/Input'
 import { clearAllUserStores } from '@/lib/stores'
 import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
-import { colors, font, radius, spacing } from '@/lib/theme'
+import { ThemeMode, useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import * as ImagePicker from 'expo-image-picker'
 import { useRouter } from 'expo-router'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
 	ActivityIndicator,
-	Alert,
+	Animated,
 	Pressable,
 	ScrollView,
 	StyleSheet,
@@ -29,9 +30,17 @@ function validateUsername(value: string): string | null {
 	return null
 }
 
+const THEME_OPTIONS: { key: ThemeMode; label: string }[] = [
+	{ key: 'light', label: 'Light' },
+	{ key: 'dark', label: 'Dark' },
+	{ key: 'system', label: 'System' },
+]
+
 export default function AccountScreen() {
 	const { user, signOut } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const profile = useProfileStore((s) => s.profile)
 	const loadProfile = useProfileStore((s) => s.loadProfile)
 	const updateUsername = useProfileStore((s) => s.updateUsername)
@@ -164,19 +173,10 @@ export default function AccountScreen() {
 	}
 
 	async function handleSignOut() {
-		Alert.alert('Sign out?', undefined, [
-			{ text: 'Cancel', style: 'cancel' },
-			{
-				text: 'Sign out',
-				style: 'destructive',
-				onPress: async () => {
-					clearProfile()
-					clearAllUserStores()
-					await signOut()
-					router.replace('/')
-				},
-			},
-		])
+		clearProfile()
+		clearAllUserStores()
+		await signOut()
+		router.replace('/')
 	}
 
 	const saveDisabled =
@@ -267,6 +267,11 @@ export default function AccountScreen() {
 					)}
 				</View>
 
+				<View style={styles.section}>
+					<Text style={styles.sectionLabel}>Appearance</Text>
+					<ThemeSegmentControl />
+				</View>
+
 				<View style={styles.signOutWrap}>
 					<Button variant="secondary" onPress={handleSignOut}>
 						Sign out
@@ -277,87 +282,178 @@ export default function AccountScreen() {
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: colors.background,
-	},
-	container: {
-		padding: spacing.lg,
-		gap: spacing.xl,
-	},
-	avatarSection: {
-		alignItems: 'center',
-		gap: spacing.sm,
-		marginTop: spacing.lg,
-	},
-	avatarOverlay: {
-		...StyleSheet.absoluteFillObject,
-		borderRadius: 999,
-		backgroundColor: 'rgba(0,0,0,0.45)',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	changePhoto: {
-		fontSize: font.base,
-		fontWeight: '600',
-		color: colors.brand,
-		paddingVertical: spacing.xs,
-	},
-	displayUsername: {
-		fontSize: font.xl,
-		fontWeight: '700',
-		color: colors.text,
-		marginTop: spacing.sm,
-	},
-	section: {
-		gap: spacing.sm,
-	},
-	sectionLabel: {
-		fontSize: font.sm,
-		fontWeight: '600',
-		letterSpacing: 0.5,
-		textTransform: 'uppercase',
-		color: colors.textSecondary,
-	},
-	row: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		minHeight: 52,
-		paddingHorizontal: spacing.md,
-		borderRadius: radius.md,
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-	},
-	rowPressed: {
-		opacity: 0.7,
-	},
-	rowValue: {
-		fontSize: font.md,
-		color: colors.text,
-	},
-	rowAction: {
-		fontSize: font.base,
-		color: colors.brand,
-		fontWeight: '600',
-	},
-	editBlock: {
-		gap: spacing.sm,
-	},
-	editActions: {
-		flexDirection: 'row',
-		gap: spacing.sm,
-	},
-	editButton: {
-		flex: 1,
-	},
-	errorText: {
-		color: colors.error,
-		fontSize: font.sm,
-	},
-	signOutWrap: {
-		marginTop: spacing.xl,
-	},
-})
+function ThemeSegmentControl() {
+	const { colors, mode, setMode } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	const [containerWidth, setContainerWidth] = useState(0)
+	const activeIndex = THEME_OPTIONS.findIndex((o) => o.key === mode)
+	const [slideAnim] = useState(() => new Animated.Value(activeIndex))
+
+	useEffect(() => {
+		Animated.spring(slideAnim, {
+			toValue: activeIndex,
+			useNativeDriver: true,
+			damping: 20,
+			stiffness: 200,
+		}).start()
+	}, [activeIndex, slideAnim])
+
+	const pillWidth = containerWidth > 0 ? (containerWidth - 12) / 3 : 0
+	const translateX = slideAnim.interpolate({
+		inputRange: [0, 1, 2],
+		outputRange: [4, 4 + pillWidth + 2, 4 + (pillWidth + 2) * 2],
+	})
+
+	return (
+		<View
+			style={styles.segmentControl}
+			onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+		>
+			{containerWidth > 0 && (
+				<Animated.View
+					style={[
+						styles.slidingPill,
+						{
+							width: pillWidth,
+							transform: [{ translateX }],
+						},
+					]}
+				/>
+			)}
+			{THEME_OPTIONS.map((opt) => {
+				const isActive = mode === opt.key
+				return (
+					<Pressable
+						key={opt.key}
+						style={styles.segmentPill}
+						onPress={() => setMode(opt.key)}
+					>
+						<Text
+							style={[
+								styles.segmentLabel,
+								{
+									color: isActive
+										? colors.white
+										: colors.textSecondary,
+								},
+							]}
+						>
+							{opt.label}
+						</Text>
+					</Pressable>
+				)
+			})}
+		</View>
+	)
+}
+
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		container: {
+			padding: spacing.lg,
+			gap: spacing.xl,
+		},
+		avatarSection: {
+			alignItems: 'center',
+			gap: spacing.sm,
+			marginTop: spacing.lg,
+		},
+		avatarOverlay: {
+			...StyleSheet.absoluteFillObject,
+			borderRadius: 999,
+			backgroundColor: 'rgba(0,0,0,0.45)',
+			alignItems: 'center',
+			justifyContent: 'center',
+		},
+		changePhoto: {
+			fontSize: font.base,
+			fontWeight: '600',
+			color: colors.brand,
+			paddingVertical: spacing.xs,
+		},
+		displayUsername: {
+			fontSize: font.xl,
+			fontWeight: '700',
+			color: colors.text,
+			marginTop: spacing.sm,
+		},
+		section: {
+			gap: spacing.sm,
+		},
+		sectionLabel: {
+			fontSize: font.sm,
+			fontWeight: '600',
+			letterSpacing: 0.5,
+			textTransform: 'uppercase',
+			color: colors.textSecondary,
+		},
+		row: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			minHeight: 52,
+			paddingHorizontal: spacing.md,
+			borderRadius: radius.md,
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.card,
+		},
+		rowPressed: {
+			opacity: 0.7,
+		},
+		rowValue: {
+			fontSize: font.md,
+			color: colors.text,
+		},
+		rowAction: {
+			fontSize: font.base,
+			color: colors.brand,
+			fontWeight: '600',
+		},
+		editBlock: {
+			gap: spacing.sm,
+		},
+		editActions: {
+			flexDirection: 'row',
+			gap: spacing.sm,
+		},
+		editButton: {
+			flex: 1,
+		},
+		errorText: {
+			color: colors.error,
+			fontSize: font.sm,
+		},
+		signOutWrap: {
+			marginTop: spacing.xl,
+		},
+		segmentControl: {
+			flexDirection: 'row',
+			borderRadius: radius.full,
+			padding: 4,
+			gap: 2,
+			backgroundColor: colors.cardAlt,
+		},
+		slidingPill: {
+			position: 'absolute',
+			top: 4,
+			bottom: 4,
+			borderRadius: radius.full,
+			backgroundColor: colors.brand,
+		},
+		segmentPill: {
+			flex: 1,
+			paddingVertical: spacing.sm,
+			borderRadius: radius.full,
+			alignItems: 'center',
+		},
+		segmentLabel: {
+			fontSize: font.sm,
+			fontWeight: '600',
+		},
+	})
+}

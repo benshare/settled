@@ -3,9 +3,10 @@ import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
 import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
-import { colors, font, spacing } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, spacing } from '@/lib/theme'
 import { useRouter } from 'expo-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
 	KeyboardAvoidingView,
 	Platform,
@@ -31,6 +32,8 @@ export default function SetUsernameScreen() {
 	const [error, setError] = useState<string | null>(null)
 	const { user } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 
 	async function handleSubmit() {
 		if (!user) return
@@ -107,34 +110,36 @@ export default function SetUsernameScreen() {
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: colors.background,
-	},
-	flex: {
-		flex: 1,
-	},
-	container: {
-		flex: 1,
-		justifyContent: 'space-between',
-		paddingHorizontal: spacing.lg,
-		paddingVertical: spacing.xl,
-	},
-	intro: {
-		gap: spacing.sm,
-		marginTop: spacing.xl,
-	},
-	title: {
-		fontSize: font.xl,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	subtitle: {
-		fontSize: font.md,
-		color: colors.textSecondary,
-	},
-	form: {
-		gap: spacing.md,
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		flex: {
+			flex: 1,
+		},
+		container: {
+			flex: 1,
+			justifyContent: 'space-between',
+			paddingHorizontal: spacing.lg,
+			paddingVertical: spacing.xl,
+		},
+		intro: {
+			gap: spacing.sm,
+			marginTop: spacing.xl,
+		},
+		title: {
+			fontSize: font.xl,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		subtitle: {
+			fontSize: font.md,
+			color: colors.textSecondary,
+		},
+		form: {
+			gap: spacing.md,
+		},
+	})
+}

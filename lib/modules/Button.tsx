@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import {
 	ActivityIndicator,
 	Pressable,
@@ -8,7 +8,8 @@ import {
 	Text,
 	ViewStyle,
 } from 'react-native'
-import { colors, font, radius, spacing } from '../theme'
+import { useTheme } from '../ThemeContext'
+import { ColorScheme, font, radius, spacing } from '../theme'
 
 type ButtonVariant = 'primary' | 'secondary'
 
@@ -27,6 +28,8 @@ export function Button({
 	style,
 	...rest
 }: ButtonProps) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const isDisabled = disabled || loading
 	const isPrimary = variant === 'primary'
 
@@ -61,33 +64,35 @@ export function Button({
 	)
 }
 
-const styles = StyleSheet.create({
-	base: {
-		minHeight: 52,
-		paddingVertical: 14,
-		paddingHorizontal: spacing.xl,
-		borderRadius: radius.md,
-		alignItems: 'center',
-		justifyContent: 'center',
-		flexDirection: 'row',
-	},
-	primary: {
-		backgroundColor: colors.text,
-	},
-	secondary: {
-		backgroundColor: colors.card,
-		borderWidth: 1,
-		borderColor: colors.border,
-	},
-	disabled: {
-		opacity: 0.4,
-	},
-	pressed: {
-		opacity: 0.85,
-	},
-	label: {
-		fontSize: font.md,
-		fontWeight: '600',
-		letterSpacing: 0.2,
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		base: {
+			minHeight: 52,
+			paddingVertical: 14,
+			paddingHorizontal: spacing.xl,
+			borderRadius: radius.md,
+			alignItems: 'center',
+			justifyContent: 'center',
+			flexDirection: 'row',
+		},
+		primary: {
+			backgroundColor: colors.brand,
+		},
+		secondary: {
+			backgroundColor: colors.card,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		disabled: {
+			opacity: 0.4,
+		},
+		pressed: {
+			opacity: 0.85,
+		},
+		label: {
+			fontSize: font.md,
+			fontWeight: '600',
+			letterSpacing: 0.2,
+		},
+	})
+}

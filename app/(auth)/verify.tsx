@@ -1,7 +1,9 @@
 import { useAuth } from '@/lib/auth'
 import { useProfileStore } from '@/lib/stores/useProfileStore'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
 	KeyboardAvoidingView,
 	Platform,
@@ -20,6 +22,8 @@ export default function VerifyScreen() {
 	const { phone } = useLocalSearchParams<{ phone: string }>()
 	const { verifyOtp, signInWithPhone } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 
 	const maskedPhone = phone
 		? phone.replace(
@@ -88,7 +92,7 @@ export default function VerifyScreen() {
 						<TextInput
 							style={styles.input}
 							placeholder="000000"
-							placeholderTextColor="#999"
+							placeholderTextColor={colors.textMuted}
 							keyboardType="number-pad"
 							textContentType="oneTimeCode"
 							maxLength={6}
@@ -133,90 +137,94 @@ export default function VerifyScreen() {
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: '#fff',
-	},
-	flex: {
-		flex: 1,
-	},
-	container: {
-		flex: 1,
-		justifyContent: 'space-between',
-		paddingHorizontal: 24,
-		paddingVertical: 32,
-	},
-	top: {
-		gap: 24,
-	},
-	back: {
-		alignSelf: 'flex-start',
-	},
-	backText: {
-		fontSize: 16,
-		color: '#0066ff',
-	},
-	intro: {
-		gap: 8,
-	},
-	title: {
-		fontSize: 28,
-		fontWeight: '700',
-		color: '#111',
-	},
-	subtitle: {
-		fontSize: 16,
-		color: '#666',
-	},
-	subtitleBold: {
-		fontWeight: '600',
-		color: '#111',
-	},
-	form: {
-		gap: 12,
-	},
-	input: {
-		height: 48,
-		borderWidth: 1,
-		borderColor: '#ddd',
-		borderRadius: 8,
-		paddingHorizontal: 16,
-		fontSize: 18,
-		letterSpacing: 4,
-		color: '#111',
-	},
-	error: {
-		color: '#d00',
-		fontSize: 14,
-	},
-	button: {
-		height: 48,
-		borderRadius: 8,
-		backgroundColor: '#111',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	buttonDisabled: {
-		backgroundColor: '#ccc',
-	},
-	buttonPressed: {
-		opacity: 0.85,
-	},
-	buttonText: {
-		color: '#fff',
-		fontSize: 16,
-		fontWeight: '600',
-	},
-	resend: {
-		paddingVertical: 8,
-		alignItems: 'center',
-	},
-	resendText: {
-		fontSize: 14,
-		color: '#666',
-	},
-	resendLink: {
-		color: '#0066ff',
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		flex: {
+			flex: 1,
+		},
+		container: {
+			flex: 1,
+			justifyContent: 'space-between',
+			paddingHorizontal: spacing.lg,
+			paddingVertical: spacing.xl,
+		},
+		top: {
+			gap: spacing.lg,
+		},
+		back: {
+			alignSelf: 'flex-start',
+		},
+		backText: {
+			fontSize: font.md,
+			color: colors.brand,
+		},
+		intro: {
+			gap: spacing.sm,
+		},
+		title: {
+			fontSize: font.xl,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		subtitle: {
+			fontSize: font.md,
+			color: colors.textSecondary,
+		},
+		subtitleBold: {
+			fontWeight: '600',
+			color: colors.text,
+		},
+		form: {
+			gap: spacing.sm,
+		},
+		input: {
+			minHeight: 52,
+			borderWidth: 1,
+			borderColor: colors.border,
+			borderRadius: radius.md,
+			paddingHorizontal: spacing.md,
+			paddingVertical: 14,
+			fontSize: font.lg,
+			letterSpacing: 4,
+			color: colors.text,
+			backgroundColor: colors.card,
+		},
+		error: {
+			color: colors.error,
+			fontSize: font.sm,
+		},
+		button: {
+			minHeight: 52,
+			borderRadius: radius.md,
+			backgroundColor: colors.brand,
+			alignItems: 'center',
+			justifyContent: 'center',
+		},
+		buttonDisabled: {
+			opacity: 0.4,
+		},
+		buttonPressed: {
+			opacity: 0.85,
+		},
+		buttonText: {
+			color: colors.white,
+			fontSize: font.md,
+			fontWeight: '600',
+		},
+		resend: {
+			paddingVertical: spacing.sm,
+			alignItems: 'center',
+		},
+		resendText: {
+			fontSize: font.sm,
+			color: colors.textSecondary,
+		},
+		resendLink: {
+			color: colors.brand,
+		},
+	})
+}

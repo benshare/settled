@@ -6,9 +6,11 @@ import {
 	useGamesStore,
 } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
-import { colors, font, radius, spacing } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import { useMemo } from 'react'
 import {
 	ActivityIndicator,
 	Pressable,
@@ -22,6 +24,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function HistoryScreen() {
 	const { user } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const pendingRequests = useGamesStore((s) => s.pendingRequests)
 	const activeGames = useGamesStore((s) => s.activeGames)
 	const completeGames = useGamesStore((s) => s.completeGames)
@@ -121,6 +125,8 @@ function PendingRow({
 	profilesById: Record<string, Profile>
 	onPress: () => void
 }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const { label } = describePendingRequest(request, meId, profilesById)
 	return (
 		<Pressable
@@ -155,6 +161,8 @@ function GameHistoryRow({
 	meId: string | undefined
 	onPress: () => void
 }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const names = game.participants
 		.map((id) => {
 			if (id === meId) return 'me'
@@ -183,60 +191,62 @@ function GameHistoryRow({
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: colors.background,
-	},
-	container: {
-		padding: spacing.lg,
-		gap: spacing.lg,
-	},
-	title: {
-		fontSize: font.xl,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	section: {
-		gap: spacing.sm,
-	},
-	sectionHeading: {
-		fontSize: font.sm,
-		fontWeight: '600',
-		letterSpacing: 0.5,
-		textTransform: 'uppercase',
-		color: colors.textSecondary,
-	},
-	row: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.sm,
-		paddingVertical: spacing.sm,
-		paddingHorizontal: spacing.md,
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-		borderRadius: radius.md,
-	},
-	pressed: {
-		opacity: 0.7,
-	},
-	rowText: {
-		flex: 1,
-		gap: 2,
-	},
-	rowPrimary: {
-		fontSize: font.md,
-		color: colors.text,
-	},
-	rowSecondary: {
-		fontSize: font.sm,
-		color: colors.textMuted,
-	},
-	emptyText: {
-		fontSize: font.base,
-		color: colors.textMuted,
-		textAlign: 'center',
-		marginTop: spacing.xl,
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		container: {
+			padding: spacing.lg,
+			gap: spacing.lg,
+		},
+		title: {
+			fontSize: font.xl,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		section: {
+			gap: spacing.sm,
+		},
+		sectionHeading: {
+			fontSize: font.sm,
+			fontWeight: '600',
+			letterSpacing: 0.5,
+			textTransform: 'uppercase',
+			color: colors.textSecondary,
+		},
+		row: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+			paddingVertical: spacing.sm,
+			paddingHorizontal: spacing.md,
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.card,
+			borderRadius: radius.md,
+		},
+		pressed: {
+			opacity: 0.7,
+		},
+		rowText: {
+			flex: 1,
+			gap: 2,
+		},
+		rowPrimary: {
+			fontSize: font.md,
+			color: colors.text,
+		},
+		rowSecondary: {
+			fontSize: font.sm,
+			color: colors.textMuted,
+		},
+		emptyText: {
+			fontSize: font.base,
+			color: colors.textMuted,
+			textAlign: 'center',
+			marginTop: spacing.xl,
+		},
+	})
+}

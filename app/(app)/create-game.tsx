@@ -4,7 +4,8 @@ import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
 import { useFriendsStore, type FriendEntry } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
-import { colors, font, spacing } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { useMemo, useState } from 'react'
@@ -22,6 +23,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function CreateGameScreen() {
 	const { user } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const friends = useFriendsStore((s) => s.friends)
 	const createRequest = useGamesStore((s) => s.createRequest)
 
@@ -153,6 +156,8 @@ function FriendToggleRow({
 	selected: boolean
 	onToggle: () => void
 }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
 		<Pressable
 			onPress={onToggle}
@@ -171,88 +176,90 @@ function FriendToggleRow({
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: colors.background,
-	},
-	flex: {
-		flex: 1,
-	},
-	header: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		paddingHorizontal: spacing.md,
-		paddingTop: spacing.sm,
-		paddingBottom: spacing.sm,
-	},
-	back: {
-		width: 40,
-		height: 40,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	pressed: {
-		opacity: 0.7,
-	},
-	title: {
-		fontSize: font.md,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	container: {
-		padding: spacing.lg,
-		gap: spacing.md,
-	},
-	hint: {
-		fontSize: font.base,
-		color: colors.textMuted,
-		textAlign: 'center',
-		marginTop: spacing.lg,
-	},
-	emptyWrap: {
-		flex: 1,
-		padding: spacing.lg,
-	},
-	list: {
-		gap: spacing.sm,
-	},
-	row: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.sm,
-		paddingVertical: spacing.sm,
-	},
-	rowUsername: {
-		flex: 1,
-		fontSize: font.md,
-		color: colors.text,
-	},
-	check: {
-		width: 28,
-		height: 28,
-		borderRadius: 999,
-		borderWidth: 1.5,
-		borderColor: colors.border,
-		alignItems: 'center',
-		justifyContent: 'center',
-		backgroundColor: colors.background,
-	},
-	checkSelected: {
-		backgroundColor: colors.text,
-		borderColor: colors.text,
-	},
-	footer: {
-		padding: spacing.lg,
-		gap: spacing.sm,
-		borderTopWidth: 1,
-		borderTopColor: colors.border,
-		backgroundColor: colors.background,
-	},
-	errorText: {
-		color: colors.error,
-		fontSize: font.sm,
-		textAlign: 'center',
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		flex: {
+			flex: 1,
+		},
+		header: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			paddingHorizontal: spacing.md,
+			paddingTop: spacing.sm,
+			paddingBottom: spacing.sm,
+		},
+		back: {
+			width: 40,
+			height: 40,
+			alignItems: 'center',
+			justifyContent: 'center',
+		},
+		pressed: {
+			opacity: 0.7,
+		},
+		title: {
+			fontSize: font.md,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		container: {
+			padding: spacing.lg,
+			gap: spacing.md,
+		},
+		hint: {
+			fontSize: font.base,
+			color: colors.textMuted,
+			textAlign: 'center',
+			marginTop: spacing.lg,
+		},
+		emptyWrap: {
+			flex: 1,
+			padding: spacing.lg,
+		},
+		list: {
+			gap: spacing.sm,
+		},
+		row: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+			paddingVertical: spacing.sm,
+		},
+		rowUsername: {
+			flex: 1,
+			fontSize: font.md,
+			color: colors.text,
+		},
+		check: {
+			width: 28,
+			height: 28,
+			borderRadius: 999,
+			borderWidth: 1.5,
+			borderColor: colors.border,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: colors.background,
+		},
+		checkSelected: {
+			backgroundColor: colors.brand,
+			borderColor: colors.brand,
+		},
+		footer: {
+			padding: spacing.lg,
+			gap: spacing.sm,
+			borderTopWidth: 1,
+			borderTopColor: colors.border,
+			backgroundColor: colors.background,
+		},
+		errorText: {
+			color: colors.error,
+			fontSize: font.sm,
+			textAlign: 'center',
+		},
+	})
+}

@@ -3,10 +3,11 @@ import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { type InvitedEntry, useGamesStore } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
-import { colors, font, radius, spacing } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -14,6 +15,8 @@ export default function PendingGameScreen() {
 	const { id } = useLocalSearchParams<{ id: string }>()
 	const { user } = useAuth()
 	const router = useRouter()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const request = useGamesStore((s) =>
 		(s.pendingRequests ?? []).find((r) => r.id === id)
 	)
@@ -103,6 +106,8 @@ function Body({
 	onAccept: () => void
 	onReject: () => void
 }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	const mine = request.invited.find((i) => i.user === meId)
 	const iAmProposer = meId === request.proposer
 	const someoneRejected = request.invited.some((i) => i.status === 'rejected')
@@ -177,6 +182,8 @@ function PersonRow({
 	label: string
 	youMark?: boolean
 }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
 		<View style={styles.personRow}>
 			{profile ? (
@@ -193,74 +200,76 @@ function PersonRow({
 	)
 }
 
-const styles = StyleSheet.create({
-	safe: {
-		flex: 1,
-		backgroundColor: colors.background,
-	},
-	header: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		paddingHorizontal: spacing.md,
-		paddingTop: spacing.sm,
-		paddingBottom: spacing.sm,
-	},
-	back: {
-		width: 40,
-		height: 40,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	pressed: {
-		opacity: 0.7,
-	},
-	title: {
-		fontSize: font.md,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	body: {
-		padding: spacing.lg,
-		gap: spacing.lg,
-	},
-	card: {
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-		borderRadius: radius.md,
-		padding: spacing.md,
-		gap: spacing.md,
-	},
-	personRow: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.sm,
-	},
-	avatarPlaceholder: {
-		width: 40,
-		height: 40,
-	},
-	personName: {
-		flex: 1,
-		fontSize: font.md,
-		color: colors.text,
-	},
-	personLabel: {
-		fontSize: font.sm,
-		color: colors.textSecondary,
-	},
-	actions: {
-		gap: spacing.sm,
-	},
-	hint: {
-		fontSize: font.base,
-		color: colors.textMuted,
-		textAlign: 'center',
-	},
-	errorText: {
-		color: colors.error,
-		fontSize: font.sm,
-		textAlign: 'center',
-	},
-})
+function makeStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		safe: {
+			flex: 1,
+			backgroundColor: colors.background,
+		},
+		header: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			paddingHorizontal: spacing.md,
+			paddingTop: spacing.sm,
+			paddingBottom: spacing.sm,
+		},
+		back: {
+			width: 40,
+			height: 40,
+			alignItems: 'center',
+			justifyContent: 'center',
+		},
+		pressed: {
+			opacity: 0.7,
+		},
+		title: {
+			fontSize: font.md,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		body: {
+			padding: spacing.lg,
+			gap: spacing.lg,
+		},
+		card: {
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.card,
+			borderRadius: radius.md,
+			padding: spacing.md,
+			gap: spacing.md,
+		},
+		personRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+		},
+		avatarPlaceholder: {
+			width: 40,
+			height: 40,
+		},
+		personName: {
+			flex: 1,
+			fontSize: font.md,
+			color: colors.text,
+		},
+		personLabel: {
+			fontSize: font.sm,
+			color: colors.textSecondary,
+		},
+		actions: {
+			gap: spacing.sm,
+		},
+		hint: {
+			fontSize: font.base,
+			color: colors.textMuted,
+			textAlign: 'center',
+		},
+		errorText: {
+			color: colors.error,
+			fontSize: font.sm,
+			textAlign: 'center',
+		},
+	})
+}
