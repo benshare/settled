@@ -1,23 +1,113 @@
 import { Ionicons } from '@expo/vector-icons'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
+import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
-import { Button } from '../modules/Button'
 import { playerColors, resourceColor } from './palette'
+import {
+	availableBankOptions,
+	isValidBankTradeShape,
+	lockedGiveResource,
+	ratioOf,
+} from './ports'
 import { canAfford, emptyHand, isValidTradeShape } from './trade'
-import type { ResourceHand } from './types'
+import type { BankKind, GameState, ResourceHand } from './types'
+
+type Mode =
+	| { kind: 'player' }
+	| { kind: 'bank_select' } // picking which ratio / port to use
+	| { kind: 'bank_compose'; choice: BankKind }
 
 // Form that replaces the main action bar when the proposer is composing a
-// trade. Lets the proposer pick what they give, what they request, and who
-// they send it to. Send fires the edge function; Cancel closes without sending.
+// trade. Player-trade mode is the default; a Bank button switches into a
+// two-step bank-trade flow.
 export function TradePanel({
+	meIdx,
+	myHand,
+	state,
+	playerOrder,
+	profilesById,
+	submitting,
+	onSend,
+	onSendBank,
+	onCancel,
+}: {
+	meIdx: number
+	myHand: ResourceHand
+	state: GameState
+	playerOrder: string[]
+	profilesById: Record<string, Profile>
+	submitting: boolean
+	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
+	onSendBank: (give: ResourceHand, receive: ResourceHand) => void
+	onCancel: () => void
+}) {
+	const [mode, setMode] = useState<Mode>({ kind: 'player' })
+
+	const bankOptions = useMemo(
+		() => availableBankOptions(state, meIdx),
+		[state, meIdx]
+	)
+
+	function startBank() {
+		// If the only option is 4:1 (no ports), skip the selector.
+		if (bankOptions.length === 1) {
+			setMode({ kind: 'bank_compose', choice: bankOptions[0] })
+		} else {
+			setMode({ kind: 'bank_select' })
+		}
+	}
+
+	if (mode.kind === 'player') {
+		return (
+			<PlayerTrade
+				meIdx={meIdx}
+				myHand={myHand}
+				playerOrder={playerOrder}
+				profilesById={profilesById}
+				submitting={submitting}
+				onBank={startBank}
+				onSend={onSend}
+				onCancel={onCancel}
+			/>
+		)
+	}
+	if (mode.kind === 'bank_select') {
+		return (
+			<BankSelect
+				options={bankOptions}
+				onPick={(choice) => setMode({ kind: 'bank_compose', choice })}
+				onBack={() => setMode({ kind: 'player' })}
+			/>
+		)
+	}
+	return (
+		<BankCompose
+			choice={mode.choice}
+			myHand={myHand}
+			submitting={submitting}
+			onBack={() =>
+				setMode(
+					bankOptions.length === 1
+						? { kind: 'player' }
+						: { kind: 'bank_select' }
+				)
+			}
+			onCancel={onCancel}
+			onSend={onSendBank}
+		/>
+	)
+}
+
+function PlayerTrade({
 	meIdx,
 	myHand,
 	playerOrder,
 	profilesById,
 	submitting,
+	onBank,
 	onSend,
 	onCancel,
 }: {
@@ -26,12 +116,12 @@ export function TradePanel({
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	submitting: boolean
+	onBank: () => void
 	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
 	onCancel: () => void
 }) {
 	const [give, setGive] = useState<ResourceHand>(emptyHand)
 	const [receive, setReceive] = useState<ResourceHand>(emptyHand)
-	// Default: address all other players. null means "all (empty list)".
 	const [addressed, setAddressed] = useState<number[]>(() =>
 		playerOrder.map((_, i) => i).filter((i) => i !== meIdx)
 	)
@@ -45,8 +135,6 @@ export function TradePanel({
 		)
 	}
 
-	// Capped by my hand for give; capped by "what would make the shape valid"
-	// for receive (we still let them go up, but Send is gated on validity).
 	function bumpGive(r: Resource, delta: 1 | -1) {
 		setGive((prev) => {
 			const next = { ...prev, [r]: prev[r] + delta }
@@ -67,7 +155,6 @@ export function TradePanel({
 	const canPropose =
 		shapeValid && canAfford(myHand, give) && addressed.length > 0
 
-	// Normalize addressed for send: if all others are selected, send [] (all).
 	function send() {
 		const to = allSelected ? [] : [...addressed]
 		onSend(give, receive, to)
@@ -75,15 +162,32 @@ export function TradePanel({
 
 	return (
 		<View style={styles.wrap}>
+			<View style={styles.headerRow}>
+				<Text style={styles.heading}>Trade</Text>
+				<Pressable
+					onPress={onBank}
+					style={({ pressed }) => [
+						styles.bankBtn,
+						pressed && styles.pressed,
+					]}
+				>
+					<Ionicons
+						name="business-outline"
+						size={14}
+						color={colors.text}
+					/>
+					<Text style={styles.bankBtnLabel}>Trade with bank</Text>
+				</Pressable>
+			</View>
 			<Text style={styles.sectionLabel}>You give</Text>
-			<ResourceRow
+			<ResourceStepperRow
 				hand={give}
 				cap={myHand}
 				onBump={bumpGive}
 				otherSide={receive}
 			/>
 			<Text style={styles.sectionLabel}>You receive</Text>
-			<ResourceRow
+			<ResourceStepperRow
 				hand={receive}
 				cap={null}
 				onBump={bumpReceive}
@@ -127,7 +231,234 @@ export function TradePanel({
 	)
 }
 
-function ResourceRow({
+function BankSelect({
+	options,
+	onPick,
+	onBack,
+}: {
+	options: BankKind[]
+	onPick: (choice: BankKind) => void
+	onBack: () => void
+}) {
+	return (
+		<View style={styles.wrap}>
+			<View style={styles.headerRow}>
+				<Text style={styles.heading}>Trade with bank</Text>
+				<Pressable
+					onPress={onBack}
+					style={({ pressed }) => [
+						styles.linkBtn,
+						pressed && styles.pressed,
+					]}
+				>
+					<Ionicons
+						name="chevron-back"
+						size={14}
+						color={colors.text}
+					/>
+					<Text style={styles.linkBtnLabel}>Back</Text>
+				</Pressable>
+			</View>
+			<Text style={styles.sectionLabel}>Choose ratio</Text>
+			<View style={styles.optionCol}>
+				{options.map((opt) => (
+					<BankOptionCard
+						key={opt}
+						kind={opt}
+						onPress={() => onPick(opt)}
+					/>
+				))}
+			</View>
+		</View>
+	)
+}
+
+function BankOptionCard({
+	kind,
+	onPress,
+}: {
+	kind: BankKind
+	onPress: () => void
+}) {
+	const locked = lockedGiveResource(kind)
+	const ratio = ratioOf(kind)
+	const title = locked
+		? `2:1 ${RESOURCE_LABELS[locked]} port`
+		: kind === '3:1'
+			? '3:1 generic port'
+			: '4:1 bank'
+	const subtitle = locked
+		? `Trade 2 ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
+		: kind === '3:1'
+			? 'Trade 3 of any one resource for 1 of anything else.'
+			: 'Default rate: trade 4 of any one resource for 1 of anything else.'
+	const accent = locked ? resourceColor[locked] : '#CCCCCC'
+	return (
+		<Pressable
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.optionCard,
+				pressed && styles.pressed,
+			]}
+		>
+			<View
+				style={[
+					styles.optionRatio,
+					{ backgroundColor: accent },
+					!locked && { borderWidth: 1, borderColor: colors.border },
+				]}
+			>
+				<Text style={styles.optionRatioText}>{ratio}:1</Text>
+			</View>
+			<View style={styles.optionBody}>
+				<Text style={styles.optionTitle}>{title}</Text>
+				<Text style={styles.optionSubtitle}>{subtitle}</Text>
+			</View>
+		</Pressable>
+	)
+}
+
+function BankCompose({
+	choice,
+	myHand,
+	submitting,
+	onBack,
+	onCancel,
+	onSend,
+}: {
+	choice: BankKind
+	myHand: ResourceHand
+	submitting: boolean
+	onBack: () => void
+	onCancel: () => void
+	onSend: (give: ResourceHand, receive: ResourceHand) => void
+}) {
+	const [give, setGive] = useState<ResourceHand>(emptyHand)
+	const [receive, setReceive] = useState<ResourceHand>(emptyHand)
+
+	const ratio = ratioOf(choice)
+	const locked = lockedGiveResource(choice)
+
+	const giveTotal = RESOURCES.reduce((a, r) => a + give[r], 0)
+	const receiveTotal = RESOURCES.reduce((a, r) => a + receive[r], 0)
+	const groups = giveTotal / ratio
+	const slotsRemaining = Math.max(0, groups - receiveTotal)
+
+	function addGive(r: Resource) {
+		setGive((prev) => {
+			if (locked && r !== locked) return prev
+			const remaining = myHand[r] - prev[r]
+			if (remaining < ratio) return prev
+			if (receive[r] > 0) return prev
+			return { ...prev, [r]: prev[r] + ratio }
+		})
+	}
+	function addReceive(r: Resource) {
+		setReceive((prev) => {
+			if (slotsRemaining <= 0) return prev
+			if (give[r] > 0) return prev
+			return { ...prev, [r]: prev[r] + 1 }
+		})
+	}
+	function reset() {
+		setGive(emptyHand())
+		setReceive(emptyHand())
+	}
+
+	const valid =
+		isValidBankTradeShape(give, receive, choice) && canAfford(myHand, give)
+
+	return (
+		<View style={styles.wrap}>
+			<View style={styles.headerRow}>
+				<Text style={styles.heading}>
+					{locked
+						? `2:1 ${RESOURCE_LABELS[locked]} port`
+						: choice === '3:1'
+							? '3:1 generic port'
+							: '4:1 bank'}
+				</Text>
+				<Pressable
+					onPress={onBack}
+					style={({ pressed }) => [
+						styles.linkBtn,
+						pressed && styles.pressed,
+					]}
+				>
+					<Ionicons
+						name="chevron-back"
+						size={14}
+						color={colors.text}
+					/>
+					<Text style={styles.linkBtnLabel}>Back</Text>
+				</Pressable>
+			</View>
+
+			<Text style={styles.sectionLabel}>
+				You give{' '}
+				<Text style={styles.ratioHint}>(tap = {ratio} at a time)</Text>
+			</Text>
+			<ResourceTapRow
+				hand={give}
+				onTap={addGive}
+				isTappable={(r) => {
+					if (locked && r !== locked) return false
+					if (receive[r] > 0) return false
+					return myHand[r] - give[r] >= ratio
+				}}
+			/>
+
+			<Text style={styles.sectionLabel}>You receive</Text>
+			<ResourceTapRow
+				hand={receive}
+				onTap={addReceive}
+				isTappable={(r) => slotsRemaining > 0 && give[r] === 0}
+			/>
+
+			<View style={styles.bankFooterRow}>
+				<Text style={styles.bankSummary}>
+					{giveTotal === 0
+						? `Pick ${ratio} of a resource to start.`
+						: `${giveTotal} → ${receiveTotal} of ${groups} available`}
+				</Text>
+				<Pressable
+					onPress={reset}
+					disabled={giveTotal === 0 && receiveTotal === 0}
+					style={({ pressed }) => [
+						styles.linkBtn,
+						giveTotal === 0 &&
+							receiveTotal === 0 &&
+							styles.linkBtnDisabled,
+						pressed && styles.pressed,
+					]}
+				>
+					<Ionicons name="refresh" size={14} color={colors.text} />
+					<Text style={styles.linkBtnLabel}>Reset</Text>
+				</Pressable>
+			</View>
+
+			<View style={styles.buttons}>
+				<Button
+					variant="secondary"
+					onPress={onCancel}
+					style={styles.cancelBtn}
+				>
+					Cancel
+				</Button>
+				<Button
+					onPress={() => onSend(give, receive)}
+					disabled={!valid}
+					loading={submitting}
+					style={styles.sendBtn}
+				>
+					Send
+				</Button>
+			</View>
+		</View>
+	)
+}
+
+function ResourceStepperRow({
 	hand,
 	cap,
 	onBump,
@@ -145,8 +476,6 @@ function ResourceRow({
 				const blockedByOverlap = otherSide[r] > 0
 				const canPlus = !atCap && !blockedByOverlap
 				const canMinus = hand[r] > 0
-				// A capped row (the "give" row) with zero available for this
-				// resource is fully disabled — not even the +/- are meaningful.
 				const cellDisabled = cap !== null && cap[r] === 0
 				return (
 					<View
@@ -174,6 +503,42 @@ function ResourceRow({
 							/>
 						</View>
 					</View>
+				)
+			})}
+		</View>
+	)
+}
+
+function ResourceTapRow({
+	hand,
+	isTappable,
+	onTap,
+}: {
+	hand: ResourceHand
+	isTappable: (r: Resource) => boolean
+	onTap: (r: Resource) => void
+}) {
+	return (
+		<View style={styles.resourceRow}>
+			{RESOURCES.map((r) => {
+				const tappable = isTappable(r)
+				return (
+					<Pressable
+						key={r}
+						disabled={!tappable}
+						onPress={() => onTap(r)}
+						style={({ pressed }) => [
+							styles.tapCell,
+							{ backgroundColor: resourceColor[r] },
+							!tappable && styles.resourceCellDisabled,
+							pressed && tappable && styles.pressed,
+						]}
+					>
+						<Text style={styles.resourceLabel}>
+							{RESOURCE_LABELS[r]}
+						</Text>
+						<Text style={styles.tapCount}>{hand[r]}</Text>
+					</Pressable>
 				)
 			})}
 		</View>
@@ -257,12 +622,99 @@ const styles = StyleSheet.create({
 		paddingBottom: spacing.md,
 		gap: spacing.xs,
 	},
+	headerRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: spacing.sm,
+	},
+	heading: {
+		fontSize: font.md,
+		fontWeight: '700',
+		color: colors.text,
+	},
+	bankBtn: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 4,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 4,
+		borderRadius: radius.full,
+		borderWidth: 1,
+		borderColor: colors.border,
+		backgroundColor: colors.card,
+	},
+	bankBtnLabel: {
+		fontSize: font.sm,
+		fontWeight: '600',
+		color: colors.text,
+	},
+	linkBtn: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 2,
+		paddingHorizontal: spacing.xs,
+		paddingVertical: 4,
+	},
+	linkBtnDisabled: {
+		opacity: 0.35,
+	},
+	linkBtnLabel: {
+		fontSize: font.sm,
+		fontWeight: '600',
+		color: colors.text,
+	},
 	sectionLabel: {
 		fontSize: font.sm,
 		fontWeight: '700',
 		color: colors.textSecondary,
 		textTransform: 'uppercase',
 		letterSpacing: 0.3,
+	},
+	ratioHint: {
+		fontSize: font.sm,
+		fontWeight: '500',
+		color: colors.textMuted,
+		textTransform: 'none',
+		letterSpacing: 0,
+	},
+	optionCol: {
+		gap: spacing.xs,
+	},
+	optionCard: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+		padding: spacing.sm,
+		borderRadius: radius.md,
+		borderWidth: 1,
+		borderColor: colors.border,
+		backgroundColor: colors.card,
+	},
+	optionRatio: {
+		width: 42,
+		height: 42,
+		borderRadius: radius.sm,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	optionRatioText: {
+		fontSize: font.sm,
+		fontWeight: '700',
+		color: '#1A1A1A',
+	},
+	optionBody: {
+		flex: 1,
+		gap: 2,
+	},
+	optionTitle: {
+		fontSize: font.md,
+		fontWeight: '700',
+		color: colors.text,
+	},
+	optionSubtitle: {
+		fontSize: font.sm,
+		color: colors.textSecondary,
 	},
 	resourceRow: {
 		flexDirection: 'row',
@@ -274,6 +726,18 @@ const styles = StyleSheet.create({
 		paddingVertical: spacing.xs,
 		alignItems: 'center',
 		gap: 2,
+	},
+	tapCell: {
+		flex: 1,
+		borderRadius: radius.sm,
+		paddingVertical: spacing.xs + 2,
+		alignItems: 'center',
+		gap: 2,
+	},
+	tapCount: {
+		fontSize: font.md,
+		fontWeight: '700',
+		color: colors.white,
 	},
 	resourceCellDisabled: {
 		opacity: 0.35,
@@ -324,6 +788,16 @@ const styles = StyleSheet.create({
 		borderWidth: 2,
 	},
 	chipLabel: {
+		fontSize: font.sm,
+		color: colors.textSecondary,
+	},
+	bankFooterRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		marginTop: spacing.xs,
+	},
+	bankSummary: {
 		fontSize: font.sm,
 		color: colors.textSecondary,
 	},

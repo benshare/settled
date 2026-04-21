@@ -2,6 +2,7 @@ import type {
 	Edge,
 	Hex,
 	HexNumber,
+	PortKind,
 	Resource,
 	Vertex,
 	VertexBuilding,
@@ -38,6 +39,20 @@ export type TradeOffer = {
 	createdAt: string
 }
 
+export type Port = { edge: Edge; kind: PortKind }
+
+// Ratio + resource scoping chosen by the player for a single bank trade.
+// '4:1' is the always-available default; '3:1' requires a generic port; the
+// resource-scoped '2:1-*' variants require the matching specific port.
+export type BankKind =
+	| '4:1'
+	| '3:1'
+	| '2:1-brick'
+	| '2:1-wood'
+	| '2:1-sheep'
+	| '2:1-wheat'
+	| '2:1-ore'
+
 export type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
@@ -65,6 +80,9 @@ export type GameState = {
 	players: PlayerState[]
 	phase: Phase
 	robber: Hex
+	// Optional so games created before ports existed still parse. New games
+	// always seed 9 ports; readers should default a missing array to empty.
+	ports?: Port[]
 }
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }

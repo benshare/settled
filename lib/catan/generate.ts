@@ -1,12 +1,14 @@
 import {
 	HEXES,
+	PORT_SLOTS,
 	RESOURCES,
 	STANDARD_NUMBERS,
+	STANDARD_PORT_KINDS,
 	STANDARD_RESOURCE_COUNTS,
 	type Hex,
 	type Resource,
 } from './board'
-import type { GameState, HexData, Variant } from './types'
+import type { GameState, HexData, Port, Variant } from './types'
 
 function shuffle<T>(xs: readonly T[]): T[] {
 	const a = [...xs]
@@ -47,6 +49,14 @@ export function generateHexes(variant: Variant): Record<Hex, HexData> {
 	return out
 }
 
+export function generatePorts(variant: Variant): Port[] {
+	if (variant !== 'standard') {
+		throw new Error(`unknown variant: ${variant}`)
+	}
+	const kinds = shuffle(STANDARD_PORT_KINDS)
+	return PORT_SLOTS.map((edge, i) => ({ edge, kind: kinds[i] }))
+}
+
 export function initialGameState(
 	variant: Variant,
 	playerCount: number
@@ -64,5 +74,6 @@ export function initialGameState(
 		})),
 		phase: { kind: 'initial_placement', round: 1, step: 'settlement' },
 		robber: desert,
+		ports: generatePorts(variant),
 	}
 }

@@ -101,6 +101,7 @@ function GameBody() {
 	const proposeTrade = useGamesStore((s) => s.proposeTrade)
 	const acceptTrade = useGamesStore((s) => s.acceptTrade)
 	const cancelTrade = useGamesStore((s) => s.cancelTrade)
+	const bankTrade = useGamesStore((s) => s.bankTrade)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
@@ -334,6 +335,18 @@ function GameBody() {
 		if (res.error) notify(res.error)
 	}
 
+	async function onBankTrade(
+		give: ResourceHandType,
+		receive: ResourceHandType
+	) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await bankTrade(game.id, give, receive)
+		setSubmitting(false)
+		if (res.error) notify('Bank trade failed', res.error)
+		else setTradePanelOpen(false)
+	}
+
 	// Button enablement: only when it's my main-phase turn, I can afford the
 	// cost, AND there is at least one valid spot on the board.
 	const myHand = gameState?.players[meIdx]?.resources ?? null
@@ -501,14 +514,16 @@ function GameBody() {
 				/>
 			)}
 
-			{tradePanelOpen && myHand && (
+			{tradePanelOpen && myHand && gameState && (
 				<TradePanel
 					meIdx={meIdx}
 					myHand={myHand}
+					state={gameState}
 					playerOrder={game.player_order}
 					profilesById={profilesById}
 					submitting={submitting}
 					onSend={onProposeTrade}
+					onSendBank={onBankTrade}
 					onCancel={() => setTradePanelOpen(false)}
 				/>
 			)}

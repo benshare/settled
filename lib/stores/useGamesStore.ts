@@ -75,6 +75,14 @@ export type GameEvent =
 			at: string
 	  }
 	| { kind: 'trade_canceled'; offer_id: string; from: number; at: string }
+	| {
+			kind: 'bank_trade'
+			player: number
+			give: ResourceHand
+			receive: ResourceHand
+			ratio: 2 | 3 | 4
+			at: string
+	  }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
@@ -119,6 +127,11 @@ type GamesStore = {
 	) => Promise<ActionResult & { offerId?: string }>
 	acceptTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 	cancelTrade: (gameId: string, offerId: string) => Promise<ActionResult>
+	bankTrade: (
+		gameId: string,
+		give: ResourceHand,
+		receive: ResourceHand
+	) => Promise<ActionResult & { ratio?: 2 | 3 | 4 }>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -438,6 +451,22 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 		if (error || !data?.ok) return { error: "Couldn't cancel trade" }
 		return { error: null }
+	},
+
+	async bankTrade(gameId, give, receive) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'bank_trade',
+					game_id: gameId,
+					give,
+					receive,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't trade with bank" }
+		return { error: null, ratio: data.ratio }
 	},
 }))
 

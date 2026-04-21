@@ -1,9 +1,12 @@
 import {
+	adjacentHexes,
 	adjacentVertices,
+	edgeEndpoints,
 	type Hex,
 	type HexNumber,
 	type Vertex,
 } from './board'
+import type { Port } from './types'
 
 // Pointy-top hex with circumradius s:
 //   width = √3 · s, height = 2s
@@ -107,4 +110,54 @@ export const PIP_COUNT: Record<HexNumber, number> = {
 	10: 3,
 	11: 2,
 	12: 1,
+}
+
+export type PortVisual = {
+	port: Port
+	// Edge midpoint, where the two docks meet the badge side.
+	anchor: { x: number; y: number }
+	// Where the badge is drawn (offset outward from land).
+	badge: { x: number; y: number }
+	// Endpoint vertex positions, for drawing the docks.
+	docks: [{ x: number; y: number }, { x: number; y: number }]
+}
+
+// Position each port visually: the badge sits on the water side of the
+// coastal edge, offset outward from the adjacent land hex's center.
+export function computePortLayout(
+	layout: BoardLayout,
+	ports: readonly Port[]
+): PortVisual[] {
+	const vertexPos = computeVertexPositions(layout)
+	const hexById = new Map(layout.hexes.map((h) => [h.id, h]))
+	const out: PortVisual[] = []
+	for (const port of ports) {
+		const [va, vb] = edgeEndpoints(port.edge)
+		const pa = vertexPos[va]
+		const pb = vertexPos[vb]
+		const mid = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 }
+		// Every port edge has exactly one adjacent land hex.
+		const landHexId = commonHex(va, vb)
+		if (!landHexId) continue
+		const h = hexById.get(landHexId)
+		if (!h) continue
+		const dx = mid.x - h.cx
+		const dy = mid.y - h.cy
+		const len = Math.hypot(dx, dy) || 1
+		const offset = layout.s * 0.55
+		const badge = {
+			x: mid.x + (dx / len) * offset,
+			y: mid.y + (dy / len) * offset,
+		}
+		out.push({ port, anchor: mid, badge, docks: [pa, pb] })
+	}
+	return out
+}
+
+function commonHex(va: Vertex, vb: Vertex): Hex | null {
+	const set = new Set(adjacentHexes[va])
+	for (const h of adjacentHexes[vb]) {
+		if (set.has(h)) return h
+	}
+	return null
 }

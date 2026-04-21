@@ -191,6 +191,86 @@ export type HexNumber = (typeof STANDARD_NUMBERS)[number]
 export const VERTEX_BUILDINGS = ['settlement', 'city'] as const
 export type VertexBuilding = (typeof VERTEX_BUILDINGS)[number]
 
+// --- Ports (harbors) -------------------------------------------------------
+
+// Coastal ring: the 30 edges where only one land hex borders the edge. Listed
+// in clockwise order starting from the top of hex 1A — order matters because
+// PORT_SLOTS picks by index and `dev/check-catan-ports.ts` validates the
+// 1-adjacent-hex property of every entry.
+export const COASTAL_EDGES: readonly Edge[] = [
+	'1B - 1C',
+	'1C - 1D',
+	'1D - 1E',
+	'1E - 1F',
+	'1F - 1G',
+	'1G - 2H',
+	'2H - 2I',
+	'2I - 3J',
+	'3J - 3K',
+	'3K - 4K',
+	'4J - 4K',
+	'4J - 5I',
+	'5H - 5I',
+	'5H - 6G',
+	'6F - 6G',
+	'6E - 6F',
+	'6D - 6E',
+	'6C - 6D',
+	'6B - 6C',
+	'6A - 6B',
+	'5B - 6A',
+	'5A - 5B',
+	'4B - 5A',
+	'4A - 4B',
+	'3A - 4A',
+	'3A - 3B',
+	'2A - 3B',
+	'2A - 2B',
+	'1A - 2B',
+	'1A - 1B',
+]
+
+// The 9 canonical port slots. Picked from COASTAL_EDGES with a 3-3-4 spacing
+// pattern (indices 0, 3, 7, 10, 13, 17, 20, 23, 27) so no two ports share a
+// coastal vertex — matching how standard Catan keeps ports visually spaced.
+// Port positions are fixed across games; only port kinds are shuffled.
+export const PORT_SLOTS: readonly Edge[] = [
+	'1B - 1C',
+	'1E - 1F',
+	'2I - 3J',
+	'4J - 4K',
+	'5H - 6G',
+	'6C - 6D',
+	'5B - 6A',
+	'4A - 4B',
+	'2A - 2B',
+]
+
+// '3:1' is a generic port (any resource at 3:1). Resource-kinded ports are
+// 2:1 for that specific resource.
+export const PORT_KINDS = [
+	'3:1',
+	'brick',
+	'wood',
+	'sheep',
+	'wheat',
+	'ore',
+] as const
+export type PortKind = (typeof PORT_KINDS)[number]
+
+// Standard distribution: 4 generic + 1 per resource = 9.
+export const STANDARD_PORT_KINDS: readonly PortKind[] = [
+	'3:1',
+	'3:1',
+	'3:1',
+	'3:1',
+	'brick',
+	'wood',
+	'sheep',
+	'wheat',
+	'ore',
+]
+
 // --- Adjacency -------------------------------------------------------------
 
 // Each hex's 6 corner vertices in clockwise order starting from N.

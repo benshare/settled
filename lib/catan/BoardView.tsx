@@ -6,8 +6,13 @@ import { BuildLayer, type BuildSelection } from './BuildLayer'
 import { type BuildKind } from './build'
 import { EdgePiece } from './EdgePiece'
 import { HexTile } from './HexTile'
-import { computeBoardLayout, computeVertexPositions } from './layout'
+import {
+	computeBoardLayout,
+	computePortLayout,
+	computeVertexPositions,
+} from './layout'
 import { PlacementLayer, type PlacementSelection } from './PlacementLayer'
+import { PortBadge } from './PortBadge'
 import { RobberLayer } from './RobberLayer'
 import { RobberPiece } from './RobberPiece'
 import type { GameState } from './types'
@@ -84,6 +89,7 @@ function BoardSvg({
 }) {
 	const layout = computeBoardLayout(boxW * 0.9, boxH * 0.9)
 	const vertexPositions = computeVertexPositions(layout)
+	const portVisuals = computePortLayout(layout, state.ports ?? [])
 	const offsetX = (boxW - layout.width) / 2
 	const offsetY = (boxH - layout.height) / 2
 
@@ -97,6 +103,9 @@ function BoardSvg({
 						size={layout.s}
 						data={state.hexes[h.id]}
 					/>
+				))}
+				{portVisuals.map((pv) => (
+					<PortBadge key={pv.port.edge} visual={pv} size={layout.s} />
 				))}
 				{Object.entries(state.edges).map(([eid, es]) => {
 					if (!es || !es.occupied) return null

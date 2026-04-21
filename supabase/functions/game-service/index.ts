@@ -102,6 +102,12 @@ type CancelTradeBody = {
 	game_id: string
 	offer_id: string
 }
+type BankTradeBody = {
+	action: 'bank_trade'
+	game_id: string
+	give: unknown
+	receive: unknown
+}
 type Body =
 	| RespondBody
 	| PlaceSettlementBody
@@ -117,6 +123,7 @@ type Body =
 	| ProposeTradeBody
 	| AcceptTradeBody
 	| CancelTradeBody
+	| BankTradeBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -441,6 +448,42 @@ type TradeOffer = {
 	createdAt: string
 }
 
+type PortKind = '3:1' | Resource
+type Port = { edge: Edge; kind: PortKind }
+type BankKind =
+	| '4:1'
+	| '3:1'
+	| '2:1-brick'
+	| '2:1-wood'
+	| '2:1-sheep'
+	| '2:1-wheat'
+	| '2:1-ore'
+
+// Canonical 9 port slots (matches lib/catan/board.ts PORT_SLOTS).
+const PORT_SLOTS: readonly Edge[] = [
+	'1B - 1C',
+	'1E - 1F',
+	'2I - 3J',
+	'4J - 4K',
+	'5H - 6G',
+	'6C - 6D',
+	'5B - 6A',
+	'4A - 4B',
+	'2A - 2B',
+]
+
+const STANDARD_PORT_KINDS: readonly PortKind[] = [
+	'3:1',
+	'3:1',
+	'3:1',
+	'3:1',
+	'brick',
+	'wood',
+	'sheep',
+	'wheat',
+	'ore',
+]
+
 type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
@@ -462,6 +505,7 @@ type GameState = {
 	players: PlayerState[]
 	phase: Phase
 	robber: Hex
+	ports?: Port[]
 }
 
 function vertexStateOf(state: GameState, v: Vertex): VertexState {
@@ -773,6 +817,105 @@ function newTradeId(): string {
 	return Math.random().toString(36).slice(2, 10)
 }
 
+// --- Port / bank-trade rules (must match lib/catan/ports) ------------------
+
+function playerPortKinds(state: GameState, playerIdx: number): Set<PortKind> {
+	const out = new Set<PortKind>()
+	const ports = state.ports ?? []
+	for (const p of ports) {
+		const [a, b] = edgeEndpoints(p.edge)
+		for (const v of [a, b]) {
+			const vs = vertexStateOf(state, v)
+			if (vs.occupied && vs.player === playerIdx) {
+				out.add(p.kind)
+				break
+			}
+		}
+	}
+	return out
+}
+
+function ratioOfBank(kind: BankKind): 2 | 3 | 4 {
+	if (kind === '4:1') return 4
+	if (kind === '3:1') return 3
+	return 2
+}
+
+// Given a give/receive hand, infer which bank kind the caller is trying to
+// use — highest-quality ratio they can support. Returns null if the hand
+// can't be parsed into any kind the player actually has access to.
+function inferBankKind(
+	state: GameState,
+	playerIdx: number,
+	give: ResourceHand
+): BankKind | null {
+	const kinds = playerPortKinds(state, playerIdx)
+	const giveResources = RESOURCES.filter((r) => give[r] > 0)
+	if (giveResources.length === 0) return null
+
+	// Single-resource give → could be any; prefer 2:1 port for that resource,
+	// then 3:1, then 4:1.
+	if (giveResources.length === 1) {
+		const only = giveResources[0]
+		if (kinds.has(only) && give[only] % 2 === 0) {
+			return `2:1-${only}` as BankKind
+		}
+		if (kinds.has('3:1') && give[only] % 3 === 0) return '3:1'
+		if (give[only] % 4 === 0) return '4:1'
+		return null
+	}
+
+	// Multi-resource give → can't use a 2:1 specific port. Prefer 3:1 then 4:1.
+	const allDivBy3 = giveResources.every((r) => give[r] % 3 === 0)
+	if (kinds.has('3:1') && allDivBy3) return '3:1'
+	const allDivBy4 = giveResources.every((r) => give[r] % 4 === 0)
+	if (allDivBy4) return '4:1'
+	return null
+}
+
+function isValidBankTradeShape(
+	give: ResourceHand,
+	receive: ResourceHand,
+	kind: BankKind
+): boolean {
+	const ratio = ratioOfBank(kind)
+	const locked: Resource | null = kind.startsWith('2:1-')
+		? (kind.slice(4) as Resource)
+		: null
+	let giveTotal = 0
+	let receiveTotal = 0
+	for (const r of RESOURCES) {
+		if (give[r] < 0 || receive[r] < 0) return false
+		if (give[r] > 0 && receive[r] > 0) return false
+		if (give[r] % ratio !== 0) return false
+		if (locked && give[r] > 0 && r !== locked) return false
+		giveTotal += give[r]
+		receiveTotal += receive[r]
+	}
+	return giveTotal > 0 && giveTotal === ratio * receiveTotal
+}
+
+function applyBankTradeToPlayer(
+	players: PlayerState[],
+	idx: number,
+	give: ResourceHand,
+	receive: ResourceHand
+): PlayerState[] {
+	return players.map((p, i) => {
+		if (i !== idx) return p
+		const next: ResourceHand = { ...p.resources }
+		for (const r of RESOURCES) {
+			next[r] = next[r] - give[r] + receive[r]
+		}
+		return { ...p, resources: next }
+	})
+}
+
+function generatePorts(): Port[] {
+	const kinds = shuffle(STANDARD_PORT_KINDS)
+	return PORT_SLOTS.map((edge, i) => ({ edge, kind: kinds[i] }))
+}
+
 // --- Game generation -------------------------------------------------------
 
 function generateHexes(): {
@@ -856,6 +999,7 @@ async function loadGame(
 		players: stateRow.players,
 		phase,
 		robber: stateRow.robber,
+		ports: stateRow.ports ?? [],
 	}
 	return { ok: true, game: game as GameRow, state }
 }
@@ -935,6 +1079,7 @@ async function handleRespond(
 			players: initialPlayers(playerOrder.length),
 			phase: INITIAL_PHASE,
 			robber: desert,
+			ports: generatePorts(),
 		})
 		if (stateErr) return err(500, 'could not create game state')
 
@@ -1872,6 +2017,63 @@ async function handleCancelTrade(
 	return json({ ok: true })
 }
 
+async function handleBankTrade(
+	admin: SupabaseClient,
+	me: string,
+	body: BankTradeBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const give = normalizeHand(body.give)
+	const receive = normalizeHand(body.receive)
+	if (!give || !receive) return err(400, 'invalid resource hand')
+
+	const kind = inferBankKind(state, meIdx, give)
+	if (!kind) return err(400, 'no valid bank ratio for this give hand')
+	if (!isValidBankTradeShape(give, receive, kind))
+		return err(400, 'invalid bank trade shape')
+	if (!canAfford(state.players[meIdx].resources, give))
+		return err(400, 'insufficient resources')
+
+	const nextPlayers = applyBankTradeToPlayer(
+		state.players,
+		meIdx,
+		give,
+		receive
+	)
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const ratio = ratioOfBank(kind)
+	const event = {
+		kind: 'bank_trade',
+		player: meIdx,
+		give,
+		receive,
+		ratio,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true, ratio })
+}
+
 serve(async (req) => {
 	if (req.method === 'OPTIONS') {
 		return new Response('ok', { headers: CORS_HEADERS })
@@ -1919,6 +2121,8 @@ serve(async (req) => {
 			return handleAcceptTrade(admin, me, body)
 		case 'cancel_trade':
 			return handleCancelTrade(admin, me, body)
+		case 'bank_trade':
+			return handleBankTrade(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}
