@@ -9,7 +9,7 @@ export function PortBadge({
 	visual: PortVisual
 	size: number
 }) {
-	const { port, anchor, badge, docks } = visual
+	const { port, badge, docks } = visual
 	const w = size * 0.9
 	const h = size * 0.42
 	const rx = h * 0.35
@@ -21,20 +21,24 @@ export function PortBadge({
 	return (
 		<G>
 			<Line
-				x1={anchor.x}
-				y1={anchor.y}
-				x2={docks[0].x}
-				y2={docks[0].y}
-				stroke={hexStroke}
-				strokeWidth={1.5}
+				x1={docks[0].x}
+				y1={docks[0].y}
+				x2={badge.x}
+				y2={badge.y}
+				stroke="#FFFFFF"
+				strokeWidth={1}
+				strokeOpacity={0.8}
+				strokeDasharray="2 3"
 			/>
 			<Line
-				x1={anchor.x}
-				y1={anchor.y}
-				x2={docks[1].x}
-				y2={docks[1].y}
-				stroke={hexStroke}
-				strokeWidth={1.5}
+				x1={docks[1].x}
+				y1={docks[1].y}
+				x2={badge.x}
+				y2={badge.y}
+				stroke="#FFFFFF"
+				strokeWidth={1}
+				strokeOpacity={0.8}
+				strokeDasharray="2 3"
 			/>
 			<Rect
 				x={badge.x - w / 2}
@@ -49,7 +53,7 @@ export function PortBadge({
 			/>
 			{!isGeneric && (
 				<Circle
-					cx={badge.x - w / 2 + h * 0.55}
+					cx={badge.x - w / 2 + h * 0.5}
 					cy={badge.y}
 					r={h * 0.28}
 					fill={accent}
@@ -58,9 +62,10 @@ export function PortBadge({
 				/>
 			)}
 			<SvgText
-				x={badge.x + (isGeneric ? 0 : h * 0.25)}
-				y={badge.y + h * 0.28}
+				x={badge.x + (isGeneric ? 0 : h * 0.4)}
+				y={badge.y}
 				textAnchor="middle"
+				alignmentBaseline="central"
 				fontSize={h * 0.62}
 				fontWeight="700"
 				fill="#1A1A1A"

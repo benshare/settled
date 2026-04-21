@@ -114,11 +114,12 @@ export const PIP_COUNT: Record<HexNumber, number> = {
 
 export type PortVisual = {
 	port: Port
-	// Edge midpoint, where the two docks meet the badge side.
+	// Edge midpoint — the near end of the badge (land-facing).
 	anchor: { x: number; y: number }
-	// Where the badge is drawn (offset outward from land).
+	// Center of the rendered port badge on the water side.
 	badge: { x: number; y: number }
-	// Endpoint vertex positions, for drawing the docks.
+	// Endpoint vertex positions of the coastal edge, used to draw dotted
+	// dock lines from each vertex toward the badge center.
 	docks: [{ x: number; y: number }, { x: number; y: number }]
 }
 

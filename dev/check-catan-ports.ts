@@ -84,6 +84,20 @@ function checkGenerate() {
 	for (let i = 0; i < kinds.length; i++) {
 		assert(kinds[i] === expected[i], 'port kind distribution mismatch')
 	}
+	// Alternation: even indices are 2:1 (resource-kinded), odd are 3:1.
+	for (let i = 0; i < ports.length; i++) {
+		if (i % 2 === 0) {
+			assert(
+				ports[i].kind !== '3:1',
+				`expected 2:1 at even index ${i}, got ${ports[i].kind}`
+			)
+		} else {
+			assert(
+				ports[i].kind === '3:1',
+				`expected 3:1 at odd index ${i}, got ${ports[i].kind}`
+			)
+		}
+	}
 	// initialGameState also seeds ports.
 	const gs = initialGameState('standard', 3)
 	assert(gs.ports && gs.ports.length === 9, 'initialGameState seeds ports')

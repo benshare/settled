@@ -144,6 +144,7 @@ function rowToState(row: Record<string, unknown>): GameState {
 		players: row.players as GameState['players'],
 		phase: row.phase as GameState['phase'],
 		robber: row.robber as GameState['robber'],
+		ports: (row.ports as GameState['ports']) ?? [],
 	}
 }
 

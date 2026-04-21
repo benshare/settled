@@ -472,18 +472,6 @@ const PORT_SLOTS: readonly Edge[] = [
 	'2A - 2B',
 ]
 
-const STANDARD_PORT_KINDS: readonly PortKind[] = [
-	'3:1',
-	'3:1',
-	'3:1',
-	'3:1',
-	'brick',
-	'wood',
-	'sheep',
-	'wheat',
-	'ore',
-]
-
 type Phase =
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
@@ -911,9 +899,15 @@ function applyBankTradeToPlayer(
 	})
 }
 
+// Alternate 2:1 / 3:1 around the canonical ring (even indices = 2:1,
+// odd = 3:1). Matches lib/catan/generate.ts.
 function generatePorts(): Port[] {
-	const kinds = shuffle(STANDARD_PORT_KINDS)
-	return PORT_SLOTS.map((edge, i) => ({ edge, kind: kinds[i] }))
+	const twoOnes = shuffle(RESOURCES) as Resource[]
+	let twoIdx = 0
+	return PORT_SLOTS.map((edge, i) => {
+		if (i % 2 === 0) return { edge, kind: twoOnes[twoIdx++] }
+		return { edge, kind: '3:1' }
+	})
 }
 
 // --- Game generation -------------------------------------------------------
