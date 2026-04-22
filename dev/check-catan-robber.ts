@@ -99,14 +99,14 @@ function testIsValidDiscardSelection() {
 }
 
 function testValidRobberHexes() {
-	const s = initialGameState('standard', 3)
+	const s = initialGameState('standard', 3, { bonuses: false })
 	const valids = validRobberHexes(s)
 	equal(valids.length, 18, 'exactly 18 valid hexes (all except current)')
 	assert(!valids.includes(s.robber), 'current robber hex excluded')
 }
 
 function testStealCandidatesOpponentWithCards() {
-	const s0 = initialGameState('standard', 3)
+	const s0 = initialGameState('standard', 3, { bonuses: false })
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
 	let s = placeBuilding(s0, v, 1, 'settlement')
@@ -122,7 +122,7 @@ function testStealCandidatesOpponentWithCards() {
 }
 
 function testStealCandidatesEmptyHand() {
-	const s0 = initialGameState('standard', 3)
+	const s0 = initialGameState('standard', 3, { bonuses: false })
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
 	const s = placeBuilding(s0, v, 1, 'settlement')
@@ -132,7 +132,7 @@ function testStealCandidatesEmptyHand() {
 }
 
 function testStealCandidatesExcludesSelf() {
-	const s0 = initialGameState('standard', 3)
+	const s0 = initialGameState('standard', 3, { bonuses: false })
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
 	let s = placeBuilding(s0, v, 0, 'settlement')
@@ -147,7 +147,7 @@ function testStealCandidatesExcludesSelf() {
 }
 
 function testDistributeSkipsRobberHex() {
-	const s0 = initialGameState('standard', 3)
+	const s0 = initialGameState('standard', 3, { bonuses: false })
 	const hex = firstResourceHex(s0)
 	const hd = s0.hexes[hex]
 	if (hd.resource === null) throw new Error('unreachable')

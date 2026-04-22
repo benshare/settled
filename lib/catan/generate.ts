@@ -7,7 +7,21 @@ import {
 	type Hex,
 	type Resource,
 } from './board'
-import type { GameState, HexData, Port, Variant } from './types'
+import {
+	BONUS_POOL,
+	CURSE_POOL,
+	type BonusId,
+	type CurseId,
+} from './bonuses'
+import {
+	type GameConfig,
+	type GameState,
+	type HexData,
+	type Phase,
+	type Port,
+	type SelectBonusHand,
+	type Variant,
+} from './types'
 
 function shuffle<T>(xs: readonly T[]): T[] {
 	const a = [...xs]
@@ -65,13 +79,33 @@ export function generatePorts(variant: Variant): Port[] {
 	})
 }
 
+// Deal a single player's select_bonus hand: two bonuses drawn from BONUS_POOL
+// (with replacement — the pool today has size 1) and one curse.
+export function dealBonusHand(): SelectBonusHand {
+	const pick = <T,>(xs: readonly T[]): T =>
+		xs[Math.floor(Math.random() * xs.length)]
+	const b0 = pick(BONUS_POOL).id as BonusId
+	const b1 = pick(BONUS_POOL).id as BonusId
+	const curse = pick(CURSE_POOL).id as CurseId
+	return { offered: [b0, b1], curse, chosen: null }
+}
+
 export function initialGameState(
 	variant: Variant,
-	playerCount: number
+	playerCount: number,
+	config: GameConfig
 ): GameState {
 	const hexes = generateHexes(variant)
 	const desert = HEXES.find((h) => hexes[h].resource === null)
 	if (!desert) throw new Error('no desert in generated board')
+	let phase: Phase
+	if (config.bonuses) {
+		const hands: Record<number, SelectBonusHand> = {}
+		for (let i = 0; i < playerCount; i++) hands[i] = dealBonusHand()
+		phase = { kind: 'select_bonus', hands }
+	} else {
+		phase = { kind: 'initial_placement', round: 1, step: 'settlement' }
+	}
 	return {
 		variant,
 		hexes,
@@ -80,8 +114,9 @@ export function initialGameState(
 		players: Array.from({ length: playerCount }, () => ({
 			resources: { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 },
 		})),
-		phase: { kind: 'initial_placement', round: 1, step: 'settlement' },
+		phase,
 		robber: desert,
 		ports: generatePorts(variant),
+		config,
 	}
 }

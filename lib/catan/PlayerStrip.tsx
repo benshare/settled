@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons'
-import { StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
+import { bonusById, curseById } from './bonuses'
 import { playerColors } from './palette'
 import type { GameState } from './types'
 
@@ -11,14 +12,17 @@ export function PlayerStrip({
 	meIdx,
 	profilesById,
 	gameState,
+	onPressPlayer,
 }: {
 	playerOrder: string[]
 	currentTurn: number | null
 	meIdx: number
 	profilesById: Record<string, Profile>
 	gameState: GameState
+	onPressPlayer?: (playerIdx: number) => void
 }) {
 	const pointsByPlayer = pointsFromVertices(gameState)
+	const showBonusIcons = gameState.config.bonuses
 
 	return (
 		<View style={styles.row}>
@@ -30,15 +34,27 @@ export function PlayerStrip({
 				const points = pointsByPlayer[i] ?? 0
 				const cards = sumResources(gameState.players[i]?.resources)
 				const isActive = currentTurn === i
+				const player = gameState.players[i]
+				const bonus = player?.bonus
+					? bonusById(player.bonus)
+					: undefined
+				const curse = player?.curse
+					? curseById(player.curse)
+					: undefined
 				return (
-					<View
+					<Pressable
 						key={uid}
-						style={[
+						onPress={
+							onPressPlayer ? () => onPressPlayer(i) : undefined
+						}
+						disabled={!onPressPlayer}
+						style={({ pressed }) => [
 							styles.box,
 							isActive && {
 								borderColor: color,
 								backgroundColor: colors.cardAlt,
 							},
+							pressed && onPressPlayer && styles.pressed,
 						]}
 					>
 						<View style={styles.headerRow}>
@@ -66,8 +82,26 @@ export function PlayerStrip({
 								/>
 								<Text style={styles.statText}>{cards}</Text>
 							</View>
+							{showBonusIcons && bonus && (
+								<View style={styles.stat}>
+									<Ionicons
+										name={bonus.icon}
+										size={12}
+										color={colors.brand}
+									/>
+								</View>
+							)}
+							{showBonusIcons && curse && (
+								<View style={styles.stat}>
+									<Ionicons
+										name={curse.icon}
+										size={12}
+										color={colors.error}
+									/>
+								</View>
+							)}
 						</View>
-					</View>
+					</Pressable>
 				)
 			})}
 		</View>
@@ -120,6 +154,9 @@ const styles = StyleSheet.create({
 		width: 8,
 		height: 8,
 		borderRadius: radius.full,
+	},
+	pressed: {
+		opacity: 0.7,
 	},
 	name: {
 		flex: 1,

@@ -53,13 +53,13 @@ function firstResourceHex(s: GameState): { hex: Hex; number: number } {
 // --- Tests -----------------------------------------------------------------
 
 function testRolledSevenYieldsNothing() {
-	const s = initialGameState('standard', 3)
+	const s = initialGameState('standard', 3, { bonuses: false })
 	const gains = distributeResources(s, 7)
 	equal(Object.keys(gains).length, 0, 'rolling 7 returns empty gains')
 }
 
 function testSettlementGetsOne() {
-	const s0 = initialGameState('standard', 3)
+	const s0 = initialGameState('standard', 3, { bonuses: false })
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
 	const s = placeBuilding(s0, v, 0, 'settlement')
@@ -71,7 +71,7 @@ function testSettlementGetsOne() {
 }
 
 function testCityGetsTwo() {
-	const s0 = initialGameState('standard', 3)
+	const s0 = initialGameState('standard', 3, { bonuses: false })
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
 	const s = placeBuilding(s0, v, 0, 'city')
@@ -82,7 +82,7 @@ function testCityGetsTwo() {
 }
 
 function testMismatchedRollPaysNothing() {
-	const s0 = initialGameState('standard', 3)
+	const s0 = initialGameState('standard', 3, { bonuses: false })
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
 	const s = placeBuilding(s0, v, 0, 'settlement')

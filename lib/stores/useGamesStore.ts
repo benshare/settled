@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
-import type { DiceRoll, ResourceHand } from '../catan/types'
+import type { BonusId } from '../catan/bonuses'
+import type { DiceRoll, GameConfig, ResourceHand } from '../catan/types'
 import type { Database } from '../database-types'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
@@ -98,12 +99,18 @@ type GamesStore = {
 	loadForUser: (userId: string) => Promise<void>
 	clear: () => void
 
-	createRequest: (meId: string, invitedIds: string[]) => Promise<ActionResult>
+	createRequest: (
+		meId: string,
+		invitedIds: string[],
+		config: GameConfig
+	) => Promise<ActionResult>
 	respond: (
 		meId: string,
 		requestId: string,
 		accept: boolean
 	) => Promise<RespondResult>
+
+	pickBonus: (gameId: string, bonus: BonusId) => Promise<ActionResult>
 
 	placeSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
 	placeRoad: (gameId: string, edge: string) => Promise<ActionResult>
@@ -275,11 +282,23 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		})
 	},
 
-	async createRequest(meId, invitedIds) {
+	async createRequest(meId, invitedIds, config) {
 		const { error } = await supabase.rpc('propose_game', {
 			invited_user_ids: invitedIds,
+			config,
 		})
 		return { error: error ? "Couldn't create game" : null }
+	},
+
+	async pickBonus(gameId, bonus) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'pick_bonus', game_id: gameId, bonus },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't pick bonus" }
+		return { error: null }
 	},
 
 	async respond(meId, requestId, accept) {
