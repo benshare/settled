@@ -214,7 +214,7 @@ function PlayerTrade({
 				<Button
 					variant="secondary"
 					onPress={onCancel}
-					style={styles.cancelBtn}
+					style={[styles.cancelBtn, styles.smallBtn]}
 				>
 					Cancel
 				</Button>
@@ -222,7 +222,7 @@ function PlayerTrade({
 					onPress={send}
 					disabled={!canPropose}
 					loading={submitting}
-					style={styles.sendBtn}
+					style={[styles.sendBtn, styles.smallBtn]}
 				>
 					Send
 				</Button>
@@ -441,7 +441,7 @@ function BankCompose({
 				<Button
 					variant="secondary"
 					onPress={onCancel}
-					style={styles.cancelBtn}
+					style={[styles.cancelBtn, styles.smallBtn]}
 				>
 					Cancel
 				</Button>
@@ -449,7 +449,7 @@ function BankCompose({
 					onPress={() => onSend(give, receive)}
 					disabled={!valid}
 					loading={submitting}
-					style={styles.sendBtn}
+					style={[styles.sendBtn, styles.smallBtn]}
 				>
 					Send
 				</Button>
@@ -811,6 +811,11 @@ const styles = StyleSheet.create({
 	},
 	sendBtn: {
 		flex: 2,
+	},
+	smallBtn: {
+		minHeight: 34,
+		paddingVertical: 6,
+		paddingHorizontal: spacing.md,
 	},
 	pressed: {
 		opacity: 0.7,

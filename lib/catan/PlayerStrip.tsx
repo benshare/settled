@@ -33,21 +33,26 @@ export function PlayerStrip({
 				return (
 					<View
 						key={uid}
-						style={[styles.box, isActive && styles.boxActive]}
+						style={[
+							styles.box,
+							isActive && {
+								borderColor: color,
+								backgroundColor: colors.cardAlt,
+							},
+						]}
 					>
-						<View
-							style={[
-								styles.colorBar,
-								{ backgroundColor: color },
-							]}
-						/>
-						<Text style={styles.name} numberOfLines={1}>
-							{name}
-						</Text>
+						<View style={styles.headerRow}>
+							<View
+								style={[styles.dot, { backgroundColor: color }]}
+							/>
+							<Text style={styles.name} numberOfLines={1}>
+								{name}
+							</Text>
+						</View>
 						<View style={styles.stats}>
 							<View style={styles.stat}>
 								<Ionicons
-									name="trophy-outline"
+									name="trophy"
 									size={12}
 									color={colors.textSecondary}
 								/>
@@ -55,7 +60,7 @@ export function PlayerStrip({
 							</View>
 							<View style={styles.stat}>
 								<Ionicons
-									name="albums-outline"
+									name="albums"
 									size={12}
 									color={colors.textSecondary}
 								/>
@@ -94,31 +99,30 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 		paddingHorizontal: spacing.md,
 		paddingTop: spacing.xs,
+		paddingBottom: spacing.sm,
 	},
 	box: {
 		flex: 1,
 		backgroundColor: colors.card,
 		borderRadius: radius.md,
-		borderWidth: 1,
+		borderWidth: 1.5,
 		borderColor: colors.border,
-		paddingHorizontal: spacing.xs,
-		paddingTop: spacing.xs,
-		paddingBottom: spacing.xs,
-		gap: 2,
-		overflow: 'hidden',
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+		gap: spacing.xs,
 	},
-	boxActive: {
-		borderColor: colors.text,
+	headerRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 6,
 	},
-	colorBar: {
-		position: 'absolute',
-		top: 0,
-		left: 0,
-		right: 0,
-		height: 3,
+	dot: {
+		width: 8,
+		height: 8,
+		borderRadius: radius.full,
 	},
 	name: {
-		marginTop: 3,
+		flex: 1,
 		fontSize: font.sm,
 		fontWeight: '700',
 		color: colors.text,
@@ -130,7 +134,7 @@ const styles = StyleSheet.create({
 	stat: {
 		flexDirection: 'row',
 		alignItems: 'center',
-		gap: 2,
+		gap: 3,
 	},
 	statText: {
 		fontSize: font.sm,

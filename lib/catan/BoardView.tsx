@@ -87,7 +87,10 @@ function BoardSvg({
 	build?: BuildInteraction
 	robber?: RobberInteraction
 }) {
-	const layout = computeBoardLayout(boxW * 0.9, boxH * 0.9)
+	const PAD = 16
+	const innerW = Math.max(0, boxW - PAD * 2)
+	const innerH = Math.max(0, boxH - PAD * 2)
+	const layout = computeBoardLayout(innerW, innerH)
 	const vertexPositions = computeVertexPositions(layout)
 	const portVisuals = computePortLayout(layout, state.ports ?? [])
 	const offsetX = (boxW - layout.width) / 2

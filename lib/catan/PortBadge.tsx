@@ -27,8 +27,8 @@ export function PortBadge({
 				y2={badge.y}
 				stroke="#FFFFFF"
 				strokeWidth={1}
-				strokeOpacity={0.8}
-				strokeDasharray="2 3"
+				strokeOpacity={0.7}
+				strokeDasharray="4 3"
 			/>
 			<Line
 				x1={docks[1].x}
@@ -37,8 +37,8 @@ export function PortBadge({
 				y2={badge.y}
 				stroke="#FFFFFF"
 				strokeWidth={1}
-				strokeOpacity={0.8}
-				strokeDasharray="2 3"
+				strokeOpacity={0.7}
+				strokeDasharray="4 3"
 			/>
 			<Rect
 				x={badge.x - w / 2}

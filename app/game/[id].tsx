@@ -37,7 +37,16 @@ import {
 	Text,
 	View,
 } from 'react-native'
+import Animated, {
+	FadeIn,
+	FadeOut,
+	LinearTransition,
+} from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
+
+const BOARD_RESIZE = LinearTransition.duration(220)
+const PANEL_IN = FadeIn.duration(160)
+const PANEL_OUT = FadeOut.duration(120)
 
 // Best-effort error notice. Alert.alert is a no-op on react-native-web;
 // fall back to window.alert there. Confirms live inline in the game view
@@ -428,7 +437,7 @@ function GameBody() {
 				</>
 			)}
 
-			<View style={styles.boardContainer}>
+			<Animated.View style={styles.boardContainer} layout={BOARD_RESIZE}>
 				{liveOffer && (
 					<TradeBanner
 						offer={liveOffer}
@@ -479,6 +488,8 @@ function GameBody() {
 						<ActivityIndicator color={colors.brand} />
 					</View>
 				)}
+				<View pointerEvents="none" style={styles.boardInsetTop} />
+				<View pointerEvents="none" style={styles.boardInsetBottom} />
 				{pendingConfirm && (
 					<ConfirmBar
 						title={pendingConfirm.title}
@@ -487,7 +498,7 @@ function GameBody() {
 						onCancel={() => setPendingConfirm(null)}
 					/>
 				)}
-			</View>
+			</Animated.View>
 
 			{inPlacement && isMyPlacementTurn && (
 				<View style={styles.actionBar}>
@@ -502,35 +513,47 @@ function GameBody() {
 			)}
 
 			{inMainLoop && gameState && !tradePanelOpen && (
-				<MainLoopBar
-					game={game}
-					gameState={gameState}
-					meIdx={meIdx}
-					isMyTurn={isMyActiveTurn}
-					profilesById={profilesById}
-					submitting={submitting}
-					onRoll={onRoll}
-					onEndTurn={onEndTurn}
-				/>
+				<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
+					<MainLoopBar
+						game={game}
+						gameState={gameState}
+						meIdx={meIdx}
+						isMyTurn={isMyActiveTurn}
+						profilesById={profilesById}
+						submitting={submitting}
+						onRoll={onRoll}
+						onEndTurn={onEndTurn}
+					/>
+				</Animated.View>
 			)}
 
 			{tradePanelOpen && myHand && gameState && (
-				<TradePanel
-					meIdx={meIdx}
-					myHand={myHand}
-					state={gameState}
-					playerOrder={game.player_order}
-					profilesById={profilesById}
-					submitting={submitting}
-					onSend={onProposeTrade}
-					onSendBank={onBankTrade}
-					onCancel={() => setTradePanelOpen(false)}
-				/>
+				<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
+					<TradePanel
+						meIdx={meIdx}
+						myHand={myHand}
+						state={gameState}
+						playerOrder={game.player_order}
+						profilesById={profilesById}
+						submitting={submitting}
+						onSend={onProposeTrade}
+						onSendBank={onBankTrade}
+						onCancel={() => setTradePanelOpen(false)}
+					/>
+				</Animated.View>
 			)}
 
-			{gameState && meIdx >= 0 && gameState.players[meIdx] && (
-				<ResourceHand hand={gameState.players[meIdx].resources} />
-			)}
+			{!inPlacement &&
+				!tradePanelOpen &&
+				gameState &&
+				meIdx >= 0 &&
+				gameState.players[meIdx] && (
+					<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
+						<ResourceHand
+							hand={gameState.players[meIdx].resources}
+						/>
+					</Animated.View>
+				)}
 		</View>
 	)
 }
@@ -885,6 +908,22 @@ const styles = StyleSheet.create({
 	boardContainer: {
 		flex: 1,
 		backgroundColor: waterColor,
+	},
+	boardInsetTop: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		height: 12,
+		boxShadow: 'inset 0 6px 6px -2px rgba(0,0,0,0.28)',
+	},
+	boardInsetBottom: {
+		position: 'absolute',
+		bottom: 0,
+		left: 0,
+		right: 0,
+		height: 12,
+		boxShadow: 'inset 0 -6px 6px -2px rgba(0,0,0,0.28)',
 	},
 	loadingFill: {
 		flex: 1,

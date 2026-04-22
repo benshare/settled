@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native'
+import { colors } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor } from './palette'
 import type { ResourceHand as ResourceHandType } from './types'
@@ -11,7 +12,15 @@ const ARC_LIFT = 2 // px outer cards shift to fake a bottom pivot
 
 export function ResourceHand({ hand }: { hand: ResourceHandType }) {
 	const cards = RESOURCES.filter((r) => (hand[r] ?? 0) > 0)
-	if (cards.length === 0) return null
+
+	if (cards.length === 0) {
+		return (
+			<View style={[styles.row, styles.emptyRow]}>
+				<Text style={styles.emptyText}>Your hand is empty</Text>
+			</View>
+		)
+	}
+
 	const center = (cards.length - 1) / 2
 
 	return (
@@ -48,16 +57,12 @@ function ResourceCard({
 	resource: Resource
 	count: number
 }) {
-	const dark = DARK_TEXT_RESOURCES.has(resource)
-	const textColor = dark ? '#1A1A1A' : '#FFFFFF'
 	return (
 		<View
 			style={[styles.card, { backgroundColor: resourceColor[resource] }]}
 		>
-			<Text style={[styles.name, { color: textColor }]}>
-				{RESOURCE_LABELS[resource]}
-			</Text>
-			<Text style={[styles.count, { color: textColor }]}>{count}</Text>
+			<Text style={styles.name}>{RESOURCE_LABELS[resource]}</Text>
+			<Text style={styles.count}>{count}</Text>
 		</View>
 	)
 }
@@ -70,8 +75,7 @@ const RESOURCE_LABELS: Record<Resource, string> = {
 	ore: 'Ore',
 }
 
-// Light fills that need dark text for legibility.
-const DARK_TEXT_RESOURCES: ReadonlySet<Resource> = new Set(['wheat', 'sheep'])
+const CARD_TEXT = '#1A1A1A'
 
 const styles = StyleSheet.create({
 	row: {
@@ -82,6 +86,14 @@ const styles = StyleSheet.create({
 		paddingTop: 16,
 		paddingBottom: 8,
 		minHeight: CARD_H + 24,
+	},
+	emptyRow: {
+		alignItems: 'center',
+	},
+	emptyText: {
+		fontSize: 13,
+		color: colors.textMuted,
+		fontStyle: 'italic',
 	},
 	cardWrap: {
 		width: CARD_W,
@@ -101,9 +113,11 @@ const styles = StyleSheet.create({
 	name: {
 		fontSize: 11,
 		fontWeight: '600',
+		color: CARD_TEXT,
 	},
 	count: {
 		fontSize: 22,
 		fontWeight: '800',
+		color: CARD_TEXT,
 	},
 })
