@@ -8,6 +8,7 @@ import { useTheme } from '@/lib/ThemeContext'
 import { ColorScheme, font, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import type React from 'react'
 import { useMemo, useState } from 'react'
 import {
 	KeyboardAvoidingView,
@@ -30,6 +31,7 @@ export default function CreateGameScreen() {
 
 	const [query, setQuery] = useState('')
 	const [selected, setSelected] = useState<Set<string>>(new Set())
+	const [bonuses, setBonuses] = useState(false)
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
@@ -54,7 +56,11 @@ export default function CreateGameScreen() {
 		if (!user?.id || selected.size === 0) return
 		setBusy(true)
 		setError(null)
-		const { error } = await createRequest(user.id, Array.from(selected))
+		const { error } = await createRequest(
+			user.id,
+			Array.from(selected),
+			{ bonuses }
+		)
 		setBusy(false)
 		if (error) {
 			setError(error)
@@ -124,6 +130,19 @@ export default function CreateGameScreen() {
 									))}
 								</View>
 							)}
+
+							<View style={styles.configSection}>
+								<Text style={styles.configHeading}>
+									Options
+								</Text>
+								<ConfigToggleRow
+									icon="sparkles"
+									title="Bonuses"
+									description="Players draw a bonus and a curse before placement."
+									value={bonuses}
+									onToggle={() => setBonuses((v) => !v)}
+								/>
+							</View>
 						</ScrollView>
 
 						<View style={styles.footer}>
@@ -144,6 +163,45 @@ export default function CreateGameScreen() {
 				)}
 			</KeyboardAvoidingView>
 		</SafeAreaView>
+	)
+}
+
+function ConfigToggleRow({
+	icon,
+	title,
+	description,
+	value,
+	onToggle,
+}: {
+	icon: React.ComponentProps<typeof Ionicons>['name']
+	title: string
+	description: string
+	value: boolean
+	onToggle: () => void
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<Pressable
+			onPress={onToggle}
+			style={({ pressed }) => [
+				styles.configRow,
+				pressed && styles.pressed,
+			]}
+		>
+			<View style={styles.configIcon}>
+				<Ionicons name={icon} size={22} color={colors.text} />
+			</View>
+			<View style={styles.configTextWrap}>
+				<Text style={styles.configTitle}>{title}</Text>
+				<Text style={styles.configDescription}>{description}</Text>
+			</View>
+			<View style={[styles.check, value && styles.checkSelected]}>
+				{value && (
+					<Ionicons name="checkmark" size={18} color={colors.white} />
+				)}
+			</View>
+		</Pressable>
 	)
 }
 
@@ -248,6 +306,46 @@ function makeStyles(colors: ColorScheme) {
 		checkSelected: {
 			backgroundColor: colors.brand,
 			borderColor: colors.brand,
+		},
+		configSection: {
+			marginTop: spacing.lg,
+			gap: spacing.sm,
+		},
+		configHeading: {
+			fontSize: font.sm,
+			fontWeight: '700',
+			color: colors.textMuted,
+			textTransform: 'uppercase',
+			letterSpacing: 0.5,
+		},
+		configRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+			paddingVertical: spacing.sm,
+		},
+		configIcon: {
+			width: 40,
+			height: 40,
+			borderRadius: 999,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: colors.card,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		configTextWrap: {
+			flex: 1,
+			gap: 2,
+		},
+		configTitle: {
+			fontSize: font.md,
+			color: colors.text,
+			fontWeight: '600',
+		},
+		configDescription: {
+			fontSize: font.sm,
+			color: colors.textMuted,
 		},
 		footer: {
 			padding: spacing.lg,

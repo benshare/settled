@@ -7,8 +7,26 @@ import type {
 	Vertex,
 	VertexBuilding,
 } from './board'
+import type { BonusId, CurseId } from './bonuses'
 
 export type Variant = 'standard'
+
+// Top-level game config. Serialized to JSONB on game_requests and game_states.
+// Today: only a single bonuses toggle. New options get added here (and wired
+// through the propose_game RPC + handleRespond in the edge function).
+export type GameConfig = {
+	bonuses: boolean
+}
+
+export const DEFAULT_CONFIG: GameConfig = { bonuses: false }
+
+export function normalizeConfig(raw: unknown): GameConfig {
+	if (!raw || typeof raw !== 'object') return { ...DEFAULT_CONFIG }
+	const obj = raw as Record<string, unknown>
+	return {
+		bonuses: obj.bonuses === true,
+	}
+}
 
 export type HexData =
 	| { resource: null }
@@ -24,6 +42,19 @@ export type ResourceHand = Record<Resource, number>
 
 export type PlayerState = {
 	resources: ResourceHand
+	// Kept bonus + dealt curse. Populated when the select_bonus phase ends;
+	// absent on standard (non-bonuses) games.
+	bonus?: BonusId
+	curse?: CurseId
+}
+
+// Per-player card hand during the select_bonus phase. `offered` is the two
+// bonus cards dealt to the player (duplicates allowed; the pool today has
+// size 1). `chosen` flips from null to one of `offered` on commit.
+export type SelectBonusHand = {
+	offered: [BonusId, BonusId]
+	curse: CurseId
+	chosen: BonusId | null
 }
 
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6
@@ -54,6 +85,11 @@ export type BankKind =
 	| '2:1-ore'
 
 export type Phase =
+	// Bonus-game-only pre-placement phase. Each player is dealt two bonus
+	// cards + one curse, picks one bonus to keep. Picks happen in parallel;
+	// once every `hands[i].chosen` is non-null, the phase advances to
+	// initial_placement and the kept bonus/curse snapshots onto PlayerState.
+	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
 	| {
@@ -83,6 +119,9 @@ export type GameState = {
 	// Optional so games created before ports existed still parse. New games
 	// always seed 9 ports; readers should default a missing array to empty.
 	ports?: Port[]
+	// Optional so games created before this feature still parse. New games
+	// always carry the config that was on the game_request.
+	config?: GameConfig
 }
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }

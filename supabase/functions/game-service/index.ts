@@ -55,6 +55,11 @@ type InvitedEntry = {
 }
 
 type RespondBody = { action: 'respond'; request_id: string; accept: boolean }
+type PickBonusBody = {
+	action: 'pick_bonus'
+	game_id: string
+	bonus: string
+}
 type PlaceSettlementBody = {
 	action: 'place_settlement'
 	game_id: string
@@ -110,6 +115,7 @@ type BankTradeBody = {
 }
 type Body =
 	| RespondBody
+	| PickBonusBody
 	| PlaceSettlementBody
 	| PlaceRoadBody
 	| RollBody
@@ -434,7 +440,11 @@ type EdgeState = { occupied: false } | { occupied: true; player: number }
 
 type ResourceHand = Record<Resource, number>
 
-type PlayerState = { resources: ResourceHand }
+type PlayerState = {
+	resources: ResourceHand
+	bonus?: BonusId
+	curse?: CurseId
+}
 
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
 type DiceRoll = { a: DieFace; b: DieFace }
@@ -472,7 +482,44 @@ const PORT_SLOTS: readonly Edge[] = [
 	'2A - 2B',
 ]
 
+// --- Bonuses (must match lib/catan/bonuses) --------------------------------
+
+type BonusId = 'placeholder'
+type CurseId = 'placeholder'
+
+const BONUS_IDS: readonly BonusId[] = ['placeholder']
+const CURSE_IDS: readonly CurseId[] = ['placeholder']
+
+type SelectBonusHand = {
+	offered: [BonusId, BonusId]
+	curse: CurseId
+	chosen: BonusId | null
+}
+
+function dealBonusHand(): SelectBonusHand {
+	const pick = <T,>(xs: readonly T[]): T =>
+		xs[Math.floor(Math.random() * xs.length)]
+	return {
+		offered: [pick(BONUS_IDS), pick(BONUS_IDS)],
+		curse: pick(CURSE_IDS),
+		chosen: null,
+	}
+}
+
+// --- Config ----------------------------------------------------------------
+
+type GameConfig = { bonuses: boolean }
+
+const DEFAULT_CONFIG: GameConfig = { bonuses: false }
+
+function normalizeConfig(raw: unknown): GameConfig {
+	if (!raw || typeof raw !== 'object') return { ...DEFAULT_CONFIG }
+	const obj = raw as Record<string, unknown>
+	return { bonuses: obj.bonuses === true }
+}
+
 type Phase =
+	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
 	| { kind: 'roll' }
 	| {
@@ -494,6 +541,7 @@ type GameState = {
 	phase: Phase
 	robber: Hex
 	ports?: Port[]
+	config?: GameConfig
 }
 
 function vertexStateOf(state: GameState, v: Vertex): VertexState {
@@ -994,6 +1042,7 @@ async function loadGame(
 		phase,
 		robber: stateRow.robber,
 		ports: stateRow.ports ?? [],
+		config: normalizeConfig(stateRow.config),
 	}
 	return { ok: true, game: game as GameRow, state }
 }
@@ -1064,6 +1113,16 @@ async function handleRespond(
 		if (insertErr || !inserted) return err(500, 'could not create game')
 
 		const { hexes: generatedHexes, desert } = generateHexes()
+		const config = normalizeConfig(request.config)
+		let initialPhase: Phase
+		if (config.bonuses) {
+			const hands: Record<number, SelectBonusHand> = {}
+			for (let i = 0; i < playerOrder.length; i++)
+				hands[i] = dealBonusHand()
+			initialPhase = { kind: 'select_bonus', hands }
+		} else {
+			initialPhase = INITIAL_PHASE
+		}
 		const { error: stateErr } = await admin.from('game_states').insert({
 			game_id: inserted.id,
 			variant: 'standard',
@@ -1071,9 +1130,10 @@ async function handleRespond(
 			vertices: {},
 			edges: {},
 			players: initialPlayers(playerOrder.length),
-			phase: INITIAL_PHASE,
+			phase: initialPhase,
 			robber: desert,
 			ports: generatePorts(),
+			config,
 		})
 		if (stateErr) return err(500, 'could not create game state')
 
@@ -1091,6 +1151,66 @@ async function handleRespond(
 		.update({ invited: nextInvited })
 		.eq('id', body.request_id)
 	if (updateErr) return err(500, 'could not update request')
+
+	return json({ ok: true })
+}
+
+// select_bonus: each player picks one of their two offered bonuses to keep.
+// Picks are parallel — no current_turn enforcement. When every hand's
+// `chosen` is set, snapshot each player's kept bonus + dealt curse onto
+// PlayerState and advance the phase to initial_placement.
+async function handlePickBonus(
+	admin: SupabaseClient,
+	me: string,
+	body: PickBonusBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'placement') return err(400, 'not in placement')
+	if (state.phase.kind !== 'select_bonus')
+		return err(400, 'not in bonus selection')
+
+	const meIdx = game.player_order.indexOf(me)
+	if (meIdx < 0) return err(403, 'not a participant')
+
+	const hand = state.phase.hands[meIdx]
+	if (!hand) return err(400, 'no bonus hand')
+	if (hand.chosen !== null) return err(400, 'already chosen')
+
+	if (!(BONUS_IDS as readonly string[]).includes(body.bonus))
+		return err(400, 'unknown bonus')
+	const bonus = body.bonus as BonusId
+	if (!hand.offered.includes(bonus)) return err(400, 'bonus not offered')
+
+	const nextHands: Record<number, SelectBonusHand> = {
+		...state.phase.hands,
+		[meIdx]: { ...hand, chosen: bonus },
+	}
+
+	const allChosen = game.player_order.every(
+		(_, i) => nextHands[i]?.chosen !== null
+	)
+
+	let nextPhase: Phase
+	let nextPlayers = state.players
+	if (allChosen) {
+		nextPlayers = state.players.map((p, i) => ({
+			...p,
+			bonus: nextHands[i]!.chosen!,
+			curse: nextHands[i]!.curse,
+		}))
+		nextPhase = { kind: 'initial_placement', round: 1, step: 'settlement' }
+	} else {
+		nextPhase = { kind: 'select_bonus', hands: nextHands }
+	}
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ phase: nextPhase, players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
 
 	return json({ ok: true })
 }
@@ -2089,6 +2209,8 @@ serve(async (req) => {
 	switch (body.action) {
 		case 'respond':
 			return handleRespond(admin, me, body)
+		case 'pick_bonus':
+			return handlePickBonus(admin, me, body)
 		case 'place_settlement':
 			return handlePlaceSettlement(admin, me, body)
 		case 'place_road':

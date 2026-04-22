@@ -1,6 +1,8 @@
 import { useAuth } from '@/lib/auth'
 import type { Hex } from '@/lib/catan/board'
 import { BoardView } from '@/lib/catan/BoardView'
+import { BonusSelection } from '@/lib/catan/BonusSelection'
+import type { BonusId } from '@/lib/catan/bonuses'
 import {
 	BUILD_COSTS,
 	canAfford,
@@ -88,6 +90,7 @@ function GameBody() {
 	const { user } = useAuth()
 	const { game, gameState, ready } = useGame()
 	const profilesById = useGamesStore((s) => s.profilesById)
+	const pickBonus = useGamesStore((s) => s.pickBonus)
 	const placeSettlement = useGamesStore((s) => s.placeSettlement)
 	const placeRoad = useGamesStore((s) => s.placeRoad)
 	const roll = useGamesStore((s) => s.roll)
@@ -192,6 +195,9 @@ function GameBody() {
 		)
 	}
 
+	const inBonusSelection =
+		game.status === 'placement' &&
+		gameState?.phase.kind === 'select_bonus'
 	const inPlacement =
 		game.status === 'placement' &&
 		gameState?.phase.kind === 'initial_placement'
@@ -204,6 +210,14 @@ function GameBody() {
 		(phaseKind === 'discard' ||
 			phaseKind === 'move_robber' ||
 			phaseKind === 'steal')
+
+	async function onPickBonus(bonus: BonusId) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await pickBonus(game.id, bonus)
+		setSubmitting(false)
+		if (res.error) notify('Pick failed', res.error)
+	}
 
 	async function onConfirm() {
 		if (!selection || !game) return
@@ -376,6 +390,28 @@ function GameBody() {
 	const tradeButtonEnabled =
 		canBuildThisTurn && !hasLiveTrade && !tradePanelOpen
 	const tradeButtonActive = tradePanelOpen || liveTradeIsMine
+
+	if (inBonusSelection && gameState && gameState.phase.kind === 'select_bonus') {
+		const myHand = meIdx >= 0 ? gameState.phase.hands[meIdx] : undefined
+		const waitingOn = game.player_order
+			.map((uid, i) => ({ uid, i }))
+			.filter(({ i }) => {
+				if (gameState.phase.kind !== 'select_bonus') return false
+				return gameState.phase.hands[i]?.chosen == null
+			})
+			.filter(({ i }) => i !== meIdx)
+			.map(({ uid }) => profilesById[uid]?.username ?? 'Player')
+		return (
+			<View style={styles.bodyRoot}>
+				<BonusSelection
+					hand={myHand}
+					waitingOn={waitingOn}
+					submitting={submitting}
+					onPick={onPickBonus}
+				/>
+			</View>
+		)
+	}
 
 	return (
 		<View style={styles.bodyRoot}>

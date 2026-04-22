@@ -91,18 +91,21 @@ export type Database = {
 			}
 			game_requests: {
 				Row: {
+					config: Json
 					created_at: string
 					id: string
 					invited: Json
 					proposer: string
 				}
 				Insert: {
+					config?: Json
 					created_at?: string
 					id?: string
 					invited: Json
 					proposer: string
 				}
 				Update: {
+					config?: Json
 					created_at?: string
 					id?: string
 					invited?: Json
@@ -120,6 +123,7 @@ export type Database = {
 			}
 			game_states: {
 				Row: {
+					config: Json | null
 					edges: Json
 					game_id: string
 					hexes: Json
@@ -130,6 +134,7 @@ export type Database = {
 					vertices: Json
 				}
 				Insert: {
+					config?: Json | null
 					edges?: Json
 					game_id: string
 					hexes: Json
@@ -140,6 +145,7 @@ export type Database = {
 					vertices?: Json
 				}
 				Update: {
+					config?: Json | null
 					edges?: Json
 					game_id?: string
 					hexes?: Json
@@ -229,7 +235,7 @@ export type Database = {
 				Returns: undefined
 			}
 			propose_game: {
-				Args: { invited_user_ids: string[] }
+				Args: { invited_user_ids: string[]; config?: Json }
 				Returns: string
 			}
 		}
