@@ -11,22 +11,15 @@ import type { BonusId, CurseId } from './bonuses'
 
 export type Variant = 'standard'
 
-// Top-level game config. Serialized to JSONB on game_requests and game_states.
-// Today: only a single bonuses toggle. New options get added here (and wired
-// through the propose_game RPC + handleRespond in the edge function).
+// Top-level game config. Serialized to JSONB on game_requests and
+// game_states. Today: only a single bonuses toggle. New options get added
+// here (and wired through the propose_game RPC + handleRespond in the edge
+// function).
 export type GameConfig = {
 	bonuses: boolean
 }
 
 export const DEFAULT_CONFIG: GameConfig = { bonuses: false }
-
-export function normalizeConfig(raw: unknown): GameConfig {
-	if (!raw || typeof raw !== 'object') return { ...DEFAULT_CONFIG }
-	const obj = raw as Record<string, unknown>
-	return {
-		bonuses: obj.bonuses === true,
-	}
-}
 
 export type HexData =
 	| { resource: null }
@@ -119,9 +112,7 @@ export type GameState = {
 	// Optional so games created before ports existed still parse. New games
 	// always seed 9 ports; readers should default a missing array to empty.
 	ports?: Port[]
-	// Optional so games created before this feature still parse. New games
-	// always carry the config that was on the game_request.
-	config?: GameConfig
+	config: GameConfig
 }
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }

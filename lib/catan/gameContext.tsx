@@ -12,7 +12,7 @@ import {
 	useState,
 	type ReactNode,
 } from 'react'
-import { normalizeConfig, type GameState } from './types'
+import type { GameState } from './types'
 
 export type GameContextValue = {
 	game: Game | undefined
@@ -145,7 +145,7 @@ function rowToState(row: Record<string, unknown>): GameState {
 		phase: row.phase as GameState['phase'],
 		robber: row.robber as GameState['robber'],
 		ports: (row.ports as GameState['ports']) ?? [],
-		config: normalizeConfig(row.config),
+		config: row.config as GameState['config'],
 	}
 }
 

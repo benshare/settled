@@ -123,7 +123,7 @@ export type Database = {
 			}
 			game_states: {
 				Row: {
-					config: Json | null
+					config: Json
 					edges: Json
 					game_id: string
 					hexes: Json
@@ -134,7 +134,7 @@ export type Database = {
 					vertices: Json
 				}
 				Insert: {
-					config?: Json | null
+					config: Json
 					edges?: Json
 					game_id: string
 					hexes: Json
@@ -145,7 +145,7 @@ export type Database = {
 					vertices?: Json
 				}
 				Update: {
-					config?: Json | null
+					config?: Json
 					edges?: Json
 					game_id?: string
 					hexes?: Json
@@ -235,7 +235,7 @@ export type Database = {
 				Returns: undefined
 			}
 			propose_game: {
-				Args: { invited_user_ids: string[]; config?: Json }
+				Args: { invited_user_ids: string[]; config: Json }
 				Returns: string
 			}
 		}

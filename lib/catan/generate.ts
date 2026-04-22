@@ -14,7 +14,6 @@ import {
 	type CurseId,
 } from './bonuses'
 import {
-	DEFAULT_CONFIG,
 	type GameConfig,
 	type GameState,
 	type HexData,
@@ -94,7 +93,7 @@ export function dealBonusHand(): SelectBonusHand {
 export function initialGameState(
 	variant: Variant,
 	playerCount: number,
-	config: GameConfig = DEFAULT_CONFIG
+	config: GameConfig
 ): GameState {
 	const hexes = generateHexes(variant)
 	const desert = HEXES.find((h) => hexes[h].resource === null)

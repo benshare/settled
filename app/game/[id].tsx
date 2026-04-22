@@ -15,14 +15,14 @@ import type { BuildSelection } from '@/lib/catan/BuildLayer'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
-import { playerColors, waterColor } from '@/lib/catan/palette'
+import { waterColor } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
+import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
 import { TradePanel } from '@/lib/catan/TradePanel'
 import type { ResourceHand as ResourceHandType } from '@/lib/catan/types'
-import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
@@ -114,6 +114,7 @@ function GameBody() {
 		title: string
 		run: () => void | Promise<void>
 	} | null>(null)
+	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
 
 	function confirmAction(title: string, run: () => void | Promise<void>) {
 		setPendingConfirm({ title, run })
@@ -415,6 +416,17 @@ function GameBody() {
 
 	return (
 		<View style={styles.bodyRoot}>
+			{gameState && (
+				<PlayerStrip
+					playerOrder={game.player_order}
+					currentTurn={game.current_turn}
+					meIdx={meIdx}
+					profilesById={profilesById}
+					gameState={gameState}
+					onPressPlayer={setOpenPlayerIdx}
+				/>
+			)}
+
 			{inPlacement && gameState && (
 				<PlacementHeader
 					game={game}
@@ -427,13 +439,6 @@ function GameBody() {
 
 			{!inPlacement && gameState && (
 				<>
-					<PlayerStrip
-						playerOrder={game.player_order}
-						currentTurn={game.current_turn}
-						meIdx={meIdx}
-						profilesById={profilesById}
-						gameState={gameState}
-					/>
 					<BuildTradeBar
 						active={buildTool}
 						enabled={buildEnabled}
@@ -462,6 +467,17 @@ function GameBody() {
 							/>
 						)}
 				</>
+			)}
+
+			{gameState && (
+				<PlayerDetailOverlay
+					playerIdx={openPlayerIdx}
+					playerOrder={game.player_order}
+					meIdx={meIdx}
+					profilesById={profilesById}
+					gameState={gameState}
+					onClose={() => setOpenPlayerIdx(null)}
+				/>
 			)}
 
 			<View style={styles.boardContainer}>
@@ -806,30 +822,6 @@ function PlacementHeader({
 	return (
 		<View style={styles.statusWrap}>
 			<Text style={styles.statusLine}>{message}</Text>
-			<View style={styles.avatarRow}>
-				{game.player_order.map((uid, i) => {
-					const profile = profilesById[uid]
-					const isActive = i === currentIdx
-					const color = playerColors[i] ?? playerColors[0]
-					return (
-						<View
-							key={uid}
-							style={[
-								styles.avatarSlot,
-								isActive && {
-									borderColor: color,
-								},
-							]}
-						>
-							{profile ? (
-								<Avatar profile={profile} size={32} />
-							) : (
-								<View style={styles.avatarPlaceholder} />
-							)}
-						</View>
-					)
-				})}
-			</View>
 		</View>
 	)
 }
@@ -901,22 +893,6 @@ const styles = StyleSheet.create({
 		fontSize: font.base,
 		color: colors.text,
 		fontWeight: '600',
-	},
-	avatarRow: {
-		flexDirection: 'row',
-		gap: spacing.xs,
-	},
-	avatarSlot: {
-		padding: 2,
-		borderRadius: radius.full,
-		borderWidth: 2,
-		borderColor: 'transparent',
-	},
-	avatarPlaceholder: {
-		width: 32,
-		height: 32,
-		borderRadius: radius.full,
-		backgroundColor: colors.border,
 	},
 	boardContainer: {
 		flex: 1,

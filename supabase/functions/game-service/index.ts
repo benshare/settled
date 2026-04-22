@@ -510,14 +510,6 @@ function dealBonusHand(): SelectBonusHand {
 
 type GameConfig = { bonuses: boolean }
 
-const DEFAULT_CONFIG: GameConfig = { bonuses: false }
-
-function normalizeConfig(raw: unknown): GameConfig {
-	if (!raw || typeof raw !== 'object') return { ...DEFAULT_CONFIG }
-	const obj = raw as Record<string, unknown>
-	return { bonuses: obj.bonuses === true }
-}
-
 type Phase =
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
@@ -541,7 +533,7 @@ type GameState = {
 	phase: Phase
 	robber: Hex
 	ports?: Port[]
-	config?: GameConfig
+	config: GameConfig
 }
 
 function vertexStateOf(state: GameState, v: Vertex): VertexState {
@@ -1042,7 +1034,7 @@ async function loadGame(
 		phase,
 		robber: stateRow.robber,
 		ports: stateRow.ports ?? [],
-		config: normalizeConfig(stateRow.config),
+		config: stateRow.config as GameConfig,
 	}
 	return { ok: true, game: game as GameRow, state }
 }
@@ -1113,7 +1105,7 @@ async function handleRespond(
 		if (insertErr || !inserted) return err(500, 'could not create game')
 
 		const { hexes: generatedHexes, desert } = generateHexes()
-		const config = normalizeConfig(request.config)
+		const config = request.config as GameConfig
 		let initialPhase: Phase
 		if (config.bonuses) {
 			const hands: Record<number, SelectBonusHand> = {}

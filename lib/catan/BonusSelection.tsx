@@ -14,13 +14,7 @@ import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import {
-	bonusById,
-	curseById,
-	type Bonus,
-	type BonusId,
-	type Curse,
-} from './bonuses'
+import { bonusById, curseById, type BonusId } from './bonuses'
 import type { SelectBonusHand } from './types'
 
 export type BonusSelectionProps = {
@@ -57,10 +51,8 @@ export function BonusSelection({
 	}
 
 	const committed = hand.chosen !== null
-	const offered: Bonus[] = hand.offered.map(
-		(id) => bonusById(id) ?? fallbackBonus(id)
-	)
-	const curse: Curse = curseById(hand.curse) ?? fallbackCurse(hand.curse)
+	const offered = hand.offered.map((id) => bonusById(id)!)
+	const curse = curseById(hand.curse)!
 
 	async function onConfirm() {
 		if (pick === null || !hand) return
@@ -161,24 +153,6 @@ export function BonusSelection({
 			)}
 		</View>
 	)
-}
-
-function fallbackBonus(id: BonusId): Bonus {
-	return {
-		id,
-		title: 'Unknown bonus',
-		description: 'Unrecognized bonus card.',
-		icon: 'help',
-	}
-}
-
-function fallbackCurse(id: string): Curse {
-	return {
-		id: id as Curse['id'],
-		title: 'Unknown curse',
-		description: 'Unrecognized curse card.',
-		icon: 'help',
-	}
 }
 
 function formatList(names: string[]): string {
