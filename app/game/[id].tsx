@@ -16,6 +16,7 @@ import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { canBuyDevCard } from '@/lib/catan/dev'
 import { DevCardHand, type DevPlayPayload } from '@/lib/catan/DevCardHand'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
+import { FinalScoreButton, GameOverOverlay } from '@/lib/catan/GameOverOverlay'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
 import { waterColor } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
@@ -99,7 +100,7 @@ export default function GameDetailScreen() {
 
 function GameBody() {
 	const { user } = useAuth()
-	const { game, gameState, ready } = useGame()
+	const { game, gameState, ready, publicVP, selfVP } = useGame()
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const pickBonus = useGamesStore((s) => s.pickBonus)
 	const placeSettlement = useGamesStore((s) => s.placeSettlement)
@@ -128,6 +129,10 @@ function GameBody() {
 		run: () => void | Promise<void>
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
+	// Game-over overlay starts open when the game is complete; user can
+	// dismiss to inspect the final board and reopen via FinalScoreButton.
+	const [gameOverOpen, setGameOverOpen] = useState(true)
+	const router = useRouter()
 
 	function confirmAction(title: string, run: () => void | Promise<void>) {
 		setPendingConfirm({ title, run })
@@ -144,6 +149,14 @@ function GameBody() {
 		if (!game || !user) return -1
 		return game.player_order.indexOf(user.id)
 	}, [game, user])
+
+	// One VP array shared by every surface that renders a player's score.
+	// During active play opponents see publicVP (no hidden VP cards) and the
+	// viewer sees their own selfVP. On game-over everyone is fully revealed.
+	const displayVP = useMemo(() => {
+		if (game?.status === 'complete') return selfVP
+		return publicVP.map((pub, i) => (i === meIdx ? selfVP[i] : pub))
+	}, [game?.status, publicVP, selfVP, meIdx])
 
 	const isCurrentPlayer =
 		!!game &&
@@ -225,6 +238,7 @@ function GameBody() {
 			phaseKind === 'steal')
 	const inRoadBuilding =
 		game.status === 'active' && phaseKind === 'road_building'
+	const inGameOver = game.status === 'complete'
 
 	async function onPickBonus(bonus: BonusId) {
 		if (!game) return
@@ -471,6 +485,7 @@ function GameBody() {
 					meIdx={meIdx}
 					profilesById={profilesById}
 					gameState={gameState}
+					pointsByPlayer={displayVP}
 					onPressPlayer={setOpenPlayerIdx}
 				/>
 			)}
@@ -485,7 +500,7 @@ function GameBody() {
 				/>
 			)}
 
-			{!inPlacement && gameState && (
+			{!inPlacement && !inGameOver && gameState && (
 				<>
 					{!inRoadBuilding && (
 						<BuildTradeBar
@@ -536,6 +551,7 @@ function GameBody() {
 					meIdx={meIdx}
 					profilesById={profilesById}
 					gameState={gameState}
+					pointsByPlayer={displayVP}
 					onClose={() => setOpenPlayerIdx(null)}
 				/>
 			)}
@@ -621,7 +637,7 @@ function GameBody() {
 				</View>
 			)}
 
-			{inMainLoop && gameState && !tradePanelOpen && (
+			{inMainLoop && !inGameOver && gameState && !tradePanelOpen && (
 				<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
 					<MainLoopBar
 						game={game}
@@ -653,6 +669,7 @@ function GameBody() {
 			)}
 
 			{!inPlacement &&
+				!inGameOver &&
 				!tradePanelOpen &&
 				gameState &&
 				meIdx >= 0 &&
@@ -675,6 +692,23 @@ function GameBody() {
 						)}
 					</Animated.View>
 				)}
+
+			{inGameOver && gameState && (
+				<GameOverOverlay
+					visible={gameOverOpen}
+					winnerIdx={game.winner}
+					playerOrder={game.player_order}
+					meIdx={meIdx}
+					profilesById={profilesById}
+					gameState={gameState}
+					pointsByPlayer={displayVP}
+					onDismiss={() => setGameOverOpen(false)}
+					onBackToGames={() => router.replace('/play')}
+				/>
+			)}
+			{inGameOver && !gameOverOpen && (
+				<FinalScoreButton onPress={() => setGameOverOpen(true)} />
+			)}
 		</View>
 	)
 }

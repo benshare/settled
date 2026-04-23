@@ -125,6 +125,7 @@ export function initialGameState(
 		config,
 		devDeck: config.devCards ? buildInitialDevDeck(Math.random) : [],
 		largestArmy: null,
+		longestRoad: null,
 		round: 0,
 	}
 }

@@ -9,6 +9,7 @@ import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { bonusById, curseById } from './bonuses'
 import { knightsPlayed } from './dev'
+import { longestRoadFor } from './longestRoad'
 import { playerColors } from './palette'
 import type { GameState } from './types'
 
@@ -18,6 +19,9 @@ export type PlayerDetailOverlayProps = {
 	meIdx: number
 	profilesById: Record<string, Profile>
 	gameState: GameState
+	// Already-resolved display VP per player. See PlayerStrip /
+	// GameContext for the selection rule.
+	pointsByPlayer: number[]
 	onClose: () => void
 }
 
@@ -27,6 +31,7 @@ export function PlayerDetailOverlay({
 	meIdx,
 	profilesById,
 	gameState,
+	pointsByPlayer,
 	onClose,
 }: PlayerDetailOverlayProps) {
 	const open = playerIdx !== null
@@ -46,6 +51,7 @@ export function PlayerDetailOverlay({
 							meIdx={meIdx}
 							profilesById={profilesById}
 							gameState={gameState}
+							points={pointsByPlayer[playerIdx] ?? 0}
 							onClose={onClose}
 						/>
 					)}
@@ -61,6 +67,7 @@ function Body({
 	meIdx,
 	profilesById,
 	gameState,
+	points,
 	onClose,
 }: {
 	playerIdx: number
@@ -68,6 +75,7 @@ function Body({
 	meIdx: number
 	profilesById: Record<string, Profile>
 	gameState: GameState
+	points: number
 	onClose: () => void
 }) {
 	const uid = playerOrder[playerIdx]
@@ -75,7 +83,6 @@ function Body({
 	const name = playerIdx === meIdx ? 'You' : (profile?.username ?? 'Player')
 	const color = playerColors[playerIdx] ?? playerColors[0]
 	const player = gameState.players[playerIdx]
-	const points = pointsFor(gameState, playerIdx)
 	const cards = sumResources(player?.resources)
 	const bonus = player?.bonus ? bonusById(player.bonus) : undefined
 	const curse = player?.curse ? curseById(player.curse) : undefined
@@ -83,6 +90,8 @@ function Body({
 	const showDevCards = gameState.config.devCards
 	const knights = player ? knightsPlayed(player) : 0
 	const hasLargestArmy = gameState.largestArmy === playerIdx
+	const longestRoadLen = longestRoadFor(gameState, playerIdx)
+	const hasLongestRoad = gameState.longestRoad === playerIdx
 
 	return (
 		<>
@@ -118,21 +127,20 @@ function Body({
 			<View style={styles.statsRow}>
 				<StatChip icon="trophy-outline" label="Points" value={points} />
 				<StatChip icon="albums-outline" label="Cards" value={cards} />
+			</View>
+
+			<View style={styles.statsRow}>
 				{showDevCards && (
 					<ArmyChip
 						knights={knights}
 						hasLargestArmy={hasLargestArmy}
 					/>
 				)}
+				<RoadChip
+					length={longestRoadLen}
+					hasLongestRoad={hasLongestRoad}
+				/>
 			</View>
-
-			{showDevCards && (
-				<View style={styles.armyLine}>
-					<Text style={styles.armyText}>
-						{armyDescription(knights, hasLargestArmy)}
-					</Text>
-				</View>
-			)}
 
 			{showBonuses && (
 				<View style={styles.cardsColumn}>
@@ -214,13 +222,30 @@ function ArmyChip({
 	)
 }
 
-function armyDescription(knights: number, hasLargestArmy: boolean): string {
-	const noun = knights === 1 ? 'knight' : 'knights'
-	if (hasLargestArmy) {
-		return `Largest Army — ${knights} ${noun} played (+2 VP).`
-	}
-	if (knights === 0) return 'No knights played yet.'
-	return `Current army: ${knights} ${noun} played.`
+function RoadChip({
+	length,
+	hasLongestRoad,
+}: {
+	length: number
+	hasLongestRoad: boolean
+}) {
+	const tint = hasLongestRoad ? colors.brand : colors.textSecondary
+	return (
+		<View
+			style={[
+				styles.chip,
+				hasLongestRoad && { borderColor: colors.brand },
+			]}
+		>
+			<MaterialCommunityIcons
+				name="road-variant"
+				size={16}
+				color={tint}
+			/>
+			<Text style={[styles.chipValue, { color: tint }]}>{length}</Text>
+			<Text style={[styles.chipLabel, { color: tint }]}>Road</Text>
+		</View>
+	)
 }
 
 function CardBlock({
@@ -264,15 +289,6 @@ function EmptyCardBlock({ label }: { label: string }) {
 			<Text style={styles.emptyText}>{label}</Text>
 		</View>
 	)
-}
-
-function pointsFor(gameState: GameState, playerIdx: number): number {
-	let total = 0
-	for (const v of Object.values(gameState.vertices)) {
-		if (!v?.occupied || v.player !== playerIdx) continue
-		total += v.building === 'city' ? 2 : 1
-	}
-	return total
 }
 
 function sumResources(
@@ -352,14 +368,6 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 		paddingHorizontal: spacing.md,
 		paddingBottom: spacing.sm,
-	},
-	armyLine: {
-		paddingHorizontal: spacing.md,
-		paddingBottom: spacing.md,
-	},
-	armyText: {
-		fontSize: font.sm,
-		color: colors.textSecondary,
 	},
 	chip: {
 		flexDirection: 'row',

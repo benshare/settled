@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { bonusById, curseById } from './bonuses'
-import { knightsPlayed, totalVP } from './dev'
+import { knightsPlayed } from './dev'
+import { longestRoadFor } from './longestRoad'
 import { playerColors } from './palette'
 import type { GameState } from './types'
 
@@ -13,6 +14,7 @@ export function PlayerStrip({
 	meIdx,
 	profilesById,
 	gameState,
+	pointsByPlayer,
 	onPressPlayer,
 }: {
 	playerOrder: string[]
@@ -20,6 +22,10 @@ export function PlayerStrip({
 	meIdx: number
 	profilesById: Record<string, Profile>
 	gameState: GameState
+	// Already-resolved display VP per player (public for others, self for
+	// the viewer, or fully revealed once the game is over). Sourced from
+	// GameContext so every surface stays in sync.
+	pointsByPlayer: number[]
 	onPressPlayer?: (playerIdx: number) => void
 }) {
 	const showBonusIcons = gameState.config.bonuses
@@ -32,9 +38,7 @@ export function PlayerStrip({
 				const profile = profilesById[uid]
 				const name =
 					i === meIdx ? 'You' : (profile?.username ?? 'Player')
-				// Hidden VP cards are included only for the viewer. Everyone
-				// else sees public points (buildings + Largest Army).
-				const points = totalVP(gameState, i, i === meIdx)
+				const points = pointsByPlayer[i] ?? 0
 				const cards = sumResources(gameState.players[i]?.resources)
 				const isActive = currentTurn === i
 				const player = gameState.players[i]
@@ -47,6 +51,8 @@ export function PlayerStrip({
 				const devCount = player?.devCards?.length ?? 0
 				const knights = player ? knightsPlayed(player) : 0
 				const hasLargestArmy = gameState.largestArmy === i
+				const longestRoadLen = longestRoadFor(gameState, i)
+				const hasLongestRoad = gameState.longestRoad === i
 				return (
 					<Pressable
 						key={uid}
@@ -120,6 +126,29 @@ export function PlayerStrip({
 										]}
 									>
 										{knights}
+									</Text>
+								</View>
+							)}
+							{longestRoadLen > 0 && (
+								<View style={styles.stat}>
+									<MaterialCommunityIcons
+										name="road-variant"
+										size={12}
+										color={
+											hasLongestRoad
+												? colors.brand
+												: colors.textSecondary
+										}
+									/>
+									<Text
+										style={[
+											styles.statText,
+											hasLongestRoad && {
+												color: colors.brand,
+											},
+										]}
+									>
+										{longestRoadLen}
 									</Text>
 								</View>
 							)}

@@ -225,6 +225,11 @@ export type GameState = {
 	// Player index holding Largest Army, or null. Recomputed after every
 	// knight play; ties keep the existing holder.
 	largestArmy: number | null
+	// Player index holding Longest Road (≥ 5-edge trail, strict majority), or
+	// null. Recomputed after every road build, Road Building card finalization,
+	// and settlement build (an opponent's settlement can split a road). Ties
+	// keep the existing holder; falling below threshold releases the bonus.
+	longestRoad: number | null
 	// Monotonic turn counter. Increments on each `end_turn`. Used to enforce
 	// "can't play dev card on turn bought" (stamped on DevCardEntry.purchasedTurn).
 	round: number

@@ -12,6 +12,7 @@ import {
 	useState,
 	type ReactNode,
 } from 'react'
+import { totalVP } from './dev'
 import type { GameState } from './types'
 
 export type GameContextValue = {
@@ -19,6 +20,14 @@ export type GameContextValue = {
 	gameState: GameState | undefined
 	// True once both loads have resolved (whether or not they returned a row).
 	ready: boolean
+	// Per-player VP totals, indexed by player index. `publicVP` is what every
+	// player can see (buildings + Largest Army + Longest Road). `selfVP` adds
+	// the player's own hidden VP cards — use this for the viewer's own row
+	// and for every row once the game is over (all hands revealed). Empty
+	// when gameState is undefined. Centralized here so PlayerStrip /
+	// PlayerDetailOverlay / GameOverOverlay can't drift on the calculation.
+	publicVP: number[]
+	selfVP: number[]
 }
 
 const GameContext = createContext<GameContextValue | null>(null)
@@ -113,13 +122,34 @@ export function GameProvider({
 		}
 	}, [gameId])
 
+	const { publicVP, selfVP } = useMemo(() => {
+		if (!gameState) return { publicVP: [], selfVP: [] }
+		const pub = gameState.players.map((_, i) =>
+			totalVP(gameState, i, false)
+		)
+		const self = gameState.players.map((_, i) =>
+			totalVP(gameState, i, true)
+		)
+		return { publicVP: pub, selfVP: self }
+	}, [gameState])
+
 	const value = useMemo<GameContextValue>(
 		() => ({
 			game: liveGame ?? storeGame,
 			gameState,
 			ready: storeReady && stateLoaded,
+			publicVP,
+			selfVP,
 		}),
-		[liveGame, storeGame, gameState, storeReady, stateLoaded]
+		[
+			liveGame,
+			storeGame,
+			gameState,
+			storeReady,
+			stateLoaded,
+			publicVP,
+			selfVP,
+		]
 	)
 
 	return <GameContext.Provider value={value}>{children}</GameContext.Provider>
@@ -148,6 +178,7 @@ function rowToState(row: Record<string, unknown>): GameState {
 		config: row.config as GameState['config'],
 		devDeck: (row.dev_deck as GameState['devDeck']) ?? [],
 		largestArmy: (row.largest_army as GameState['largestArmy']) ?? null,
+		longestRoad: (row.longest_road as GameState['longestRoad']) ?? null,
 		round: (row.round as GameState['round']) ?? 0,
 	}
 }

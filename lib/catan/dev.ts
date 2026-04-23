@@ -97,6 +97,7 @@ export function totalVP(
 		}
 	}
 	if (state.largestArmy === playerIdx) vp += 2
+	if (state.longestRoad === playerIdx) vp += 2
 	if (includeHiddenVP) {
 		for (const e of p.devCards) {
 			if (e.id === 'victory_point') vp += 1

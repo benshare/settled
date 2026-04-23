@@ -102,6 +102,20 @@ export type GameEvent =
 			at: string
 	  }
 	| { kind: 'largest_army_changed'; player: number; at: string }
+	// Longest Road flips after road builds, Road Building card finalizations,
+	// and settlement builds (opponent can split a chain). `player: null`
+	// announces that the current holder lost the bonus with no successor —
+	// common when a settlement severs a chain below the 5-segment threshold.
+	| { kind: 'longest_road_changed'; player: number | null; at: string }
+	// Terminal event. Written once per game when a player reaches 10 VP.
+	// `vpCards` reveals each player's previously-hidden VP card count so
+	// clients can render a final scoreboard without a separate read.
+	| {
+			kind: 'game_complete'
+			winner: number
+			vpCards: Record<number, number>
+			at: string
+	  }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }

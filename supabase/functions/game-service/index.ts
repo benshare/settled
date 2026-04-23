@@ -681,6 +681,7 @@ type GameState = {
 	config: GameConfig
 	devDeck: DevCardId[]
 	largestArmy: number | null
+	longestRoad: number | null
 	round: number
 }
 
@@ -1006,6 +1007,194 @@ function hasLegalRoadPlacement(state: GameState, meIdx: number): boolean {
 	return validBuildRoadEdges(state, meIdx).length > 0
 }
 
+// --- Longest Road (must match lib/catan/longestRoad) -----------------------
+
+const LONGEST_ROAD_THRESHOLD = 5
+
+function longestRoadFor(state: GameState, playerIdx: number): number {
+	const ownEdges: Edge[] = []
+	for (const edge of EDGES) {
+		const es = edgeStateOf(state, edge)
+		if (es.occupied && es.player === playerIdx) ownEdges.push(edge)
+	}
+	if (ownEdges.length === 0) return 0
+
+	let best = 0
+	const used = new Set<Edge>()
+	for (const start of ownEdges) {
+		const [a, b] = edgeEndpoints(start)
+		used.add(start)
+		const lenA = longestRoadWalk(state, playerIdx, a, used)
+		const lenB = longestRoadWalk(state, playerIdx, b, used)
+		used.delete(start)
+		const local = Math.max(lenA, lenB)
+		if (local > best) best = local
+		if (best === ownEdges.length) return best
+	}
+	return best
+}
+
+function longestRoadWalk(
+	state: GameState,
+	playerIdx: number,
+	head: Vertex,
+	used: Set<Edge>
+): number {
+	const vs = vertexStateOf(state, head)
+	if (vs.occupied && vs.player !== playerIdx) return used.size
+	let best = used.size
+	for (const e of adjacentEdges[head]) {
+		if (used.has(e)) continue
+		const es = edgeStateOf(state, e)
+		if (!es.occupied || es.player !== playerIdx) continue
+		const [a, b] = edgeEndpoints(e)
+		const next = a === head ? b : a
+		used.add(e)
+		const len = longestRoadWalk(state, playerIdx, next, used)
+		used.delete(e)
+		if (len > best) best = len
+	}
+	return best
+}
+
+function recomputeLongestRoad(state: GameState): number | null {
+	const lengths = state.players.map((_, i) => longestRoadFor(state, i))
+	let bestIdx: number | null = null
+	let bestLen = LONGEST_ROAD_THRESHOLD - 1
+	lengths.forEach((len, i) => {
+		if (len > bestLen) {
+			bestLen = len
+			bestIdx = i
+		}
+	})
+	if (bestIdx === null) return null
+	const tiedAtLead = lengths
+		.map((len, i) => ({ len, i }))
+		.filter((e) => e.len === bestLen)
+	if (tiedAtLead.length > 1) {
+		if (
+			state.longestRoad !== null &&
+			tiedAtLead.some((e) => e.i === state.longestRoad)
+		) {
+			return state.longestRoad
+		}
+		return null
+	}
+	return bestIdx
+}
+
+// --- Victory (must match lib/catan/dev.totalVP) ----------------------------
+
+const VICTORY_THRESHOLD = 10
+
+function totalVP(state: GameState, playerIdx: number): number {
+	const p = state.players[playerIdx]
+	let vp = 0
+	for (const v of Object.values(state.vertices)) {
+		if (v?.occupied && v.player === playerIdx) {
+			vp += v.building === 'city' ? 2 : 1
+		}
+	}
+	if (state.largestArmy === playerIdx) vp += 2
+	if (state.longestRoad === playerIdx) vp += 2
+	for (const e of p.devCards) {
+		if (e.id === 'victory_point') vp += 1
+	}
+	return vp
+}
+
+function vpCardCountsByPlayer(state: GameState): Record<number, number> {
+	const out: Record<number, number> = {}
+	state.players.forEach((p, i) => {
+		let n = 0
+		for (const e of p.devCards) if (e.id === 'victory_point') n++
+		if (n > 0) out[i] = n
+	})
+	return out
+}
+
+// Returns the first player (by index) at or above the victory threshold, or
+// null. All VP (including hidden VP cards) counts.
+function findWinner(state: GameState): number | null {
+	for (let i = 0; i < state.players.length; i++) {
+		if (totalVP(state, i) >= VICTORY_THRESHOLD) return i
+	}
+	return null
+}
+
+// Runs the end-of-action bookkeeping shared by every handler that could
+// shift Longest Road or push a player to victory:
+//   1. Recompute Longest Road (opt-in — only handlers that touched the road
+//      graph pass `recomputeRoads: true`). Pushes `longest_road_changed` event
+//      + `longest_road` column update on change.
+//   2. Scan for a winner (totalVP >= 10). If found, flip phase to `game_over`,
+//      mark the games row as complete, and push `game_complete` event.
+//
+// Mutates `stateUpdate` + `events` in place. Returns the winner index (or
+// null) so the caller can populate games.status / games.winner.
+function applyEndOfActionChecks(
+	nextState: GameState,
+	stateUpdate: Record<string, unknown>,
+	events: unknown[],
+	opts: { recomputeRoads: boolean }
+): number | null {
+	const at = new Date().toISOString()
+	let cur = nextState
+
+	if (opts.recomputeRoads) {
+		const newHolder = recomputeLongestRoad(cur)
+		if (newHolder !== cur.longestRoad) {
+			cur = { ...cur, longestRoad: newHolder }
+			stateUpdate.longest_road = newHolder
+			events.push({ kind: 'longest_road_changed', player: newHolder, at })
+		}
+	}
+
+	const winner = findWinner(cur)
+	if (winner !== null) {
+		const gameOverPhase: Phase = { kind: 'game_over' }
+		stateUpdate.phase = gameOverPhase
+		events.push({
+			kind: 'game_complete',
+			winner,
+			at,
+			vpCards: vpCardCountsByPlayer(cur),
+		})
+	}
+	return winner
+}
+
+// Commits `stateUpdate` to game_states and `events` (plus optional
+// winner/status) to games. Matches the two-step write pattern used across
+// handlers; factored out so end-of-action flows stay readable.
+async function commitActionWrite(
+	admin: SupabaseClient,
+	game: GameRow,
+	stateUpdate: Record<string, unknown>,
+	events: unknown[],
+	winner: number | null
+): Promise<Response | null> {
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update(stateUpdate)
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const gameUpdate: Record<string, unknown> = {
+		events: [...(game.events ?? []), ...events],
+	}
+	if (winner !== null) {
+		gameUpdate.status = 'complete'
+		gameUpdate.winner = winner
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update(gameUpdate)
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return null
+}
+
 // --- Trade rules (must match lib/catan/trade) ------------------------------
 
 function isValidTradeShape(give: ResourceHand, receive: ResourceHand): boolean {
@@ -1270,6 +1459,7 @@ async function loadGame(
 		config: stateRow.config as GameConfig,
 		devDeck: (stateRow.dev_deck as DevCardId[] | null) ?? [],
 		largestArmy: (stateRow.largest_army as number | null) ?? null,
+		longestRoad: (stateRow.longest_road as number | null) ?? null,
 		round: (stateRow.round as number | null) ?? 0,
 	}
 	return { ok: true, game: game as GameRow, state }
@@ -1364,6 +1554,7 @@ async function handleRespond(
 			config,
 			dev_deck: config.devCards ? buildInitialDevDeck() : [],
 			largest_army: null,
+			longest_road: null,
 			round: 0,
 		})
 		if (stateErr) return err(500, 'could not create game state')
@@ -1873,23 +2064,31 @@ async function handleBuildRoad(
 	}
 	if (nextPhase) update.phase = nextPhase
 
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update(update)
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
-	const event = {
-		kind: 'road_built',
-		player: meIdx,
-		edge,
-		at: new Date().toISOString(),
+	const nextState: GameState = {
+		...state,
+		players: nextPlayers,
+		edges: nextEdges,
+		phase: nextPhase ?? state.phase,
 	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
+	const events: unknown[] = [
+		{
+			kind: 'road_built',
+			player: meIdx,
+			edge,
+			at: new Date().toISOString(),
+		},
+	]
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: true,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
 
 	return json({ ok: true })
 }
@@ -1923,23 +2122,36 @@ async function handleBuildSettlement(
 	}
 	const nextPlayers = applyCost(state.players, meIdx, cost)
 
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ vertices: nextVertices, players: nextPlayers })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
-	const event = {
-		kind: 'settlement_built',
-		player: meIdx,
-		vertex,
-		at: new Date().toISOString(),
+	const update: Record<string, unknown> = {
+		vertices: nextVertices,
+		players: nextPlayers,
 	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
+	const nextState: GameState = {
+		...state,
+		vertices: nextVertices,
+		players: nextPlayers,
+	}
+	const events: unknown[] = [
+		{
+			kind: 'settlement_built',
+			player: meIdx,
+			vertex,
+			at: new Date().toISOString(),
+		},
+	]
+	// An opponent's settlement can split a chain, so Longest Road gets
+	// recomputed here too (not just on road builds).
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: true,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
 
 	return json({ ok: true })
 }
@@ -1973,23 +2185,35 @@ async function handleBuildCity(
 	}
 	const nextPlayers = applyCost(state.players, meIdx, cost)
 
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ vertices: nextVertices, players: nextPlayers })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
-	const event = {
-		kind: 'city_built',
-		player: meIdx,
-		vertex,
-		at: new Date().toISOString(),
+	const update: Record<string, unknown> = {
+		vertices: nextVertices,
+		players: nextPlayers,
 	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
+	const nextState: GameState = {
+		...state,
+		vertices: nextVertices,
+		players: nextPlayers,
+	}
+	const events: unknown[] = [
+		{
+			kind: 'city_built',
+			player: meIdx,
+			vertex,
+			at: new Date().toISOString(),
+		},
+	]
+	// Cities don't touch the road graph; skip Longest Road recompute.
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: false,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
 
 	return json({ ok: true })
 }
@@ -2509,23 +2733,35 @@ async function handleBuyDevCard(
 		}
 	})
 
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ players: nextPlayers, dev_deck: nextDeck })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
-	// No card id in the event — the draw stays private.
-	const event = {
-		kind: 'dev_bought',
-		player: meIdx,
-		at: new Date().toISOString(),
+	const update: Record<string, unknown> = {
+		players: nextPlayers,
+		dev_deck: nextDeck,
 	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
+	const nextState: GameState = {
+		...state,
+		players: nextPlayers,
+		devDeck: nextDeck,
+	}
+	// No card id in the event — the draw stays private.
+	const events: unknown[] = [
+		{
+			kind: 'dev_bought',
+			player: meIdx,
+			at: new Date().toISOString(),
+		},
+	]
+	// A VP card can push the buyer over 10; no road-graph change here.
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: false,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
 
 	return json({ ok: true })
 }
@@ -2707,19 +2943,26 @@ async function handlePlayDevCard(
 		update.largest_army = nextLargestArmy
 	}
 
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update(update)
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
-	if (events.length > 0) {
-		const { error: gameErr } = await admin
-			.from('games')
-			.update({ events: [...(game.events ?? []), ...events] })
-			.eq('id', game.id)
-		if (gameErr) return err(500, 'could not log event')
+	const nextState: GameState = {
+		...state,
+		players: nextPlayers,
+		phase: nextPhase,
+		largestArmy: nextLargestArmy,
 	}
+	// A knight play can shift Largest Army (+2 VP swing) and push the new
+	// holder over 10. Road Building card's actual road placements flow
+	// through handleBuildRoad, which runs its own recompute — skip here.
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: false,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
 
 	return json({ ok: true })
 }
