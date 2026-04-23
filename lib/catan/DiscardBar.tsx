@@ -32,10 +32,12 @@ export function DiscardBar({
 	const [sel, setSel] = useState<ResourceHand>(EMPTY)
 	const total = handSize(sel)
 	const ready = total === required && !submitting
+	const atCap = total >= required
 
 	function set(r: Resource, delta: number) {
 		const next = sel[r] + delta
 		if (next < 0 || next > hand[r]) return
+		if (delta > 0 && atCap) return
 		setSel({ ...sel, [r]: next })
 	}
 
@@ -54,6 +56,7 @@ export function DiscardBar({
 						resource={r}
 						available={hand[r]}
 						value={sel[r]}
+						canInc={!atCap && sel[r] < hand[r]}
 						onDec={() => set(r, -1)}
 						onInc={() => set(r, +1)}
 					/>
@@ -74,12 +77,14 @@ function ResourceStepper({
 	resource,
 	available,
 	value,
+	canInc,
 	onDec,
 	onInc,
 }: {
 	resource: Resource
 	available: number
 	value: number
+	canInc: boolean
 	onDec: () => void
 	onInc: () => void
 }) {
@@ -96,11 +101,7 @@ function ResourceStepper({
 			<View style={styles.stepperControls}>
 				<StepButton label="-" onPress={onDec} disabled={value <= 0} />
 				<Text style={styles.stepperValue}>{value}</Text>
-				<StepButton
-					label="+"
-					onPress={onInc}
-					disabled={value >= available}
-				/>
+				<StepButton label="+" onPress={onInc} disabled={!canInc} />
 			</View>
 		</View>
 	)

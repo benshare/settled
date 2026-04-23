@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons'
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { bonusById, curseById } from './bonuses'
-import { totalVP } from './dev'
+import { knightsPlayed, totalVP } from './dev'
 import { playerColors } from './palette'
 import type { GameState } from './types'
 
@@ -45,6 +45,8 @@ export function PlayerStrip({
 					? curseById(player.curse)
 					: undefined
 				const devCount = player?.devCards?.length ?? 0
+				const knights = player ? knightsPlayed(player) : 0
+				const hasLargestArmy = gameState.largestArmy === i
 				return (
 					<Pressable
 						key={uid}
@@ -95,6 +97,29 @@ export function PlayerStrip({
 									/>
 									<Text style={styles.statText}>
 										{devCount}
+									</Text>
+								</View>
+							)}
+							{showDevCards && knights > 0 && (
+								<View style={styles.stat}>
+									<MaterialCommunityIcons
+										name="sword"
+										size={12}
+										color={
+											hasLargestArmy
+												? colors.brand
+												: colors.textSecondary
+										}
+									/>
+									<Text
+										style={[
+											styles.statText,
+											hasLargestArmy && {
+												color: colors.brand,
+											},
+										]}
+									>
+										{knights}
 									</Text>
 								</View>
 							)}

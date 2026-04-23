@@ -3,11 +3,12 @@
 // game is running with bonuses — the full bonus and curse cards they hold.
 
 import { Avatar } from '@/lib/modules/Avatar'
-import { Ionicons } from '@expo/vector-icons'
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { bonusById, curseById } from './bonuses'
+import { knightsPlayed } from './dev'
 import { playerColors } from './palette'
 import type { GameState } from './types'
 
@@ -79,6 +80,9 @@ function Body({
 	const bonus = player?.bonus ? bonusById(player.bonus) : undefined
 	const curse = player?.curse ? curseById(player.curse) : undefined
 	const showBonuses = gameState.config.bonuses
+	const showDevCards = gameState.config.devCards
+	const knights = player ? knightsPlayed(player) : 0
+	const hasLargestArmy = gameState.largestArmy === playerIdx
 
 	return (
 		<>
@@ -106,27 +110,29 @@ function Body({
 							pressed && styles.pressed,
 						]}
 					>
-						<Ionicons
-							name="close"
-							size={22}
-							color={colors.text}
-						/>
+						<Ionicons name="close" size={22} color={colors.text} />
 					</Pressable>
 				</View>
 			</View>
 
 			<View style={styles.statsRow}>
-				<StatChip
-					icon="trophy-outline"
-					label="Points"
-					value={points}
-				/>
-				<StatChip
-					icon="albums-outline"
-					label="Cards"
-					value={cards}
-				/>
+				<StatChip icon="trophy-outline" label="Points" value={points} />
+				<StatChip icon="albums-outline" label="Cards" value={cards} />
+				{showDevCards && (
+					<ArmyChip
+						knights={knights}
+						hasLargestArmy={hasLargestArmy}
+					/>
+				)}
 			</View>
+
+			{showDevCards && (
+				<View style={styles.armyLine}>
+					<Text style={styles.armyText}>
+						{armyDescription(knights, hasLargestArmy)}
+					</Text>
+				</View>
+			)}
 
 			{showBonuses && (
 				<View style={styles.cardsColumn}>
@@ -186,6 +192,37 @@ function StatChip({
 	)
 }
 
+function ArmyChip({
+	knights,
+	hasLargestArmy,
+}: {
+	knights: number
+	hasLargestArmy: boolean
+}) {
+	const tint = hasLargestArmy ? colors.brand : colors.textSecondary
+	return (
+		<View
+			style={[
+				styles.chip,
+				hasLargestArmy && { borderColor: colors.brand },
+			]}
+		>
+			<MaterialCommunityIcons name="sword" size={16} color={tint} />
+			<Text style={[styles.chipValue, { color: tint }]}>{knights}</Text>
+			<Text style={[styles.chipLabel, { color: tint }]}>Army</Text>
+		</View>
+	)
+}
+
+function armyDescription(knights: number, hasLargestArmy: boolean): string {
+	const noun = knights === 1 ? 'knight' : 'knights'
+	if (hasLargestArmy) {
+		return `Largest Army — ${knights} ${noun} played (+2 VP).`
+	}
+	if (knights === 0) return 'No knights played yet.'
+	return `Current army: ${knights} ${noun} played.`
+}
+
 function CardBlock({
 	icon,
 	iconColor,
@@ -206,12 +243,7 @@ function CardBlock({
 	return (
 		<View style={[styles.cardBlock, { borderColor }]}>
 			<View style={styles.cardHeader}>
-				<View
-					style={[
-						styles.cardIcon,
-						{ borderColor: borderColor },
-					]}
-				>
+				<View style={[styles.cardIcon, { borderColor: borderColor }]}>
 					<Ionicons name={icon} size={28} color={iconColor} />
 				</View>
 				<View style={styles.cardHeaderText}>
@@ -316,9 +348,18 @@ const styles = StyleSheet.create({
 	},
 	statsRow: {
 		flexDirection: 'row',
+		flexWrap: 'wrap',
 		gap: spacing.sm,
 		paddingHorizontal: spacing.md,
+		paddingBottom: spacing.sm,
+	},
+	armyLine: {
+		paddingHorizontal: spacing.md,
 		paddingBottom: spacing.md,
+	},
+	armyText: {
+		fontSize: font.sm,
+		color: colors.textSecondary,
 	},
 	chip: {
 		flexDirection: 'row',

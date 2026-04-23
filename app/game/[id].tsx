@@ -767,15 +767,19 @@ function MainLoopBar({
 	}
 
 	return (
-		<View style={styles.actionBar}>
+		<View style={styles.mainLoopBar}>
 			<View style={styles.mainLoopRow}>
-				{dice && (
-					<View style={styles.diceRow}>
-						<DieFaceView value={dice.a} />
-						<DieFaceView value={dice.b} />
-					</View>
-				)}
-				<Text style={styles.mainLoopStatus}>{status}</Text>
+				<View style={styles.diceSlot}>
+					{dice && (
+						<View style={styles.diceRow}>
+							<DieFaceView value={dice.a} />
+							<DieFaceView value={dice.b} />
+						</View>
+					)}
+				</View>
+				<Text style={styles.mainLoopStatus} numberOfLines={2}>
+					{status}
+				</Text>
 				{isMyTurn && phase.kind === 'roll' && (
 					<Button onPress={onRoll} loading={submitting}>
 						Roll
@@ -1052,6 +1056,18 @@ const styles = StyleSheet.create({
 		paddingTop: spacing.sm,
 		paddingBottom: spacing.md,
 	},
+	mainLoopBar: {
+		paddingHorizontal: spacing.md,
+		paddingTop: spacing.sm,
+		paddingBottom: spacing.md,
+		minHeight: 76,
+		justifyContent: 'center',
+	},
+	diceSlot: {
+		width: 72,
+		height: 32,
+		justifyContent: 'center',
+	},
 	confirmFloat: {
 		position: 'absolute',
 		top: spacing.sm,
@@ -1106,6 +1122,7 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: spacing.sm,
+		minHeight: 52,
 	},
 	diceRow: {
 		flexDirection: 'row',
