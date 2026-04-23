@@ -64,13 +64,19 @@ function assertVerticesEqual(got: Vertex[], want: Vertex[], msg: string) {
 // --- Tests -----------------------------------------------------------------
 
 function testFreshGameAllValid() {
-	const s = initialGameState('standard', 3, { bonuses: false })
+	const s = initialGameState('standard', 3, {
+		bonuses: false,
+		devCards: false,
+	})
 	const valid = validSettlementVertices(s)
 	equal(valid.length, VERTICES.length, 'fresh game: all 54 vertices valid')
 }
 
 function testDistanceRule() {
-	const s0 = initialGameState('standard', 3, { bonuses: false })
+	const s0 = initialGameState('standard', 3, {
+		bonuses: false,
+		devCards: false,
+	})
 	const s = placeSettlement(s0, '3F', 0)
 	assert(
 		!isValidSettlementVertex(s, '3F'),
@@ -97,14 +103,17 @@ function testDistanceRule() {
 }
 
 function testTargetSettlementRound1() {
-	const s0 = initialGameState('standard', 3, { bonuses: false })
+	const s0 = initialGameState('standard', 3, {
+		bonuses: false,
+		devCards: false,
+	})
 	const s = placeSettlement(s0, '3F', 0)
 	equal(targetSettlement(s, 0), '3F', 'round-1 target = only settlement')
 	equal(targetSettlement(s, 1), null, 'other player has no target')
 }
 
 function testTargetSettlementRound2() {
-	let s = initialGameState('standard', 3, { bonuses: false })
+	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
 	// Round 1: player 0 places settlement 3F + a road on one of its edges.
 	s = placeSettlement(s, '3F', 0)
 	const firstEdge = adjacentEdges['3F'][0] as Edge
@@ -126,7 +135,7 @@ function testTargetSettlementRound2() {
 }
 
 function testValidRoadEdges() {
-	let s = initialGameState('standard', 3, { bonuses: false })
+	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
 	s = placeSettlement(s, '3F', 0)
 	const edges = validRoadEdges(s, 0)
 	assert(edges.length > 0 && edges.length <= 3, 'road count 1..3')
@@ -146,7 +155,10 @@ function testValidRoadEdges() {
 }
 
 function testStartingResourcesInterior() {
-	const s = initialGameState('standard', 3, { bonuses: false })
+	const s = initialGameState('standard', 3, {
+		bonuses: false,
+		devCards: false,
+	})
 	// Find an interior vertex (touches 3 hexes).
 	const interior = VERTICES.find((v) => adjacentHexes[v].length === 3)
 	assert(interior, 'board must have at least one interior vertex')
@@ -189,7 +201,10 @@ function testNextPlacementTurnBoundaries() {
 }
 
 function testValidSettlementExcludesAllNeighbors() {
-	const s0 = initialGameState('standard', 3, { bonuses: false })
+	const s0 = initialGameState('standard', 3, {
+		bonuses: false,
+		devCards: false,
+	})
 	const s = placeSettlement(s0, '3F', 0)
 	const valid = new Set(validSettlementVertices(s))
 	const want = new Set<Vertex>(VERTICES)

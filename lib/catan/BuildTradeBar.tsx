@@ -25,25 +25,34 @@ export function BuildTradeBar({
 	meIdx,
 	tradeEnabled,
 	tradeActive,
+	devCardsEnabled,
 	onSelect,
 	onTradePress,
+	onBuyDevCard,
 }: {
 	active: BuildKind | null
 	enabled: BuildEnablement
 	meIdx: number
 	tradeEnabled: boolean
 	tradeActive: boolean
+	// Config gate: when the game wasn't created with dev cards, the button
+	// is hidden entirely rather than just disabled.
+	devCardsEnabled: boolean
 	onSelect: (tool: BuildKind) => void
 	onTradePress: () => void
+	onBuyDevCard: () => void
 }) {
 	const color = playerColors[meIdx] ?? playerColors[0]
 	const tradeInteractive = tradeEnabled || tradeActive
+	const options = devCardsEnabled
+		? BUILD_OPTIONS
+		: BUILD_OPTIONS.filter((o) => o.key !== 'dev_card')
 	return (
 		<View style={styles.row}>
 			<View style={[styles.panel, styles.buildPanel]}>
 				<Text style={styles.title}>Build</Text>
 				<View style={styles.iconRow}>
-					{BUILD_OPTIONS.map((opt) => (
+					{options.map((opt) => (
 						<BuildIconButton
 							key={opt.key}
 							option={opt}
@@ -53,7 +62,10 @@ export function BuildTradeBar({
 							}
 							meIdx={meIdx}
 							onPress={() => {
-								if (opt.key === 'dev_card') return
+								if (opt.key === 'dev_card') {
+									onBuyDevCard()
+									return
+								}
 								onSelect(opt.key)
 							}}
 						/>

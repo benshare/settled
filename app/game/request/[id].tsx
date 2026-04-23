@@ -1,4 +1,5 @@
 import { useAuth } from '@/lib/auth'
+import { parseGameConfig, summarizeGameConfig } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { type InvitedEntry, useGamesStore } from '@/lib/stores/useGamesStore'
@@ -98,6 +99,7 @@ function Body({
 		id: string
 		proposer: string
 		invited: InvitedEntry[]
+		config: unknown
 	}
 	profilesById: Record<string, Profile>
 	meId: string | undefined
@@ -114,6 +116,15 @@ function Body({
 	const canRespond =
 		mine !== undefined && mine.status === 'pending' && !someoneRejected
 
+	// Participant count = proposer + everyone they invited. We don't filter
+	// by response status here — a "3 player game" describes the intended
+	// game regardless of who's still pending.
+	const playerCount = request.invited.length + 1
+	const summary = summarizeGameConfig(
+		parseGameConfig(request.config),
+		playerCount
+	)
+
 	let statusLine: string | null = null
 	if (!canRespond) {
 		if (someoneRejected) statusLine = 'Someone declined. Game cancelled.'
@@ -125,6 +136,7 @@ function Body({
 
 	return (
 		<ScrollView contentContainerStyle={styles.body}>
+			<Text style={styles.summary}>{summary}</Text>
 			<View style={styles.card}>
 				<PersonRow
 					profile={profilesById[request.proposer]}
@@ -231,6 +243,10 @@ function makeStyles(colors: ColorScheme) {
 		body: {
 			padding: spacing.lg,
 			gap: spacing.lg,
+		},
+		summary: {
+			fontSize: font.base,
+			color: colors.textSecondary,
 		},
 		card: {
 			borderWidth: 1,

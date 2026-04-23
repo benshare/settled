@@ -4,12 +4,18 @@ import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
 import { useFriendsStore, type FriendEntry } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
+import {
+	DEFAULT_GAME_DEFAULTS,
+	parseGameDefaults,
+	useProfileStore,
+	type GameDefaults,
+} from '@/lib/stores/useProfileStore'
 import { useTheme } from '@/lib/ThemeContext'
-import { ColorScheme, font, spacing } from '@/lib/theme'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import type React from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
 	KeyboardAvoidingView,
 	Platform,
@@ -28,12 +34,44 @@ export default function CreateGameScreen() {
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const friends = useFriendsStore((s) => s.friends)
 	const createRequest = useGamesStore((s) => s.createRequest)
+	const profile = useProfileStore((s) => s.profile)
+	const updateGameDefaults = useProfileStore((s) => s.updateGameDefaults)
+
+	// Snapshot of the user's saved defaults. We compare the current form
+	// against this to decide whether to show the "Save options" button.
+	const savedDefaults: GameDefaults = profile?.game_defaults
+		? parseGameDefaults(profile.game_defaults)
+		: DEFAULT_GAME_DEFAULTS
 
 	const [query, setQuery] = useState('')
 	const [selected, setSelected] = useState<Set<string>>(new Set())
-	const [bonuses, setBonuses] = useState(false)
+	const [bonuses, setBonuses] = useState(savedDefaults.extras.bonuses)
+	const [devCards, setDevCards] = useState(savedDefaults.settings.devCards)
+	const [settingsOpen, setSettingsOpen] = useState(false)
+	const [extrasOpen, setExtrasOpen] = useState(false)
 	const [busy, setBusy] = useState(false)
+	const [savingDefaults, setSavingDefaults] = useState(false)
 	const [error, setError] = useState<string | null>(null)
+
+	// If the profile loads after mount, reset form fields to match the
+	// freshly-loaded saved values. Users who touched the toggles before the
+	// load completed keep their edits.
+	const [touched, setTouched] = useState(false)
+	const savedBonuses = savedDefaults.extras.bonuses
+	const savedDevCards = savedDefaults.settings.devCards
+	useEffect(() => {
+		if (touched) return
+		setBonuses(savedBonuses)
+		setDevCards(savedDevCards)
+	}, [savedBonuses, savedDevCards, touched])
+
+	const currentDefaults: GameDefaults = {
+		settings: { devCards },
+		extras: { bonuses },
+	}
+	const dirty =
+		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
+		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses
 
 	const filtered = useMemo(() => {
 		const q = query.trim().toLowerCase()
@@ -56,17 +94,23 @@ export default function CreateGameScreen() {
 		if (!user?.id || selected.size === 0) return
 		setBusy(true)
 		setError(null)
-		const { error } = await createRequest(
-			user.id,
-			Array.from(selected),
-			{ bonuses }
-		)
+		const { error } = await createRequest(user.id, Array.from(selected), {
+			bonuses,
+			devCards,
+		})
 		setBusy(false)
 		if (error) {
 			setError(error)
 			return
 		}
 		router.replace('/play')
+	}
+
+	async function onSaveDefaults() {
+		setSavingDefaults(true)
+		const { error } = await updateGameDefaults(currentDefaults)
+		setSavingDefaults(false)
+		if (error) setError(error)
 	}
 
 	return (
@@ -131,17 +175,72 @@ export default function CreateGameScreen() {
 								</View>
 							)}
 
-							<View style={styles.configSection}>
-								<Text style={styles.configHeading}>
-									Options
-								</Text>
-								<ConfigToggleRow
-									icon="sparkles"
-									title="Bonuses"
-									description="Players draw a bonus and a curse before placement."
-									value={bonuses}
-									onToggle={() => setBonuses((v) => !v)}
-								/>
+							<View style={styles.optionsBlock}>
+								<View style={styles.optionsHeaderRow}>
+									<Text style={styles.optionsHeading}>
+										Options
+									</Text>
+									{dirty && (
+										<Pressable
+											onPress={onSaveDefaults}
+											disabled={savingDefaults}
+											style={({ pressed }) => [
+												styles.saveDefaultsBtn,
+												pressed &&
+													!savingDefaults &&
+													styles.pressed,
+											]}
+										>
+											<Ionicons
+												name="bookmark-outline"
+												size={14}
+												color={colors.brand}
+											/>
+											<Text
+												style={styles.saveDefaultsText}
+											>
+												{savingDefaults
+													? 'Saving…'
+													: 'Save options'}
+											</Text>
+										</Pressable>
+									)}
+								</View>
+
+								<CollapsibleSection
+									title="Game settings"
+									open={settingsOpen}
+									onToggle={() => setSettingsOpen((v) => !v)}
+									first
+								>
+									<CompactToggleRow
+										icon="albums"
+										title="Dev cards"
+										description="Buy Knights, VPs, and special cards during play."
+										value={devCards}
+										onToggle={() => {
+											setDevCards((v) => !v)
+											setTouched(true)
+										}}
+									/>
+								</CollapsibleSection>
+
+								<CollapsibleSection
+									title="Extras"
+									open={extrasOpen}
+									onToggle={() => setExtrasOpen((v) => !v)}
+								>
+									<CompactToggleRow
+										icon="sparkles"
+										title="Bonuses"
+										description="Players draw a bonus and a curse before placement."
+										value={bonuses}
+										onToggle={() => {
+											setBonuses((v) => !v)
+											setTouched(true)
+										}}
+									/>
+								</CollapsibleSection>
 							</View>
 						</ScrollView>
 
@@ -166,7 +265,49 @@ export default function CreateGameScreen() {
 	)
 }
 
-function ConfigToggleRow({
+function CollapsibleSection({
+	title,
+	open,
+	onToggle,
+	first,
+	children,
+}: {
+	title: string
+	open: boolean
+	onToggle: () => void
+	// Suppresses the top divider on the first section in a group.
+	first?: boolean
+	children: React.ReactNode
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View
+			style={[
+				styles.collapsibleWrap,
+				first && styles.collapsibleWrapFirst,
+			]}
+		>
+			<Pressable
+				onPress={onToggle}
+				style={({ pressed }) => [
+					styles.collapsibleHeader,
+					pressed && styles.pressed,
+				]}
+			>
+				<Text style={styles.collapsibleTitle}>{title}</Text>
+				<Ionicons
+					name={open ? 'chevron-up' : 'chevron-down'}
+					size={16}
+					color={colors.textMuted}
+				/>
+			</Pressable>
+			{open && <View style={styles.collapsibleBody}>{children}</View>}
+		</View>
+	)
+}
+
+function CompactToggleRow({
 	icon,
 	title,
 	description,
@@ -185,21 +326,20 @@ function ConfigToggleRow({
 		<Pressable
 			onPress={onToggle}
 			style={({ pressed }) => [
-				styles.configRow,
+				styles.compactRow,
 				pressed && styles.pressed,
 			]}
 		>
-			<View style={styles.configIcon}>
-				<Ionicons name={icon} size={22} color={colors.text} />
+			<Ionicons name={icon} size={18} color={colors.textSecondary} />
+			<View style={styles.compactTextWrap}>
+				<Text style={styles.compactTitle}>{title}</Text>
+				<Text style={styles.compactDescription}>{description}</Text>
 			</View>
-			<View style={styles.configTextWrap}>
-				<Text style={styles.configTitle}>{title}</Text>
-				<Text style={styles.configDescription}>{description}</Text>
-			</View>
-			<View style={[styles.check, value && styles.checkSelected]}>
-				{value && (
-					<Ionicons name="checkmark" size={18} color={colors.white} />
-				)}
+			<View
+				style={[styles.pillTrack, value && styles.pillTrackOn]}
+				pointerEvents="none"
+			>
+				<View style={[styles.pillThumb, value && styles.pillThumbOn]} />
 			</View>
 		</Pressable>
 	)
@@ -307,45 +447,102 @@ function makeStyles(colors: ColorScheme) {
 			backgroundColor: colors.brand,
 			borderColor: colors.brand,
 		},
-		configSection: {
-			marginTop: spacing.lg,
+		optionsBlock: {
+			marginTop: spacing.xl,
 			gap: spacing.sm,
 		},
-		configHeading: {
+		optionsHeaderRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			marginBottom: spacing.xs,
+		},
+		optionsHeading: {
+			fontSize: font.md,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		collapsibleWrap: {
+			borderTopWidth: 1,
+			borderTopColor: colors.borderLight,
+			paddingTop: spacing.sm,
+		},
+		collapsibleWrapFirst: {
+			borderTopWidth: 0,
+			paddingTop: 0,
+		},
+		collapsibleHeader: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			paddingVertical: spacing.xs,
+		},
+		collapsibleTitle: {
 			fontSize: font.sm,
 			fontWeight: '700',
 			color: colors.textMuted,
 			textTransform: 'uppercase',
 			letterSpacing: 0.5,
 		},
-		configRow: {
+		collapsibleBody: {
+			paddingTop: spacing.xs,
+		},
+		compactRow: {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: spacing.sm,
-			paddingVertical: spacing.sm,
+			paddingVertical: spacing.xs,
 		},
-		configIcon: {
-			width: 40,
-			height: 40,
-			borderRadius: 999,
-			alignItems: 'center',
-			justifyContent: 'center',
-			backgroundColor: colors.card,
-			borderWidth: 1,
-			borderColor: colors.border,
-		},
-		configTextWrap: {
+		compactTextWrap: {
 			flex: 1,
-			gap: 2,
 		},
-		configTitle: {
-			fontSize: font.md,
+		compactTitle: {
+			fontSize: font.base,
 			color: colors.text,
 			fontWeight: '600',
 		},
-		configDescription: {
-			fontSize: font.sm,
+		compactDescription: {
+			fontSize: font.xs,
 			color: colors.textMuted,
+		},
+		pillTrack: {
+			width: 34,
+			height: 20,
+			borderRadius: radius.full,
+			backgroundColor: colors.cardAlt,
+			borderWidth: 1,
+			borderColor: colors.border,
+			justifyContent: 'center',
+			paddingHorizontal: 2,
+		},
+		pillTrackOn: {
+			backgroundColor: colors.brand,
+			borderColor: colors.brand,
+		},
+		pillThumb: {
+			width: 14,
+			height: 14,
+			borderRadius: radius.full,
+			backgroundColor: colors.white,
+		},
+		pillThumbOn: {
+			transform: [{ translateX: 14 }],
+		},
+		saveDefaultsBtn: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			alignSelf: 'flex-start',
+			gap: 6,
+			paddingVertical: spacing.xs,
+			paddingHorizontal: spacing.sm,
+			borderRadius: radius.full,
+			borderWidth: 1,
+			borderColor: colors.brand,
+		},
+		saveDefaultsText: {
+			fontSize: font.sm,
+			color: colors.brand,
+			fontWeight: '600',
 		},
 		footer: {
 			padding: spacing.lg,

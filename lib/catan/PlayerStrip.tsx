@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { bonusById, curseById } from './bonuses'
+import { totalVP } from './dev'
 import { playerColors } from './palette'
 import type { GameState } from './types'
 
@@ -21,8 +22,8 @@ export function PlayerStrip({
 	gameState: GameState
 	onPressPlayer?: (playerIdx: number) => void
 }) {
-	const pointsByPlayer = pointsFromVertices(gameState)
 	const showBonusIcons = gameState.config.bonuses
+	const showDevCards = gameState.config.devCards
 
 	return (
 		<View style={styles.row}>
@@ -31,7 +32,9 @@ export function PlayerStrip({
 				const profile = profilesById[uid]
 				const name =
 					i === meIdx ? 'You' : (profile?.username ?? 'Player')
-				const points = pointsByPlayer[i] ?? 0
+				// Hidden VP cards are included only for the viewer. Everyone
+				// else sees public points (buildings + Largest Army).
+				const points = totalVP(gameState, i, i === meIdx)
 				const cards = sumResources(gameState.players[i]?.resources)
 				const isActive = currentTurn === i
 				const player = gameState.players[i]
@@ -41,6 +44,7 @@ export function PlayerStrip({
 				const curse = player?.curse
 					? curseById(player.curse)
 					: undefined
+				const devCount = player?.devCards?.length ?? 0
 				return (
 					<Pressable
 						key={uid}
@@ -82,6 +86,18 @@ export function PlayerStrip({
 								/>
 								<Text style={styles.statText}>{cards}</Text>
 							</View>
+							{showDevCards && devCount > 0 && (
+								<View style={styles.stat}>
+									<Ionicons
+										name="shield"
+										size={12}
+										color={colors.textSecondary}
+									/>
+									<Text style={styles.statText}>
+										{devCount}
+									</Text>
+								</View>
+							)}
 							{showBonusIcons && bonus && (
 								<View style={styles.stat}>
 									<Ionicons
@@ -106,16 +122,6 @@ export function PlayerStrip({
 			})}
 		</View>
 	)
-}
-
-function pointsFromVertices(gameState: GameState): Record<number, number> {
-	const out: Record<number, number> = {}
-	for (const v of Object.values(gameState.vertices)) {
-		if (!v?.occupied) continue
-		const add = v.building === 'city' ? 2 : 1
-		out[v.player] = (out[v.player] ?? 0) + add
-	}
-	return out
 }
 
 function sumResources(

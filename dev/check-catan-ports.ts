@@ -99,12 +99,18 @@ function checkGenerate() {
 		}
 	}
 	// initialGameState also seeds ports.
-	const gs = initialGameState('standard', 3, { bonuses: false })
+	const gs = initialGameState('standard', 3, {
+		bonuses: false,
+		devCards: false,
+	})
 	assert(gs.ports && gs.ports.length === 9, 'initialGameState seeds ports')
 }
 
 function stateWithSettlement(vertex: string, portKind: string): GameState {
-	const base = initialGameState('standard', 2, { bonuses: false })
+	const base = initialGameState('standard', 2, {
+		bonuses: false,
+		devCards: false,
+	})
 	// Force a port of the given kind onto the adjacent edge.
 	// Find an edge in PORT_SLOTS that has `vertex` as an endpoint.
 	const edge = PORT_SLOTS.find((e) =>
@@ -146,7 +152,10 @@ function checkAvailableOptions() {
 	assert(!opts.includes('3:1'), 'no 3:1 when no generic port')
 
 	// Player with no ports → only 4:1.
-	const noPort = initialGameState('standard', 2, { bonuses: false })
+	const noPort = initialGameState('standard', 2, {
+		bonuses: false,
+		devCards: false,
+	})
 	const only = availableBankOptions(noPort, 0)
 	assert(only.length === 1 && only[0] === '4:1', 'only 4:1 when no ports')
 }
@@ -210,7 +219,15 @@ function checkValidShape() {
 }
 
 function checkApply() {
-	const players = [{ resources: hand({ wheat: 4 }) }, { resources: hand({}) }]
+	const emptyP = {
+		devCards: [],
+		devCardsPlayed: {},
+		playedDevThisTurn: false,
+	}
+	const players = [
+		{ resources: hand({ wheat: 4 }), ...emptyP },
+		{ resources: hand({}), ...emptyP },
+	]
 	const next = applyBankTradeToPlayer(
 		players,
 		0,

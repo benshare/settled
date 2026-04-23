@@ -4,11 +4,13 @@ Two kinds of stores live here.
 
 ## 1. Bespoke stores
 
-Loaded by the screens that need them. `useProfileStore` is the only one today. It's outside the auto-load registry because routing (`verify.tsx`, `set-username.tsx`) depends on its load completing at specific moments.
+Loaded explicitly by routes that need the result before they can proceed — e.g. `login.tsx`, `verify.tsx`, `set-username.tsx` all `await useProfileStore.loadProfile()` before deciding where to route. These pre-(app) flows can't rely on the auto-load registry, which only runs once the user enters `(app)`.
 
 ## 2. Auto-loaded user stores
 
 Registered in `index.ts`. Loaded once when a user enters `(app)`, cleared on sign out. Use this for any store whose data is scoped to a signed-in user and whose load can be fire-and-forget — failure is non-fatal, and the screen using the data is responsible for its own empty/loading state.
+
+A single store can serve both roles: `useProfileStore` registers in `autoLoadedStores` for in-(app) screens (so `state.profile` is always populated on cold start) _and_ exposes `loadProfile` for the pre-(app) routes that need to await it.
 
 ### Adding an auto-loaded store
 

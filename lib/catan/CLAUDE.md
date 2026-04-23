@@ -11,13 +11,18 @@ Everything Catan-specific lives here. Split by what it describes:
 - `trade.ts` — pure rules for player-to-player trade offers: shape validity, affordability, offer-addressing, hand swap. A game carries at most one open `TradeOffer` at a time. No I/O.
 - `ports.ts` — pure rules for ports (harbors) and bank trades: which port kinds a player has access to, which bank ratios they can use (2:1 specific / 3:1 generic / 4:1 default), shape validity for multi-group bank trades, hand update. No I/O.
 - `robber.ts` — pure rules for the 7-roll chain: discard requirements, robber-movement validity, steal candidates. No I/O; callable from UI helpers and tests.
+- `devCards.ts` — static dev-card data: `DevCardId` union, `DEV_CARD_POOL` (title/description/icon), `DEV_DECK_COMPOSITION` (classic 14/5/2/2/2 split). Mirror of `bonuses/`.
+- `bonuses/` — static bonus + curse card data. `index.ts` defines shared types (`BonusId`, `CurseId`, `Bonus`, `Curse`) and re-exports. `bonuses.ts` has `BONUS_POOL`; `curses.ts` has `CURSE_POOL`. Both pools are mirrored in the edge function.
+- `dev.ts` — pure rules for development cards: cost, deck build + shuffle, buy/play validity, Largest Army recomputation, `totalVP` (including hidden VP cards for self-views). No I/O.
 - `gameContext.tsx` — React context that loads the per-game `games` row + `game_states` row and subscribes to realtime. Use `useGame()` in any subtree under `<GameProvider>`.
 
 ## Constants are duplicated in the edge function
 
-`supabase/functions/game-service/index.ts` re-declares `HEXES`, `VERTICES`, `EDGES`, `adjacentVertices`, and the derived adjacency IIFEs from `board.ts`, plus the placement rules from `placement.ts`, the roll/distribution rules from `roll.ts`, the build rules from `build.ts`, the trade rules from `trade.ts`, the robber rules from `robber.ts`, and the port/bank-trade rules from `ports.ts` (including `PORT_SLOTS` + `STANDARD_PORT_KINDS`). The Deno bundler can't reliably import up-tree from `supabase/functions/`, so we accept a single redundancy: change both when rules or board data change. The source of truth is `lib/catan/`; the edge function is the copy.
+`supabase/functions/game-service/index.ts` re-declares `HEXES`, `VERTICES`, `EDGES`, `adjacentVertices`, and the derived adjacency IIFEs from `board.ts`, plus the placement rules from `placement.ts`, the roll/distribution rules from `roll.ts`, the build rules from `build.ts`, the trade rules from `trade.ts`, the robber rules from `robber.ts`, the port/bank-trade rules from `ports.ts` (including `PORT_SLOTS` + `STANDARD_PORT_KINDS`), and the dev-card rules from `dev.ts` + `devCards.ts` (deck composition, `DEV_CARD_COST`, `buildInitialDevDeck`, Largest Army recomputation). The Deno bundler can't reliably import up-tree from `supabase/functions/`, so we accept a single redundancy: change both when rules or board data change. The source of truth is `lib/catan/`; the edge function is the copy.
 
-When in doubt, run the seven check scripts — `npx tsx dev/check-catan-board.ts`, `check-catan-placement.ts`, `check-catan-roll.ts`, `check-catan-build.ts`, `check-catan-trade.ts`, `check-catan-robber.ts`, `check-catan-ports.ts` — after edits. The edge function is only validated at deploy time (`npm run edge`).
+Phase sub-phases (`discard`, `move_robber`, `steal`, `road_building`) carry a `resume: ResumePhase` pointer so effects triggered from different contexts return correctly: 7-roll chain resumes to `main`, knight played before rolling resumes to `roll`, road_building resumes to whichever phase the player was in.
+
+When in doubt, run the eight check scripts — `npx tsx dev/check-catan-board.ts`, `check-catan-placement.ts`, `check-catan-roll.ts`, `check-catan-build.ts`, `check-catan-trade.ts`, `check-catan-robber.ts`, `check-catan-ports.ts`, `check-catan-dev.ts` — after edits. The edge function is only validated at deploy time (`npm run edge`).
 
 ## Sparse storage
 

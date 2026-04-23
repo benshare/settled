@@ -1,6 +1,8 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
+import type { Resource } from '../catan/board'
 import type { BonusId } from '../catan/bonuses'
+import type { DevCardId } from '../catan/devCards'
 import type { DiceRoll, GameConfig, ResourceHand } from '../catan/types'
 import type { Database } from '../database-types'
 import { supabase } from '../supabase'
@@ -10,7 +12,8 @@ import type { Profile } from './useProfileStore'
 type GameRow = Database['public']['Tables']['games']['Row']
 type GameRequestRow = Database['public']['Tables']['game_requests']['Row']
 
-const PROFILE_COLS = 'id, username, avatar_path, created_at, updated_at, dev'
+const PROFILE_COLS =
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults'
 
 let requestsChannel: RealtimeChannel | null = null
 let gamesChannel: RealtimeChannel | null = null
@@ -84,6 +87,21 @@ export type GameEvent =
 			ratio: 2 | 3 | 4
 			at: string
 	  }
+	// Dev-card events. `dev_bought` intentionally carries no card id so the
+	// deck/draw stays private. `dev_played` reveals the id (and any payload
+	// fields that would be publicly announced at the table) when a non-VP
+	// card is actually played.
+	| { kind: 'dev_bought'; player: number; at: string }
+	| {
+			kind: 'dev_played'
+			player: number
+			id: Exclude<DevCardId, 'victory_point'>
+			take?: [Resource, Resource]
+			resource?: Resource
+			total?: number
+			at: string
+	  }
+	| { kind: 'largest_army_changed'; player: number; at: string }
 
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
@@ -139,6 +157,13 @@ type GamesStore = {
 		give: ResourceHand,
 		receive: ResourceHand
 	) => Promise<ActionResult & { ratio?: 2 | 3 | 4 }>
+
+	buyDevCard: (gameId: string) => Promise<ActionResult>
+	playDevCard: (
+		gameId: string,
+		id: DevCardId,
+		payload?: { r1?: Resource; r2?: Resource; resource?: Resource }
+	) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -486,6 +511,33 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 		if (error || !data?.ok) return { error: "Couldn't trade with bank" }
 		return { error: null, ratio: data.ratio }
+	},
+
+	async buyDevCard(gameId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'buy_dev_card', game_id: gameId },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't buy dev card" }
+		return { error: null }
+	},
+
+	async playDevCard(gameId, id, payload) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'play_dev_card',
+					game_id: gameId,
+					id,
+					payload: payload ?? null,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't play dev card" }
+		return { error: null }
 	},
 }))
 

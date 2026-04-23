@@ -25,7 +25,12 @@ function hand(partial: Partial<ResourceHand>): ResourceHand {
 }
 
 function player(resources: Partial<ResourceHand>): PlayerState {
-	return { resources: hand(resources) }
+	return {
+		resources: hand(resources),
+		devCards: [],
+		devCardsPlayed: {},
+		playedDevThisTurn: false,
+	}
 }
 
 function offer(partial: Partial<TradeOffer> = {}): TradeOffer {

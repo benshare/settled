@@ -7,12 +7,8 @@ import {
 	type Hex,
 	type Resource,
 } from './board'
-import {
-	BONUS_POOL,
-	CURSE_POOL,
-	type BonusId,
-	type CurseId,
-} from './bonuses'
+import { BONUS_POOL, CURSE_POOL, type BonusId, type CurseId } from './bonuses'
+import { buildInitialDevDeck } from './dev'
 import {
 	type GameConfig,
 	type GameState,
@@ -82,7 +78,7 @@ export function generatePorts(variant: Variant): Port[] {
 // Deal a single player's select_bonus hand: two bonuses drawn from BONUS_POOL
 // (with replacement — the pool today has size 1) and one curse.
 export function dealBonusHand(): SelectBonusHand {
-	const pick = <T,>(xs: readonly T[]): T =>
+	const pick = <T>(xs: readonly T[]): T =>
 		xs[Math.floor(Math.random() * xs.length)]
 	const b0 = pick(BONUS_POOL).id as BonusId
 	const b1 = pick(BONUS_POOL).id as BonusId
@@ -113,10 +109,16 @@ export function initialGameState(
 		edges: {},
 		players: Array.from({ length: playerCount }, () => ({
 			resources: { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 },
+			devCards: [],
+			devCardsPlayed: {},
+			playedDevThisTurn: false,
 		})),
 		phase,
 		robber: desert,
 		ports: generatePorts(variant),
 		config,
+		devDeck: config.devCards ? buildInitialDevDeck(Math.random) : [],
+		largestArmy: null,
+		round: 0,
 	}
 }

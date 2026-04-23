@@ -98,7 +98,7 @@ export type Database = {
 					proposer: string
 				}
 				Insert: {
-					config?: Json
+					config: Json
 					created_at?: string
 					id?: string
 					invited: Json
@@ -124,33 +124,48 @@ export type Database = {
 			game_states: {
 				Row: {
 					config: Json
+					dev_deck: Json
 					edges: Json
 					game_id: string
 					hexes: Json
+					largest_army: number | null
 					phase: Json
 					players: Json
+					ports: Json | null
+					robber: string
+					round: number
 					updated_at: string
 					variant: string
 					vertices: Json
 				}
 				Insert: {
 					config: Json
+					dev_deck: Json
 					edges?: Json
 					game_id: string
 					hexes: Json
+					largest_army?: number | null
 					phase: Json
 					players: Json
+					ports?: Json | null
+					robber: string
+					round: number
 					updated_at?: string
 					variant: string
 					vertices?: Json
 				}
 				Update: {
 					config?: Json
+					dev_deck?: Json
 					edges?: Json
 					game_id?: string
 					hexes?: Json
+					largest_army?: number | null
 					phase?: Json
 					players?: Json
+					ports?: Json | null
+					robber?: string
+					round?: number
 					updated_at?: string
 					variant?: string
 					vertices?: Json
@@ -203,6 +218,7 @@ export type Database = {
 					avatar_path: string | null
 					created_at: string
 					dev: boolean
+					game_defaults: Json
 					id: string
 					updated_at: string
 					username: string
@@ -211,6 +227,7 @@ export type Database = {
 					avatar_path?: string | null
 					created_at?: string
 					dev?: boolean
+					game_defaults?: Json
 					id: string
 					updated_at?: string
 					username: string
@@ -219,6 +236,7 @@ export type Database = {
 					avatar_path?: string | null
 					created_at?: string
 					dev?: boolean
+					game_defaults?: Json
 					id?: string
 					updated_at?: string
 					username?: string
@@ -235,7 +253,7 @@ export type Database = {
 				Returns: undefined
 			}
 			propose_game: {
-				Args: { invited_user_ids: string[]; config: Json }
+				Args: { config: Json; invited_user_ids: string[] }
 				Returns: string
 			}
 		}

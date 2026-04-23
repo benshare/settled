@@ -146,6 +146,9 @@ function rowToState(row: Record<string, unknown>): GameState {
 		robber: row.robber as GameState['robber'],
 		ports: (row.ports as GameState['ports']) ?? [],
 		config: row.config as GameState['config'],
+		devDeck: (row.dev_deck as GameState['devDeck']) ?? [],
+		largestArmy: (row.largest_army as GameState['largestArmy']) ?? null,
+		round: (row.round as GameState['round']) ?? 0,
 	}
 }
 

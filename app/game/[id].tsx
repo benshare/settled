@@ -11,6 +11,8 @@ import {
 	validBuildSettlementVertices,
 	type BuildKind,
 } from '@/lib/catan/build'
+import { canBuyDevCard } from '@/lib/catan/dev'
+import { DevCardHand, type DevPlayPayload } from '@/lib/catan/DevCardHand'
 import type { BuildSelection } from '@/lib/catan/BuildLayer'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
@@ -114,6 +116,8 @@ function GameBody() {
 	const acceptTrade = useGamesStore((s) => s.acceptTrade)
 	const cancelTrade = useGamesStore((s) => s.cancelTrade)
 	const bankTrade = useGamesStore((s) => s.bankTrade)
+	const buyDevCard = useGamesStore((s) => s.buyDevCard)
+	const playDevCard = useGamesStore((s) => s.playDevCard)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
@@ -219,6 +223,8 @@ function GameBody() {
 		(phaseKind === 'discard' ||
 			phaseKind === 'move_robber' ||
 			phaseKind === 'steal')
+	const inRoadBuilding =
+		game.status === 'active' && phaseKind === 'road_building'
 
 	async function onPickBonus(bonus: BonusId) {
 		if (!game) return
@@ -257,6 +263,34 @@ function GameBody() {
 		const res = await endTurn(game.id)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
+	}
+
+	async function onBuyDevCard() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await buyDevCard(game.id)
+		setSubmitting(false)
+		if (res.error) notify('Buy failed', res.error)
+	}
+
+	async function onPlayDevCard(payload: DevPlayPayload) {
+		if (!game) return
+		setSubmitting(true)
+		let res
+		if (payload.id === 'year_of_plenty') {
+			res = await playDevCard(game.id, payload.id, {
+				r1: payload.r1,
+				r2: payload.r2,
+			})
+		} else if (payload.id === 'monopoly') {
+			res = await playDevCard(game.id, payload.id, {
+				resource: payload.resource,
+			})
+		} else {
+			res = await playDevCard(game.id, payload.id)
+		}
+		setSubmitting(false)
+		if (res.error) notify('Play failed', res.error)
 	}
 
 	function onBuildToolSelect(tool: BuildKind) {
@@ -391,7 +425,9 @@ function GameBody() {
 			!!myHand &&
 			canAfford(myHand, BUILD_COSTS.city) &&
 			validBuildCityVertices(gameState!, meIdx).length > 0,
-		dev_card: false,
+		dev_card:
+			!!gameState &&
+			canBuyDevCard(gameState, meIdx, game?.current_turn ?? -1),
 	}
 
 	const hasLiveTrade = !!liveOffer
@@ -451,15 +487,27 @@ function GameBody() {
 
 			{!inPlacement && gameState && (
 				<>
-					<BuildTradeBar
-						active={buildTool}
-						enabled={buildEnabled}
-						meIdx={meIdx}
-						tradeEnabled={tradeButtonEnabled}
-						tradeActive={tradeButtonActive}
-						onSelect={onBuildToolSelect}
-						onTradePress={onTradePress}
-					/>
+					{!inRoadBuilding && (
+						<BuildTradeBar
+							active={buildTool}
+							enabled={buildEnabled}
+							meIdx={meIdx}
+							tradeEnabled={tradeButtonEnabled}
+							tradeActive={tradeButtonActive}
+							devCardsEnabled={!!gameState?.config.devCards}
+							onSelect={onBuildToolSelect}
+							onTradePress={onTradePress}
+							onBuyDevCard={onBuyDevCard}
+						/>
+					)}
+					{inRoadBuilding && (
+						<RoadBuildingStatus
+							game={game}
+							gameState={gameState}
+							meIdx={meIdx}
+							profilesById={profilesById}
+						/>
+					)}
 					{inRobberFlow && (
 						<RobberStatus
 							game={game}
@@ -524,7 +572,13 @@ function GameBody() {
 										tool: buildTool,
 										onSelect: onBuildSpotSelect,
 									}
-								: undefined
+								: inRoadBuilding && isCurrentPlayer
+									? {
+											meIdx,
+											tool: 'road',
+											onSelect: onBuildSpotSelect,
+										}
+									: undefined
 						}
 						robber={
 							isMyActiveTurn &&
@@ -607,6 +661,18 @@ function GameBody() {
 						<ResourceHand
 							hand={gameState.players[meIdx].resources}
 						/>
+						{gameState.config.devCards && (
+							<DevCardHand
+								entries={gameState.players[meIdx].devCards}
+								round={gameState.round}
+								myTurn={isMyActiveTurn}
+								phaseKind={gameState.phase.kind}
+								playedDevThisTurn={
+									gameState.players[meIdx].playedDevThisTurn
+								}
+								onPlay={onPlayDevCard}
+							/>
+						)}
 					</Animated.View>
 				)}
 		</View>
@@ -787,14 +853,50 @@ function RobberStatus({
 				: `${currentName} is stealing`
 	}
 
-	const dice = phase.roll
+	// Dice are only relevant when the sub-phase was triggered by a 7-roll
+	// (resume.kind === 'main'). Knight-triggered pre-roll chains resume to
+	// `roll` and have no dice to show yet.
+	const dice = phase.resume.kind === 'main' ? phase.resume.roll : null
 	return (
 		<View style={styles.actionBar}>
 			<View style={styles.mainLoopRow}>
-				<View style={styles.diceRow}>
-					<DieFaceView value={dice.a} />
-					<DieFaceView value={dice.b} />
-				</View>
+				{dice && (
+					<View style={styles.diceRow}>
+						<DieFaceView value={dice.a} />
+						<DieFaceView value={dice.b} />
+					</View>
+				)}
+				<Text style={styles.mainLoopStatus}>{status}</Text>
+			</View>
+		</View>
+	)
+}
+
+function RoadBuildingStatus({
+	game,
+	gameState,
+	meIdx,
+	profilesById,
+}: {
+	game: NonNullable<ReturnType<typeof useGame>['game']>
+	gameState: NonNullable<ReturnType<typeof useGame>['gameState']>
+	meIdx: number
+	profilesById: Record<string, Profile>
+}) {
+	const phase = gameState.phase
+	if (phase.kind !== 'road_building') return null
+	const currentIdx = game.current_turn ?? 0
+	const isMyTurn = meIdx === currentIdx
+	const currentName = isMyTurn
+		? 'You'
+		: (profilesById[game.player_order[currentIdx]]?.username ?? 'Player')
+	const placedSoFar = 2 - phase.remaining + 1
+	const status = isMyTurn
+		? `Place free road ${placedSoFar}/2`
+		: `${currentName} is placing 2 roads`
+	return (
+		<View style={styles.actionBar}>
+			<View style={styles.mainLoopRow}>
 				<Text style={styles.mainLoopStatus}>{status}</Text>
 			</View>
 		</View>

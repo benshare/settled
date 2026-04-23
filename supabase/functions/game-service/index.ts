@@ -113,6 +113,13 @@ type BankTradeBody = {
 	give: unknown
 	receive: unknown
 }
+type BuyDevCardBody = { action: 'buy_dev_card'; game_id: string }
+type PlayDevCardBody = {
+	action: 'play_dev_card'
+	game_id: string
+	id: unknown
+	payload?: unknown
+}
 type Body =
 	| RespondBody
 	| PickBonusBody
@@ -130,6 +137,8 @@ type Body =
 	| AcceptTradeBody
 	| CancelTradeBody
 	| BankTradeBody
+	| BuyDevCardBody
+	| PlayDevCardBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -440,10 +449,22 @@ type EdgeState = { occupied: false } | { occupied: true; player: number }
 
 type ResourceHand = Record<Resource, number>
 
+type DevCardId =
+	| 'knight'
+	| 'victory_point'
+	| 'road_building'
+	| 'year_of_plenty'
+	| 'monopoly'
+
+type DevCardEntry = { id: DevCardId; purchasedTurn: number }
+
 type PlayerState = {
 	resources: ResourceHand
 	bonus?: BonusId
 	curse?: CurseId
+	devCards: DevCardEntry[]
+	devCardsPlayed: Partial<Record<DevCardId, number>>
+	playedDevThisTurn: boolean
 }
 
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
@@ -484,11 +505,89 @@ const PORT_SLOTS: readonly Edge[] = [
 
 // --- Bonuses (must match lib/catan/bonuses) --------------------------------
 
-type BonusId = 'placeholder'
-type CurseId = 'placeholder'
+type BonusId =
+	| 'specialist'
+	| 'merchant'
+	| 'gambler'
+	| 'veteran'
+	| 'scout'
+	| 'plutocrat'
+	| 'accountant'
+	| 'hoarder'
+	| 'explorer'
+	| 'ritualist'
+	| 'fencer'
+	| 'underdog'
+	| 'nomad'
+	| 'populist'
+	| 'fortune_teller'
+	| 'shepherd'
+	| 'smith'
+	| 'carpenter'
+	| 'metropolitan'
+	| 'investor'
+	| 'curio_collector'
+	| 'thrill_seeker'
+	| 'bricklayer'
+	| 'aristocrat'
+	| 'magician'
+	| 'forger'
+	| 'haunt'
+type CurseId =
+	| 'age'
+	| 'decadence'
+	| 'ambition'
+	| 'elitism'
+	| 'asceticism'
+	| 'nomadism'
+	| 'avarice'
+	| 'power'
+	| 'compaction'
+	| 'provinciality'
+	| 'youth'
 
-const BONUS_IDS: readonly BonusId[] = ['placeholder']
-const CURSE_IDS: readonly CurseId[] = ['placeholder']
+const BONUS_IDS: readonly BonusId[] = [
+	'specialist',
+	'merchant',
+	'gambler',
+	'veteran',
+	'scout',
+	'plutocrat',
+	'accountant',
+	'hoarder',
+	'explorer',
+	'ritualist',
+	'fencer',
+	'underdog',
+	'nomad',
+	'populist',
+	'fortune_teller',
+	'shepherd',
+	'smith',
+	'carpenter',
+	'metropolitan',
+	'investor',
+	'curio_collector',
+	'thrill_seeker',
+	'bricklayer',
+	'aristocrat',
+	'magician',
+	'forger',
+	'haunt',
+]
+const CURSE_IDS: readonly CurseId[] = [
+	'age',
+	'decadence',
+	'ambition',
+	'elitism',
+	'asceticism',
+	'nomadism',
+	'avarice',
+	'power',
+	'compaction',
+	'provinciality',
+	'youth',
+]
 
 type SelectBonusHand = {
 	offered: [BonusId, BonusId]
@@ -497,7 +596,7 @@ type SelectBonusHand = {
 }
 
 function dealBonusHand(): SelectBonusHand {
-	const pick = <T,>(xs: readonly T[]): T =>
+	const pick = <T>(xs: readonly T[]): T =>
 		xs[Math.floor(Math.random() * xs.length)]
 	return {
 		offered: [pick(BONUS_IDS), pick(BONUS_IDS)],
@@ -508,7 +607,11 @@ function dealBonusHand(): SelectBonusHand {
 
 // --- Config ----------------------------------------------------------------
 
-type GameConfig = { bonuses: boolean }
+type GameConfig = { bonuses: boolean; devCards: boolean }
+
+type ResumePhase =
+	| { kind: 'roll' }
+	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
 
 type Phase =
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
@@ -516,11 +619,12 @@ type Phase =
 	| { kind: 'roll' }
 	| {
 			kind: 'discard'
-			roll: DiceRoll
+			resume: ResumePhase
 			pending: Partial<Record<number, number>>
 	  }
-	| { kind: 'move_robber'; roll: DiceRoll }
-	| { kind: 'steal'; roll: DiceRoll; hex: Hex; candidates: number[] }
+	| { kind: 'move_robber'; resume: ResumePhase }
+	| { kind: 'steal'; resume: ResumePhase; hex: Hex; candidates: number[] }
+	| { kind: 'road_building'; resume: ResumePhase; remaining: 1 | 2 }
 	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
 	| { kind: 'game_over' }
 
@@ -534,6 +638,9 @@ type GameState = {
 	robber: Hex
 	ports?: Port[]
 	config: GameConfig
+	devDeck: DevCardId[]
+	largestArmy: number | null
+	round: number
 }
 
 function vertexStateOf(state: GameState, v: Vertex): VertexState {
@@ -776,6 +883,88 @@ function stealCandidates(state: GameState, hex: Hex, meIdx: number): number[] {
 	return Array.from(set)
 }
 
+// --- Dev-card rules (must match lib/catan/dev + devCards) ------------------
+
+const DEV_CARD_IDS: readonly DevCardId[] = [
+	'knight',
+	'victory_point',
+	'road_building',
+	'year_of_plenty',
+	'monopoly',
+]
+
+const DEV_DECK_COMPOSITION: Record<DevCardId, number> = {
+	knight: 14,
+	victory_point: 5,
+	road_building: 2,
+	year_of_plenty: 2,
+	monopoly: 2,
+}
+
+const DEV_CARD_COST: ResourceHand = {
+	brick: 0,
+	wood: 0,
+	sheep: 1,
+	wheat: 1,
+	ore: 1,
+}
+
+function buildInitialDevDeck(): DevCardId[] {
+	const deck: DevCardId[] = []
+	for (const id of DEV_CARD_IDS) {
+		for (let i = 0; i < DEV_DECK_COMPOSITION[id]; i++) deck.push(id)
+	}
+	for (let i = deck.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1))
+		;[deck[i], deck[j]] = [deck[j], deck[i]]
+	}
+	return deck
+}
+
+function knightsPlayed(p: PlayerState): number {
+	return p.devCardsPlayed.knight ?? 0
+}
+
+function recomputeLargestArmy(state: GameState): number | null {
+	let bestIdx: number | null = null
+	let best = 2
+	state.players.forEach((p, i) => {
+		const k = knightsPlayed(p)
+		if (k > best) {
+			best = k
+			bestIdx = i
+		} else if (k === best && state.largestArmy === i) {
+			bestIdx = i
+		}
+	})
+	return bestIdx !== null ? bestIdx : state.largestArmy
+}
+
+function validBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
+	const out: Edge[] = []
+	const seen = new Set<Edge>()
+	for (const v of VERTICES) {
+		const vs = vertexStateOf(state, v)
+		const ownsVertex = vs.occupied && vs.player === meIdx
+		const hasAdjOwnRoad = adjacentEdges[v].some((e) => {
+			const es = edgeStateOf(state, e)
+			return es.occupied && es.player === meIdx
+		})
+		if (!ownsVertex && !hasAdjOwnRoad) continue
+		if (vs.occupied && vs.player !== meIdx) continue
+		for (const e of adjacentEdges[v]) {
+			if (seen.has(e)) continue
+			seen.add(e)
+			if (isValidBuildRoadEdge(state, meIdx, e)) out.push(e)
+		}
+	}
+	return out
+}
+
+function hasLegalRoadPlacement(state: GameState, meIdx: number): boolean {
+	return validBuildRoadEdges(state, meIdx).length > 0
+}
+
 // --- Trade rules (must match lib/catan/trade) ------------------------------
 
 function isValidTradeShape(give: ResourceHand, receive: ResourceHand): boolean {
@@ -983,6 +1172,9 @@ function generateHexes(): {
 function initialPlayers(count: number): PlayerState[] {
 	return Array.from({ length: count }, () => ({
 		resources: { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 },
+		devCards: [],
+		devCardsPlayed: {},
+		playedDevThisTurn: false,
 	}))
 }
 
@@ -1035,6 +1227,9 @@ async function loadGame(
 		robber: stateRow.robber,
 		ports: stateRow.ports ?? [],
 		config: stateRow.config as GameConfig,
+		devDeck: (stateRow.dev_deck as DevCardId[] | null) ?? [],
+		largestArmy: (stateRow.largest_army as number | null) ?? null,
+		round: (stateRow.round as number | null) ?? 0,
 	}
 	return { ok: true, game: game as GameRow, state }
 }
@@ -1126,6 +1321,9 @@ async function handleRespond(
 			robber: desert,
 			ports: generatePorts(),
 			config,
+			dev_deck: config.devCards ? buildInitialDevDeck() : [],
+			largest_army: null,
+			round: 0,
 		})
 		if (stateErr) return err(500, 'could not create game state')
 
@@ -1416,10 +1614,16 @@ async function handleRoll(
 
 	if (total === 7) {
 		const pending = requiredDiscards(state.players)
+		// 7-roll chain always resumes to main (dice are already thrown).
+		const resume: ResumePhase = {
+			kind: 'main',
+			roll: dice,
+			trade: null,
+		}
 		const nextPhase: Phase =
 			Object.keys(pending).length > 0
-				? { kind: 'discard', roll: dice, pending }
-				: { kind: 'move_robber', roll: dice }
+				? { kind: 'discard', resume, pending }
+				: { kind: 'move_robber', resume }
 
 		const { error: stateErr } = await admin
 			.from('game_states')
@@ -1493,9 +1697,21 @@ async function handleEndTurn(
 
 	const nextTurn = nextMainTurn(game.current_turn!, game.player_order.length)
 
+	// Clear the outgoing active player's one-per-turn dev flag so they can
+	// play again when it becomes their turn again. Round bumps monotonically
+	// so dev-cards bought last turn become playable now.
+	const nextPlayers = state.players.map((p, i) =>
+		i === meIdx ? { ...p, playedDevThisTurn: false } : p
+	)
+	const nextRound = state.round + 1
+
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ phase: { kind: 'roll' } satisfies Phase })
+		.update({
+			phase: { kind: 'roll' } satisfies Phase,
+			players: nextPlayers,
+			round: nextRound,
+		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -1554,9 +1770,19 @@ async function handleBuildRoad(
 	me: string,
 	body: BuildRoadBody
 ): Promise<Response> {
-	const pre = await preflightBuild(admin, me, body.game_id)
-	if (!pre.ok) return pre.response
-	const { game, state, meIdx } = pre
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const phase = state.phase
+	const isRoadBuilding = phase.kind === 'road_building'
+	if (phase.kind !== 'main' && !isRoadBuilding)
+		return err(400, 'expected main or road_building phase')
 
 	if (!(EDGES as readonly string[]).includes(body.edge))
 		return err(400, 'unknown edge')
@@ -1564,19 +1790,51 @@ async function handleBuildRoad(
 
 	if (!isValidBuildRoadEdge(state, meIdx, edge))
 		return err(400, 'invalid road')
-	const cost = BUILD_COSTS.road
-	if (!canAfford(state.players[meIdx].resources, cost))
-		return err(400, 'insufficient resources')
+
+	let nextPlayers: PlayerState[]
+	let nextPhase: Phase | null = null
+	if (isRoadBuilding) {
+		nextPlayers = state.players
+		// Speculatively place the new edge so we can check for legal follow-up
+		// placements before committing the phase transition.
+		const afterPlace: GameState = {
+			...state,
+			edges: {
+				...state.edges,
+				[edge]: { occupied: true as const, player: meIdx },
+			},
+		}
+		const remainingAfter = phase.remaining - 1
+		if (remainingAfter === 0 || !hasLegalRoadPlacement(afterPlace, meIdx)) {
+			nextPhase = phase.resume
+		} else {
+			nextPhase = {
+				kind: 'road_building',
+				resume: phase.resume,
+				remaining: remainingAfter as 1,
+			}
+		}
+	} else {
+		const cost = BUILD_COSTS.road
+		if (!canAfford(state.players[meIdx].resources, cost))
+			return err(400, 'insufficient resources')
+		nextPlayers = applyCost(state.players, meIdx, cost)
+	}
 
 	const nextEdges = {
 		...state.edges,
 		[edge]: { occupied: true as const, player: meIdx },
 	}
-	const nextPlayers = applyCost(state.players, meIdx, cost)
+
+	const update: Record<string, unknown> = {
+		edges: nextEdges,
+		players: nextPlayers,
+	}
+	if (nextPhase) update.phase = nextPhase
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ edges: nextEdges, players: nextPlayers })
+		.update(update)
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -1743,8 +2001,12 @@ async function handleDiscard(
 
 	const nextPhase: Phase =
 		Object.keys(nextPending).length > 0
-			? { kind: 'discard', roll: state.phase.roll, pending: nextPending }
-			: { kind: 'move_robber', roll: state.phase.roll }
+			? {
+					kind: 'discard',
+					resume: state.phase.resume,
+					pending: nextPending,
+				}
+			: { kind: 'move_robber', resume: state.phase.resume }
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -1806,11 +2068,9 @@ async function handleMoveRobber(
 	//   1 candidate  → auto-steal (skip the extra selection step).
 	//   2+ candidates → steal phase with a picker.
 	let nextPlayers: PlayerState[] = state.players
-	let nextPhase: Phase = {
-		kind: 'main',
-		roll: state.phase.roll,
-		trade: null,
-	}
+	// Default: no candidates → transition straight to the resume phase
+	// (post-7-roll main, or pre-roll if triggered by a knight before rolling).
+	let nextPhase: Phase = state.phase.resume
 
 	if (candidates.length === 1) {
 		const victim = candidates[0]
@@ -1847,7 +2107,7 @@ async function handleMoveRobber(
 	} else if (candidates.length > 1) {
 		nextPhase = {
 			kind: 'steal',
-			roll: state.phase.roll,
+			resume: state.phase.resume,
 			hex,
 			candidates,
 		}
@@ -1924,11 +2184,7 @@ async function handleSteal(
 		return p
 	})
 
-	const nextPhase: Phase = {
-		kind: 'main',
-		roll: state.phase.roll,
-		trade: null,
-	}
+	const nextPhase: Phase = state.phase.resume
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -2180,6 +2436,253 @@ async function handleBankTrade(
 	return json({ ok: true, ratio })
 }
 
+async function handleBuyDevCard(
+	admin: SupabaseClient,
+	me: string,
+	body: BuyDevCardBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
+	if (!state.config.devCards) return err(400, 'dev cards disabled')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
+	if (!canAfford(state.players[meIdx].resources, DEV_CARD_COST))
+		return err(400, 'insufficient resources')
+
+	const card = state.devDeck[0]
+	const nextDeck = state.devDeck.slice(1)
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		return {
+			...p,
+			resources: deductHand(p.resources, DEV_CARD_COST),
+			devCards: [...p.devCards, { id: card, purchasedTurn: state.round }],
+		}
+	})
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers, dev_deck: nextDeck })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	// No card id in the event — the draw stays private.
+	const event = {
+		kind: 'dev_bought',
+		player: meIdx,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
+function parseResource(v: unknown): Resource | null {
+	if (typeof v !== 'string') return null
+	if ((RESOURCES as readonly string[]).includes(v)) return v as Resource
+	return null
+}
+
+async function handlePlayDevCard(
+	admin: SupabaseClient,
+	me: string,
+	body: PlayDevCardBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const phase = state.phase
+	// Classic Catan allows pre-roll dev plays. Everything else must be main.
+	if (phase.kind !== 'main' && phase.kind !== 'roll')
+		return err(400, 'expected main or roll phase')
+
+	if (
+		typeof body.id !== 'string' ||
+		!DEV_CARD_IDS.includes(body.id as DevCardId)
+	)
+		return err(400, 'unknown dev card id')
+	const id = body.id as DevCardId
+	if (id === 'victory_point') return err(400, 'VP cards cannot be played')
+
+	const player = state.players[meIdx]
+	if (player.playedDevThisTurn)
+		return err(400, 'already played a dev card this turn')
+
+	// Find an entry bought on a prior turn (`purchasedTurn < state.round`).
+	const entryIdx = player.devCards.findIndex(
+		(c) => c.id === id && c.purchasedTurn < state.round
+	)
+	if (entryIdx < 0) return err(400, 'no playable card of that id')
+
+	const resume: ResumePhase =
+		phase.kind === 'main'
+			? { kind: 'main', roll: phase.roll, trade: phase.trade }
+			: { kind: 'roll' }
+
+	const now = new Date().toISOString()
+	const events: unknown[] = []
+
+	// Shared mutations: remove the card, bump played count, set the flag.
+	const nextDevCards = [...player.devCards]
+	nextDevCards.splice(entryIdx, 1)
+	const nextDevCardsPlayed = {
+		...player.devCardsPlayed,
+		[id]: (player.devCardsPlayed[id] ?? 0) + 1,
+	}
+	const basePlayer: PlayerState = {
+		...player,
+		devCards: nextDevCards,
+		devCardsPlayed: nextDevCardsPlayed,
+		playedDevThisTurn: true,
+	}
+
+	let nextPlayers: PlayerState[] = state.players.map((p, i) =>
+		i === meIdx ? basePlayer : p
+	)
+	let nextPhase: Phase = resume
+	let nextLargestArmy: number | null = state.largestArmy
+	const update: Record<string, unknown> = {}
+
+	switch (id) {
+		case 'knight': {
+			// Update Largest Army, then enter move_robber with the stored resume.
+			const speculative: GameState = {
+				...state,
+				players: nextPlayers,
+				largestArmy: state.largestArmy,
+			}
+			const newHolder = recomputeLargestArmy(speculative)
+			if (newHolder !== state.largestArmy) {
+				nextLargestArmy = newHolder
+				if (newHolder !== null) {
+					events.push({
+						kind: 'largest_army_changed',
+						player: newHolder,
+						at: now,
+					})
+				}
+			}
+			nextPhase = { kind: 'move_robber', resume }
+			break
+		}
+		case 'road_building': {
+			const speculative: GameState = { ...state, players: nextPlayers }
+			if (!hasLegalRoadPlacement(speculative, meIdx)) {
+				// No legal placements → card is consumed, phase doesn't change.
+				nextPhase = resume
+			} else {
+				nextPhase = { kind: 'road_building', resume, remaining: 2 }
+			}
+			break
+		}
+		case 'year_of_plenty': {
+			const payload = body.payload as {
+				r1?: unknown
+				r2?: unknown
+			} | null
+			const r1 = payload ? parseResource(payload.r1) : null
+			const r2 = payload ? parseResource(payload.r2) : null
+			if (!r1 || !r2) return err(400, 'invalid year_of_plenty payload')
+			nextPlayers = nextPlayers.map((p, i) => {
+				if (i !== meIdx) return p
+				return {
+					...p,
+					resources: {
+						...p.resources,
+						[r1]: p.resources[r1] + 1,
+						[r2]: p.resources[r2] + 1,
+					},
+				}
+			})
+			events.push({
+				kind: 'dev_played',
+				player: meIdx,
+				id,
+				take: [r1, r2],
+				at: now,
+			})
+			break
+		}
+		case 'monopoly': {
+			const payload = body.payload as { resource?: unknown } | null
+			const resource = payload ? parseResource(payload.resource) : null
+			if (!resource) return err(400, 'invalid monopoly payload')
+			let stolen = 0
+			nextPlayers = nextPlayers.map((p, i) => {
+				if (i === meIdx) return p
+				stolen += p.resources[resource]
+				return { ...p, resources: { ...p.resources, [resource]: 0 } }
+			})
+			nextPlayers = nextPlayers.map((p, i) =>
+				i === meIdx
+					? {
+							...p,
+							resources: {
+								...p.resources,
+								[resource]: p.resources[resource] + stolen,
+							},
+						}
+					: p
+			)
+			events.push({
+				kind: 'dev_played',
+				player: meIdx,
+				id,
+				resource,
+				total: stolen,
+				at: now,
+			})
+			break
+		}
+	}
+
+	// Knight + road_building log their `dev_played` with no extra payload.
+	if (id === 'knight' || id === 'road_building') {
+		events.push({ kind: 'dev_played', player: meIdx, id, at: now })
+	}
+
+	update.players = nextPlayers
+	update.phase = nextPhase
+	if (nextLargestArmy !== state.largestArmy) {
+		update.largest_army = nextLargestArmy
+	}
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update(update)
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	if (events.length > 0) {
+		const { error: gameErr } = await admin
+			.from('games')
+			.update({ events: [...(game.events ?? []), ...events] })
+			.eq('id', game.id)
+		if (gameErr) return err(500, 'could not log event')
+	}
+
+	return json({ ok: true })
+}
+
 serve(async (req) => {
 	if (req.method === 'OPTIONS') {
 		return new Response('ok', { headers: CORS_HEADERS })
@@ -2231,6 +2734,10 @@ serve(async (req) => {
 			return handleCancelTrade(admin, me, body)
 		case 'bank_trade':
 			return handleBankTrade(admin, me, body)
+		case 'buy_dev_card':
+			return handleBuyDevCard(admin, me, body)
+		case 'play_dev_card':
+			return handlePlayDevCard(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}

@@ -6,8 +6,10 @@ export type AutoLoadedStore = {
 
 import { friendsStoreRegistration } from './useFriendsStore'
 import { gamesStoreRegistration } from './useGamesStore'
+import { profileStoreRegistration } from './useProfileStore'
 
 export const autoLoadedStores: AutoLoadedStore[] = [
+	profileStoreRegistration,
 	friendsStoreRegistration,
 	gamesStoreRegistration,
 ]

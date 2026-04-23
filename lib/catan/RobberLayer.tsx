@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { Circle, G } from 'react-native-svg'
 import { adjacentVertices, type Hex, type Vertex } from './board'
 import type { HexLayout } from './layout'
-import { playerColors } from './palette'
+import { playerColors, tokenFace, tokenRing } from './palette'
 import { PulsingDot } from './PulsingDot'
 import { validRobberHexes } from './robber'
 import type { GameState } from './types'
@@ -32,28 +32,47 @@ export function RobberLayer({
 	if (phase.kind === 'move_robber') {
 		const valids = new Set<Hex>(validRobberHexes(state))
 		const color = playerColors[meIdx] ?? playerColors[0]
+		// The desert has no NumberToken, so a pulse rendered there would read
+		// as a solid blob rather than a halo-around-an-anchor like every other
+		// valid hex. Render a blank token-shaped backdrop first so the pulse
+		// lands on the same cream disc the other hexes provide for free.
+		const tokenR = layoutS * 0.42
+		const tokenSw = Math.max(1, layoutS * 0.03)
 		return (
 			<G>
 				{hexLayouts
 					.filter((h) => valids.has(h.id))
-					.map((h) => (
-						<Fragment key={h.id}>
-							<PulsingDot
-								cx={h.cx}
-								cy={h.cy}
-								r={layoutS * 0.34}
-								color={color}
-							/>
-							<Circle
-								cx={h.cx}
-								cy={h.cy}
-								r={layoutS * 0.55}
-								fill="#000"
-								fillOpacity={0.001}
-								onPress={() => onMoveRobber(h.id)}
-							/>
-						</Fragment>
-					))}
+					.map((h) => {
+						const isDesert = state.hexes[h.id]?.resource == null
+						return (
+							<Fragment key={h.id}>
+								{isDesert && (
+									<Circle
+										cx={h.cx}
+										cy={h.cy}
+										r={tokenR}
+										fill={tokenFace}
+										stroke={tokenRing}
+										strokeWidth={tokenSw}
+									/>
+								)}
+								<PulsingDot
+									cx={h.cx}
+									cy={h.cy}
+									r={layoutS * 0.34}
+									color={color}
+								/>
+								<Circle
+									cx={h.cx}
+									cy={h.cy}
+									r={layoutS * 0.55}
+									fill="#000"
+									fillOpacity={0.001}
+									onPress={() => onMoveRobber(h.id)}
+								/>
+							</Fragment>
+						)
+					})}
 			</G>
 		)
 	}

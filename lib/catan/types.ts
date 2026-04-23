@@ -8,18 +8,60 @@ import type {
 	VertexBuilding,
 } from './board'
 import type { BonusId, CurseId } from './bonuses'
+import type { DevCardId } from './devCards'
 
 export type Variant = 'standard'
 
 // Top-level game config. Serialized to JSONB on game_requests and
-// game_states. Today: only a single bonuses toggle. New options get added
-// here (and wired through the propose_game RPC + handleRespond in the edge
-// function).
+// game_states. New options get added here (and wired through the
+// propose_game RPC + handleRespond in the edge function).
 export type GameConfig = {
 	bonuses: boolean
+	devCards: boolean
 }
 
-export const DEFAULT_CONFIG: GameConfig = { bonuses: false }
+// System-shipped defaults for a standard game. Used as the reference when
+// summarizing a game's options (e.g. "bonuses enabled" means this game
+// differs from the global default). Mirrors the server-side default on
+// `profiles.game_defaults`, kept in a flat GameConfig shape for consumers.
+export const DEFAULT_CONFIG: GameConfig = { bonuses: false, devCards: true }
+
+// Defensive JSON reader. `raw` comes off `game_requests.config` /
+// `game_states.config` as `Json`; any missing fields fall back to the
+// global defaults so a partially-written row still renders sanely.
+export function parseGameConfig(raw: unknown): GameConfig {
+	if (!raw || typeof raw !== 'object') return DEFAULT_CONFIG
+	const src = raw as Record<string, unknown>
+	return {
+		bonuses:
+			typeof src.bonuses === 'boolean'
+				? src.bonuses
+				: DEFAULT_CONFIG.bonuses,
+		devCards:
+			typeof src.devCards === 'boolean'
+				? src.devCards
+				: DEFAULT_CONFIG.devCards,
+	}
+}
+
+// Human-readable one-liner for a game's config relative to DEFAULT_CONFIG.
+// Only non-default options get called out. Example outputs:
+//   "3 player game"
+//   "2 player game. Bonuses enabled"
+//   "4 player game. Bonuses enabled. Dev cards disabled"
+export function summarizeGameConfig(
+	config: GameConfig,
+	playerCount: number
+): string {
+	const parts: string[] = [`${playerCount} player game`]
+	if (config.bonuses !== DEFAULT_CONFIG.bonuses) {
+		parts.push(config.bonuses ? 'Bonuses enabled' : 'Bonuses disabled')
+	}
+	if (config.devCards !== DEFAULT_CONFIG.devCards) {
+		parts.push(config.devCards ? 'Dev cards enabled' : 'Dev cards disabled')
+	}
+	return parts.join('. ')
+}
 
 export type HexData =
 	| { resource: null }
@@ -33,12 +75,25 @@ export type EdgeState = { occupied: false } | { occupied: true; player: number }
 
 export type ResourceHand = Record<Resource, number>
 
+export type DevCardEntry = {
+	id: DevCardId
+	// Value of `state.round` at time of purchase. Playable once `state.round`
+	// has advanced past this value — enforces "can't play on turn bought".
+	purchasedTurn: number
+}
+
 export type PlayerState = {
 	resources: ResourceHand
 	// Kept bonus + dealt curse. Populated when the select_bonus phase ends;
 	// absent on standard (non-bonuses) games.
 	bonus?: BonusId
 	curse?: CurseId
+	// Dev-card hand (unplayed cards + VP). VP cards never leave the hand.
+	devCards: DevCardEntry[]
+	// Count per id, for Largest Army + stats. Incremented on play.
+	devCardsPlayed: Partial<Record<DevCardId, number>>
+	// Reset on end_turn for the outgoing active player.
+	playedDevThisTurn: boolean
 }
 
 // Per-player card hand during the select_bonus phase. `offered` is the two
@@ -77,6 +132,14 @@ export type BankKind =
 	| '2:1-wheat'
 	| '2:1-ore'
 
+// Phase to return to after a sub-phase (discard → move_robber → steal,
+// road_building) completes. A knight played during `roll` (pre-roll) resumes
+// to `roll`; anything triggered from main (or the 7-roll chain) resumes to
+// `main` with its trade snapshot.
+export type ResumePhase =
+	| { kind: 'roll' }
+	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
+
 export type Phase =
 	// Bonus-game-only pre-placement phase. Each player is dealt two bonus
 	// cards + one curse, picks one bonus to keep. Picks happen in parallel;
@@ -87,12 +150,21 @@ export type Phase =
 	| { kind: 'roll' }
 	| {
 			kind: 'discard'
-			roll: DiceRoll
+			resume: ResumePhase
 			// Amount each player still owes. Entries are removed as players submit.
 			pending: Partial<Record<number, number>>
 	  }
-	| { kind: 'move_robber'; roll: DiceRoll }
-	| { kind: 'steal'; roll: DiceRoll; hex: Hex; candidates: number[] }
+	| { kind: 'move_robber'; resume: ResumePhase }
+	| {
+			kind: 'steal'
+			resume: ResumePhase
+			hex: Hex
+			candidates: number[]
+	  }
+	// Fires when a player pops `Play` on a Road Building card. Active player
+	// places free roads one at a time; on completion we transition to
+	// `resume`.
+	| { kind: 'road_building'; resume: ResumePhase; remaining: 1 | 2 }
 	// `trade` piggy-backs on the main phase so we don't need a separate
 	// top-level field (and a DB column). It's always cleared when leaving main.
 	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
@@ -113,6 +185,15 @@ export type GameState = {
 	// always seed 9 ports; readers should default a missing array to empty.
 	ports?: Port[]
 	config: GameConfig
+	// Top = index 0. Edge function splices from the front on buy. `[]` when
+	// config.devCards is off.
+	devDeck: DevCardId[]
+	// Player index holding Largest Army, or null. Recomputed after every
+	// knight play; ties keep the existing holder.
+	largestArmy: number | null
+	// Monotonic turn counter. Increments on each `end_turn`. Used to enforce
+	// "can't play dev card on turn bought" (stamped on DevCardEntry.purchasedTurn).
+	round: number
 }
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }
