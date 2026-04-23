@@ -17,6 +17,9 @@ export type Variant = 'standard'
 // propose_game RPC + handleRespond in the edge function).
 export type GameConfig = {
 	bonuses: boolean
+	// Which bonus sets are in the draw pool when `bonuses` is on. Only '1' is
+	// live today; '2' and '3' are defined in the data but disabled in the UI.
+	bonusSets: string[]
 	devCards: boolean
 }
 
@@ -24,7 +27,11 @@ export type GameConfig = {
 // summarizing a game's options (e.g. "bonuses enabled" means this game
 // differs from the global default). Mirrors the server-side default on
 // `profiles.game_defaults`, kept in a flat GameConfig shape for consumers.
-export const DEFAULT_CONFIG: GameConfig = { bonuses: false, devCards: true }
+export const DEFAULT_CONFIG: GameConfig = {
+	bonuses: false,
+	bonusSets: ['1'],
+	devCards: true,
+}
 
 // Defensive JSON reader. `raw` comes off `game_requests.config` /
 // `game_states.config` as `Json`; any missing fields fall back to the
@@ -37,6 +44,11 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			typeof src.bonuses === 'boolean'
 				? src.bonuses
 				: DEFAULT_CONFIG.bonuses,
+		bonusSets:
+			Array.isArray(src.bonusSets) &&
+			src.bonusSets.every((s) => typeof s === 'string')
+				? (src.bonusSets as string[])
+				: DEFAULT_CONFIG.bonusSets,
 		devCards:
 			typeof src.devCards === 'boolean'
 				? src.devCards
@@ -48,19 +60,41 @@ export function parseGameConfig(raw: unknown): GameConfig {
 // Only non-default options get called out. Example outputs:
 //   "3 player game"
 //   "2 player game. Bonuses enabled"
-//   "4 player game. Bonuses enabled. Dev cards disabled"
+//   "4 player game. Bonuses enabled (sets 1, 2). Dev cards disabled"
 export function summarizeGameConfig(
 	config: GameConfig,
 	playerCount: number
 ): string {
 	const parts: string[] = [`${playerCount} player game`]
+	const nonDefaultSets =
+		config.bonuses &&
+		!sameStringSet(config.bonusSets, DEFAULT_CONFIG.bonusSets)
 	if (config.bonuses !== DEFAULT_CONFIG.bonuses) {
-		parts.push(config.bonuses ? 'Bonuses enabled' : 'Bonuses disabled')
+		if (config.bonuses) {
+			const suffix = nonDefaultSets
+				? ` (sets ${[...config.bonusSets].sort().join(', ')})`
+				: ''
+			parts.push(`Bonuses enabled${suffix}`)
+		} else {
+			parts.push('Bonuses disabled')
+		}
+	} else if (nonDefaultSets) {
+		parts.push(`Bonuses (sets ${[...config.bonusSets].sort().join(', ')})`)
 	}
 	if (config.devCards !== DEFAULT_CONFIG.devCards) {
 		parts.push(config.devCards ? 'Dev cards enabled' : 'Dev cards disabled')
 	}
 	return parts.join('. ')
+}
+
+export function sameStringSet(
+	a: readonly string[],
+	b: readonly string[]
+): boolean {
+	if (a.length !== b.length) return false
+	const as = new Set(a)
+	for (const x of b) if (!as.has(x)) return false
+	return true
 }
 
 export type HexData =

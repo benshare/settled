@@ -1,4 +1,5 @@
 import { useAuth } from '@/lib/auth'
+import { sameStringSet } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
@@ -46,6 +47,9 @@ export default function CreateGameScreen() {
 	const [query, setQuery] = useState('')
 	const [selected, setSelected] = useState<Set<string>>(new Set())
 	const [bonuses, setBonuses] = useState(savedDefaults.extras.bonuses)
+	const [bonusSets, setBonusSets] = useState<string[]>(
+		savedDefaults.extras.bonusSets
+	)
 	const [devCards, setDevCards] = useState(savedDefaults.settings.devCards)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [extrasOpen, setExtrasOpen] = useState(false)
@@ -58,20 +62,26 @@ export default function CreateGameScreen() {
 	// load completed keep their edits.
 	const [touched, setTouched] = useState(false)
 	const savedBonuses = savedDefaults.extras.bonuses
+	const savedBonusSets = savedDefaults.extras.bonusSets
 	const savedDevCards = savedDefaults.settings.devCards
 	useEffect(() => {
 		if (touched) return
 		setBonuses(savedBonuses)
+		setBonusSets(savedBonusSets)
 		setDevCards(savedDevCards)
-	}, [savedBonuses, savedDevCards, touched])
+	}, [savedBonuses, savedBonusSets, savedDevCards, touched])
 
 	const currentDefaults: GameDefaults = {
 		settings: { devCards },
-		extras: { bonuses },
+		extras: { bonuses, bonusSets },
 	}
 	const dirty =
 		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
-		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses
+		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses ||
+		!sameStringSet(
+			currentDefaults.extras.bonusSets,
+			savedDefaults.extras.bonusSets
+		)
 
 	const filtered = useMemo(() => {
 		const q = query.trim().toLowerCase()
@@ -96,6 +106,7 @@ export default function CreateGameScreen() {
 		setError(null)
 		const { error } = await createRequest(user.id, Array.from(selected), {
 			bonuses,
+			bonusSets,
 			devCards,
 		})
 		setBusy(false)
@@ -240,6 +251,55 @@ export default function CreateGameScreen() {
 											setTouched(true)
 										}}
 									/>
+									{bonuses && (
+										<View style={styles.subOptions}>
+											{(['1', '2', '3'] as const).map(
+												(setId) => {
+													const locked = setId !== '1'
+													return (
+														<CheckboxRow
+															key={setId}
+															label={`Set ${setId}`}
+															checked={bonusSets.includes(
+																setId
+															)}
+															disabled={locked}
+															onToggle={() => {
+																setBonusSets(
+																	(prev) => {
+																		if (
+																			prev.includes(
+																				setId
+																			)
+																		) {
+																			// Keep at least one set enabled.
+																			if (
+																				prev.length <=
+																				1
+																			)
+																				return prev
+																			return prev.filter(
+																				(
+																					s
+																				) =>
+																					s !==
+																					setId
+																			)
+																		}
+																		return [
+																			...prev,
+																			setId,
+																		]
+																	}
+																)
+																setTouched(true)
+															}}
+														/>
+													)
+												}
+											)}
+										</View>
+									)}
 								</CollapsibleSection>
 							</View>
 						</ScrollView>
@@ -304,6 +364,52 @@ function CollapsibleSection({
 			</Pressable>
 			{open && <View style={styles.collapsibleBody}>{children}</View>}
 		</View>
+	)
+}
+
+function CheckboxRow({
+	label,
+	checked,
+	disabled,
+	onToggle,
+}: {
+	label: string
+	checked: boolean
+	disabled?: boolean
+	onToggle: () => void
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<Pressable
+			onPress={disabled ? undefined : onToggle}
+			disabled={disabled}
+			style={({ pressed }) => [
+				styles.checkboxRow,
+				pressed && !disabled && styles.pressed,
+			]}
+		>
+			<View
+				style={[
+					styles.checkbox,
+					checked && !disabled && styles.checkboxChecked,
+					disabled && styles.checkboxDisabled,
+				]}
+			>
+				{checked && !disabled && (
+					<Ionicons name="checkmark" size={14} color={colors.white} />
+				)}
+			</View>
+			<Text
+				style={[
+					styles.checkboxLabel,
+					disabled && styles.checkboxLabelDisabled,
+				]}
+			>
+				{label}
+			</Text>
+			{disabled && <Text style={styles.checkboxHint}>coming soon</Text>}
+		</Pressable>
 	)
 }
 
@@ -527,6 +633,48 @@ function makeStyles(colors: ColorScheme) {
 		},
 		pillThumbOn: {
 			transform: [{ translateX: 14 }],
+		},
+		subOptions: {
+			paddingLeft: spacing.md + 18,
+			paddingBottom: spacing.xs,
+			gap: 2,
+		},
+		checkboxRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+			paddingVertical: 6,
+		},
+		checkbox: {
+			width: 18,
+			height: 18,
+			borderRadius: 4,
+			borderWidth: 1.5,
+			borderColor: colors.border,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: colors.background,
+		},
+		checkboxChecked: {
+			backgroundColor: colors.brand,
+			borderColor: colors.brand,
+		},
+		checkboxDisabled: {
+			borderColor: colors.borderLight,
+			backgroundColor: colors.cardAlt,
+		},
+		checkboxLabel: {
+			fontSize: font.base,
+			color: colors.text,
+		},
+		checkboxLabelDisabled: {
+			color: colors.textMuted,
+		},
+		checkboxHint: {
+			fontSize: font.xs,
+			color: colors.textMuted,
+			fontStyle: 'italic',
+			marginLeft: 'auto',
 		},
 		saveDefaultsBtn: {
 			flexDirection: 'row',

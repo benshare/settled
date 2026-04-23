@@ -55,6 +55,7 @@ function firstResourceHex(s: GameState): { hex: Hex; number: number } {
 function testRolledSevenYieldsNothing() {
 	const s = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const gains = distributeResources(s, 7)
@@ -64,6 +65,7 @@ function testRolledSevenYieldsNothing() {
 function testSettlementGetsOne() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const { hex, number } = firstResourceHex(s0)
@@ -79,6 +81,7 @@ function testSettlementGetsOne() {
 function testCityGetsTwo() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const { hex, number } = firstResourceHex(s0)
@@ -93,6 +96,7 @@ function testCityGetsTwo() {
 function testMismatchedRollPaysNothing() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const { hex, number } = firstResourceHex(s0)

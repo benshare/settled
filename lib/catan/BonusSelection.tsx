@@ -9,8 +9,8 @@
 // view without any client-side cleanup needed.
 
 import { Button } from '@/lib/modules/Button'
-import { useTheme } from '@/lib/ThemeContext'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
+import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -66,7 +66,6 @@ export function BonusSelection({
 				Keep one bonus card. The other will be discarded. Your curse
 				card stays either way.
 			</Text>
-
 			<View style={styles.bonusRow}>
 				{offered.map((b, i) => {
 					const isPicked = committed
@@ -108,7 +107,7 @@ export function BonusSelection({
 										color={colors.white}
 									/>
 									<Text style={styles.cardBadgeText}>
-										Kept
+										Keep
 									</Text>
 								</View>
 							)}
@@ -125,10 +124,7 @@ export function BonusSelection({
 						color={colors.error}
 					/>
 				</View>
-				<Text style={styles.cardTitle}>
-					{curse.title}{' '}
-					<Text style={styles.curseTag}>(curse)</Text>
-				</Text>
+				<Text style={styles.cardTitle}>{curse.title}</Text>
 				<Text style={styles.cardDescription}>{curse.description}</Text>
 			</View>
 
@@ -242,11 +238,6 @@ function makeStyles(colors: ColorScheme) {
 			flexGrow: 0,
 			borderColor: colors.error,
 			backgroundColor: colors.card,
-		},
-		curseTag: {
-			fontSize: font.sm,
-			fontWeight: '600',
-			color: colors.error,
 		},
 		actionRow: {
 			marginTop: 'auto',

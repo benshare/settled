@@ -595,11 +595,48 @@ type SelectBonusHand = {
 	chosen: BonusId | null
 }
 
-function dealBonusHand(): SelectBonusHand {
+// Which set each bonus belongs to. Must stay in sync with
+// lib/catan/bonuses/bonuses.ts. Used to filter the draw pool by
+// config.bonusSets when dealing.
+const BONUS_SET_OF: Record<BonusId, '1' | '2' | '3'> = {
+	specialist: '1',
+	merchant: '3',
+	gambler: '1',
+	veteran: '1',
+	scout: '2',
+	plutocrat: '3',
+	accountant: '2',
+	hoarder: '1',
+	explorer: '2',
+	ritualist: '2',
+	fencer: '3',
+	underdog: '1',
+	nomad: '1',
+	populist: '2',
+	fortune_teller: '2',
+	shepherd: '2',
+	smith: '3',
+	carpenter: '1',
+	metropolitan: '2',
+	investor: '3',
+	curio_collector: '2',
+	thrill_seeker: '1',
+	bricklayer: '1',
+	aristocrat: '1',
+	magician: '3',
+	forger: '2',
+	haunt: '3',
+}
+
+function dealBonusHand(bonusSets: readonly string[]): SelectBonusHand {
 	const pick = <T>(xs: readonly T[]): T =>
 		xs[Math.floor(Math.random() * xs.length)]
+	const filtered = BONUS_IDS.filter((id) =>
+		bonusSets.includes(BONUS_SET_OF[id])
+	)
+	const pool = filtered.length > 0 ? filtered : BONUS_IDS
 	return {
-		offered: [pick(BONUS_IDS), pick(BONUS_IDS)],
+		offered: [pick(pool), pick(pool)],
 		curse: pick(CURSE_IDS),
 		chosen: null,
 	}
@@ -607,7 +644,11 @@ function dealBonusHand(): SelectBonusHand {
 
 // --- Config ----------------------------------------------------------------
 
-type GameConfig = { bonuses: boolean; devCards: boolean }
+type GameConfig = {
+	bonuses: boolean
+	bonusSets: string[]
+	devCards: boolean
+}
 
 type ResumePhase =
 	| { kind: 'roll' }
@@ -1305,7 +1346,7 @@ async function handleRespond(
 		if (config.bonuses) {
 			const hands: Record<number, SelectBonusHand> = {}
 			for (let i = 0; i < playerOrder.length; i++)
-				hands[i] = dealBonusHand()
+				hands[i] = dealBonusHand(config.bonusSets)
 			initialPhase = { kind: 'select_bonus', hands }
 		} else {
 			initialPhase = INITIAL_PHASE

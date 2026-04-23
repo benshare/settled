@@ -110,6 +110,7 @@ function testIsValidDiscardSelection() {
 function testValidRobberHexes() {
 	const s = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const valids = validRobberHexes(s)
@@ -120,6 +121,7 @@ function testValidRobberHexes() {
 function testStealCandidatesOpponentWithCards() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const hex = firstResourceHex(s0)
@@ -139,6 +141,7 @@ function testStealCandidatesOpponentWithCards() {
 function testStealCandidatesEmptyHand() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const hex = firstResourceHex(s0)
@@ -152,6 +155,7 @@ function testStealCandidatesEmptyHand() {
 function testStealCandidatesExcludesSelf() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const hex = firstResourceHex(s0)
@@ -170,6 +174,7 @@ function testStealCandidatesExcludesSelf() {
 function testDistributeSkipsRobberHex() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const hex = firstResourceHex(s0)

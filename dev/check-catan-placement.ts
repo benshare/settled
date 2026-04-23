@@ -66,6 +66,7 @@ function assertVerticesEqual(got: Vertex[], want: Vertex[], msg: string) {
 function testFreshGameAllValid() {
 	const s = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const valid = validSettlementVertices(s)
@@ -75,6 +76,7 @@ function testFreshGameAllValid() {
 function testDistanceRule() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const s = placeSettlement(s0, '3F', 0)
@@ -105,6 +107,7 @@ function testDistanceRule() {
 function testTargetSettlementRound1() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const s = placeSettlement(s0, '3F', 0)
@@ -113,7 +116,11 @@ function testTargetSettlementRound1() {
 }
 
 function testTargetSettlementRound2() {
-	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
+	let s = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		devCards: false,
+	})
 	// Round 1: player 0 places settlement 3F + a road on one of its edges.
 	s = placeSettlement(s, '3F', 0)
 	const firstEdge = adjacentEdges['3F'][0] as Edge
@@ -135,7 +142,11 @@ function testTargetSettlementRound2() {
 }
 
 function testValidRoadEdges() {
-	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
+	let s = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		devCards: false,
+	})
 	s = placeSettlement(s, '3F', 0)
 	const edges = validRoadEdges(s, 0)
 	assert(edges.length > 0 && edges.length <= 3, 'road count 1..3')
@@ -157,6 +168,7 @@ function testValidRoadEdges() {
 function testStartingResourcesInterior() {
 	const s = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	// Find an interior vertex (touches 3 hexes).
@@ -203,6 +215,7 @@ function testNextPlacementTurnBoundaries() {
 function testValidSettlementExcludesAllNeighbors() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
+		bonusSets: ['1'],
 		devCards: false,
 	})
 	const s = placeSettlement(s0, '3F', 0)

@@ -9,7 +9,7 @@ export type Profile = Database['public']['Tables']['profiles']['Row']
 // grouping so both sides can compare values directly.
 export type GameDefaults = {
 	settings: { devCards: boolean }
-	extras: { bonuses: boolean }
+	extras: { bonuses: boolean; bonusSets: string[] }
 }
 
 // Default used before a profile loads, and as a fallback when a row is
@@ -17,7 +17,7 @@ export type GameDefaults = {
 // resilient). Dev cards on, bonuses off — matches the SQL default.
 export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 	settings: { devCards: true },
-	extras: { bonuses: false },
+	extras: { bonuses: false, bonusSets: ['1'] },
 }
 
 // Narrow the JSONB blob to GameDefaults. Silently falls back on shape drift.
@@ -38,6 +38,11 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				typeof extras?.bonuses === 'boolean'
 					? extras.bonuses
 					: DEFAULT_GAME_DEFAULTS.extras.bonuses,
+			bonusSets:
+				Array.isArray(extras?.bonusSets) &&
+				extras.bonusSets.every((s) => typeof s === 'string')
+					? (extras.bonusSets as string[])
+					: DEFAULT_GAME_DEFAULTS.extras.bonusSets,
 		},
 	}
 }

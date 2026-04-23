@@ -87,7 +87,11 @@ function testDeductHand() {
 }
 
 function testRoadValidity() {
-	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
+	let s = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		devCards: false,
+	})
 	s = placeSettlement(s, '3F', 0)
 	const firstEdge = adjacentEdges['3F'][0] as Edge
 	s = placeRoad(s, firstEdge, 0)
@@ -100,7 +104,11 @@ function testRoadValidity() {
 }
 
 function testRoadBlockedByOpponentSettlement() {
-	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
+	let s = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		devCards: false,
+	})
 	// Player 0 settles at 3E and builds a road out to 4E.
 	s = placeSettlement(s, '3E', 0)
 	const seedEdge = edgeBetween('3E', '4E') as Edge
@@ -127,7 +135,11 @@ function edgeStateOfUnowned(s: GameState, e: Edge): boolean {
 }
 
 function testSettlementValidity() {
-	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
+	let s = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		devCards: false,
+	})
 	s = placeSettlement(s, '3F', 0)
 	const myEdge = adjacentEdges['3F'][0] as Edge
 	s = placeRoad(s, myEdge, 0)
@@ -146,7 +158,11 @@ function testSettlementValidity() {
 }
 
 function testSettlementNeedsRoad() {
-	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
+	let s = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		devCards: false,
+	})
 	s = placeSettlement(s, '3F', 0)
 	// No road yet — no valid settlement sites.
 	equal(
@@ -157,7 +173,11 @@ function testSettlementNeedsRoad() {
 }
 
 function testCityValidity() {
-	let s = initialGameState('standard', 3, { bonuses: false, devCards: false })
+	let s = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		devCards: false,
+	})
 	s = placeSettlement(s, '3F', 0)
 	s = placeSettlement(s, '1A', 1)
 	const cities = validBuildCityVertices(s, 0)

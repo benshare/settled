@@ -1,8 +1,8 @@
 import { useAuth } from '@/lib/auth'
 import type { Hex } from '@/lib/catan/board'
 import { BoardView } from '@/lib/catan/BoardView'
-import { BonusSelection } from '@/lib/catan/BonusSelection'
 import type { BonusId } from '@/lib/catan/bonuses'
+import { BonusSelection } from '@/lib/catan/BonusSelection'
 import {
 	BUILD_COSTS,
 	canAfford,
@@ -11,10 +11,10 @@ import {
 	validBuildSettlementVertices,
 	type BuildKind,
 } from '@/lib/catan/build'
-import { canBuyDevCard } from '@/lib/catan/dev'
-import { DevCardHand, type DevPlayPayload } from '@/lib/catan/DevCardHand'
 import type { BuildSelection } from '@/lib/catan/BuildLayer'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
+import { canBuyDevCard } from '@/lib/catan/dev'
+import { DevCardHand, type DevPlayPayload } from '@/lib/catan/DevCardHand'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
 import { waterColor } from '@/lib/catan/palette'

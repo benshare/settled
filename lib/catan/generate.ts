@@ -75,13 +75,18 @@ export function generatePorts(variant: Variant): Port[] {
 	})
 }
 
-// Deal a single player's select_bonus hand: two bonuses drawn from BONUS_POOL
-// (with replacement — the pool today has size 1) and one curse.
-export function dealBonusHand(): SelectBonusHand {
+// Deal a single player's select_bonus hand: two bonuses drawn from the
+// subset of BONUS_POOL whose `set` is included in `bonusSets` (with
+// replacement) and one curse drawn from the full CURSE_POOL. Falls back to
+// the full bonus pool when the filter produces nothing, so a misconfigured
+// game never deals an empty hand.
+export function dealBonusHand(bonusSets: readonly string[]): SelectBonusHand {
 	const pick = <T>(xs: readonly T[]): T =>
 		xs[Math.floor(Math.random() * xs.length)]
-	const b0 = pick(BONUS_POOL).id as BonusId
-	const b1 = pick(BONUS_POOL).id as BonusId
+	const filtered = BONUS_POOL.filter((b) => bonusSets.includes(b.set))
+	const pool = filtered.length > 0 ? filtered : BONUS_POOL
+	const b0 = pick(pool).id as BonusId
+	const b1 = pick(pool).id as BonusId
 	const curse = pick(CURSE_POOL).id as CurseId
 	return { offered: [b0, b1], curse, chosen: null }
 }
@@ -97,7 +102,8 @@ export function initialGameState(
 	let phase: Phase
 	if (config.bonuses) {
 		const hands: Record<number, SelectBonusHand> = {}
-		for (let i = 0; i < playerCount; i++) hands[i] = dealBonusHand()
+		for (let i = 0; i < playerCount; i++)
+			hands[i] = dealBonusHand(config.bonusSets)
 		phase = { kind: 'select_bonus', hands }
 	} else {
 		phase = { kind: 'initial_placement', round: 1, step: 'settlement' }
