@@ -2,13 +2,17 @@ import { useAuth } from '@/lib/auth'
 import { parseGameConfig, summarizeGameConfig } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
-import { type InvitedEntry, useGamesStore } from '@/lib/stores/useGamesStore'
+import {
+	type GameRequest,
+	type InvitedEntry,
+	useGamesStore,
+} from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
 import { useTheme } from '@/lib/ThemeContext'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -18,14 +22,47 @@ export default function PendingGameScreen() {
 	const router = useRouter()
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
-	const request = useGamesStore((s) =>
-		(s.pendingRequests ?? []).find((r) => r.id === id)
-	)
+	const pendingRequests = useGamesStore((s) => s.pendingRequests)
+	const activeGames = useGamesStore((s) => s.activeGames)
+	const request = pendingRequests?.find((r) => r.id === id)
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const respond = useGamesStore((s) => s.respond)
 
 	const [busy, setBusy] = useState<'accept' | 'reject' | null>(null)
 	const [error, setError] = useState<string | null>(null)
+
+	// Remember the request after it disappears from the store so we can
+	// match it against a newly-created game. When the final invitee accepts,
+	// the server deletes the request and inserts the game; both arrive via
+	// realtime for anyone else viewing the invite, and we redirect them.
+	const lastRequestRef = useRef<GameRequest | null>(null)
+	const redirectingRef = useRef(false)
+
+	useEffect(() => {
+		if (request) lastRequestRef.current = request
+	}, [request])
+
+	useEffect(() => {
+		if (redirectingRef.current) return
+		if (pendingRequests === undefined) return
+		if (request) return
+		const last = lastRequestRef.current
+		if (!last) return
+		if (!activeGames) return
+		const want = new Set([
+			last.proposer,
+			...last.invited.map((i) => i.user),
+		])
+		const match = activeGames.find(
+			(g) =>
+				g.participants.length === want.size &&
+				g.participants.every((p) => want.has(p))
+		)
+		if (match) {
+			redirectingRef.current = true
+			router.replace(`/game/${match.id}`)
+		}
+	}, [pendingRequests, activeGames, request, router])
 
 	async function onRespond(accept: boolean) {
 		if (!user?.id || !request) return

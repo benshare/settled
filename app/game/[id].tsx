@@ -1055,12 +1055,14 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.md,
 		paddingTop: spacing.sm,
 		paddingBottom: spacing.md,
+		height: 76,
+		justifyContent: 'center',
 	},
 	mainLoopBar: {
 		paddingHorizontal: spacing.md,
 		paddingTop: spacing.sm,
 		paddingBottom: spacing.md,
-		minHeight: 76,
+		height: 76,
 		justifyContent: 'center',
 	},
 	diceSlot: {
@@ -1122,7 +1124,7 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: spacing.sm,
-		minHeight: 52,
+		height: 52,
 	},
 	diceRow: {
 		flexDirection: 'row',

@@ -10,6 +10,7 @@
 		"web": "expo start --web",
 		"check": "npx tsc -p tsconfig.json --noEmit && eslint . --fix && npx expo-doctor",
 		"format": "prettier --write .",
+		"link": "supabase link --project-ref ymbtisbqwehsgpidntag",
 		"migrate": "npx supabase db push",
 		"edge": "npx supabase functions deploy",
 		"types": "supabase gen types typescript --project-id ymbtisbqwehsgpidntag > lib/database-types.ts"
