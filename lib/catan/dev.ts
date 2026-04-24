@@ -3,7 +3,12 @@
 // and tests. The edge function re-implements the same logic against its
 // duplicated constants.
 
-import { bonusOf, carpenterVPOf, winVPThresholdFor } from './bonus'
+import {
+	bonusOf,
+	carpenterVPOf,
+	populistBonusVPFor,
+	winVPThresholdFor,
+} from './bonus'
 import { canAffordPurchase, validBuildRoadEdges } from './build'
 import {
 	curseOf,
@@ -102,12 +107,14 @@ export function totalVP(
 	let vp = 0
 	for (const v of Object.values(state.vertices)) {
 		if (v?.occupied && v.player === playerIdx) {
-			vp += v.building === 'city' ? 2 : 1
+			vp +=
+				v.building === 'super_city' ? 3 : v.building === 'city' ? 2 : 1
 		}
 	}
 	if (state.largestArmy === playerIdx) vp += 2
 	if (state.longestRoad === playerIdx) vp += 2
 	vp += carpenterVPOf(p)
+	vp += populistBonusVPFor(state, playerIdx)
 	if (includeHiddenVP) {
 		for (const e of p.devCards) {
 			if (e.id === 'victory_point') vp += 1

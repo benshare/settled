@@ -4,15 +4,41 @@ import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
 import {
+	canBuildMoreSuperCities,
+	canShepherdSwap,
+	forgerActive,
+	ritualCardCost,
+} from '@/lib/catan/bonus'
+import {
+	AccountantPicker,
+	type LiquidationTarget,
+} from '@/lib/catan/AccountantPicker'
+import {
+	CurioPickOverlay,
+	CurioWaitOverlay,
+} from '@/lib/catan/CurioPickOverlay'
+import { ForgerMovePicker } from '@/lib/catan/ForgerMovePicker'
+import { ForgerPickOverlay } from '@/lib/catan/ForgerPickOverlay'
+import { MetropolitanCostPicker } from '@/lib/catan/MetropolitanCostPicker'
+import {
+	ExplorerStatusBanner,
 	SpecialistDeclareOverlay,
 	SpecialistWaitOverlay,
 } from '@/lib/catan/PostPlacementOverlay'
+import { RitualistPicker } from '@/lib/catan/RitualistPicker'
+import {
+	ScoutPickOverlay,
+	ScoutWaitOverlay,
+} from '@/lib/catan/ScoutPickOverlay'
+import { ShepherdSwapPicker } from '@/lib/catan/ShepherdSwapPicker'
 import {
 	canAffordPurchase,
+	canAffordMetropolitanCost,
 	shouldUseBricklayer,
 	validBuildCityVertices,
 	validBuildRoadEdges,
 	validBuildSettlementVertices,
+	validBuildSuperCityVertices,
 	type BuildKind,
 } from '@/lib/catan/build'
 import type { BuildSelection } from '@/lib/catan/BuildLayer'
@@ -130,11 +156,34 @@ function GameBody() {
 	const setSpecialistResource = useGamesStore((s) => s.setSpecialistResource)
 	const buyCarpenterVP = useGamesStore((s) => s.buyCarpenterVP)
 	const tapKnight = useGamesStore((s) => s.tapKnight)
+	const buildSuperCity = useGamesStore((s) => s.buildSuperCity)
+	const liquidate = useGamesStore((s) => s.liquidate)
+	const placeExplorerRoad = useGamesStore((s) => s.placeExplorerRoad)
+	const ritualRoll = useGamesStore((s) => s.ritualRoll)
+	const shepherdSwap = useGamesStore((s) => s.shepherdSwap)
+	const claimCurio = useGamesStore((s) => s.claimCurio)
+	const moveForgerToken = useGamesStore((s) => s.moveForgerToken)
+	const pickForgerTarget = useGamesStore((s) => s.pickForgerTarget)
+	const confirmScoutCard = useGamesStore((s) => s.confirmScoutCard)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
-	const [buildTool, setBuildTool] = useState<BuildKind | null>(null)
+	const [buildTool, setBuildTool] = useState<BuildKind | 'super_city' | null>(
+		null
+	)
 	const [tradePanelOpen, setTradePanelOpen] = useState(false)
+	const [ritualOpen, setRitualOpen] = useState(false)
+	const [shepherdOpen, setShepherdOpen] = useState(false)
+	const [forgerMoveOpen, setForgerMoveOpen] = useState(false)
+	const [accountantOpen, setAccountantOpen] = useState(false)
+	// When a city / super_city build is pending and the metropolitan
+	// player can swap wheat→ore, this carries the picked vertex until the
+	// swap modal resolves.
+	const [metroPending, setMetroPending] = useState<
+		| { kind: 'city'; vertex: string }
+		| { kind: 'super_city'; vertex: string }
+		| null
+	>(null)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		run: () => void | Promise<void>
@@ -285,6 +334,93 @@ function GameBody() {
 		if (res.error) notify('Tap failed', res.error)
 	}
 
+	async function onRitualRoll(discard: ResourceHandType, total: number) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await ritualRoll(game.id, discard, total)
+		setSubmitting(false)
+		if (res.error) notify('Ritual failed', res.error)
+		else setRitualOpen(false)
+	}
+
+	async function onShepherdSwap(take: [Resource, Resource]) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await shepherdSwap(game.id, take)
+		setSubmitting(false)
+		if (res.error) notify('Swap failed', res.error)
+		else setShepherdOpen(false)
+	}
+
+	async function onClaimCurio(take: [Resource, Resource, Resource]) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await claimCurio(game.id, take)
+		setSubmitting(false)
+		if (res.error) notify('Claim failed', res.error)
+	}
+
+	async function onMoveForgerToken(hex: Hex) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await moveForgerToken(game.id, hex)
+		setSubmitting(false)
+		if (res.error) notify('Move failed', res.error)
+		else setForgerMoveOpen(false)
+	}
+
+	async function onPickForgerTarget(target: number) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await pickForgerTarget(game.id, target)
+		setSubmitting(false)
+		if (res.error) notify('Pick failed', res.error)
+	}
+
+	async function onConfirmScoutCard(index: number) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await confirmScoutCard(game.id, index)
+		setSubmitting(false)
+		if (res.error) notify('Pick failed', res.error)
+	}
+
+	async function onLiquidate(target: LiquidationTarget) {
+		if (!game) return
+		setSubmitting(true)
+		// The picker carries an `id` for dev_card target rows so the player
+		// can see what they're dropping; the edge wants only kind+index.
+		const payload =
+			target.kind === 'dev_card'
+				? { kind: 'dev_card' as const, index: target.index }
+				: target
+		const res = await liquidate(game.id, payload)
+		setSubmitting(false)
+		if (res.error) notify('Liquidate failed', res.error)
+		else setAccountantOpen(false)
+	}
+
+	async function onPlaceExplorerRoad(edge: string) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await placeExplorerRoad(game.id, edge)
+		setSubmitting(false)
+		if (res.error) notify('Placement failed', res.error)
+	}
+
+	async function onBuildSuperCity(vertex: string, swapDelta: number) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await buildSuperCity(game.id, vertex, swapDelta)
+		setSubmitting(false)
+		if (res.error) {
+			notify('Upgrade failed', res.error)
+			return
+		}
+		setBuildTool(null)
+		setMetroPending(null)
+	}
+
 	async function onConfirm() {
 		if (!selection || !game) return
 		setSubmitting(true)
@@ -361,15 +497,41 @@ function GameBody() {
 		if (res.error) notify('Play failed', res.error)
 	}
 
-	function onBuildToolSelect(tool: BuildKind) {
+	function onBuildToolSelect(tool: BuildKind | 'super_city') {
 		setBuildTool((prev) => (prev === tool ? null : tool))
 	}
 
 	function onBuildSpotSelect(sel: BuildSelection) {
-		confirmAction(confirmBuildTitle(sel.kind), () => commitBuild(sel))
+		// Explorer free-road placement bypasses the confirm bar (the post-
+		// placement layer is informational; just commit).
+		if (sel.kind === 'explorer_road') {
+			onPlaceExplorerRoad(sel.edge)
+			return
+		}
+		// Metropolitan: route city / super_city through the wheat→ore picker
+		// so the player can choose how to pay.
+		if (
+			(sel.kind === 'city' || sel.kind === 'super_city') &&
+			myPlayer?.bonus === 'metropolitan'
+		) {
+			setMetroPending({ kind: sel.kind, vertex: sel.vertex })
+			return
+		}
+		// At this point sel is one of road/settlement/city (the non-
+		// metropolitan branch). Narrow for confirmAction + commitBuild.
+		if (sel.kind === 'super_city') return
+		const standardSel = sel
+		confirmAction(confirmBuildTitle(standardSel.kind), () =>
+			commitBuild(standardSel)
+		)
 	}
 
-	async function commitBuild(sel: BuildSelection) {
+	async function commitBuild(
+		sel: Exclude<
+			BuildSelection,
+			{ kind: 'explorer_road' } | { kind: 'super_city' }
+		>
+	) {
 		if (!game) return
 		setSubmitting(true)
 		const use = myPlayer ? shouldUseBricklayer(myPlayer, sel.kind) : false
@@ -521,6 +683,23 @@ function GameBody() {
 		canBuildThisTurn && !hasLiveTrade && !tradePanelOpen
 	const tradeButtonActive = tradePanelOpen || liveTradeIsMine
 
+	// Set-2 build-bar enablement.
+	const superCityCanAfford =
+		!!myPlayer &&
+		(canAffordMetropolitanCost(myPlayer, 0) ||
+			canAffordMetropolitanCost(myPlayer, 1) ||
+			canAffordMetropolitanCost(myPlayer, 2))
+	const superCityEnabled =
+		canBuildThisTurn &&
+		!!gameState &&
+		!!myPlayer &&
+		myPlayer.bonus === 'metropolitan' &&
+		canBuildMoreSuperCities(gameState, meIdx) &&
+		validBuildSuperCityVertices(gameState, meIdx).length > 0 &&
+		superCityCanAfford
+	const accountantEnabled =
+		canBuildThisTurn && !!myPlayer && myPlayer.bonus === 'accountant'
+
 	if (
 		inBonusSelection &&
 		gameState &&
@@ -589,10 +768,25 @@ function GameBody() {
 										myPlayer.resources.wood >= 4
 									: undefined
 							}
+							superCityEnabled={
+								myPlayer?.bonus === 'metropolitan'
+									? superCityEnabled
+									: undefined
+							}
+							superCityActive={buildTool === 'super_city'}
+							accountantEnabled={
+								myPlayer?.bonus === 'accountant'
+									? accountantEnabled
+									: undefined
+							}
 							onSelect={onBuildToolSelect}
 							onTradePress={onTradePress}
 							onBuyDevCard={onBuyDevCard}
 							onBuyCarpenterVP={onBuyCarpenterVP}
+							onSelectSuperCity={() =>
+								onBuildToolSelect('super_city')
+							}
+							onAccountant={() => setAccountantOpen(true)}
 						/>
 					)}
 					{inRoadBuilding && (
@@ -618,6 +812,10 @@ function GameBody() {
 								hand={gameState.players[meIdx].resources}
 								required={gameState.phase.pending[meIdx]!}
 								submitting={submitting}
+								isShepherd={
+									gameState.players[meIdx]?.bonus ===
+									'shepherd'
+								}
 								onSubmit={onDiscard}
 							/>
 						)}
@@ -640,28 +838,190 @@ function GameBody() {
 				gameState &&
 				gameState.phase.kind === 'post_placement' &&
 				(() => {
-					const pending = gameState.phase.pending.specialist
-					const waitingOn = pending
+					const phase = gameState.phase
+					const specialistPending = phase.pending.specialist
+					const explorer = phase.pending.explorer ?? {}
+					const waitingSpecialist = specialistPending
 						.filter((i) => i !== meIdx)
 						.map(
 							(i) =>
 								profilesById[game.player_order[i]]?.username ??
 								'Player'
 						)
-					if (pending.includes(meIdx)) {
+					if (specialistPending.includes(meIdx)) {
 						return (
 							<SpecialistDeclareOverlay
-								waitingOn={waitingOn}
+								waitingOn={waitingSpecialist}
 								submitting={submitting}
 								onConfirm={onSetSpecialistResource}
 							/>
 						)
 					}
-					if (waitingOn.length > 0) {
-						return <SpecialistWaitOverlay waitingOn={waitingOn} />
+					// Specialist still pending for someone else: block the
+					// player with a wait overlay so the board doesn't become
+					// interactive mid-resolution.
+					if (waitingSpecialist.length > 0) {
+						return (
+							<SpecialistWaitOverlay
+								waitingOn={waitingSpecialist}
+							/>
+						)
+					}
+					// Specialist done — explorer placements happen inline on
+					// the board; surface a status banner so the player sees
+					// the count.
+					const myRemaining = explorer[meIdx] ?? 0
+					const otherWaiting = Object.entries(explorer)
+						.filter(
+							([idx, n]) => Number(idx) !== meIdx && (n ?? 0) > 0
+						)
+						.map(
+							([idx]) =>
+								profilesById[game.player_order[Number(idx)]]
+									?.username ?? 'Player'
+						)
+					if (myRemaining > 0 || otherWaiting.length > 0) {
+						return (
+							<ExplorerStatusBanner
+								remaining={myRemaining}
+								waitingOn={otherWaiting}
+							/>
+						)
 					}
 					return null
 				})()}
+
+			{gameState && gameState.phase.kind === 'scout_pick' && (
+				<>
+					{gameState.phase.owner === meIdx ? (
+						<ScoutPickOverlay
+							cards={gameState.phase.cards}
+							submitting={submitting}
+							onConfirm={onConfirmScoutCard}
+						/>
+					) : (
+						<ScoutWaitOverlay
+							ownerName={
+								profilesById[
+									game.player_order[gameState.phase.owner]
+								]?.username ?? 'Player'
+							}
+						/>
+					)}
+				</>
+			)}
+
+			{gameState && gameState.phase.kind === 'curio_pick' && (
+				<>
+					{gameState.phase.pending.includes(meIdx) ? (
+						<CurioPickOverlay
+							submitting={submitting}
+							onConfirm={onClaimCurio}
+						/>
+					) : (
+						<CurioWaitOverlay
+							waitingOn={gameState.phase.pending.map(
+								(i) =>
+									profilesById[game.player_order[i]]
+										?.username ?? 'Player'
+							)}
+						/>
+					)}
+				</>
+			)}
+
+			{gameState &&
+				gameState.phase.kind === 'forger_pick' &&
+				gameState.phase.queue.length > 0 &&
+				gameState.phase.queue[0].idx === meIdx && (
+					<ForgerPickOverlay
+						hex={gameState.phase.queue[0].hex}
+						gainsByCandidate={
+							gameState.phase.queue[0].gainsByCandidate
+						}
+						playerNames={Object.fromEntries(
+							game.player_order.map((uid, i) => [
+								i,
+								i === meIdx
+									? 'You'
+									: (profilesById[uid]?.username ??
+										`Player ${i + 1}`),
+							])
+						)}
+						submitting={submitting}
+						onConfirm={onPickForgerTarget}
+					/>
+				)}
+
+			{ritualOpen && myPlayer && gameState && (
+				<RitualistPicker
+					hand={myPlayer.resources}
+					cardCost={ritualCardCost(gameState, meIdx)}
+					submitting={submitting}
+					onCancel={() => setRitualOpen(false)}
+					onConfirm={onRitualRoll}
+				/>
+			)}
+
+			{shepherdOpen && (
+				<ShepherdSwapPicker
+					submitting={submitting}
+					onCancel={() => setShepherdOpen(false)}
+					onConfirm={onShepherdSwap}
+				/>
+			)}
+
+			{forgerMoveOpen && myPlayer?.forgerToken && gameState && (
+				<ForgerMovePicker
+					state={gameState}
+					currentHex={myPlayer.forgerToken}
+					submitting={submitting}
+					onCancel={() => setForgerMoveOpen(false)}
+					onConfirm={onMoveForgerToken}
+				/>
+			)}
+
+			{accountantOpen && gameState && (
+				<AccountantPicker
+					state={gameState}
+					playerIdx={meIdx}
+					submitting={submitting}
+					onCancel={() => setAccountantOpen(false)}
+					onConfirm={onLiquidate}
+				/>
+			)}
+
+			{metroPending && myHand && (
+				<MetropolitanCostPicker
+					hand={myHand}
+					titleKind={metroPending.kind}
+					submitting={submitting}
+					onCancel={() => setMetroPending(null)}
+					onConfirm={(swapDelta) => {
+						if (metroPending.kind === 'super_city') {
+							onBuildSuperCity(metroPending.vertex, swapDelta)
+						} else {
+							;(async () => {
+								if (!game) return
+								setSubmitting(true)
+								const res = await buildCity(
+									game.id,
+									metroPending.vertex,
+									false,
+									swapDelta
+								)
+								setSubmitting(false)
+								if (res.error) {
+									notify('Build failed', res.error)
+									return
+								}
+								setMetroPending(null)
+								setBuildTool(null)
+							})()
+						}
+					}}
+				/>
+			)}
 
 			<Animated.View style={styles.boardContainer} layout={BOARD_RESIZE}>
 				{liveOffer && (
@@ -701,7 +1061,20 @@ function GameBody() {
 											tool: 'road',
 											onSelect: onBuildSpotSelect,
 										}
-									: undefined
+									: inPostPlacement &&
+										  gameState.phase.kind ===
+												'post_placement' &&
+										  (gameState.phase.pending.explorer?.[
+												meIdx
+										  ] ?? 0) > 0 &&
+										  gameState.phase.pending.specialist
+												.length === 0
+										? {
+												meIdx,
+												tool: 'explorer_road' as const,
+												onSelect: onBuildSpotSelect,
+											}
+										: undefined
 						}
 						robber={
 							isMyActiveTurn &&
@@ -757,6 +1130,34 @@ function GameBody() {
 						onConfirmRoll={onConfirmRoll}
 						onRerollDice={onRerollDice}
 						onEndTurn={onEndTurn}
+						onRitualPress={
+							isMyActiveTurn &&
+							gameState.phase.kind === 'roll' &&
+							!gameState.phase.pending?.dice &&
+							myPlayer?.bonus === 'ritualist' &&
+							!myPlayer?.ritualWasUsedThisTurn
+								? () => setRitualOpen(true)
+								: undefined
+						}
+						onShepherdPress={
+							isMyActiveTurn &&
+							gameState.phase.kind === 'roll' &&
+							!gameState.phase.pending?.dice &&
+							myPlayer &&
+							canShepherdSwap(myPlayer)
+								? () => setShepherdOpen(true)
+								: undefined
+						}
+						onForgerMovePress={
+							isMyActiveTurn &&
+							gameState.phase.kind === 'roll' &&
+							!gameState.phase.pending?.dice &&
+							myPlayer &&
+							forgerActive(myPlayer) &&
+							!myPlayer.forgerMovedThisTurn
+								? () => setForgerMoveOpen(true)
+								: undefined
+						}
 					/>
 				</Animated.View>
 			)}
@@ -890,6 +1291,9 @@ function MainLoopBar({
 	onConfirmRoll,
 	onRerollDice,
 	onEndTurn,
+	onRitualPress,
+	onShepherdPress,
+	onForgerMovePress,
 }: {
 	game: NonNullable<ReturnType<typeof useGame>['game']>
 	gameState: NonNullable<ReturnType<typeof useGame>['gameState']>
@@ -901,6 +1305,12 @@ function MainLoopBar({
 	onConfirmRoll: () => void
 	onRerollDice: () => void
 	onEndTurn: () => void
+	// Set-2 pre-roll affordances. Each is `undefined` when the bar should
+	// not show the corresponding button (wrong player / wrong phase / cap
+	// reached).
+	onRitualPress?: () => void
+	onShepherdPress?: () => void
+	onForgerMovePress?: () => void
 }) {
 	const phase = gameState.phase
 	if (phase.kind !== 'roll' && phase.kind !== 'main') return null
@@ -938,6 +1348,8 @@ function MainLoopBar({
 			: `${currentName} rolled ${total}`
 	}
 
+	const showBonusRow =
+		!!onRitualPress || !!onShepherdPress || !!onForgerMovePress
 	return (
 		<View style={styles.mainLoopBar}>
 			<View style={styles.mainLoopRow}>
@@ -979,6 +1391,37 @@ function MainLoopBar({
 					</Button>
 				)}
 			</View>
+			{showBonusRow && (
+				<View style={styles.bonusRow}>
+					{onRitualPress && (
+						<Button
+							variant="secondary"
+							onPress={onRitualPress}
+							disabled={submitting}
+						>
+							Ritual roll
+						</Button>
+					)}
+					{onShepherdPress && (
+						<Button
+							variant="secondary"
+							onPress={onShepherdPress}
+							disabled={submitting}
+						>
+							Shepherd swap
+						</Button>
+					)}
+					{onForgerMovePress && (
+						<Button
+							variant="secondary"
+							onPress={onForgerMovePress}
+							disabled={submitting}
+						>
+							Move forger token
+						</Button>
+					)}
+				</View>
+			)}
 		</View>
 	)
 }
@@ -1313,6 +1756,12 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		gap: spacing.sm,
 		height: 52,
+	},
+	bonusRow: {
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: spacing.xs,
+		marginTop: spacing.xs,
 	},
 	gamblerActions: {
 		flexDirection: 'row',

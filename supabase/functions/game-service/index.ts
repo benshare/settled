@@ -91,6 +91,10 @@ type BuildCityBody = {
 	game_id: string
 	vertex: string
 	use_bricklayer?: boolean
+	// Metropolitan: replace N wheat in the cost with N ore (one-directional;
+	// 0..2). Mutually exclusive with use_bricklayer (both bonuses can't be
+	// held simultaneously).
+	swap_wheat_to_ore?: number
 }
 type DiscardBody = {
 	action: 'discard'
@@ -126,6 +130,7 @@ type BuyDevCardBody = {
 	action: 'buy_dev_card'
 	game_id: string
 	use_bricklayer?: boolean
+	scout_swap?: { from: unknown; to: unknown } | null
 }
 type PlayDevCardBody = {
 	action: 'play_dev_card'
@@ -147,6 +152,53 @@ type TapKnightBody = {
 	game_id: string
 	r1: unknown
 	r2: unknown
+}
+type BuildSuperCityBody = {
+	action: 'build_super_city'
+	game_id: string
+	vertex: string
+	swap_wheat_to_ore?: number
+}
+type LiquidateBody = {
+	action: 'liquidate'
+	game_id: string
+	target: unknown
+}
+type PlaceExplorerRoadBody = {
+	action: 'place_explorer_road'
+	game_id: string
+	edge: string
+}
+type RitualRollBody = {
+	action: 'ritual_roll'
+	game_id: string
+	discard: unknown
+	total: unknown
+}
+type ShepherdSwapBody = {
+	action: 'shepherd_swap'
+	game_id: string
+	take: unknown
+}
+type ClaimCurioBody = {
+	action: 'claim_curio'
+	game_id: string
+	take: unknown
+}
+type MoveForgerTokenBody = {
+	action: 'move_forger_token'
+	game_id: string
+	hex: string
+}
+type PickForgerTargetBody = {
+	action: 'pick_forger_target'
+	game_id: string
+	target: unknown
+}
+type ConfirmScoutCardBody = {
+	action: 'confirm_scout_card'
+	game_id: string
+	index: unknown
 }
 type Body =
 	| RespondBody
@@ -172,6 +224,15 @@ type Body =
 	| SetSpecialistResourceBody
 	| BuyCarpenterVPBody
 	| TapKnightBody
+	| BuildSuperCityBody
+	| LiquidateBody
+	| PlaceExplorerRoadBody
+	| RitualRollBody
+	| ShepherdSwapBody
+	| ClaimCurioBody
+	| MoveForgerTokenBody
+	| PickForgerTargetBody
+	| ConfirmScoutCardBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -474,11 +535,20 @@ const adjacentEdges: Record<Vertex, readonly Edge[]> = (() => {
 
 // --- Game state shapes (duplicated from lib/catan/types) -------------------
 
+type VertexBuilding = 'settlement' | 'city' | 'super_city'
+
 type VertexState =
 	| { occupied: false }
-	| { occupied: true; player: number; building: 'settlement' | 'city' }
+	| {
+			occupied: true
+			player: number
+			building: VertexBuilding
+			placedTurn: number
+	  }
 
-type EdgeState = { occupied: false } | { occupied: true; player: number }
+type EdgeState =
+	| { occupied: false }
+	| { occupied: true; player: number; placedTurn: number }
 
 type ResourceHand = Record<Resource, number>
 
@@ -508,6 +578,11 @@ type PlayerState = {
 	boughtCarpenterVPThisTurn?: boolean
 	carpenterVP?: number
 	tappedKnights?: number
+	// Set 2.
+	ritualWasUsedThisTurn?: boolean
+	shepherdUsedThisTurn?: boolean
+	forgerToken?: Hex
+	forgerMovedThisTurn?: boolean
 }
 
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
@@ -698,20 +773,54 @@ type ResumePhase =
 	| { kind: 'roll' }
 	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
 
+type ForgerPickEntry = {
+	idx: number
+	hex: Hex
+	gainsByCandidate: Record<number, ResourceHand>
+}
+
 type Phase =
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
-	| { kind: 'post_placement'; pending: { specialist: number[] } }
+	| {
+			kind: 'post_placement'
+			pending: {
+				specialist: number[]
+				explorer?: Partial<Record<number, number>>
+			}
+	  }
 	| { kind: 'roll'; pending?: { dice: DiceRoll } }
 	| {
 			kind: 'discard'
 			resume: ResumePhase
 			pending: Partial<Record<number, number>>
+			// True iff the chain was triggered by a 7-roll (vs a knight).
+			// Used to decide whether to snap forger tokens after move_robber
+			// completes and to trigger fortune_teller bonus rolls on resume.
+			from7?: boolean
 	  }
-	| { kind: 'move_robber'; resume: ResumePhase }
-	| { kind: 'steal'; resume: ResumePhase; hex: Hex; candidates: number[] }
+	| { kind: 'move_robber'; resume: ResumePhase; from7?: boolean }
+	| {
+			kind: 'steal'
+			resume: ResumePhase
+			hex: Hex
+			candidates: number[]
+			from7?: boolean
+	  }
 	| { kind: 'road_building'; resume: ResumePhase; remaining: 1 | 2 }
 	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
+	| {
+			kind: 'scout_pick'
+			resume: ResumePhase
+			owner: number
+			cards: DevCardId[]
+	  }
+	// curio_pick and forger_pick can chain: a roll that triggers both
+	// enters forger_pick(resume=curio_pick(resume=main)). Their resume
+	// therefore accepts any Phase (recursive) — not just ResumePhase —
+	// since the next thing might itself be another sub-phase.
+	| { kind: 'curio_pick'; resume: Phase; pending: number[] }
+	| { kind: 'forger_pick'; resume: Phase; queue: ForgerPickEntry[] }
 	| { kind: 'game_over' }
 
 type GameState = {
@@ -879,6 +988,9 @@ function cityCountFor(state: GameState, playerIdx: number): number {
 	return n
 }
 
+// Settlements that have been upgraded to a city (or super_city) no longer
+// occupy a "settlement slot". The settlement supply cap (5) is unchanged.
+
 function effectiveLongestRoadLength(
 	state: GameState,
 	playerIdx: number,
@@ -918,7 +1030,8 @@ function hexPowerForPlayer(
 	for (const v of adjacentVertices[hex]) {
 		const vs = vertexStateOf(state, v)
 		if (!vs.occupied || vs.player !== playerIdx) continue
-		power += vs.building === 'city' ? 2 : 1
+		power +=
+			vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
 	}
 	return power
 }
@@ -1094,6 +1207,11 @@ function underdogMultiplierFor(
 	return 1
 }
 
+// Kept for parity with lib/catan/roll.distributeResources. The edge
+// function now uses `distributeResourcesByHex` everywhere; this helper is
+// referenced indirectly through the parity check and may return for use
+// when adding non-forger features that don't need per-hex breakdowns.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function distributeResources(
 	state: GameState,
 	total: number
@@ -1108,7 +1226,12 @@ function distributeResources(
 		for (const v of adjacentVertices[hex]) {
 			const vs = vertexStateOf(state, v)
 			if (!vs.occupied) continue
-			const base = vs.building === 'city' ? 2 : 1
+			const base =
+				vs.building === 'super_city'
+					? 3
+					: vs.building === 'city'
+						? 2
+						: 1
 			const mult = underdogMultiplierFor(
 				state.players[vs.player]?.bonus,
 				hd.number
@@ -1127,6 +1250,70 @@ function distributeResources(
 		}
 	}
 	return result
+}
+
+// Per-hex per-player gain for a roll. Used by the forger bonus to look up
+// the gain another player received from the forger's token hex on this
+// roll. Same rules as distributeResources but factored per hex.
+function distributeResourcesByHex(
+	state: GameState,
+	total: number
+): Partial<Record<Hex, Record<number, ResourceHand>>> {
+	const out: Partial<Record<Hex, Record<number, ResourceHand>>> = {}
+	if (total === 7) return out
+	for (const hex of HEXES) {
+		if (hex === state.robber) continue
+		const hd = state.hexes[hex]
+		if (hd.resource === null) continue
+		if (hd.number !== total) continue
+		const perPlayer: Record<number, ResourceHand> = {}
+		for (const v of adjacentVertices[hex]) {
+			const vs = vertexStateOf(state, v)
+			if (!vs.occupied) continue
+			const base =
+				vs.building === 'super_city'
+					? 3
+					: vs.building === 'city'
+						? 2
+						: 1
+			const mult = underdogMultiplierFor(
+				state.players[vs.player]?.bonus,
+				hd.number
+			)
+			const gain = base * mult
+			const hand =
+				perPlayer[vs.player] ??
+				(perPlayer[vs.player] = {
+					brick: 0,
+					wood: 0,
+					sheep: 0,
+					wheat: 0,
+					ore: 0,
+				})
+			hand[hd.resource] += gain
+		}
+		if (Object.keys(perPlayer).length > 0) out[hex] = perPlayer
+	}
+	return out
+}
+
+function isDoubles(d: DiceRoll): boolean {
+	return d.a === d.b
+}
+
+function emptyHand(): ResourceHand {
+	return { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 }
+}
+
+function addHandInto(target: ResourceHand, src: ResourceHand): ResourceHand {
+	for (const r of RESOURCES) target[r] += src[r]
+	return target
+}
+
+function handTotal(h: ResourceHand): number {
+	let n = 0
+	for (const r of RESOURCES) n += h[r]
+	return n
 }
 
 function nextMainTurn(currentTurn: number, playerCount: number): number {
@@ -1232,8 +1419,12 @@ function requiredDiscards(players: PlayerState[]): Record<number, number> {
 	players.forEach((p, i) => {
 		if (p.bonus === 'hoarder') return
 		const total = handSize(p.resources)
-		if (total > 7)
-			out[i] = p.curse === 'avarice' ? total : Math.floor(total / 2)
+		const effective =
+			p.bonus === 'shepherd' ? total - p.resources.sheep : total
+		if (effective > 7) {
+			out[i] =
+				p.curse === 'avarice' ? effective : Math.floor(effective / 2)
+		}
 	})
 	return out
 }
@@ -1434,16 +1625,270 @@ function totalVP(state: GameState, playerIdx: number): number {
 	let vp = 0
 	for (const v of Object.values(state.vertices)) {
 		if (v?.occupied && v.player === playerIdx) {
-			vp += v.building === 'city' ? 2 : 1
+			vp +=
+				v.building === 'super_city' ? 3 : v.building === 'city' ? 2 : 1
 		}
 	}
 	if (state.largestArmy === playerIdx) vp += 2
 	if (state.longestRoad === playerIdx) vp += 2
 	vp += p.carpenterVP ?? 0
+	vp += populistBonusVPFor(state, playerIdx)
 	for (const e of p.devCards) {
 		if (e.id === 'victory_point') vp += 1
 	}
 	return vp
+}
+
+// Populist: each settlement (NOT cities/super_cities) whose total adjacent
+// producing-hex pips sum to < 5 is worth +1 VP.
+function pipCountFor(hexNumber: number): number {
+	switch (hexNumber) {
+		case 2:
+		case 12:
+			return 1
+		case 3:
+		case 11:
+			return 2
+		case 4:
+		case 10:
+			return 3
+		case 5:
+		case 9:
+			return 4
+		case 6:
+		case 8:
+			return 5
+	}
+	return 0
+}
+
+function pipsAtVertex(state: GameState, vertex: Vertex): number {
+	let pips = 0
+	for (const h of adjacentHexes[vertex]) {
+		const hd = state.hexes[h]
+		if (hd.resource === null) continue
+		pips += pipCountFor(hd.number)
+	}
+	return pips
+}
+
+function populistBonusVPFor(state: GameState, playerIdx: number): number {
+	if (state.players[playerIdx]?.bonus !== 'populist') return 0
+	let n = 0
+	for (const [vid, vs] of Object.entries(state.vertices)) {
+		if (!vs?.occupied) continue
+		if (vs.player !== playerIdx) continue
+		if (vs.building !== 'settlement') continue
+		if (pipsAtVertex(state, vid as Vertex) < 5) n += 1
+	}
+	return n
+}
+
+function superCityCount(state: GameState, playerIdx: number): number {
+	let n = 0
+	for (const v of Object.values(state.vertices)) {
+		if (
+			v?.occupied &&
+			v.player === playerIdx &&
+			v.building === 'super_city'
+		)
+			n += 1
+	}
+	return n
+}
+
+const METROPOLITAN_SUPER_CITY_CAP = 1
+
+function canBuildMoreSuperCities(state: GameState, playerIdx: number): boolean {
+	if (state.players[playerIdx]?.bonus !== 'metropolitan') return false
+	return superCityCount(state, playerIdx) < METROPOLITAN_SUPER_CITY_CAP
+}
+
+const WHEAT_IN_CITY_COST = 2
+
+function metropolitanWheatSwapDelta(
+	bonus: BonusId | undefined,
+	requested: number
+): number {
+	if (bonus !== 'metropolitan') return 0
+	if (!Number.isInteger(requested)) return 0
+	if (requested < 0) return 0
+	if (requested > WHEAT_IN_CITY_COST) return WHEAT_IN_CITY_COST
+	return requested
+}
+
+function metropolitanCityCost(
+	bonus: BonusId | undefined,
+	delta: number
+): ResourceHand {
+	const d = metropolitanWheatSwapDelta(bonus, delta)
+	return {
+		brick: 0,
+		wood: 0,
+		sheep: 0,
+		wheat: WHEAT_IN_CITY_COST - d,
+		ore: 3 + d,
+	}
+}
+
+// Inlined into `requiredDiscards`; kept here as the parallel mirror of
+// the lib/catan/bonus helper so client and server stay symmetric.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function shepherdEffectiveHandSize(p: PlayerState): number {
+	let n = 0
+	for (const r of RESOURCES) {
+		if (p.bonus === 'shepherd' && r === 'sheep') continue
+		n += p.resources[r]
+	}
+	return n
+}
+
+function ritualCardCost(state: GameState, playerIdx: number): 2 | 3 {
+	let cities = 0
+	for (const v of Object.values(state.vertices)) {
+		if (!v?.occupied || v.player !== playerIdx) continue
+		if (v.building === 'city' || v.building === 'super_city') cities += 1
+	}
+	return cities >= 1 ? 3 : 2
+}
+
+function isValidRitualTotal(total: unknown): total is number {
+	if (typeof total !== 'number') return false
+	if (!Number.isInteger(total)) return false
+	if (total < 2 || total > 12) return false
+	return total !== 7
+}
+
+function dicePairForTotal(total: number): DiceRoll {
+	for (let a = 1; a <= 6; a++) {
+		const b = total - a
+		if (b >= 1 && b <= 6) {
+			return { a: a as DieFace, b: b as DieFace }
+		}
+	}
+	throw new Error(`no dice pair sums to ${total}`)
+}
+
+function fortuneTellerTriggersOn(
+	bonus: BonusId | undefined,
+	dice: DiceRoll
+): boolean {
+	if (bonus !== 'fortune_teller') return false
+	if (dice.a === dice.b) return true
+	if (dice.a + dice.b === 7) return true
+	return false
+}
+
+function curioCollectorTriggers(
+	bonus: BonusId | undefined,
+	total: number,
+	gainedCount: number
+): boolean {
+	if (bonus !== 'curio_collector') return false
+	if (total !== 2 && total !== 12) return false
+	return gainedCount >= 1
+}
+
+function hexesAdjacentTo(hex: Hex): Hex[] {
+	const seen = new Set<Hex>()
+	for (const v of adjacentVertices[hex]) {
+		for (const h of adjacentHexes[v]) {
+			if (h === hex) continue
+			seen.add(h)
+		}
+	}
+	return Array.from(seen)
+}
+
+const SCOUT_COST_RESOURCES: readonly Resource[] = ['sheep', 'wheat', 'ore']
+
+function isValidScoutSwap(swap: { from: Resource; to: Resource }): boolean {
+	if (!SCOUT_COST_RESOURCES.includes(swap.from)) return false
+	if (!SCOUT_COST_RESOURCES.includes(swap.to)) return false
+	if (swap.from === swap.to) return false
+	return true
+}
+
+function scoutDevCardCost(swap?: {
+	from: Resource
+	to: Resource
+}): ResourceHand {
+	const out: ResourceHand = {
+		brick: 0,
+		wood: 0,
+		sheep: 1,
+		wheat: 1,
+		ore: 1,
+	}
+	if (swap && isValidScoutSwap(swap)) {
+		out[swap.from] -= 1
+		out[swap.to] += 1
+	}
+	return out
+}
+
+const SCOUT_PEEK_SIZE = 3
+
+const ROAD_REFUND: ResourceHand = {
+	brick: 1,
+	wood: 1,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
+}
+const SETTLEMENT_REFUND: ResourceHand = {
+	brick: 1,
+	wood: 1,
+	sheep: 1,
+	wheat: 1,
+	ore: 0,
+}
+const CITY_REFUND: ResourceHand = {
+	brick: 0,
+	wood: 0,
+	sheep: 0,
+	wheat: 2,
+	ore: 3,
+}
+const SUPER_CITY_REFUND: ResourceHand = CITY_REFUND
+const DEV_CARD_REFUND: ResourceHand = {
+	brick: 0,
+	wood: 0,
+	sheep: 1,
+	wheat: 1,
+	ore: 1,
+}
+
+function roadRemovalSplitsBuildings(
+	state: GameState,
+	playerIdx: number,
+	edge: Edge
+): boolean {
+	const myBuildings: Vertex[] = []
+	for (const [vid, vs] of Object.entries(state.vertices)) {
+		if (vs?.occupied && vs.player === playerIdx)
+			myBuildings.push(vid as Vertex)
+	}
+	if (myBuildings.length <= 1) return false
+	const seed = myBuildings[0]
+	const visited = new Set<Vertex>([seed])
+	const stack: Vertex[] = [seed]
+	while (stack.length > 0) {
+		const v = stack.pop()!
+		for (const e of adjacentEdges[v]) {
+			if (e === edge) continue
+			const es = state.edges[e]
+			if (!es?.occupied || es.player !== playerIdx) continue
+			const [a, b] = e.split(' - ') as [Vertex, Vertex]
+			const other = a === v ? b : a
+			if (visited.has(other)) continue
+			const ovs = vertexStateOf(state, other)
+			if (ovs.occupied && ovs.player !== playerIdx) continue
+			visited.add(other)
+			stack.push(other)
+		}
+	}
+	return myBuildings.some((b) => !visited.has(b))
 }
 
 function vpCardCountsByPlayer(state: GameState): Record<number, number> {
@@ -2057,6 +2502,7 @@ async function handlePlaceSettlement(
 			occupied: true as const,
 			player: meIdx,
 			building: 'settlement' as const,
+			placedTurn: state.round,
 		},
 	}
 
@@ -2142,7 +2588,11 @@ async function handlePlaceRoad(
 
 	const nextEdges = {
 		...state.edges,
-		[edge]: { occupied: true as const, player: meIdx },
+		[edge]: {
+			occupied: true as const,
+			player: meIdx,
+			placedTurn: state.round,
+		},
 	}
 
 	const roadEvent = {
@@ -2155,17 +2605,23 @@ async function handlePlaceRoad(
 
 	if (next === null) {
 		// Last placement — transition to active. If any player has a
-		// start-of-game bonus (specialist), enter `post_placement` so they
-		// can resolve their decision. Otherwise go straight to `roll`.
+		// start-of-game bonus (specialist, explorer), enter `post_placement`
+		// so they can resolve their decision. Otherwise go straight to `roll`.
 		const specialistIdxs: number[] = []
+		const explorerOwed: Partial<Record<number, number>> = {}
 		state.players.forEach((p, i) => {
 			if (p.bonus === 'specialist') specialistIdxs.push(i)
+			if (p.bonus === 'explorer') explorerOwed[i] = 3
 		})
+		const explorerHas = Object.keys(explorerOwed).length > 0
 		const postPlacementPhase: Phase =
-			specialistIdxs.length > 0
+			specialistIdxs.length > 0 || explorerHas
 				? {
 						kind: 'post_placement',
-						pending: { specialist: specialistIdxs },
+						pending: {
+							specialist: specialistIdxs,
+							...(explorerHas ? { explorer: explorerOwed } : {}),
+						},
 					}
 				: { kind: 'roll' }
 
@@ -2227,13 +2683,15 @@ async function handlePlaceRoad(
 // `rolled` event for this dice value.
 async function applyRollOutcome(
 	admin: SupabaseClient,
-	game: { id: string; events: unknown[] | null },
+	game: { id: string; events: unknown[] | null; current_turn: number | null },
 	state: GameState,
 	dice: DiceRoll,
-	extraEvents: unknown[] = []
+	extraEvents: unknown[] = [],
+	options: { distributeOnlyTo?: number } = {}
 ): Promise<Response> {
 	const total = dice.a + dice.b
 	const existingEvents = [...(game.events ?? []), ...extraEvents]
+	const activeIdx = game.current_turn ?? 0
 
 	if (total === 7) {
 		// Nomad: each nomad player is granted 1 random resource (d5)
@@ -2250,8 +2708,8 @@ async function applyRollOutcome(
 		const resume: ResumePhase = { kind: 'main', roll: dice, trade: null }
 		const nextPhase: Phase =
 			Object.keys(pending).length > 0
-				? { kind: 'discard', resume, pending }
-				: { kind: 'move_robber', resume }
+				? { kind: 'discard', resume, pending, from7: true }
+				: { kind: 'move_robber', resume, from7: true }
 
 		const stateUpdate: Record<string, unknown> = { phase: nextPhase }
 		if (nomadResult.events.length > 0) {
@@ -2277,8 +2735,23 @@ async function applyRollOutcome(
 		return json({ ok: true, dice, total })
 	}
 
-	const gains = distributeResources(state, total)
-	const nextPlayers = state.players.map((p, i) => {
+	const perHex = distributeResourcesByHex(state, total)
+	const gains: Record<number, ResourceHand> = {}
+	for (const hex of Object.keys(perHex) as Hex[]) {
+		const perPlayer = perHex[hex]!
+		for (const idxStr of Object.keys(perPlayer)) {
+			const idx = Number(idxStr)
+			if (
+				options.distributeOnlyTo !== undefined &&
+				idx !== options.distributeOnlyTo
+			) {
+				continue
+			}
+			gains[idx] = addHandInto(gains[idx] ?? emptyHand(), perPlayer[idx])
+		}
+	}
+
+	let nextPlayers = state.players.map((p, i) => {
 		const g = gains[i]
 		if (!g) return p
 		const r = p.resources
@@ -2293,23 +2766,167 @@ async function applyRollOutcome(
 			},
 		}
 	})
+	let stateAfter: GameState = { ...state, players: nextPlayers }
+	const events: unknown[] = [...existingEvents]
+
+	// Curio collector: queue picks for any curio_collector who gained ≥ 1
+	// card from this 2/12 original roll. Skipped on bonus rolls
+	// (distributeOnlyTo set), and skipped on totals other than 2/12.
+	const curioPending: number[] = []
+	if (
+		options.distributeOnlyTo === undefined &&
+		(total === 2 || total === 12)
+	) {
+		for (const idxStr of Object.keys(gains)) {
+			const idx = Number(idxStr)
+			if (
+				curioCollectorTriggers(
+					stateAfter.players[idx]?.bonus,
+					total,
+					handTotal(gains[idx])
+				)
+			) {
+				curioPending.push(idx)
+			}
+		}
+	}
+
+	// Forger: queue picks for any forger whose token's hex produced AND
+	// for whom another player gained from that hex this roll. Skipped on
+	// bonus rolls.
+	const forgerQueue: ForgerPickEntry[] = []
+	if (options.distributeOnlyTo === undefined) {
+		stateAfter.players.forEach((p, idx) => {
+			if (p.bonus !== 'forger' || !p.forgerToken) return
+			const hex = p.forgerToken
+			const perPlayer = perHex[hex]
+			if (!perPlayer) return
+			const candidates: Record<number, ResourceHand> = {}
+			for (const cidStr of Object.keys(perPlayer)) {
+				const cid = Number(cidStr)
+				if (cid === idx) continue
+				if (handTotal(perPlayer[cid]) <= 0) continue
+				candidates[cid] = perPlayer[cid]
+			}
+			if (Object.keys(candidates).length > 0) {
+				forgerQueue.push({ idx, hex, gainsByCandidate: candidates })
+			}
+		})
+	}
+
+	const mainPhase: Phase = { kind: 'main', roll: dice, trade: null }
+	let nextPhase: Phase = mainPhase
+
+	// On a bonus roll, no sub-phases fire and we don't want to stomp the
+	// active main phase (we're already inside it). Skip the phase update.
+	if (options.distributeOnlyTo === undefined) {
+		// Resolution order: forger first, then curio, then main. We chain
+		// via the recursive `resume` field on the sub-phase variants.
+		const afterForger: Phase =
+			curioPending.length > 0
+				? {
+						kind: 'curio_pick',
+						resume: mainPhase,
+						pending: curioPending,
+					}
+				: mainPhase
+		nextPhase =
+			forgerQueue.length > 0
+				? {
+						kind: 'forger_pick',
+						resume: afterForger,
+						queue: forgerQueue,
+					}
+				: afterForger
+	}
+
+	stateAfter = { ...stateAfter, players: nextPlayers, phase: nextPhase }
+
+	// Fortune teller: if no pending sub-phases and active player is FT and
+	// the original roll was doubles or 7, run the bonus chain synchronously.
+	// Bonus rolls give resources only to FT, no robber, no curio/forger
+	// triggers. Chain on doubles/7.
+	if (
+		nextPhase.kind === 'main' &&
+		options.distributeOnlyTo === undefined &&
+		fortuneTellerTriggersOn(stateAfter.players[activeIdx]?.bonus, dice)
+	) {
+		const ftResult = await runFortuneTellerChain(
+			stateAfter,
+			activeIdx,
+			events
+		)
+		stateAfter = ftResult.state
+	}
 
 	const { error: stateErr } = await admin
 		.from('game_states')
 		.update({
-			players: nextPlayers,
-			phase: { kind: 'main', roll: dice, trade: null } satisfies Phase,
+			players: stateAfter.players,
+			phase: stateAfter.phase,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({ events: existingEvents })
+		.update({ events })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
 	return json({ ok: true, dice, total })
+}
+
+// Synchronous fortune-teller bonus chain. Each iteration rolls fresh dice
+// and applies distribution to the FT player only (no robber, no other
+// triggers). Continues while the rolled dice are doubles or sum to 7.
+async function runFortuneTellerChain(
+	state: GameState,
+	ftIdx: number,
+	events: unknown[]
+): Promise<{ state: GameState }> {
+	let cur = state
+	// Cap the chain at 64 iterations as a safety guardrail. The expected
+	// chain length is small (< 1.5) since each step has a ~1/3 chance of
+	// re-triggering.
+	for (let step = 0; step < 64; step++) {
+		const dice = rollDice()
+		const total = dice.a + dice.b
+		const perHex = distributeResourcesByHex(cur, total)
+		const ftGain: ResourceHand = emptyHand()
+		for (const hex of Object.keys(perHex) as Hex[]) {
+			const perPlayer = perHex[hex]!
+			const g = perPlayer[ftIdx]
+			if (g) addHandInto(ftGain, g)
+		}
+		cur = {
+			...cur,
+			players: cur.players.map((p, i) => {
+				if (i !== ftIdx) return p
+				const r = p.resources
+				return {
+					...p,
+					resources: {
+						brick: r.brick + ftGain.brick,
+						wood: r.wood + ftGain.wood,
+						sheep: r.sheep + ftGain.sheep,
+						wheat: r.wheat + ftGain.wheat,
+						ore: r.ore + ftGain.ore,
+					},
+				}
+			}),
+		}
+		events.push({
+			kind: 'fortune_teller_roll',
+			player: ftIdx,
+			dice: [dice.a, dice.b],
+			total,
+			gain: ftGain,
+			at: new Date().toISOString(),
+		})
+		if (!isDoubles(dice) && total !== 7) break
+	}
+	return { state: cur }
 }
 
 async function handleRoll(
@@ -2470,6 +3087,9 @@ async function handleEndTurn(
 		if (p.curse === 'age') next.cardsSpentThisTurn = 0
 		if (p.rerolledThisTurn) next.rerolledThisTurn = false
 		if (p.boughtCarpenterVPThisTurn) next.boughtCarpenterVPThisTurn = false
+		if (p.ritualWasUsedThisTurn) next.ritualWasUsedThisTurn = false
+		if (p.shepherdUsedThisTurn) next.shepherdUsedThisTurn = false
+		if (p.forgerMovedThisTurn) next.forgerMovedThisTurn = false
 		return next
 	})
 	const nextRound = state.round + 1
@@ -2581,7 +3201,11 @@ async function handleBuildRoad(
 			...state,
 			edges: {
 				...state.edges,
-				[edge]: { occupied: true as const, player: meIdx },
+				[edge]: {
+					occupied: true as const,
+					player: meIdx,
+					placedTurn: state.round,
+				},
 			},
 		}
 		const remainingAfter = phase.remaining - 1
@@ -2609,7 +3233,11 @@ async function handleBuildRoad(
 
 	const nextEdges = {
 		...state.edges,
-		[edge]: { occupied: true as const, player: meIdx },
+		[edge]: {
+			occupied: true as const,
+			player: meIdx,
+			placedTurn: state.round,
+		},
 	}
 
 	const update: Record<string, unknown> = {
@@ -2678,6 +3306,7 @@ async function handleBuildSettlement(
 			occupied: true as const,
 			player: meIdx,
 			building: 'settlement' as const,
+			placedTurn: state.round,
 		},
 	}
 	const nextPlayers = applyCost(state.players, meIdx, cost)
@@ -2731,14 +3360,23 @@ async function handleBuildCity(
 
 	if (!isValidBuildCityVertex(state, meIdx, vertex))
 		return err(400, 'invalid city target')
+	const me = state.players[meIdx]
 	const useBricklayer = !!body.use_bricklayer
-	const cost = resolvePurchaseCost(
-		state.players[meIdx],
-		BUILD_COSTS.city,
-		useBricklayer
-	)
+	const requestedSwap = Number.isFinite(body.swap_wheat_to_ore)
+		? Number(body.swap_wheat_to_ore)
+		: 0
+	const swapDelta = metropolitanWheatSwapDelta(me.bonus, requestedSwap)
+	let cost: ResourceHand | null
+	if (useBricklayer) {
+		cost = resolvePurchaseCost(me, BUILD_COSTS.city, true)
+	} else if (swapDelta > 0) {
+		const altCost = metropolitanCityCost(me.bonus, swapDelta)
+		cost = canAfford(me.resources, altCost) ? altCost : null
+	} else {
+		cost = resolvePurchaseCost(me, BUILD_COSTS.city, false)
+	}
 	if (!cost) return err(400, 'insufficient resources')
-	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
+	if (!canSpendUnderAge(me, costSize(cost)))
 		return err(400, 'age limit reached this turn')
 
 	const nextVertices = {
@@ -2747,6 +3385,7 @@ async function handleBuildCity(
 			occupied: true as const,
 			player: meIdx,
 			building: 'city' as const,
+			placedTurn: state.round,
 		},
 	}
 	const nextPlayers = applyCost(state.players, meIdx, cost)
@@ -2836,8 +3475,13 @@ async function handleDiscard(
 					kind: 'discard',
 					resume: state.phase.resume,
 					pending: nextPending,
+					from7: state.phase.from7,
 				}
-			: { kind: 'move_robber', resume: state.phase.resume }
+			: {
+					kind: 'move_robber',
+					resume: state.phase.resume,
+					from7: state.phase.from7,
+				}
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -2899,8 +3543,6 @@ async function handleMoveRobber(
 	//   1 candidate  → auto-steal (skip the extra selection step).
 	//   2+ candidates → steal phase with a picker.
 	let nextPlayers: PlayerState[] = state.players
-	// Default: no candidates → transition straight to the resume phase
-	// (post-7-roll main, or pre-roll if triggered by a knight before rolling).
 	let nextPhase: Phase = state.phase.resume
 
 	if (candidates.length === 1) {
@@ -2941,12 +3583,61 @@ async function handleMoveRobber(
 			resume: state.phase.resume,
 			hex,
 			candidates,
+			from7: state.phase.from7,
 		}
+	}
+
+	// Forger token snap: any 7-induced robber move re-anchors every
+	// forger player's token to the new robber hex. Activates the token
+	// the first time (snap from undefined → hex). Knight moves don't
+	// trigger the snap (gated by from7).
+	if (state.phase.from7) {
+		const snapEvents: unknown[] = []
+		nextPlayers = nextPlayers.map((p, i) => {
+			if (p.bonus !== 'forger') return p
+			snapEvents.push({
+				kind: p.forgerToken ? 'forger_token_move' : 'forger_token_set',
+				player: i,
+				hex,
+				at: now,
+			})
+			return { ...p, forgerToken: hex }
+		})
+		events.push(...snapEvents)
+	}
+
+	// If we're transitioning straight to main (no steal needed), apply
+	// the post-roll FT chain for the active player.
+	const stateAfterRobber: GameState = {
+		...state,
+		players: nextPlayers,
+		robber: hex,
+		phase: nextPhase,
+	}
+	let finalState = stateAfterRobber
+	if (
+		state.phase.from7 &&
+		nextPhase.kind === 'main' &&
+		fortuneTellerTriggersOn(
+			stateAfterRobber.players[game.current_turn ?? 0]?.bonus,
+			nextPhase.roll
+		)
+	) {
+		const ft = await runFortuneTellerChain(
+			stateAfterRobber,
+			game.current_turn ?? 0,
+			events
+		)
+		finalState = ft.state
 	}
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ robber: hex, phase: nextPhase, players: nextPlayers })
+		.update({
+			robber: hex,
+			phase: finalState.phase,
+			players: finalState.players,
+		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -3017,21 +3708,49 @@ async function handleSteal(
 
 	const nextPhase: Phase = state.phase.resume
 
+	const events: unknown[] = [
+		{
+			kind: 'stolen',
+			thief: meIdx,
+			victim: body.victim,
+			at: new Date().toISOString(),
+		},
+	]
+
+	// FT chain after a 7 → steal → main transition.
+	let finalPlayers: PlayerState[] = nextPlayers
+	let finalPhase: Phase = nextPhase
+	if (
+		state.phase.from7 &&
+		nextPhase.kind === 'main' &&
+		fortuneTellerTriggersOn(
+			nextPlayers[game.current_turn ?? 0]?.bonus,
+			nextPhase.roll
+		)
+	) {
+		const stateAfterSteal: GameState = {
+			...state,
+			players: nextPlayers,
+			phase: nextPhase,
+		}
+		const ft = await runFortuneTellerChain(
+			stateAfterSteal,
+			game.current_turn ?? 0,
+			events
+		)
+		finalPlayers = ft.state.players
+		finalPhase = ft.state.phase
+	}
+
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ players: nextPlayers, phase: nextPhase })
+		.update({ players: finalPlayers, phase: finalPhase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
-	const event = {
-		kind: 'stolen',
-		thief: meIdx,
-		victim: body.victim,
-		at: new Date().toISOString(),
-	}
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
+		.update({ events: [...(game.events ?? []), ...events] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
@@ -3287,18 +4006,96 @@ async function handleBuyDevCard(
 
 	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
 	const useBricklayer = !!body.use_bricklayer
-	const cost = resolvePurchaseCost(
-		state.players[meIdx],
-		DEV_CARD_COST,
-		useBricklayer
-	)
+
+	// Scout: optionally swap one of the standard cost resources for a
+	// duplicate of one of the others. Mutually exclusive with bricklayer.
+	let scoutSwap: { from: Resource; to: Resource } | null = null
+	if (body.scout_swap && bonusOf(state, meIdx) === 'scout') {
+		const from = parseResource(body.scout_swap.from)
+		const to = parseResource(body.scout_swap.to)
+		if (!from || !to) return err(400, 'invalid scout swap resource')
+		const swap = { from, to }
+		if (!isValidScoutSwap(swap)) return err(400, 'invalid scout swap')
+		if (useBricklayer)
+			return err(400, 'scout swap and bricklayer are exclusive')
+		scoutSwap = swap
+	}
+
+	let cost: ResourceHand | null
+	if (scoutSwap) {
+		const altCost = scoutDevCardCost(scoutSwap)
+		cost = canAfford(state.players[meIdx].resources, altCost)
+			? altCost
+			: null
+	} else {
+		cost = resolvePurchaseCost(
+			state.players[meIdx],
+			DEV_CARD_COST,
+			useBricklayer
+		)
+	}
 	if (!cost) return err(400, 'insufficient resources')
 	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
 		return err(400, 'age limit reached this turn')
 
+	const devSpend = costSize(cost)
+
+	// Scout: peek at the top up-to-3 cards rather than committing the top.
+	// The buyer enters the scout_pick sub-phase to choose one; the rest
+	// flush back to the bottom in their drawn order on confirm.
+	if (bonusOf(state, meIdx) === 'scout') {
+		const peekCount = Math.min(SCOUT_PEEK_SIZE, state.devDeck.length)
+		const peek = state.devDeck.slice(0, peekCount)
+		// Deck is rewritten only on confirm. We cannot leave the cards in
+		// the deck (they'd be visible to the next buyer). Stash them on
+		// the phase and remove from the deck immediately. The unchosen
+		// cards return to the bottom on confirm.
+		const remaining = state.devDeck.slice(peekCount)
+		const nextPlayers = state.players.map((p, i) => {
+			if (i !== meIdx) return p
+			const next: PlayerState = {
+				...p,
+				resources: deductHand(p.resources, cost),
+			}
+			if (p.curse === 'age') {
+				next.cardsSpentThisTurn = (p.cardsSpentThisTurn ?? 0) + devSpend
+			}
+			return next
+		})
+		const scoutPhase: Phase = {
+			kind: 'scout_pick',
+			resume: { kind: 'main', roll: state.phase.roll, trade: null },
+			owner: meIdx,
+			cards: peek,
+		}
+		const update: Record<string, unknown> = {
+			players: nextPlayers,
+			dev_deck: remaining,
+			phase: scoutPhase,
+		}
+		const events: unknown[] = [
+			{
+				kind: 'scout_buy',
+				player: meIdx,
+				swap: scoutSwap,
+				at: new Date().toISOString(),
+			},
+		]
+		const { error: stateErr } = await admin
+			.from('game_states')
+			.update(update)
+			.eq('game_id', game.id)
+		if (stateErr) return err(500, 'could not update state')
+		const { error: gameErr } = await admin
+			.from('games')
+			.update({ events: [...(game.events ?? []), ...events] })
+			.eq('id', game.id)
+		if (gameErr) return err(500, 'could not log event')
+		return json({ ok: true })
+	}
+
 	const card = state.devDeck[0]
 	const nextDeck = state.devDeck.slice(1)
-	const devSpend = costSize(cost)
 	const nextPlayers = state.players.map((p, i) => {
 		if (i !== meIdx) return p
 		const next: PlayerState = {
@@ -3342,6 +4139,762 @@ async function handleBuyDevCard(
 	)
 	if (commitErr) return commitErr
 
+	return json({ ok: true })
+}
+
+async function handleConfirmScoutCard(
+	admin: SupabaseClient,
+	me: string,
+	body: ConfirmScoutCardBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (state.phase.kind !== 'scout_pick')
+		return err(400, 'expected scout_pick phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (state.phase.owner !== meIdx) return err(403, 'not your scout pick')
+	const idx = body.index
+	if (typeof idx !== 'number' || !Number.isInteger(idx))
+		return err(400, 'invalid index')
+	if (idx < 0 || idx >= state.phase.cards.length)
+		return err(400, 'index out of range')
+
+	const chosen = state.phase.cards[idx]
+	const returned = state.phase.cards.filter((_, i) => i !== idx)
+	const nextDeck = [...state.devDeck, ...returned]
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		return {
+			...p,
+			devCards: [
+				...p.devCards,
+				{ id: chosen, purchasedTurn: state.round },
+			],
+		}
+	})
+	const update: Record<string, unknown> = {
+		players: nextPlayers,
+		dev_deck: nextDeck,
+		phase: state.phase.resume,
+	}
+	const nextState: GameState = {
+		...state,
+		players: nextPlayers,
+		devDeck: nextDeck,
+		phase: state.phase.resume,
+	}
+	const events: unknown[] = [
+		{ kind: 'dev_bought', player: meIdx, at: new Date().toISOString() },
+	]
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: false,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
+	return json({ ok: true })
+}
+
+// --- Set 2 handlers --------------------------------------------------------
+
+async function handleBuildSuperCity(
+	admin: SupabaseClient,
+	me: string,
+	body: BuildSuperCityBody
+): Promise<Response> {
+	const pre = await preflightBuild(admin, me, body.game_id)
+	if (!pre.ok) return pre.response
+	const { game, state, meIdx } = pre
+	if (!(VERTICES as readonly string[]).includes(body.vertex))
+		return err(400, 'unknown vertex')
+	const vertex = body.vertex as Vertex
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'metropolitan') return err(400, 'not a metropolitan')
+	if (!canBuildMoreSuperCities(state, meIdx))
+		return err(400, 'super city cap reached')
+	const vs = vertexStateOf(state, vertex)
+	if (!vs.occupied || vs.player !== meIdx || vs.building !== 'city')
+		return err(400, 'must upgrade your own city')
+	if (!canPlaceUnderPower(state, meIdx, vertex))
+		return err(400, 'power curse blocks this upgrade')
+
+	const requested = Number.isFinite(body.swap_wheat_to_ore)
+		? Number(body.swap_wheat_to_ore)
+		: 0
+	const swapDelta = metropolitanWheatSwapDelta(meP.bonus, requested)
+	const cost = metropolitanCityCost(meP.bonus, swapDelta)
+	if (!canAfford(meP.resources, cost))
+		return err(400, 'insufficient resources')
+	if (!canSpendUnderAge(meP, costSize(cost)))
+		return err(400, 'age limit reached this turn')
+
+	const nextVertices = {
+		...state.vertices,
+		[vertex]: {
+			occupied: true as const,
+			player: meIdx,
+			building: 'super_city' as const,
+			placedTurn: state.round,
+		},
+	}
+	const nextPlayers = applyCost(state.players, meIdx, cost)
+	const update: Record<string, unknown> = {
+		vertices: nextVertices,
+		players: nextPlayers,
+	}
+	const nextState: GameState = {
+		...state,
+		vertices: nextVertices,
+		players: nextPlayers,
+	}
+	const events: unknown[] = [
+		{
+			kind: 'build_super_city',
+			player: meIdx,
+			vertex,
+			cost,
+			at: new Date().toISOString(),
+		},
+	]
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: false,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
+	return json({ ok: true })
+}
+
+async function handleLiquidate(
+	admin: SupabaseClient,
+	me: string,
+	body: LiquidateBody
+): Promise<Response> {
+	const pre = await preflightBuild(admin, me, body.game_id)
+	if (!pre.ok) return pre.response
+	const { game, state, meIdx } = pre
+	if (state.players[meIdx].bonus !== 'accountant')
+		return err(400, 'not an accountant')
+
+	const target = body.target as { kind?: string } & Record<string, unknown>
+	if (!target || typeof target !== 'object') return err(400, 'invalid target')
+	const kind = target.kind
+	const refund = ((): { hand: ResourceHand; eventDetail: unknown } | null => {
+		const at = new Date().toISOString()
+		if (kind === 'road') {
+			const edge = target.edge as Edge
+			if (!(EDGES as readonly string[]).includes(edge as string))
+				return null
+			const es = state.edges[edge]
+			if (!es?.occupied || es.player !== meIdx) return null
+			if (es.placedTurn >= state.round) return null
+			if (roadRemovalSplitsBuildings(state, meIdx, edge)) return null
+			return {
+				hand: ROAD_REFUND,
+				eventDetail: { kind: 'road', edge, at, refund: ROAD_REFUND },
+			}
+		}
+		if (kind === 'settlement') {
+			const vertex = target.vertex as Vertex
+			if (!(VERTICES as readonly string[]).includes(vertex as string))
+				return null
+			const vs = vertexStateOf(state, vertex)
+			if (!vs.occupied || vs.player !== meIdx) return null
+			if (vs.building !== 'settlement') return null
+			if (vs.placedTurn >= state.round) return null
+			return {
+				hand: SETTLEMENT_REFUND,
+				eventDetail: {
+					kind: 'settlement',
+					vertex,
+					at,
+					refund: SETTLEMENT_REFUND,
+				},
+			}
+		}
+		if (kind === 'city') {
+			const vertex = target.vertex as Vertex
+			if (!(VERTICES as readonly string[]).includes(vertex as string))
+				return null
+			const vs = vertexStateOf(state, vertex)
+			if (!vs.occupied || vs.player !== meIdx) return null
+			if (vs.building !== 'city') return null
+			if (vs.placedTurn >= state.round) return null
+			return {
+				hand: CITY_REFUND,
+				eventDetail: { kind: 'city', vertex, at, refund: CITY_REFUND },
+			}
+		}
+		if (kind === 'super_city') {
+			const vertex = target.vertex as Vertex
+			if (!(VERTICES as readonly string[]).includes(vertex as string))
+				return null
+			const vs = vertexStateOf(state, vertex)
+			if (!vs.occupied || vs.player !== meIdx) return null
+			if (vs.building !== 'super_city') return null
+			if (vs.placedTurn >= state.round) return null
+			return {
+				hand: SUPER_CITY_REFUND,
+				eventDetail: {
+					kind: 'super_city',
+					vertex,
+					at,
+					refund: SUPER_CITY_REFUND,
+				},
+			}
+		}
+		if (kind === 'dev_card') {
+			const idx = target.index as number
+			if (typeof idx !== 'number' || !Number.isInteger(idx)) return null
+			const me = state.players[meIdx]
+			if (idx < 0 || idx >= me.devCards.length) return null
+			const entry = me.devCards[idx]
+			if (entry.purchasedTurn >= state.round) return null
+			return {
+				hand: DEV_CARD_REFUND,
+				eventDetail: {
+					kind: 'dev_card',
+					id: entry.id,
+					at,
+					refund: DEV_CARD_REFUND,
+				},
+			}
+		}
+		return null
+	})()
+
+	if (!refund) return err(400, 'invalid liquidation target')
+
+	let nextVertices = state.vertices
+	let nextEdges = state.edges
+	let nextPlayers = state.players.map((p) => p)
+
+	if (kind === 'road') {
+		const edge = target.edge as Edge
+		const ne = { ...state.edges }
+		delete ne[edge]
+		nextEdges = ne
+	} else if (kind === 'settlement') {
+		const vertex = target.vertex as Vertex
+		const nv = { ...state.vertices }
+		delete nv[vertex]
+		nextVertices = nv
+	} else if (kind === 'city') {
+		const vertex = target.vertex as Vertex
+		const vs = state.vertices[vertex]!
+		nextVertices = {
+			...state.vertices,
+			[vertex]: {
+				occupied: true,
+				player: meIdx,
+				building: 'settlement',
+				placedTurn: vs.occupied ? vs.placedTurn : 0,
+			},
+		}
+	} else if (kind === 'super_city') {
+		const vertex = target.vertex as Vertex
+		const vs = state.vertices[vertex]!
+		nextVertices = {
+			...state.vertices,
+			[vertex]: {
+				occupied: true,
+				player: meIdx,
+				building: 'city',
+				placedTurn: vs.occupied ? vs.placedTurn : 0,
+			},
+		}
+	} else if (kind === 'dev_card') {
+		const idx = target.index as number
+		nextPlayers = state.players.map((p, i) => {
+			if (i !== meIdx) return p
+			return { ...p, devCards: p.devCards.filter((_, j) => j !== idx) }
+		})
+	}
+
+	// Credit the refund to the player's hand.
+	nextPlayers = nextPlayers.map((p, i) => {
+		if (i !== meIdx) return p
+		const r = p.resources
+		return {
+			...p,
+			resources: {
+				brick: r.brick + refund.hand.brick,
+				wood: r.wood + refund.hand.wood,
+				sheep: r.sheep + refund.hand.sheep,
+				wheat: r.wheat + refund.hand.wheat,
+				ore: r.ore + refund.hand.ore,
+			},
+		}
+	})
+
+	const update: Record<string, unknown> = {
+		vertices: nextVertices,
+		edges: nextEdges,
+		players: nextPlayers,
+	}
+	const nextState: GameState = {
+		...state,
+		vertices: nextVertices,
+		edges: nextEdges,
+		players: nextPlayers,
+	}
+	const events: unknown[] = [
+		{
+			kind: 'liquidate',
+			player: meIdx,
+			detail: refund.eventDetail,
+			at: new Date().toISOString(),
+		},
+	]
+	// Roads can split a longest-road chain; settlements can join one. Run
+	// the road recompute when either changed.
+	const recomputeRoads = kind === 'road' || kind === 'settlement'
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
+	return json({ ok: true })
+}
+
+async function handlePlaceExplorerRoad(
+	admin: SupabaseClient,
+	me: string,
+	body: PlaceExplorerRoadBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (state.phase.kind !== 'post_placement')
+		return err(400, 'expected post_placement phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	const remaining = state.phase.pending.explorer?.[meIdx] ?? 0
+	if (remaining <= 0) return err(400, 'no explorer roads remaining')
+	if (!(EDGES as readonly string[]).includes(body.edge))
+		return err(400, 'unknown edge')
+	const edge = body.edge as Edge
+	if (!isValidBuildRoadEdge(state, meIdx, edge))
+		return err(400, 'invalid road placement')
+
+	const nextEdges = {
+		...state.edges,
+		[edge]: {
+			occupied: true as const,
+			player: meIdx,
+			placedTurn: state.round,
+		},
+	}
+	const newRemaining = remaining - 1
+	const newExplorer = { ...(state.phase.pending.explorer ?? {}) }
+	if (newRemaining <= 0) delete newExplorer[meIdx]
+	else newExplorer[meIdx] = newRemaining
+
+	const explorerEmpty = Object.keys(newExplorer).length === 0
+	const specialistEmpty = state.phase.pending.specialist.length === 0
+	const nextPhase: Phase =
+		explorerEmpty && specialistEmpty
+			? { kind: 'roll' }
+			: {
+					kind: 'post_placement',
+					pending: {
+						specialist: state.phase.pending.specialist,
+						...(explorerEmpty ? {} : { explorer: newExplorer }),
+					},
+				}
+
+	const stateAfter: GameState = {
+		...state,
+		edges: nextEdges,
+		phase: nextPhase,
+	}
+	const events: unknown[] = [
+		{
+			kind: 'explorer_road',
+			player: meIdx,
+			edge,
+			at: new Date().toISOString(),
+		},
+	]
+
+	// Recompute longest road so leaderboards reflect explorer placements.
+	const newHolder = recomputeLongestRoad(stateAfter)
+	const update: Record<string, unknown> = {
+		edges: nextEdges,
+		phase: nextPhase,
+	}
+	if (newHolder !== state.longestRoad) {
+		update.longest_road = newHolder
+		events.push({
+			kind: 'longest_road_changed',
+			player: newHolder,
+			at: new Date().toISOString(),
+		})
+	}
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update(update)
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), ...events] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+async function handleRitualRoll(
+	admin: SupabaseClient,
+	me: string,
+	body: RitualRollBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+	if (state.phase.pending?.dice) return err(400, 'dice already pending')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'ritualist') return err(400, 'not a ritualist')
+	if (meP.ritualWasUsedThisTurn) return err(400, 'ritual already used')
+
+	if (!isValidRitualTotal(body.total))
+		return err(400, 'invalid total (must be 2..6 or 8..12)')
+	const total = body.total
+
+	const discard = normalizeHand(body.discard)
+	if (!discard) return err(400, 'invalid discard shape')
+	const required = ritualCardCost(state, meIdx)
+	if (handSize(discard) !== required)
+		return err(400, `must discard exactly ${required} cards`)
+	for (const r of RESOURCES) {
+		if (discard[r] < 0) return err(400, 'invalid discard amounts')
+		if (discard[r] > meP.resources[r])
+			return err(400, 'insufficient resources to discard')
+	}
+
+	const dice = dicePairForTotal(total)
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		return {
+			...p,
+			resources: deductHand(p.resources, discard),
+			ritualWasUsedThisTurn: true,
+		}
+	})
+	const stateAfterDiscard: GameState = { ...state, players: nextPlayers }
+	const rollEvent = {
+		kind: 'ritual_roll',
+		player: meIdx,
+		total,
+		dice: [dice.a, dice.b],
+		discard,
+		at: new Date().toISOString(),
+	}
+	return applyRollOutcome(admin, game, stateAfterDiscard, dice, [rollEvent], {
+		distributeOnlyTo: meIdx,
+	})
+}
+
+async function handleShepherdSwap(
+	admin: SupabaseClient,
+	me: string,
+	body: ShepherdSwapBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+	if (state.phase.pending?.dice) return err(400, 'dice already pending')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'shepherd') return err(400, 'not a shepherd')
+	if (meP.shepherdUsedThisTurn) return err(400, 'shepherd already used')
+	if (meP.resources.sheep < 4) return err(400, 'need 4 sheep')
+
+	const take = body.take
+	if (!Array.isArray(take) || take.length !== 2)
+		return err(400, 'must take exactly 2 resources')
+	const r1 = parseResource(take[0])
+	const r2 = parseResource(take[1])
+	if (!r1 || !r2) return err(400, 'invalid resource')
+
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		const r = p.resources
+		const next: ResourceHand = { ...r, sheep: r.sheep - 2 }
+		next[r1] = next[r1] + 1
+		next[r2] = next[r2] + 1
+		return { ...p, resources: next, shepherdUsedThisTurn: true }
+	})
+
+	const events: unknown[] = [
+		{
+			kind: 'shepherd_swap',
+			player: meIdx,
+			take: [r1, r2],
+			at: new Date().toISOString(),
+		},
+	]
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), ...events] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+async function handleClaimCurio(
+	admin: SupabaseClient,
+	me: string,
+	body: ClaimCurioBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (state.phase.kind !== 'curio_pick')
+		return err(400, 'expected curio_pick phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (!state.phase.pending.includes(meIdx))
+		return err(400, 'no curio pending for you')
+	const take = body.take
+	if (!Array.isArray(take) || take.length !== 3)
+		return err(400, 'must claim exactly 3 resources')
+	const resources: Resource[] = []
+	for (const t of take) {
+		const r = parseResource(t)
+		if (!r) return err(400, 'invalid resource')
+		resources.push(r)
+	}
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		const r = { ...p.resources }
+		for (const x of resources) r[x] = r[x] + 1
+		return { ...p, resources: r }
+	})
+	const newPending = state.phase.pending.filter((i) => i !== meIdx)
+	const nextPhase: Phase =
+		newPending.length > 0
+			? { ...state.phase, pending: newPending }
+			: state.phase.resume
+
+	const events: unknown[] = [
+		{
+			kind: 'curio_collected',
+			player: meIdx,
+			take: resources,
+			at: new Date().toISOString(),
+		},
+	]
+
+	// If we transition into main and the active player is FT, fire the
+	// FT chain (mirrors what applyRollOutcome does for the no-pending path).
+	let finalPhase = nextPhase
+	let finalPlayers = nextPlayers
+	if (nextPhase.kind === 'main') {
+		const stateAfter: GameState = {
+			...state,
+			players: nextPlayers,
+			phase: nextPhase,
+		}
+		const activeIdx = game.current_turn ?? 0
+		if (
+			fortuneTellerTriggersOn(
+				stateAfter.players[activeIdx]?.bonus,
+				nextPhase.roll
+			)
+		) {
+			const ft = await runFortuneTellerChain(
+				stateAfter,
+				activeIdx,
+				events
+			)
+			finalPlayers = ft.state.players
+			finalPhase = ft.state.phase
+		}
+	}
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: finalPlayers, phase: finalPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), ...events] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+async function handleMoveForgerToken(
+	admin: SupabaseClient,
+	me: string,
+	body: MoveForgerTokenBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+	if (state.phase.pending?.dice) return err(400, 'dice already pending')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'forger') return err(400, 'not a forger')
+	if (!meP.forgerToken) return err(400, 'forger token not yet active')
+	if (meP.forgerMovedThisTurn) return err(400, 'already moved this turn')
+	if (!(HEXES as readonly string[]).includes(body.hex))
+		return err(400, 'unknown hex')
+	const target = body.hex as Hex
+	if (target === meP.forgerToken) return err(400, 'must move to a new hex')
+	if (!hexesAdjacentTo(meP.forgerToken).includes(target))
+		return err(400, 'target hex must be adjacent to current')
+
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		return { ...p, forgerToken: target, forgerMovedThisTurn: true }
+	})
+	const events: unknown[] = [
+		{
+			kind: 'forger_token_move',
+			player: meIdx,
+			hex: target,
+			at: new Date().toISOString(),
+		},
+	]
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), ...events] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+async function handlePickForgerTarget(
+	admin: SupabaseClient,
+	me: string,
+	body: PickForgerTargetBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (state.phase.kind !== 'forger_pick')
+		return err(400, 'expected forger_pick phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	const head = state.phase.queue[0]
+	if (!head) return err(400, 'forger queue empty')
+	if (head.idx !== meIdx) return err(403, 'not your turn to pick')
+	const target = body.target
+	if (typeof target !== 'number' || !Number.isInteger(target))
+		return err(400, 'invalid target')
+	const gain = head.gainsByCandidate[target]
+	if (!gain) return err(400, 'target is not a candidate')
+
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		const r = p.resources
+		return {
+			...p,
+			resources: {
+				brick: r.brick + gain.brick,
+				wood: r.wood + gain.wood,
+				sheep: r.sheep + gain.sheep,
+				wheat: r.wheat + gain.wheat,
+				ore: r.ore + gain.ore,
+			},
+		}
+	})
+	const newQueue = state.phase.queue.slice(1)
+	const nextPhase: Phase =
+		newQueue.length > 0
+			? { ...state.phase, queue: newQueue }
+			: state.phase.resume
+
+	const events: unknown[] = [
+		{
+			kind: 'forger_copy',
+			player: meIdx,
+			target,
+			gain,
+			at: new Date().toISOString(),
+		},
+	]
+
+	let finalPhase = nextPhase
+	let finalPlayers = nextPlayers
+	if (nextPhase.kind === 'main') {
+		const activeIdx = game.current_turn ?? 0
+		if (
+			fortuneTellerTriggersOn(
+				finalPlayers[activeIdx]?.bonus,
+				nextPhase.roll
+			)
+		) {
+			const stateAfter: GameState = {
+				...state,
+				players: finalPlayers,
+				phase: nextPhase,
+			}
+			const ft = await runFortuneTellerChain(
+				stateAfter,
+				activeIdx,
+				events
+			)
+			finalPlayers = ft.state.players
+			finalPhase = ft.state.phase
+		}
+	}
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: finalPlayers, phase: finalPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), ...events] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
 	return json({ ok: true })
 }
 
@@ -3798,6 +5351,24 @@ serve(async (req) => {
 			return handleBuyCarpenterVP(admin, me, body)
 		case 'tap_knight':
 			return handleTapKnight(admin, me, body)
+		case 'build_super_city':
+			return handleBuildSuperCity(admin, me, body)
+		case 'liquidate':
+			return handleLiquidate(admin, me, body)
+		case 'place_explorer_road':
+			return handlePlaceExplorerRoad(admin, me, body)
+		case 'ritual_roll':
+			return handleRitualRoll(admin, me, body)
+		case 'shepherd_swap':
+			return handleShepherdSwap(admin, me, body)
+		case 'claim_curio':
+			return handleClaimCurio(admin, me, body)
+		case 'move_forger_token':
+			return handleMoveForgerToken(admin, me, body)
+		case 'pick_forger_target':
+			return handlePickForgerTarget(admin, me, body)
+		case 'confirm_scout_card':
+			return handleConfirmScoutCard(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}

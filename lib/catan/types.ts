@@ -10,6 +10,11 @@ import type {
 import type { BonusId, CurseId } from './bonuses'
 import type { DevCardId } from './devCards'
 
+// `placedTurn` is the value of `GameState.round` at the moment a piece was
+// placed. Initial-placement pieces are stamped with 0; main-phase builds are
+// stamped with the current round. Used by the accountant bonus to gate
+// liquidation ("not the same turn the piece was bought").
+
 export type Variant = 'standard'
 
 // Top-level game config. Serialized to JSONB on game_requests and
@@ -103,9 +108,16 @@ export type HexData =
 
 export type VertexState =
 	| { occupied: false }
-	| { occupied: true; player: number; building: VertexBuilding }
+	| {
+			occupied: true
+			player: number
+			building: VertexBuilding
+			placedTurn: number
+	  }
 
-export type EdgeState = { occupied: false } | { occupied: true; player: number }
+export type EdgeState =
+	| { occupied: false }
+	| { occupied: true; player: number; placedTurn: number }
 
 export type ResourceHand = Record<Resource, number>
 
@@ -151,6 +163,20 @@ export type PlayerState = {
 	// for the +2 resource effect. The knight stays counted in
 	// devCardsPlayed.knight for Largest Army purposes.
 	tappedKnights?: number
+	// `ritualist`: set to true once the player has used their per-turn
+	// `ritual_roll` choose-your-roll action. Reset on end_turn.
+	ritualWasUsedThisTurn?: boolean
+	// `shepherd`: set to true once the player has used their per-turn
+	// shepherd swap (4-sheep start-of-turn). Reset on end_turn.
+	shepherdUsedThisTurn?: boolean
+	// `forger`: hex where the forger token currently sits, undefined until
+	// the first 7 is rolled (any player). Re-snaps to the post-7 robber
+	// hex on every subsequent 7 (regardless of whose roll). The forger
+	// player may move it to a vertex-adjacent hex once per their own turn.
+	forgerToken?: Hex
+	// `forger`: set to true once the player has used their per-turn token
+	// move. Reset on end_turn.
+	forgerMovedThisTurn?: boolean
 }
 
 // Per-player card hand during the select_bonus phase. `offered` is the two
@@ -206,16 +232,20 @@ export type Phase =
 	// initial_placement and the kept bonus/curse snapshots onto PlayerState.
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
-	// Start-of-game bonus resolutions (specialist declaration, etc). Inserted
-	// between the final initial_placement road and the first roll when any
-	// player has a bonus that requires an up-front decision. `pending` lists
-	// the player indices that still owe an action, per bonus id. Phase
-	// advances to `roll` when every list is empty. Picks are parallel — not
-	// turn-serialized. Phase is skipped entirely when no such bonus is in
-	// play.
+	// Start-of-game bonus resolutions (specialist declaration, explorer free
+	// roads, etc). Inserted between the final initial_placement road and
+	// the first roll when any player has a bonus that requires an up-front
+	// decision. `pending.specialist` lists indices owing a specialist
+	// declaration; `pending.explorer` maps explorer player indices to the
+	// number of free roads they still owe (3 → 0). Picks are parallel —
+	// not turn-serialized. Phase advances to `roll` when every entry is
+	// drained. Skipped entirely when no such bonus is in play.
 	| {
 			kind: 'post_placement'
-			pending: { specialist: number[] }
+			pending: {
+				specialist: number[]
+				explorer?: Partial<Record<number, number>>
+			}
 	  }
 	// `roll` is the default pre-roll state. For gambler players, after the
 	// initial roll the dice sit in `pending` while the player decides
@@ -229,13 +259,18 @@ export type Phase =
 			resume: ResumePhase
 			// Amount each player still owes. Entries are removed as players submit.
 			pending: Partial<Record<number, number>>
+			// True iff the chain was triggered by a 7-roll (vs a knight).
+			// Used to snap forger tokens after move_robber completes and to
+			// trigger fortune_teller bonus rolls on resume.
+			from7?: boolean
 	  }
-	| { kind: 'move_robber'; resume: ResumePhase }
+	| { kind: 'move_robber'; resume: ResumePhase; from7?: boolean }
 	| {
 			kind: 'steal'
 			resume: ResumePhase
 			hex: Hex
 			candidates: number[]
+			from7?: boolean
 	  }
 	// Fires when a player pops `Play` on a Road Building card. Active player
 	// places free roads one at a time; on completion we transition to
@@ -244,7 +279,50 @@ export type Phase =
 	// `trade` piggy-backs on the main phase so we don't need a separate
 	// top-level field (and a DB column). It's always cleared when leaving main.
 	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
+	// Scout dev-card peek. After the buy commits, the buyer sees the top
+	// up-to-3 cards and picks one. The other two return to the bottom of
+	// the deck in their drawn order. `cards` is the drawn slice (top-most
+	// first); `owner` is the buying player.
+	| {
+			kind: 'scout_pick'
+			resume: ResumePhase
+			owner: number
+			cards: DevCardId[]
+	  }
+	// Curio collector trigger after a 2 or 12 original roll. Each
+	// curio_collector who gained ≥1 card from the roll is queued here and
+	// must claim their +3 resources via `claim_curio`. Picks are parallel
+	// (each pending entry resolves independently). Phase advances to
+	// `resume` when `pending` is empty.
+	//
+	// `resume` accepts any Phase (recursive) so a roll that triggers both
+	// curio AND forger can chain: forger_pick(resume = curio_pick(resume =
+	// main)).
+	| {
+			kind: 'curio_pick'
+			resume: Phase
+			pending: number[]
+	  }
+	// Forger token-hex production. Each forger whose token's hex produced
+	// AND for whom another player gained from that hex is queued here.
+	// Each entry resolves serially (head of queue acts first). The acting
+	// forger picks one candidate, gains a copy of that candidate's hex
+	// gain, queue pops, and `resume` fires once empty.
+	| {
+			kind: 'forger_pick'
+			resume: Phase
+			queue: ForgerPickEntry[]
+	  }
 	| { kind: 'game_over' }
+
+export type ForgerPickEntry = {
+	idx: number
+	hex: Hex
+	// `gainsByCandidate` maps candidate player index → resources THAT
+	// candidate received from `hex` on the original roll. The forger picks
+	// one candidate and copies that hand into their own.
+	gainsByCandidate: Record<number, ResourceHand>
+}
 
 // vertices / edges are Partial — a missing key means the default
 // `{ occupied: false }`. Keeps storage for a fresh game tiny and avoids

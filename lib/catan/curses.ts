@@ -151,8 +151,8 @@ export const POWER_HEX_LIMIT = 3
 export const POWER_MAX_HEXES = 2
 
 // Sum of pips contributed to a single hex by a player's own buildings on that
-// hex's vertices. Settlement = 1, city = 2. Robber presence is ignored; this
-// is a building-distribution metric, not a production metric.
+// hex's vertices. Settlement = 1, city = 2, super_city = 3. Robber presence
+// is ignored; this is a building-distribution metric, not a production metric.
 export function hexPowerForPlayer(
 	state: GameState,
 	playerIdx: number,
@@ -162,7 +162,8 @@ export function hexPowerForPlayer(
 	for (const v of adjacentVertices[hex]) {
 		const vs = vertexStateOf(state, v)
 		if (!vs.occupied || vs.player !== playerIdx) continue
-		power += vs.building === 'city' ? 2 : 1
+		power +=
+			vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
 	}
 	return power
 }

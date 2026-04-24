@@ -106,7 +106,11 @@ function testCompactionRoadCap() {
 		'1G - 2H',
 	]
 	for (const eid of edgeIds) {
-		edges[eid as keyof typeof edges] = { occupied: true, player: 0 }
+		edges[eid as keyof typeof edges] = {
+			occupied: true,
+			player: 0,
+			placedTurn: 0,
+		}
 	}
 	const capped: GameState = { ...s, edges }
 	assert(!canBuildMoreRoads(capped, 0), 'cursed + 7 roads → no more')
@@ -134,16 +138,19 @@ function testDecadenceCityCap() {
 		occupied: true,
 		player: 0,
 		building: 'city',
+		placedTurn: 0,
 	}
 	vertices['1D' as keyof typeof vertices] = {
 		occupied: true,
 		player: 0,
 		building: 'city',
+		placedTurn: 0,
 	}
 	vertices['1F' as keyof typeof vertices] = {
 		occupied: true,
 		player: 0,
 		building: 'settlement',
+		placedTurn: 0,
 	}
 	const capped: GameState = { ...s, vertices }
 	assert(!canBuildMoreCities(capped, 0), 'two cities → blocked')
@@ -207,16 +214,19 @@ function testElitismSettlementCap() {
 		occupied: true,
 		player: 0,
 		building: 'settlement',
+		placedTurn: 0,
 	}
 	vertices['1C' as keyof typeof vertices] = {
 		occupied: true,
 		player: 0,
 		building: 'settlement',
+		placedTurn: 0,
 	}
 	vertices['1E' as keyof typeof vertices] = {
 		occupied: true,
 		player: 0,
 		building: 'city',
+		placedTurn: 0,
 	}
 	const capped: GameState = { ...s, vertices }
 	assert(
@@ -295,7 +305,11 @@ function testNomadismRoadRequirement() {
 		'2D - 3D',
 	]
 	for (const eid of edgeIds) {
-		edges[eid as keyof typeof edges] = { occupied: true, player: 0 }
+		edges[eid as keyof typeof edges] = {
+			occupied: true,
+			player: 0,
+			placedTurn: 0,
+		}
 	}
 	equal(findWinner({ ...s, players, edges }), 0, '10 VP + 11 roads → wins')
 }
@@ -348,11 +362,13 @@ function testPowerCaps() {
 		occupied: true,
 		player: 0,
 		building: 'city',
+		placedTurn: 0,
 	}
 	vertices[adj[2] as keyof typeof vertices] = {
 		occupied: true,
 		player: 0,
 		building: 'settlement',
+		placedTurn: 0,
 	}
 	const loaded: GameState = { ...s, vertices }
 	equal(hexPowerForPlayer(loaded, 0, '1A'), 3, 'city(2) + settlement(1) = 3')
@@ -377,6 +393,7 @@ function testYouthTouchedSet() {
 		occupied: true,
 		player: 0,
 		building: 'settlement',
+		placedTurn: 0,
 	}
 	const loaded: GameState = { ...s, vertices }
 	assert(

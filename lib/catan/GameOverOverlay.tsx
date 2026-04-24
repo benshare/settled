@@ -16,6 +16,7 @@ import {
 import type { Profile } from '../stores/useProfileStore'
 import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
+import { populistBonusVPFor } from './bonus'
 import { knightsPlayed } from './dev'
 import { longestRoadFor } from './longestRoad'
 import { playerColors } from './palette'
@@ -210,9 +211,11 @@ function breakdownFor(state: GameState, playerIdx: number): ScoreChip[] {
 	const chips: ScoreChip[] = []
 	let settlements = 0
 	let cities = 0
+	let superCities = 0
 	for (const v of Object.values(state.vertices)) {
 		if (v?.occupied && v.player === playerIdx) {
-			if (v.building === 'city') cities++
+			if (v.building === 'super_city') superCities++
+			else if (v.building === 'city') cities++
 			else settlements++
 		}
 	}
@@ -220,6 +223,12 @@ function breakdownFor(state: GameState, playerIdx: number): ScoreChip[] {
 		chips.push({ label: 'Settlements', value: settlements, icon: 'trophy' })
 	if (cities > 0)
 		chips.push({ label: 'Cities', value: cities * 2, icon: 'trophy' })
+	if (superCities > 0)
+		chips.push({
+			label: 'Super Cities',
+			value: superCities * 3,
+			icon: 'trophy',
+		})
 	if (state.largestArmy === playerIdx) {
 		chips.push({
 			label: `Largest Army (${knightsPlayed(state.players[playerIdx])})`,
@@ -237,6 +246,10 @@ function breakdownFor(state: GameState, playerIdx: number): ScoreChip[] {
 	const carpenterVP = state.players[playerIdx].carpenterVP ?? 0
 	if (carpenterVP > 0) {
 		chips.push({ label: 'Carpenter VP', value: carpenterVP, icon: 'star' })
+	}
+	const populistVP = populistBonusVPFor(state, playerIdx)
+	if (populistVP > 0) {
+		chips.push({ label: 'Populist VP', value: populistVP, icon: 'star' })
 	}
 	let vpCards = 0
 	for (const e of state.players[playerIdx].devCards) {

@@ -31,12 +31,17 @@ export function BuildTradeBar({
 	tradeActive,
 	devCardsEnabled,
 	carpenterEnabled,
+	superCityEnabled,
+	superCityActive,
+	accountantEnabled,
 	onSelect,
 	onTradePress,
 	onBuyDevCard,
 	onBuyCarpenterVP,
+	onSelectSuperCity,
+	onAccountant,
 }: {
-	active: BuildKind | null
+	active: BuildKind | 'super_city' | null
 	enabled: BuildEnablement
 	// Per-kind curse hint: when present, the button shows a curse-icon badge
 	// and a tooltip with the reason, even if the button is also disabled for
@@ -51,10 +56,19 @@ export function BuildTradeBar({
 	// Carpenter-bonus-only button. Undefined = player is not carpenter and
 	// the button is hidden. Boolean = eligible to buy (enabled/disabled).
 	carpenterEnabled?: boolean
+	// Metropolitan-bonus-only button. Undefined = not metropolitan and
+	// hidden. Boolean = eligible to upgrade.
+	superCityEnabled?: boolean
+	superCityActive?: boolean
+	// Accountant-bonus-only button. Undefined = not accountant and hidden.
+	// Boolean = liquidation modal can be opened.
+	accountantEnabled?: boolean
 	onSelect: (tool: BuildKind) => void
 	onTradePress: () => void
 	onBuyDevCard: () => void
 	onBuyCarpenterVP?: () => void
+	onSelectSuperCity?: () => void
+	onAccountant?: () => void
 }) {
 	const color = playerColors[meIdx] ?? playerColors[0]
 	const tradeInteractive = tradeEnabled || tradeActive
@@ -89,6 +103,20 @@ export function BuildTradeBar({
 						<CarpenterVPButton
 							enabled={carpenterEnabled}
 							onPress={() => onBuyCarpenterVP?.()}
+						/>
+					)}
+					{superCityEnabled !== undefined && (
+						<SuperCityButton
+							enabled={superCityEnabled}
+							active={!!superCityActive}
+							meIdx={meIdx}
+							onPress={() => onSelectSuperCity?.()}
+						/>
+					)}
+					{accountantEnabled !== undefined && (
+						<AccountantButton
+							enabled={accountantEnabled}
+							onPress={() => onAccountant?.()}
 						/>
 					)}
 				</View>
@@ -222,6 +250,94 @@ function CarpenterVPButton({
 	)
 }
 
+function SuperCityButton({
+	enabled,
+	active,
+	meIdx,
+	onPress,
+}: {
+	enabled: boolean
+	active: boolean
+	meIdx: number
+	onPress: () => void
+}) {
+	const color = playerColors[meIdx] ?? playerColors[0]
+	const interactive = enabled || active
+	return (
+		<Pressable
+			disabled={!interactive}
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.iconBtn,
+				styles.superCityBtn,
+				active && { borderColor: color, borderWidth: 2 },
+				!interactive && styles.iconBtnDisabled,
+				pressed && interactive && styles.pressed,
+			]}
+			accessibilityLabel={
+				active
+					? 'Cancel Super City upgrade'
+					: 'Metropolitan: upgrade a city to a Super City'
+			}
+		>
+			<Ionicons
+				name="business"
+				size={20}
+				color={interactive ? colors.white : colors.textMuted}
+			/>
+			<Text
+				style={[
+					styles.carpenterCostLabel,
+					!interactive && { color: colors.textMuted },
+				]}
+			>
+				Super
+			</Text>
+			{active && (
+				<View style={styles.cancelBadge}>
+					<Ionicons name="close" size={12} color={colors.white} />
+				</View>
+			)}
+		</Pressable>
+	)
+}
+
+function AccountantButton({
+	enabled,
+	onPress,
+}: {
+	enabled: boolean
+	onPress: () => void
+}) {
+	return (
+		<Pressable
+			disabled={!enabled}
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.iconBtn,
+				styles.accountantBtn,
+				!enabled && styles.iconBtnDisabled,
+				pressed && enabled && styles.pressed,
+			]}
+			accessibilityLabel="Accountant: liquidate a piece for resources"
+		>
+			<Ionicons
+				name="calculator-outline"
+				size={20}
+				color={enabled ? colors.white : colors.textMuted}
+			/>
+			<Text
+				style={[
+					styles.carpenterCostLabel,
+					!enabled && { color: colors.textMuted },
+				]}
+			>
+				Liquid
+			</Text>
+		</Pressable>
+	)
+}
+
 const styles = StyleSheet.create({
 	row: {
 		flexDirection: 'row',
@@ -283,6 +399,18 @@ const styles = StyleSheet.create({
 	carpenterBtn: {
 		backgroundColor: '#6F5A2A',
 		borderColor: '#3B2D12',
+		flexDirection: 'column',
+		gap: 2,
+	},
+	superCityBtn: {
+		backgroundColor: '#3B5BA5',
+		borderColor: '#1F326B',
+		flexDirection: 'column',
+		gap: 2,
+	},
+	accountantBtn: {
+		backgroundColor: '#5A3F8F',
+		borderColor: '#322357',
 		flexDirection: 'column',
 		gap: 2,
 	},

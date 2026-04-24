@@ -13,7 +13,11 @@ import {
 	type Edge,
 	type Vertex,
 } from './board'
-import { BRICKLAYER_COST } from './bonus'
+import {
+	BRICKLAYER_COST,
+	canBuildMoreSuperCities,
+	metropolitanCityCost,
+} from './bonus'
 import type { BonusId } from './bonuses'
 import {
 	curseOf,
@@ -276,4 +280,49 @@ export function validBuildCityVertices(
 	playerIdx: number
 ): Vertex[] {
 	return VERTICES.filter((v) => isValidBuildCityVertex(state, playerIdx, v))
+}
+
+// --- Super cities (metropolitan bonus only) --------------------------------
+
+export function isValidBuildSuperCityVertex(
+	state: GameState,
+	playerIdx: number,
+	vertex: Vertex
+): boolean {
+	if (!canBuildMoreSuperCities(state, playerIdx)) return false
+	const vs = vertexStateOf(state, vertex)
+	if (!vs.occupied || vs.player !== playerIdx || vs.building !== 'city') {
+		return false
+	}
+	// Upgrading a city to super_city adds +1 pip per adjacent hex (city = 2,
+	// super_city = 3) — same delta as settlement → city, so the existing
+	// power-curse helper applies unchanged.
+	return canPlaceUnderPower(state, playerIdx, vertex)
+}
+
+export function validBuildSuperCityVertices(
+	state: GameState,
+	playerIdx: number
+): Vertex[] {
+	return VERTICES.filter((v) =>
+		isValidBuildSuperCityVertex(state, playerIdx, v)
+	)
+}
+
+// Effective wheat / ore cost for a city or super_city after applying the
+// metropolitan wheat → ore swap. `swapDelta` is the number of wheat the
+// player wants to replace with ore (clamped to 0..2 by the helper). Other
+// resources are unchanged. Used by both `build_city` and `build_super_city`.
+export function metropolitanCostOf(
+	p: PlayerState,
+	swapDelta: number
+): ResourceHand {
+	return metropolitanCityCost(p.bonus, swapDelta)
+}
+
+export function canAffordMetropolitanCost(
+	p: PlayerState,
+	swapDelta: number
+): boolean {
+	return canAfford(p.resources, metropolitanCostOf(p, swapDelta))
 }

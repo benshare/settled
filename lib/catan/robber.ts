@@ -19,6 +19,11 @@ export function handSize(hand: ResourceHand): number {
 // Standard Catan 7-rule: any hand > 7 must discard floor(hand/2). Players
 // under the `avarice` curse discard their entire hand instead; players
 // with the `hoarder` bonus discard nothing regardless of hand size.
+//
+// Shepherd's "sheep don't count toward your hand limit" exempts sheep from
+// both the > 7 threshold check AND the discard amount. The discard amount
+// for a shepherd over the threshold is `floor(effective / 2)` where
+// `effective = total − sheep`.
 export function requiredDiscards(
 	players: PlayerState[]
 ): Partial<Record<number, number>> {
@@ -26,8 +31,12 @@ export function requiredDiscards(
 	players.forEach((p, i) => {
 		if (p.bonus === 'hoarder') return
 		const total = handSize(p.resources)
-		if (total > 7)
-			out[i] = p.curse === 'avarice' ? total : Math.floor(total / 2)
+		const effective =
+			p.bonus === 'shepherd' ? total - p.resources.sheep : total
+		if (effective > 7) {
+			out[i] =
+				p.curse === 'avarice' ? effective : Math.floor(effective / 2)
+		}
 	})
 	return out
 }

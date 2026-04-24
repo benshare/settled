@@ -97,6 +97,36 @@ export function SpecialistWaitOverlay({ waitingOn }: { waitingOn: string[] }) {
 	)
 }
 
+// Explorer's "place 3 free roads" affordance during post_placement. Renders
+// as a small inline banner with a counter; the actual road picks happen on
+// the board (BuildLayer with tool='explorer_road'). Counter goes 3 → 0,
+// mirroring `phase.pending.explorer[meIdx]`.
+export function ExplorerStatusBanner({
+	remaining,
+	waitingOn,
+}: {
+	remaining: number
+	waitingOn: string[]
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	if (remaining <= 0 && waitingOn.length === 0) return null
+	return (
+		<View style={styles.banner}>
+			{remaining > 0 ? (
+				<Text style={styles.bannerText}>
+					Explorer: place {remaining} more free road
+					{remaining === 1 ? '' : 's'} on the board.
+				</Text>
+			) : (
+				<Text style={styles.bannerText}>
+					Waiting on {waitingOn.join(', ')} to place explorer roads.
+				</Text>
+			)}
+		</View>
+	)
+}
+
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
 		backdrop: {
@@ -153,6 +183,20 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.sm,
 			color: colors.textSecondary,
 			fontStyle: 'italic',
+		},
+		banner: {
+			marginHorizontal: spacing.md,
+			marginBottom: spacing.xs,
+			padding: spacing.sm,
+			backgroundColor: colors.card,
+			borderRadius: radius.sm,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		bannerText: {
+			fontSize: font.sm,
+			fontWeight: '600',
+			color: colors.text,
 		},
 		pressed: {
 			opacity: 0.8,

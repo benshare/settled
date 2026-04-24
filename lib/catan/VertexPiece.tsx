@@ -28,6 +28,17 @@ export function VertexPiece({
 			/>
 		)
 	}
+	if (building === 'super_city') {
+		return (
+			<SuperCity
+				cx={cx}
+				cy={cy}
+				size={size}
+				color={color}
+				stroke={stroke}
+			/>
+		)
+	}
 	return <City cx={cx} cy={cy} size={size} color={color} stroke={stroke} />
 }
 
@@ -91,6 +102,53 @@ function City({
 	const points = [
 		[cx - W / 4, top],
 		[cx, eave],
+		[cx + W / 2, eave],
+		[cx + W / 2, bot],
+		[cx - W / 2, bot],
+		[cx - W / 2, eave],
+	]
+	return (
+		<Polygon
+			points={points.map((p) => p.join(',')).join(' ')}
+			fill={color}
+			stroke={pieceStroke}
+			strokeWidth={stroke}
+			strokeLinejoin="round"
+		/>
+	)
+}
+
+// A taller, dual-peak silhouette with a battlement-style flat roof in the
+// middle so super_city reads as the next step up from city. Uses the same
+// player fill so colour identity stays consistent.
+function SuperCity({
+	cx,
+	cy,
+	size,
+	color,
+	stroke,
+}: {
+	cx: number
+	cy: number
+	size: number
+	color: string
+	stroke: number
+}) {
+	const H = size * 0.6
+	const W = size * 0.72
+	const roof = H * 0.32
+	const top = cy - H / 2
+	const bot = cy + H / 2
+	const eave = top + roof
+	// Two peaks (left + right) with a flat centre crenellation.
+	const peakInset = W * 0.18
+	const points = [
+		[cx - W / 2 + peakInset, top],
+		[cx - peakInset, eave],
+		[cx - peakInset, top + roof * 0.5],
+		[cx + peakInset, top + roof * 0.5],
+		[cx + peakInset, eave],
+		[cx + W / 2 - peakInset, top],
 		[cx + W / 2, eave],
 		[cx + W / 2, bot],
 		[cx - W / 2, bot],

@@ -2,7 +2,7 @@
 // (display) or tests. The edge function re-implements the same logic against
 // its duplicated adjacency constants.
 
-import { HEXES, adjacentVertices } from './board'
+import { HEXES, adjacentVertices, type Hex } from './board'
 import { underdogMultiplierFor } from './bonus'
 import {
 	vertexStateOf,
@@ -46,7 +46,12 @@ export function distributeResources(
 		for (const v of adjacentVertices[hex]) {
 			const vs = vertexStateOf(state, v)
 			if (!vs.occupied) continue
-			const base = vs.building === 'city' ? 2 : 1
+			const base =
+				vs.building === 'super_city'
+					? 3
+					: vs.building === 'city'
+						? 2
+						: 1
 			const mult = underdogMultiplierFor(
 				state.players[vs.player]?.bonus,
 				hd.number
@@ -70,4 +75,56 @@ export function distributeResources(
 // Straight rotation in the main phase.
 export function nextMainTurn(currentTurn: number, playerCount: number): number {
 	return (currentTurn + 1) % playerCount
+}
+
+// Per-hex per-player gain from a roll. Same rules as `distributeResources`
+// (robber blocks production, super_city pays 3, city pays 2, settlement
+// pays 1, underdog doubles on 1- and 2-pip hexes), but factored so the
+// caller can attribute gains to specific hexes — used by the forger bonus
+// to look up "what did each player gain from MY token's hex this roll".
+export function distributeResourcesByHex(
+	state: GameState,
+	total: number
+): Partial<Record<Hex, Record<number, ResourceHand>>> {
+	const out: Partial<Record<Hex, Record<number, ResourceHand>>> = {}
+	if (total === 7) return out
+	for (const hex of HEXES) {
+		if (hex === state.robber) continue
+		const hd = state.hexes[hex]
+		if (hd.resource === null) continue
+		if (hd.number !== total) continue
+		const perPlayer: Record<number, ResourceHand> = {}
+		for (const v of adjacentVertices[hex]) {
+			const vs = vertexStateOf(state, v)
+			if (!vs.occupied) continue
+			const base =
+				vs.building === 'super_city'
+					? 3
+					: vs.building === 'city'
+						? 2
+						: 1
+			const mult = underdogMultiplierFor(
+				state.players[vs.player]?.bonus,
+				hd.number
+			)
+			const gain = base * mult
+			const hand =
+				perPlayer[vs.player] ??
+				(perPlayer[vs.player] = {
+					brick: 0,
+					wood: 0,
+					sheep: 0,
+					wheat: 0,
+					ore: 0,
+				})
+			hand[hd.resource] += gain
+		}
+		if (Object.keys(perPlayer).length > 0) out[hex] = perPlayer
+	}
+	return out
+}
+
+// True iff both dice show the same face.
+export function isDoubles(d: DiceRoll): boolean {
+	return d.a === d.b
 }

@@ -22,11 +22,15 @@ export function DiscardBar({
 	hand,
 	required,
 	submitting,
+	isShepherd,
 	onSubmit,
 }: {
 	hand: ResourceHand
 	required: number
 	submitting: boolean
+	// Shepherd's "sheep don't count toward your hand limit" — show a hint
+	// so the player understands why their effective hand is smaller.
+	isShepherd?: boolean
 	onSubmit: (selection: ResourceHand) => void
 }) {
 	const [sel, setSel] = useState<ResourceHand>(EMPTY)
@@ -49,6 +53,11 @@ export function DiscardBar({
 					{total} / {required}
 				</Text>
 			</View>
+			{isShepherd && (
+				<Text style={styles.shepherdHint}>
+					Shepherd: sheep don't count toward your hand limit.
+				</Text>
+			)}
 			<View style={styles.row}>
 				{RESOURCES.filter((r) => hand[r] > 0).map((r) => (
 					<ResourceStepper
@@ -157,6 +166,11 @@ const styles = StyleSheet.create({
 		fontSize: font.base,
 		fontWeight: '700',
 		color: colors.text,
+	},
+	shepherdHint: {
+		fontSize: font.xs,
+		color: colors.textSecondary,
+		fontStyle: 'italic',
 	},
 	row: {
 		flexDirection: 'row',

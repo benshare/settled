@@ -26,7 +26,7 @@ function fresh(players = 3): GameState {
 function withRoads(state: GameState, roads: Array<[Edge, number]>): GameState {
 	const edges = { ...state.edges }
 	for (const [edge, player] of roads) {
-		edges[edge] = { occupied: true, player }
+		edges[edge] = { occupied: true, player, placedTurn: 0 }
 	}
 	return { ...state, edges }
 }
@@ -37,7 +37,12 @@ function withSettlement(
 	player: number,
 	building: 'settlement' | 'city' = 'settlement'
 ): GameState {
-	const next: VertexState = { occupied: true, player, building }
+	const next: VertexState = {
+		occupied: true,
+		player,
+		building,
+		placedTurn: 0,
+	}
 	return { ...state, vertices: { ...state.vertices, [vertex]: next } }
 }
 

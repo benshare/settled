@@ -188,7 +188,9 @@ export const STANDARD_NUMBERS = [
 export type HexNumber = (typeof STANDARD_NUMBERS)[number]
 
 // Vertex buildings only. An occupied edge is implicitly a road.
-export const VERTEX_BUILDINGS = ['settlement', 'city'] as const
+// `super_city` is the metropolitan-bonus upgrade above `city` — worth 3 VP
+// and yielding 3 resources per producing adjacent hex.
+export const VERTEX_BUILDINGS = ['settlement', 'city', 'super_city'] as const
 export type VertexBuilding = (typeof VERTEX_BUILDINGS)[number]
 
 // --- Ports (harbors) -------------------------------------------------------

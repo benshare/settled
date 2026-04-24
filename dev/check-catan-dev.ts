@@ -181,9 +181,24 @@ function testTotalVP() {
 	const state: GameState = {
 		...base,
 		vertices: {
-			'1A': { occupied: true, player: 0, building: 'settlement' },
-			'1B': { occupied: true, player: 0, building: 'city' },
-			'1C': { occupied: true, player: 1, building: 'settlement' },
+			'1A': {
+				occupied: true,
+				player: 0,
+				building: 'settlement',
+				placedTurn: 0,
+			},
+			'1B': {
+				occupied: true,
+				player: 0,
+				building: 'city',
+				placedTurn: 0,
+			},
+			'1C': {
+				occupied: true,
+				player: 1,
+				building: 'settlement',
+				placedTurn: 0,
+			},
 		},
 		largestArmy: 0,
 		players: base.players.map((p, i) =>

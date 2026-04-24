@@ -8,14 +8,33 @@ import {
 	bonusOf,
 	bricklayerAltCost,
 	canBuyCarpenterVP,
+	canMoveForgerToken,
 	canReroll,
+	canShepherdSwap,
 	canTapKnight,
+	canBuildMoreSuperCities,
 	carpenterVPOf,
+	curioCollectorTriggers,
+	dicePairForTotal,
 	effectiveBankRatio,
+	fortuneTellerTriggersOn,
 	grantsStartingResourcesOnRound,
 	hasBonus,
+	hexesAdjacentTo,
+	isValidRitualTotal,
+	isValidScoutSwap,
+	metropolitanCityCost,
+	metropolitanWheatSwapDelta,
 	nomadResourceForRoll,
+	pipCountFor,
+	pipsAtVertex,
+	populistBonusVPFor,
+	ritualCardCost,
+	roadRemovalSplitsBuildings,
+	scoutDevCardCost,
+	shepherdEffectiveHandSize,
 	specialistGiveResource,
+	superCityCount,
 	tappedKnightsOf,
 	underdogMultiplierFor,
 	winVPThresholdFor,
@@ -376,6 +395,342 @@ function testFindWinnerThrillSeeker() {
 	equal(findWinner(s), null, 'fresh state no winner')
 }
 
+// === Set 2 ==================================================================
+
+function testPopulist() {
+	equal(pipCountFor(2), 1, 'pip 2')
+	equal(pipCountFor(12), 1, 'pip 12')
+	equal(pipCountFor(6), 5, 'pip 6')
+	equal(pipCountFor(8), 5, 'pip 8')
+	const s = setBonus(baseState(), 0, 'populist')
+	// Drop a settlement on a guaranteed-low-pip vertex by inspection of the
+	// generated board. The cleanest way is to scan all 54 vertices and find
+	// one with sum < 5 of producing-hex pips, then assert populistBonusVPFor
+	// goes 0 → 1 when we attach a settlement there. If no such vertex exists
+	// (rare on a fresh standard board), fall back to a vertex with ≥ 5 pips
+	// and assert the inverse (still 0).
+	let target: string | null = null
+	let highTarget: string | null = null
+	for (const [vid] of Object.entries(s.vertices)) void vid
+	for (const v of Object.keys(s.hexes) as never[]) void v
+	// Walk every vertex via the static board layout — we can't import board
+	// here easily without bumping into adjacency types, so probe via a known
+	// vertex set: '6A'..'6G' is the bottom row (1- or 2-hex coastal), likely
+	// to have low pip totals.
+	const candidates = ['6A', '6B', '6C', '6D', '6E', '6F', '6G']
+	for (const v of candidates) {
+		const pips = pipsAtVertex(s, v as never)
+		if (pips < 5 && target === null) target = v
+		if (pips >= 5 && highTarget === null) highTarget = v
+	}
+	if (target) {
+		const withSettlement: GameState = {
+			...s,
+			vertices: {
+				...s.vertices,
+				[target as never]: {
+					occupied: true,
+					player: 0,
+					building: 'settlement',
+					placedTurn: 0,
+				},
+			},
+		}
+		equal(
+			populistBonusVPFor(withSettlement, 0),
+			1,
+			'populist gives +1 on low-pip settlement'
+		)
+		// Upgrading to city forfeits the bonus.
+		const withCity: GameState = {
+			...withSettlement,
+			vertices: {
+				...withSettlement.vertices,
+				[target as never]: {
+					occupied: true,
+					player: 0,
+					building: 'city',
+					placedTurn: 0,
+				},
+			},
+		}
+		equal(
+			populistBonusVPFor(withCity, 0),
+			0,
+			'populist forfeited on upgrade to city'
+		)
+	}
+	if (highTarget) {
+		const withHigh: GameState = {
+			...s,
+			vertices: {
+				...s.vertices,
+				[highTarget as never]: {
+					occupied: true,
+					player: 0,
+					building: 'settlement',
+					placedTurn: 0,
+				},
+			},
+		}
+		equal(
+			populistBonusVPFor(withHigh, 0),
+			0,
+			'populist 0 on high-pip settlement'
+		)
+	}
+}
+
+function testShepherdHandSize() {
+	const p: PlayerState = {
+		resources: { brick: 1, wood: 1, sheep: 5, wheat: 0, ore: 0 },
+		bonus: 'shepherd',
+		devCards: [],
+		devCardsPlayed: {},
+		playedDevThisTurn: false,
+	}
+	equal(shepherdEffectiveHandSize(p), 2, 'shepherd ignores sheep')
+	const noBonus: PlayerState = { ...p, bonus: undefined }
+	equal(shepherdEffectiveHandSize(noBonus), 7, 'non-shepherd counts sheep')
+	assert(canShepherdSwap(p), 'shepherd with 5 sheep can swap')
+	const used: PlayerState = { ...p, shepherdUsedThisTurn: true }
+	assert(!canShepherdSwap(used), 'shepherd already used cannot swap')
+	const lowSheep: PlayerState = {
+		...p,
+		resources: { ...p.resources, sheep: 3 },
+	}
+	assert(!canShepherdSwap(lowSheep), 'shepherd with 3 sheep cannot swap')
+	// Discard logic via requiredDiscards.
+	const big: PlayerState = {
+		...p,
+		resources: { brick: 5, wood: 0, sheep: 5, wheat: 0, ore: 0 },
+	}
+	const r = requiredDiscards([big])
+	// brick=5 sheep=5: total=10, effective (sans sheep) = 5 → not > 7 → no discard.
+	equal(r[0], undefined, 'shepherd 5 brick + 5 sheep: no discard')
+	const noSh: PlayerState = { ...big, bonus: undefined }
+	const r2 = requiredDiscards([noSh])
+	equal(r2[0], 5, 'non-shepherd 10 → discard 5')
+}
+
+function testRitualist() {
+	assert(isValidRitualTotal(2), '2 valid')
+	assert(isValidRitualTotal(8), '8 valid')
+	assert(!isValidRitualTotal(7), '7 not valid')
+	assert(!isValidRitualTotal(1), '1 not valid')
+	assert(!isValidRitualTotal(13), '13 not valid')
+	const dice = dicePairForTotal(8)
+	equal(dice.a + dice.b, 8, 'dice sum to 8')
+	const dice2 = dicePairForTotal(4)
+	equal(dice2.a + dice2.b, 4, 'dice sum to 4')
+	// City count gate.
+	const s = baseState()
+	equal(ritualCardCost(s, 0), 2, 'no cities → 2 cards')
+	const withCity: GameState = {
+		...s,
+		vertices: {
+			...s.vertices,
+			'1A': {
+				occupied: true,
+				player: 0,
+				building: 'city',
+				placedTurn: 0,
+			},
+		},
+	}
+	equal(ritualCardCost(withCity, 0), 3, 'one city → 3 cards')
+	const withSuper: GameState = {
+		...s,
+		vertices: {
+			...s.vertices,
+			'1A': {
+				occupied: true,
+				player: 0,
+				building: 'super_city',
+				placedTurn: 0,
+			},
+		},
+	}
+	equal(ritualCardCost(withSuper, 0), 3, 'one super_city → 3 cards')
+}
+
+function testFortuneTeller() {
+	assert(
+		fortuneTellerTriggersOn('fortune_teller', { a: 3, b: 3 }),
+		'doubles trigger'
+	)
+	assert(
+		fortuneTellerTriggersOn('fortune_teller', { a: 6, b: 1 }),
+		'7 triggers'
+	)
+	assert(
+		!fortuneTellerTriggersOn('fortune_teller', { a: 5, b: 3 }),
+		'8 non-doubles no trigger'
+	)
+	assert(
+		!fortuneTellerTriggersOn(undefined, { a: 3, b: 3 }),
+		'non-FT no trigger'
+	)
+}
+
+function testCurioCollector() {
+	assert(
+		curioCollectorTriggers('curio_collector', 2, 1),
+		'2 with gain triggers'
+	)
+	assert(
+		curioCollectorTriggers('curio_collector', 12, 3),
+		'12 with gain triggers'
+	)
+	assert(
+		!curioCollectorTriggers('curio_collector', 2, 0),
+		'no gain → no trigger'
+	)
+	assert(
+		!curioCollectorTriggers('curio_collector', 6, 1),
+		'wrong number → no trigger'
+	)
+	assert(!curioCollectorTriggers(undefined, 2, 1), 'non-curio → no trigger')
+}
+
+function testMetropolitan() {
+	const s = setBonus(baseState(), 0, 'metropolitan')
+	assert(canBuildMoreSuperCities(s, 0), 'fresh metropolitan can build super')
+	const withSuper: GameState = {
+		...s,
+		vertices: {
+			...s.vertices,
+			'1A': {
+				occupied: true,
+				player: 0,
+				building: 'super_city',
+				placedTurn: 0,
+			},
+		},
+	}
+	assert(
+		!canBuildMoreSuperCities(withSuper, 0),
+		'cap reached after first super'
+	)
+	equal(superCityCount(withSuper, 0), 1, 'super_city count')
+	// Wheat → ore swap.
+	equal(metropolitanWheatSwapDelta('metropolitan', 0), 0, 'no swap')
+	equal(metropolitanWheatSwapDelta('metropolitan', 1), 1, 'swap 1')
+	equal(metropolitanWheatSwapDelta('metropolitan', 2), 2, 'swap 2')
+	equal(metropolitanWheatSwapDelta('metropolitan', 3), 2, 'clamp at 2')
+	equal(
+		metropolitanWheatSwapDelta(undefined, 1),
+		0,
+		'non-metropolitan ignored'
+	)
+	const c0 = metropolitanCityCost('metropolitan', 0)
+	equal(c0.wheat, 2, 'no swap: 2 wheat')
+	equal(c0.ore, 3, 'no swap: 3 ore')
+	const c2 = metropolitanCityCost('metropolitan', 2)
+	equal(c2.wheat, 0, 'swap 2: 0 wheat')
+	equal(c2.ore, 5, 'swap 2: 5 ore')
+}
+
+function testForger() {
+	const adj = hexesAdjacentTo('3C' as never)
+	assert(adj.length > 0, 'forger adj has results')
+	assert(!adj.includes('3C' as never), 'forger adj excludes self')
+	const p: PlayerState = {
+		resources: emptyHand(),
+		bonus: 'forger',
+		devCards: [],
+		devCardsPlayed: {},
+		playedDevThisTurn: false,
+	}
+	assert(!canMoveForgerToken(p, '3C' as never), 'no token → cannot move')
+	const active = { ...p, forgerToken: '3C' as never }
+	assert(
+		canMoveForgerToken(active, adj[0]),
+		'forger with token → can move to adjacent'
+	)
+	assert(
+		!canMoveForgerToken(active, '3C' as never),
+		'cannot move to same hex'
+	)
+	const used = { ...active, forgerMovedThisTurn: true }
+	assert(!canMoveForgerToken(used, adj[0]), 'already moved cannot move')
+}
+
+function testScout() {
+	assert(isValidScoutSwap({ from: 'sheep', to: 'wheat' }), 'sheep→wheat ok')
+	assert(isValidScoutSwap({ from: 'wheat', to: 'ore' }), 'wheat→ore ok')
+	assert(
+		!isValidScoutSwap({ from: 'sheep', to: 'sheep' }),
+		'self swap invalid'
+	)
+	assert(
+		!isValidScoutSwap({ from: 'brick' as never, to: 'wheat' }),
+		'non-cost from invalid'
+	)
+	const c = scoutDevCardCost({ from: 'sheep', to: 'ore' })
+	equal(c.sheep, 0, 'sheep removed')
+	equal(c.wheat, 1, 'wheat unchanged')
+	equal(c.ore, 2, 'ore doubled')
+	const std = scoutDevCardCost()
+	equal(std.sheep, 1, 'standard 1 sheep')
+	equal(std.wheat, 1, 'standard 1 wheat')
+	equal(std.ore, 1, 'standard 1 ore')
+}
+
+function testAccountantSplit() {
+	// Build a tiny network: settlements at A, B, C connected by roads
+	// A-B (edge1) and B-C (edge2). Removing edge1 disconnects A from {B,C}.
+	const s = baseState()
+	// Use vertices 1A and 1B (adjacent through edge '1A - 1B').
+	const withPieces: GameState = {
+		...s,
+		vertices: {
+			...s.vertices,
+			'1A': {
+				occupied: true,
+				player: 0,
+				building: 'settlement',
+				placedTurn: 0,
+			},
+			'1B': {
+				occupied: true,
+				player: 0,
+				building: 'settlement',
+				placedTurn: 0,
+			},
+		},
+		edges: {
+			...s.edges,
+			'1A - 1B': { occupied: true, player: 0, placedTurn: 0 },
+		},
+	}
+	assert(
+		roadRemovalSplitsBuildings(withPieces, 0, '1A - 1B'),
+		'removing the only connecting road splits buildings'
+	)
+	// Single building → never splits.
+	const single: GameState = {
+		...s,
+		vertices: {
+			...s.vertices,
+			'1A': {
+				occupied: true,
+				player: 0,
+				building: 'settlement',
+				placedTurn: 0,
+			},
+		},
+		edges: {
+			...s.edges,
+			'1A - 1B': { occupied: true, player: 0, placedTurn: 0 },
+		},
+	}
+	assert(
+		!roadRemovalSplitsBuildings(single, 0, '1A - 1B'),
+		'single building never splits'
+	)
+}
+
 function main() {
 	const tests: Array<[string, () => void]> = [
 		['bonusOf sparse', testBonusOf],
@@ -391,6 +746,15 @@ function main() {
 		['nomad d5 mapping', testNomadResourceMapping],
 		['aristocrat placement gate', testAristocratGrantGate],
 		['findWinner + thrill_seeker', testFindWinnerThrillSeeker],
+		['set2: populist', testPopulist],
+		['set2: shepherd', testShepherdHandSize],
+		['set2: ritualist', testRitualist],
+		['set2: fortune_teller', testFortuneTeller],
+		['set2: curio_collector', testCurioCollector],
+		['set2: metropolitan', testMetropolitan],
+		['set2: forger', testForger],
+		['set2: scout', testScout],
+		['set2: accountant split check', testAccountantSplit],
 	]
 	for (const [name, fn] of tests) {
 		fn()

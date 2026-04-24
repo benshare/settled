@@ -1,6 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
-import type { Resource } from '../catan/board'
+import type { Hex, Resource } from '../catan/board'
 import type { BonusId } from '../catan/bonuses'
 import type { DevCardId } from '../catan/devCards'
 import type { DiceRoll, GameConfig, ResourceHand } from '../catan/types'
@@ -177,7 +177,8 @@ type GamesStore = {
 	buildCity: (
 		gameId: string,
 		vertex: string,
-		useBricklayer?: boolean
+		useBricklayer?: boolean,
+		swapDelta?: number
 	) => Promise<ActionResult>
 
 	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
@@ -200,13 +201,69 @@ type GamesStore = {
 
 	buyDevCard: (
 		gameId: string,
-		useBricklayer?: boolean
+		useBricklayer?: boolean,
+		scoutSwap?: { from: Resource; to: Resource }
 	) => Promise<ActionResult>
 	playDevCard: (
 		gameId: string,
 		id: DevCardId,
 		payload?: { r1?: Resource; r2?: Resource; resource?: Resource }
 	) => Promise<ActionResult>
+
+	// --- Set-2 bonus actions -------------------------------------------------
+
+	// Metropolitan: build a city or super_city. `swapDelta` is the number of
+	// wheat (0..2) to replace with extra ore in the cost; ignored for non-
+	// metropolitan players. `useBricklayer` is mutually exclusive with the
+	// swap (bricklayer doesn't apply to a metropolitan-discounted cost).
+	buildSuperCity: (
+		gameId: string,
+		vertex: string,
+		swapDelta?: number
+	) => Promise<ActionResult>
+
+	// Accountant: trade a piece back into resources.
+	liquidate: (
+		gameId: string,
+		target:
+			| { kind: 'road'; edge: string }
+			| { kind: 'settlement'; vertex: string }
+			| { kind: 'city'; vertex: string }
+			| { kind: 'super_city'; vertex: string }
+			| { kind: 'dev_card'; index: number }
+	) => Promise<ActionResult>
+
+	// Explorer: place one of the 3 free post-placement roads.
+	placeExplorerRoad: (gameId: string, edge: string) => Promise<ActionResult>
+
+	// Ritualist: choose a dice total (2..6, 8..12) by discarding cards.
+	ritualRoll: (
+		gameId: string,
+		discard: ResourceHand,
+		total: number
+	) => Promise<ActionResult>
+
+	// Shepherd: trade 2 sheep for 2 chosen resources at start of turn.
+	shepherdSwap: (
+		gameId: string,
+		take: [Resource, Resource]
+	) => Promise<ActionResult>
+
+	// Curio collector: claim 3 chosen resources after a 2 or 12.
+	claimCurio: (
+		gameId: string,
+		take: [Resource, Resource, Resource]
+	) => Promise<ActionResult>
+
+	// Forger: move the token to a vertex-adjacent hex, before rolling.
+	moveForgerToken: (gameId: string, hex: Hex) => Promise<ActionResult>
+
+	// Forger: pick which other player to copy from after the token's hex
+	// produces.
+	pickForgerTarget: (gameId: string, target: number) => Promise<ActionResult>
+
+	// Scout: confirm which of the 3 peeked dev cards to keep.
+	confirmScoutCard: (gameId: string, index: number) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -523,7 +580,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return { error: null }
 	},
 
-	async buildCity(gameId, vertex, useBricklayer) {
+	async buildCity(gameId, vertex, useBricklayer, swapDelta) {
 		const { data, error } = await supabase.functions.invoke(
 			'game-service',
 			{
@@ -532,6 +589,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 					game_id: gameId,
 					vertex,
 					use_bricklayer: !!useBricklayer,
+					swap_wheat_to_ore: swapDelta ?? 0,
 				},
 			}
 		)
@@ -635,7 +693,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return { error: null, ratio: data.ratio }
 	},
 
-	async buyDevCard(gameId, useBricklayer) {
+	async buyDevCard(gameId, useBricklayer, scoutSwap) {
 		const { data, error } = await supabase.functions.invoke(
 			'game-service',
 			{
@@ -643,6 +701,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 					action: 'buy_dev_card',
 					game_id: gameId,
 					use_bricklayer: !!useBricklayer,
+					scout_swap: scoutSwap ?? null,
 				},
 			}
 		)
@@ -663,6 +722,144 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't play dev card" }
+		return { error: null }
+	},
+
+	async buildSuperCity(gameId, vertex, swapDelta) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'build_super_city',
+					game_id: gameId,
+					vertex,
+					swap_wheat_to_ore: swapDelta ?? 0,
+				},
+			}
+		)
+		if (error || !data?.ok)
+			return { error: "Couldn't upgrade to super city" }
+		return { error: null }
+	},
+
+	async liquidate(gameId, target) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'liquidate',
+					game_id: gameId,
+					target,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't liquidate" }
+		return { error: null }
+	},
+
+	async placeExplorerRoad(gameId, edge) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'place_explorer_road',
+					game_id: gameId,
+					edge,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't place explorer road" }
+		return { error: null }
+	},
+
+	async ritualRoll(gameId, discard, total) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'ritual_roll',
+					game_id: gameId,
+					discard,
+					total,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't ritual roll" }
+		return { error: null }
+	},
+
+	async shepherdSwap(gameId, take) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'shepherd_swap',
+					game_id: gameId,
+					take,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't swap sheep" }
+		return { error: null }
+	},
+
+	async claimCurio(gameId, take) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'claim_curio',
+					game_id: gameId,
+					take,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't claim curio" }
+		return { error: null }
+	},
+
+	async moveForgerToken(gameId, hex) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'move_forger_token',
+					game_id: gameId,
+					hex,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't move forger token" }
+		return { error: null }
+	},
+
+	async pickForgerTarget(gameId, target) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'pick_forger_target',
+					game_id: gameId,
+					target,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't pick forger target" }
+		return { error: null }
+	},
+
+	async confirmScoutCard(gameId, index) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'confirm_scout_card',
+					game_id: gameId,
+					index,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't confirm scout card" }
 		return { error: null }
 	},
 }))

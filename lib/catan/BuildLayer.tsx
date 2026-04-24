@@ -5,21 +5,31 @@ import {
 	validBuildCityVertices,
 	validBuildRoadEdges,
 	validBuildSettlementVertices,
+	validBuildSuperCityVertices,
 	type BuildKind,
 } from './build'
 import { playerColors } from './palette'
 import { PulsingDot } from './PulsingDot'
 import type { GameState } from './types'
 
+// `super_city` is the metropolitan upgrade (cities → super_city). It uses
+// the build-bar pulse layer the same way as the standard kinds, but is gated
+// on the metropolitan bonus. `explorer_road` is the post_placement free-road
+// pulse for the explorer bonus — same edge validity as a paid road, just
+// gated on a different phase.
+export type BoardTool = BuildKind | 'super_city' | 'explorer_road'
+
 export type BuildSelection =
 	| { kind: 'road'; edge: Edge }
 	| { kind: 'settlement'; vertex: Vertex }
 	| { kind: 'city'; vertex: Vertex }
+	| { kind: 'super_city'; vertex: Vertex }
+	| { kind: 'explorer_road'; edge: Edge }
 
 // Overlay inside BoardSvg's transformed group. When a build tool is active,
 // pulses all valid spots for the current player and surfaces invisible hit
 // targets that bubble up a BuildSelection. Renders nothing when tool is null
-// or when the game isn't in main phase.
+// or when the game isn't in a phase that allows the requested tool.
 export function BuildLayer({
 	state,
 	meIdx,
@@ -30,17 +40,24 @@ export function BuildLayer({
 }: {
 	state: GameState
 	meIdx: number
-	tool: BuildKind | null
+	tool: BoardTool | null
 	layoutS: number
 	vertexPositions: Record<Vertex, { x: number; y: number }>
 	onSelect: (selection: BuildSelection) => void
 }) {
 	if (!tool) return null
-	if (state.phase.kind !== 'main') return null
+	const inMain = state.phase.kind === 'main'
+	const inPostPlacement = state.phase.kind === 'post_placement'
+	if (tool === 'explorer_road') {
+		if (!inPostPlacement) return null
+	} else {
+		if (!inMain) return null
+	}
 	const color = playerColors[meIdx] ?? playerColors[0]
 
-	if (tool === 'road') {
+	if (tool === 'road' || tool === 'explorer_road') {
 		const valids = validBuildRoadEdges(state, meIdx)
+		const pickKind = tool
 		return (
 			<G>
 				{valids.map((e) => {
@@ -63,7 +80,7 @@ export function BuildLayer({
 								r={layoutS * 0.42}
 								fill="transparent"
 								onPress={() =>
-									onSelect({ kind: 'road', edge: e })
+									onSelect({ kind: pickKind, edge: e })
 								}
 							/>
 						</Fragment>
@@ -76,7 +93,9 @@ export function BuildLayer({
 	const valids =
 		tool === 'settlement'
 			? validBuildSettlementVertices(state, meIdx)
-			: validBuildCityVertices(state, meIdx)
+			: tool === 'city'
+				? validBuildCityVertices(state, meIdx)
+				: validBuildSuperCityVertices(state, meIdx)
 
 	return (
 		<G>
