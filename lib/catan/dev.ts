@@ -5,6 +5,13 @@
 
 import { canAfford } from './build'
 import { validBuildRoadEdges } from './build'
+import {
+	curseOf,
+	effectiveKnightsPlayed,
+	roadCountFor,
+	winRoadsRequiredFor,
+	winVPThresholdFor,
+} from './curses'
 import { DEV_CARD_POOL, DEV_DECK_COMPOSITION, type DevCardId } from './devCards'
 import type { GameState, PlayerState, ResourceHand } from './types'
 
@@ -66,11 +73,14 @@ export function knightsPlayed(p: PlayerState): number {
 // Strict-majority Largest Army holder: owner with the most played knights
 // (≥ 3). Returns the existing holder if no one newly qualifies or the lead
 // is tied. Pass the post-play state for knight plays.
+//
+// The `asceticism` curse reduces the cursed player's effective knight count
+// by 1, so they need one extra knight in hand compared to the baseline.
 export function recomputeLargestArmy(state: GameState): number | null {
 	let bestIdx: number | null = null
-	let bestCount = 2 // must be strictly > 2 to qualify (≥ 3 knights)
+	let bestCount = 2 // must be strictly > 2 to qualify (≥ 3 effective knights)
 	state.players.forEach((p, i) => {
-		const k = knightsPlayed(p)
+		const k = effectiveKnightsPlayed(p.curse, knightsPlayed(p))
 		if (k > bestCount) {
 			bestCount = k
 			bestIdx = i
@@ -111,4 +121,22 @@ export function hasLegalRoadPlacement(
 	meIdx: number
 ): boolean {
 	return validBuildRoadEdges(state, meIdx).length > 0
+}
+
+// Baseline victory point count. Curse-aware variants (ambition, nomadism)
+// live in `winVPThresholdFor` / `winRoadsRequiredFor`.
+export const VICTORY_VP = 10
+
+// First player (by index) who currently meets their victory conditions, or
+// null. "Meets" = totalVP ≥ curse-specific threshold (10 default, 11 under
+// ambition) AND, if cursed with nomadism, ≥ 11 roads on the board.
+export function findWinner(state: GameState): number | null {
+	for (let i = 0; i < state.players.length; i++) {
+		const curse = curseOf(state, i)
+		if (totalVP(state, i) < winVPThresholdFor(curse)) continue
+		const roadsNeeded = winRoadsRequiredFor(curse)
+		if (roadsNeeded > 0 && roadCountFor(state, i) < roadsNeeded) continue
+		return i
+	}
+	return null
 }

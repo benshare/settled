@@ -19,6 +19,7 @@ import {
 	type Edge,
 	type Vertex,
 } from './board'
+import { effectiveLongestRoadLength } from './curses'
 import { edgeStateOf, vertexStateOf, type GameState } from './types'
 
 export const LONGEST_ROAD_THRESHOLD = 5
@@ -78,8 +79,15 @@ function walk(
 // Holder after a state change. Strict-majority rule with the current holder
 // keeping the bonus on ties. Dropping below LONGEST_ROAD_THRESHOLD releases
 // the bonus (returns null if no one else qualifies).
+//
+// The `asceticism` curse subtracts 2 from the cursed player's effective
+// length for the purposes of this comparison, so they need a 7-edge trail
+// to first claim (baseline threshold is 5) and an extra 2-edge margin to
+// outpace a rival.
 export function recomputeLongestRoad(state: GameState): number | null {
-	const lengths = state.players.map((_, i) => longestRoadFor(state, i))
+	const lengths = state.players.map((_, i) =>
+		effectiveLongestRoadLength(state, i, longestRoadFor(state, i))
+	)
 
 	let bestIdx: number | null = null
 	let bestLen = LONGEST_ROAD_THRESHOLD - 1 // must be > this to qualify (≥ 5)

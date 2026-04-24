@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Tooltip } from '../modules/Tooltip'
 import { colors, font, radius, spacing } from '../theme'
 import type { BuildKind } from './build'
+import type { CurseHint } from './curses'
 import { playerColors } from './palette'
 
 type BuildOption = {
@@ -18,10 +20,12 @@ const BUILD_OPTIONS: readonly BuildOption[] = [
 ]
 
 export type BuildEnablement = Record<BuildKind | 'dev_card', boolean>
+export type BuildCurseHints = Partial<Record<BuildKind | 'dev_card', CurseHint>>
 
 export function BuildTradeBar({
 	active,
 	enabled,
+	curseHints,
 	meIdx,
 	tradeEnabled,
 	tradeActive,
@@ -32,6 +36,10 @@ export function BuildTradeBar({
 }: {
 	active: BuildKind | null
 	enabled: BuildEnablement
+	// Per-kind curse hint: when present, the button shows a curse-icon badge
+	// and a tooltip with the reason, even if the button is also disabled for
+	// unrelated reasons (resources / turn / phase).
+	curseHints?: BuildCurseHints
 	meIdx: number
 	tradeEnabled: boolean
 	tradeActive: boolean
@@ -60,6 +68,7 @@ export function BuildTradeBar({
 							active={
 								opt.key !== 'dev_card' && active === opt.key
 							}
+							curseHint={curseHints?.[opt.key]}
 							meIdx={meIdx}
 							onPress={() => {
 								if (opt.key === 'dev_card') {
@@ -108,18 +117,23 @@ function BuildIconButton({
 	option,
 	enabled,
 	active,
+	curseHint,
 	meIdx,
 	onPress,
 }: {
 	option: BuildOption
 	enabled: boolean
 	active: boolean
+	curseHint: CurseHint | undefined
 	meIdx: number
 	onPress: () => void
 }) {
 	const color = playerColors[meIdx] ?? playerColors[0]
-	const interactive = enabled || active
-	return (
+	// A curse hint means the action is currently blocked by the player's
+	// curse, so the button must be non-interactive regardless of other
+	// enablement signals.
+	const interactive = (enabled || active) && !curseHint
+	const button = (
 		<Pressable
 			disabled={!interactive}
 			onPress={onPress}
@@ -143,8 +157,21 @@ function BuildIconButton({
 					<Ionicons name="close" size={12} color={colors.white} />
 				</View>
 			)}
+			{curseHint && !active && (
+				<View style={styles.curseBadge}>
+					<Ionicons
+						name={curseHint.icon}
+						size={10}
+						color={colors.white}
+					/>
+				</View>
+			)}
 		</Pressable>
 	)
+	if (curseHint) {
+		return <Tooltip label={curseHint.reason}>{button}</Tooltip>
+	}
+	return button
 }
 
 const styles = StyleSheet.create({
@@ -215,6 +242,19 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.error,
 		alignItems: 'center',
 		justifyContent: 'center',
+	},
+	curseBadge: {
+		position: 'absolute',
+		top: -6,
+		right: -6,
+		width: 16,
+		height: 16,
+		borderRadius: 8,
+		backgroundColor: colors.error,
+		alignItems: 'center',
+		justifyContent: 'center',
+		borderWidth: 1,
+		borderColor: colors.card,
 	},
 	tradeBody: {
 		flex: 1,

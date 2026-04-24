@@ -16,14 +16,16 @@ export function handSize(hand: ResourceHand): number {
 	return n
 }
 
-// Standard Catan 7-rule: any hand > 7 must discard floor(hand/2).
+// Standard Catan 7-rule: any hand > 7 must discard floor(hand/2). Players
+// under the `avarice` curse discard their entire hand instead.
 export function requiredDiscards(
 	players: PlayerState[]
 ): Partial<Record<number, number>> {
 	const out: Partial<Record<number, number>> = {}
 	players.forEach((p, i) => {
 		const total = handSize(p.resources)
-		if (total > 7) out[i] = Math.floor(total / 2)
+		if (total > 7)
+			out[i] = p.curse === 'avarice' ? total : Math.floor(total / 2)
 	})
 	return out
 }

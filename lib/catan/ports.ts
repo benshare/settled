@@ -36,10 +36,15 @@ export function playerPortKinds(
 // '4:1'; '3:1' appears if they own a generic port; each '2:1-*' appears if
 // they own the matching specific port. Order: 2:1s (by resource order), then
 // '3:1', then '4:1' — most-advantageous first.
+//
+// The `provinciality` curse collapses every option down to '5:1' (no port
+// access, penalised default bank rate). Pass the player's curse so this
+// function owns the final list the UI and server agree on.
 export function availableBankOptions(
 	state: GameState,
 	playerIdx: number
 ): BankKind[] {
+	if (state.players[playerIdx]?.curse === 'provinciality') return ['5:1']
 	const kinds = playerPortKinds(state, playerIdx)
 	const out: BankKind[] = []
 	for (const r of RESOURCES) {
@@ -50,7 +55,8 @@ export function availableBankOptions(
 	return out
 }
 
-export function ratioOf(kind: BankKind): 2 | 3 | 4 {
+export function ratioOf(kind: BankKind): 2 | 3 | 4 | 5 {
+	if (kind === '5:1') return 5
 	if (kind === '4:1') return 4
 	if (kind === '3:1') return 3
 	return 2

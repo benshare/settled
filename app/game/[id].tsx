@@ -12,7 +12,8 @@ import {
 	type BuildKind,
 } from '@/lib/catan/build'
 import type { BuildSelection } from '@/lib/catan/BuildLayer'
-import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
+import { BuildTradeBar, type BuildCurseHints } from '@/lib/catan/BuildTradeBar'
+import { curseBuildReason } from '@/lib/catan/curses'
 import { canBuyDevCard } from '@/lib/catan/dev'
 import { DevCardHand, type DevPlayPayload } from '@/lib/catan/DevCardHand'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
@@ -443,6 +444,20 @@ function GameBody() {
 			!!gameState &&
 			canBuyDevCard(gameState, meIdx, game?.current_turn ?? -1),
 	}
+	const buildCurseHints: BuildCurseHints = (() => {
+		if (!gameState || meIdx < 0) return {}
+		const out: BuildCurseHints = {}
+		for (const kind of [
+			'road',
+			'settlement',
+			'city',
+			'dev_card',
+		] as const) {
+			const hint = curseBuildReason(gameState, meIdx, kind)
+			if (hint) out[kind] = hint
+		}
+		return out
+	})()
 
 	const hasLiveTrade = !!liveOffer
 	const liveTradeIsMine = !!liveOffer && liveOffer.from === meIdx
@@ -506,6 +521,7 @@ function GameBody() {
 						<BuildTradeBar
 							active={buildTool}
 							enabled={buildEnabled}
+							curseHints={buildCurseHints}
 							meIdx={meIdx}
 							tradeEnabled={tradeButtonEnabled}
 							tradeActive={tradeButtonActive}

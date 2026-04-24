@@ -14,6 +14,17 @@ import {
 	type Vertex,
 } from './board'
 import {
+	curseOf,
+	maxRoadsFor,
+	maxCitiesFor,
+	maxSettlementsFor,
+	roadCountFor,
+	cityCountFor,
+	settlementCountFor,
+	canPlaceUnderPower,
+	settlementKeepsYouthOK,
+} from './curses'
+import {
 	edgeStateOf,
 	vertexStateOf,
 	type GameState,
@@ -26,6 +37,12 @@ export const BUILD_COSTS: Record<BuildKind, ResourceHand> = {
 	road: { brick: 1, wood: 1, sheep: 0, wheat: 0, ore: 0 },
 	settlement: { brick: 1, wood: 1, sheep: 1, wheat: 1, ore: 0 },
 	city: { brick: 0, wood: 0, sheep: 0, wheat: 2, ore: 3 },
+}
+
+export function costSize(cost: ResourceHand): number {
+	let n = 0
+	for (const r of RESOURCES) n += cost[r]
+	return n
 }
 
 export function canAfford(hand: ResourceHand, cost: ResourceHand): boolean {
@@ -73,10 +90,41 @@ export function isValidBuildRoadEdge(
 	edge: Edge
 ): boolean {
 	if (edgeStateOf(state, edge).occupied) return false
+	if (!canBuildMoreRoads(state, playerIdx)) return false
 	const [a, b] = edgeEndpoints(edge)
 	return (
 		roadConnectsVia(state, playerIdx, edge, a) ||
 		roadConnectsVia(state, playerIdx, edge, b)
+	)
+}
+
+// Supply + curse cap check. Returns false when the player already has as
+// many roads on the board as their cap allows. Classic Catan is 15; the
+// `compaction` curse lowers that to 7.
+export function canBuildMoreRoads(
+	state: GameState,
+	playerIdx: number
+): boolean {
+	return (
+		roadCountFor(state, playerIdx) < maxRoadsFor(curseOf(state, playerIdx))
+	)
+}
+
+export function canBuildMoreSettlements(
+	state: GameState,
+	playerIdx: number
+): boolean {
+	const curse = curseOf(state, playerIdx)
+	const cap = maxSettlementsFor(curse, cityCountFor(state, playerIdx))
+	return settlementCountFor(state, playerIdx) < cap
+}
+
+export function canBuildMoreCities(
+	state: GameState,
+	playerIdx: number
+): boolean {
+	return (
+		cityCountFor(state, playerIdx) < maxCitiesFor(curseOf(state, playerIdx))
 	)
 }
 
@@ -114,10 +162,13 @@ export function isValidBuildSettlementVertex(
 	playerIdx: number,
 	vertex: Vertex
 ): boolean {
+	if (!canBuildMoreSettlements(state, playerIdx)) return false
 	if (vertexStateOf(state, vertex).occupied) return false
 	for (const n of neighborVertices[vertex]) {
 		if (vertexStateOf(state, n).occupied) return false
 	}
+	if (!canPlaceUnderPower(state, playerIdx, vertex)) return false
+	if (!settlementKeepsYouthOK(state, playerIdx, vertex)) return false
 	return adjacentEdges[vertex].some((e) => {
 		const es = edgeStateOf(state, e)
 		return es.occupied && es.player === playerIdx
@@ -140,10 +191,18 @@ export function isValidBuildCityVertex(
 	playerIdx: number,
 	vertex: Vertex
 ): boolean {
+	if (!canBuildMoreCities(state, playerIdx)) return false
 	const vs = vertexStateOf(state, vertex)
-	return (
-		vs.occupied && vs.player === playerIdx && vs.building === 'settlement'
-	)
+	if (
+		!vs.occupied ||
+		vs.player !== playerIdx ||
+		vs.building !== 'settlement'
+	) {
+		return false
+	}
+	// Upgrading a settlement to a city adds +1 pip to each adjacent hex, so
+	// the same power check used for fresh settlements applies.
+	return canPlaceUnderPower(state, playerIdx, vertex)
 }
 
 export function validBuildCityVertices(

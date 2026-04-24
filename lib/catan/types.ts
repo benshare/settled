@@ -128,6 +128,11 @@ export type PlayerState = {
 	devCardsPlayed: Partial<Record<DevCardId, number>>
 	// Reset on end_turn for the outgoing active player.
 	playedDevThisTurn: boolean
+	// Sum of resource cards spent this turn on a traditional build (road,
+	// settlement, city, dev-card buy). Used by the `age` curse (cap 6). Reset
+	// to 0 on end_turn for the outgoing active player. Sparse — only written
+	// for players actually affected.
+	cardsSpentThisTurn?: number
 }
 
 // Per-player card hand during the select_bonus phase. `offered` is the two
@@ -156,8 +161,10 @@ export type Port = { edge: Edge; kind: PortKind }
 
 // Ratio + resource scoping chosen by the player for a single bank trade.
 // '4:1' is the always-available default; '3:1' requires a generic port; the
-// resource-scoped '2:1-*' variants require the matching specific port.
+// resource-scoped '2:1-*' variants require the matching specific port; '5:1'
+// is the only option available to players under the `provinciality` curse.
 export type BankKind =
+	| '5:1'
 	| '4:1'
 	| '3:1'
 	| '2:1-brick'

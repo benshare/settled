@@ -12,6 +12,7 @@ import {
 	type Edge,
 	type Vertex,
 } from './board'
+import { canPlaceUnderPower, settlementKeepsYouthOK } from './curses'
 import {
 	edgeStateOf,
 	vertexStateOf,
@@ -56,19 +57,32 @@ export function nextPlacementTurn(
 
 // Standard distance rule: vertex is valid iff itself is unoccupied AND no
 // neighbor vertex is occupied. Same rule both rounds during initial placement.
+//
+// When `playerIdx` is provided, the curse-aware checks (`youth`, `power`)
+// are also applied. Callers that know the acting player (UI + handlers)
+// should always pass it; unit-tests that only care about the distance rule
+// can omit it.
 export function isValidSettlementVertex(
 	state: GameState,
-	vertex: Vertex
+	vertex: Vertex,
+	playerIdx?: number
 ): boolean {
 	if (vertexStateOf(state, vertex).occupied) return false
 	for (const n of neighborVertices[vertex]) {
 		if (vertexStateOf(state, n).occupied) return false
 	}
+	if (playerIdx !== undefined) {
+		if (!canPlaceUnderPower(state, playerIdx, vertex)) return false
+		if (!settlementKeepsYouthOK(state, playerIdx, vertex)) return false
+	}
 	return true
 }
 
-export function validSettlementVertices(state: GameState): Vertex[] {
-	return VERTICES.filter((v) => isValidSettlementVertex(state, v))
+export function validSettlementVertices(
+	state: GameState,
+	playerIdx?: number
+): Vertex[] {
+	return VERTICES.filter((v) => isValidSettlementVertex(state, v, playerIdx))
 }
 
 // --- Road validity ----------------------------------------------------------

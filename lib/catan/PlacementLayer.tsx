@@ -36,7 +36,7 @@ export function PlacementLayer({
 	const color = playerColors[meIdx] ?? playerColors[0]
 
 	if (step === 'settlement') {
-		const valids = validSettlementVertices(state)
+		const valids = validSettlementVertices(state, meIdx)
 		return (
 			<G>
 				{valids.map((v) => {

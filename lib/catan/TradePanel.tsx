@@ -286,12 +286,16 @@ function BankOptionCard({
 		? `2:1 ${RESOURCE_LABELS[locked]} port`
 		: kind === '3:1'
 			? '3:1 generic port'
-			: '4:1 bank'
+			: kind === '5:1'
+				? '5:1 bank (Curse of Provinciality)'
+				: '4:1 bank'
 	const subtitle = locked
 		? `Trade 2 ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
 		: kind === '3:1'
 			? 'Trade 3 of any one resource for 1 of anything else.'
-			: 'Default rate: trade 4 of any one resource for 1 of anything else.'
+			: kind === '5:1'
+				? 'Under your curse, trade 5 of any one resource for 1 of anything else.'
+				: 'Default rate: trade 4 of any one resource for 1 of anything else.'
 	const accent = locked ? resourceColor[locked] : '#CCCCCC'
 	return (
 		<Pressable
@@ -376,7 +380,9 @@ function BankCompose({
 						? `2:1 ${RESOURCE_LABELS[locked]} port`
 						: choice === '3:1'
 							? '3:1 generic port'
-							: '4:1 bank'}
+							: choice === '5:1'
+								? '5:1 bank (Curse of Provinciality)'
+								: '4:1 bank'}
 				</Text>
 				<Pressable
 					onPress={onBack}

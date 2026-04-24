@@ -465,6 +465,10 @@ type PlayerState = {
 	devCards: DevCardEntry[]
 	devCardsPlayed: Partial<Record<DevCardId, number>>
 	playedDevThisTurn: boolean
+	// Cards paid into traditional builds this turn (road/settlement/city/dev
+	// card buy). Used by the `age` curse. Reset on end_turn for the outgoing
+	// active player. Sparse — only written for cursed players.
+	cardsSpentThisTurn?: number
 }
 
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
@@ -482,6 +486,7 @@ type TradeOffer = {
 type PortKind = '3:1' | Resource
 type Port = { edge: Edge; kind: PortKind }
 type BankKind =
+	| '5:1'
 	| '4:1'
 	| '3:1'
 	| '2:1-brick'
@@ -693,12 +698,201 @@ function edgeStateOf(state: GameState, e: Edge): EdgeState {
 	return state.edges[e] ?? { occupied: false }
 }
 
+// --- Curses (must match lib/catan/curses) ----------------------------------
+
+const AGE_CARD_LIMIT = 6
+const POWER_HEX_LIMIT = 3
+const POWER_MAX_HEXES = 2
+
+function curseOf(state: GameState, playerIdx: number): CurseId | undefined {
+	return state.players[playerIdx]?.curse
+}
+
+function maxRoadsFor(curse: CurseId | undefined): number {
+	return curse === 'compaction' ? 7 : 15
+}
+
+function maxCitiesFor(curse: CurseId | undefined): number {
+	return curse === 'decadence' ? 2 : 4
+}
+
+function maxSettlementsFor(
+	curse: CurseId | undefined,
+	currentCities: number
+): number {
+	if (curse === 'elitism') return currentCities >= 1 ? 2 : 3
+	return 5
+}
+
+function winVPThresholdFor(curse: CurseId | undefined): number {
+	return curse === 'ambition' ? 11 : 10
+}
+
+function winRoadsRequiredFor(curse: CurseId | undefined): number {
+	return curse === 'nomadism' ? 11 : 0
+}
+
+function roadCountFor(state: GameState, playerIdx: number): number {
+	let n = 0
+	for (const e of Object.values(state.edges)) {
+		if (e?.occupied && e.player === playerIdx) n++
+	}
+	return n
+}
+
+function settlementCountFor(state: GameState, playerIdx: number): number {
+	let n = 0
+	for (const v of Object.values(state.vertices)) {
+		if (
+			v?.occupied &&
+			v.player === playerIdx &&
+			v.building === 'settlement'
+		) {
+			n++
+		}
+	}
+	return n
+}
+
+function cityCountFor(state: GameState, playerIdx: number): number {
+	let n = 0
+	for (const v of Object.values(state.vertices)) {
+		if (v?.occupied && v.player === playerIdx && v.building === 'city') n++
+	}
+	return n
+}
+
+function effectiveLongestRoadLength(
+	state: GameState,
+	playerIdx: number,
+	rawLength: number
+): number {
+	if (curseOf(state, playerIdx) === 'asceticism')
+		return Math.max(0, rawLength - 2)
+	return rawLength
+}
+
+function effectiveKnightsPlayed(
+	curse: CurseId | undefined,
+	rawCount: number
+): number {
+	if (curse === 'asceticism') return Math.max(0, rawCount - 1)
+	return rawCount
+}
+
+function canSpendUnderAge(p: PlayerState, costSize: number): boolean {
+	if (p.curse !== 'age') return true
+	const spent = p.cardsSpentThisTurn ?? 0
+	return spent + costSize <= AGE_CARD_LIMIT
+}
+
+function costSize(cost: ResourceHand): number {
+	let n = 0
+	for (const r of RESOURCES) n += cost[r]
+	return n
+}
+
+function hexPowerForPlayer(
+	state: GameState,
+	playerIdx: number,
+	hex: Hex
+): number {
+	let power = 0
+	for (const v of adjacentVertices[hex]) {
+		const vs = vertexStateOf(state, v)
+		if (!vs.occupied || vs.player !== playerIdx) continue
+		power += vs.building === 'city' ? 2 : 1
+	}
+	return power
+}
+
+function countHexesAtMaxPower(state: GameState, playerIdx: number): number {
+	let n = 0
+	for (const h of HEXES) {
+		if (hexPowerForPlayer(state, playerIdx, h) === POWER_HEX_LIMIT) n++
+	}
+	return n
+}
+
+function canPlaceUnderPower(
+	state: GameState,
+	playerIdx: number,
+	vertex: Vertex
+): boolean {
+	if (curseOf(state, playerIdx) !== 'power') return true
+	let hexesAtMax = countHexesAtMaxPower(state, playerIdx)
+	for (const h of adjacentHexes[vertex]) {
+		const before = hexPowerForPlayer(state, playerIdx, h)
+		const after = before + 1
+		if (after > POWER_HEX_LIMIT) return false
+		if (after === POWER_HEX_LIMIT && before < POWER_HEX_LIMIT) {
+			hexesAtMax += 1
+			if (hexesAtMax > POWER_MAX_HEXES) return false
+		}
+	}
+	return true
+}
+
+function touchedResources(state: GameState, playerIdx: number): Set<Resource> {
+	const out = new Set<Resource>()
+	for (const [vid, vs] of Object.entries(state.vertices)) {
+		if (!vs?.occupied || vs.player !== playerIdx) continue
+		for (const h of adjacentHexes[vid as Vertex]) {
+			const hd = state.hexes[h]
+			if (hd.resource !== null) out.add(hd.resource)
+		}
+	}
+	return out
+}
+
+function settlementKeepsYouthOK(
+	state: GameState,
+	playerIdx: number,
+	vertex: Vertex
+): boolean {
+	if (curseOf(state, playerIdx) !== 'youth') return true
+	const touched = touchedResources(state, playerIdx)
+	if (touched.size === RESOURCES.length) return false
+	const next = new Set(touched)
+	for (const h of adjacentHexes[vertex]) {
+		const hd = state.hexes[h]
+		if (hd.resource !== null) next.add(hd.resource)
+	}
+	return next.size < RESOURCES.length
+}
+
+function canBuildMoreRoads(state: GameState, playerIdx: number): boolean {
+	return (
+		roadCountFor(state, playerIdx) < maxRoadsFor(curseOf(state, playerIdx))
+	)
+}
+
+function canBuildMoreSettlements(state: GameState, playerIdx: number): boolean {
+	const curse = curseOf(state, playerIdx)
+	const cap = maxSettlementsFor(curse, cityCountFor(state, playerIdx))
+	return settlementCountFor(state, playerIdx) < cap
+}
+
+function canBuildMoreCities(state: GameState, playerIdx: number): boolean {
+	return (
+		cityCountFor(state, playerIdx) < maxCitiesFor(curseOf(state, playerIdx))
+	)
+}
+
 // --- Placement rules (must match lib/catan/placement) ----------------------
 
-function isValidSettlementVertex(state: GameState, v: Vertex): boolean {
+function isValidSettlementVertex(
+	state: GameState,
+	v: Vertex,
+	playerIdx?: number
+): boolean {
 	if (vertexStateOf(state, v).occupied) return false
 	for (const n of neighborVertices[v]) {
 		if (vertexStateOf(state, n).occupied) return false
+	}
+	if (playerIdx !== undefined) {
+		if (!canPlaceUnderPower(state, playerIdx, v)) return false
+		if (!settlementKeepsYouthOK(state, playerIdx, v)) return false
 	}
 	return true
 }
@@ -850,6 +1044,7 @@ function isValidBuildRoadEdge(
 	edge: Edge
 ): boolean {
 	if (edgeStateOf(state, edge).occupied) return false
+	if (!canBuildMoreRoads(state, playerIdx)) return false
 	const [a, b] = edgeEndpoints(edge)
 	return (
 		roadConnectsVia(state, playerIdx, edge, a) ||
@@ -862,10 +1057,13 @@ function isValidBuildSettlementVertex(
 	playerIdx: number,
 	vertex: Vertex
 ): boolean {
+	if (!canBuildMoreSettlements(state, playerIdx)) return false
 	if (vertexStateOf(state, vertex).occupied) return false
 	for (const n of neighborVertices[vertex]) {
 		if (vertexStateOf(state, n).occupied) return false
 	}
+	if (!canPlaceUnderPower(state, playerIdx, vertex)) return false
+	if (!settlementKeepsYouthOK(state, playerIdx, vertex)) return false
 	return adjacentEdges[vertex].some((e) => {
 		const es = edgeStateOf(state, e)
 		return es.occupied && es.player === playerIdx
@@ -877,10 +1075,16 @@ function isValidBuildCityVertex(
 	playerIdx: number,
 	vertex: Vertex
 ): boolean {
+	if (!canBuildMoreCities(state, playerIdx)) return false
 	const vs = vertexStateOf(state, vertex)
-	return (
-		vs.occupied && vs.player === playerIdx && vs.building === 'settlement'
-	)
+	if (
+		!vs.occupied ||
+		vs.player !== playerIdx ||
+		vs.building !== 'settlement'
+	) {
+		return false
+	}
+	return canPlaceUnderPower(state, playerIdx, vertex)
 }
 
 // --- Robber rules (must match lib/catan/robber) ----------------------------
@@ -895,7 +1099,8 @@ function requiredDiscards(players: PlayerState[]): Record<number, number> {
 	const out: Record<number, number> = {}
 	players.forEach((p, i) => {
 		const total = handSize(p.resources)
-		if (total > 7) out[i] = Math.floor(total / 2)
+		if (total > 7)
+			out[i] = p.curse === 'avarice' ? total : Math.floor(total / 2)
 	})
 	return out
 }
@@ -971,7 +1176,7 @@ function recomputeLargestArmy(state: GameState): number | null {
 	let bestIdx: number | null = null
 	let best = 2
 	state.players.forEach((p, i) => {
-		const k = knightsPlayed(p)
+		const k = effectiveKnightsPlayed(p.curse, knightsPlayed(p))
 		if (k > best) {
 			best = k
 			bestIdx = i
@@ -1058,7 +1263,9 @@ function longestRoadWalk(
 }
 
 function recomputeLongestRoad(state: GameState): number | null {
-	const lengths = state.players.map((_, i) => longestRoadFor(state, i))
+	const lengths = state.players.map((_, i) =>
+		effectiveLongestRoadLength(state, i, longestRoadFor(state, i))
+	)
 	let bestIdx: number | null = null
 	let bestLen = LONGEST_ROAD_THRESHOLD - 1
 	lengths.forEach((len, i) => {
@@ -1084,8 +1291,9 @@ function recomputeLongestRoad(state: GameState): number | null {
 }
 
 // --- Victory (must match lib/catan/dev.totalVP) ----------------------------
-
-const VICTORY_THRESHOLD = 10
+//
+// Threshold is 10 by default and 11 under the `ambition` curse — see
+// winVPThresholdFor in the Curses section. findWinner does the comparison.
 
 function totalVP(state: GameState, playerIdx: number): number {
 	const p = state.players[playerIdx]
@@ -1113,11 +1321,17 @@ function vpCardCountsByPlayer(state: GameState): Record<number, number> {
 	return out
 }
 
-// Returns the first player (by index) at or above the victory threshold, or
-// null. All VP (including hidden VP cards) counts.
+// Returns the first player (by index) who meets their victory conditions,
+// or null. "Meets" = totalVP ≥ curse-specific VP threshold (10 default, 11
+// under ambition) AND, if cursed with nomadism, ≥ 11 roads on the board.
+// All VP (including hidden VP cards) counts.
 function findWinner(state: GameState): number | null {
 	for (let i = 0; i < state.players.length; i++) {
-		if (totalVP(state, i) >= VICTORY_THRESHOLD) return i
+		const curse = curseOf(state, i)
+		if (totalVP(state, i) < winVPThresholdFor(curse)) continue
+		const roadsNeeded = winRoadsRequiredFor(curse)
+		if (roadsNeeded > 0 && roadCountFor(state, i) < roadsNeeded) continue
+		return i
 	}
 	return null
 }
@@ -1282,7 +1496,8 @@ function playerPortKinds(state: GameState, playerIdx: number): Set<PortKind> {
 	return out
 }
 
-function ratioOfBank(kind: BankKind): 2 | 3 | 4 {
+function ratioOfBank(kind: BankKind): 2 | 3 | 4 | 5 {
+	if (kind === '5:1') return 5
 	if (kind === '4:1') return 4
 	if (kind === '3:1') return 3
 	return 2
@@ -1290,15 +1505,22 @@ function ratioOfBank(kind: BankKind): 2 | 3 | 4 {
 
 // Given a give/receive hand, infer which bank kind the caller is trying to
 // use — highest-quality ratio they can support. Returns null if the hand
-// can't be parsed into any kind the player actually has access to.
+// can't be parsed into any kind the player actually has access to. Players
+// under the `provinciality` curse can only use 5:1 regardless of ports.
 function inferBankKind(
 	state: GameState,
 	playerIdx: number,
 	give: ResourceHand
 ): BankKind | null {
-	const kinds = playerPortKinds(state, playerIdx)
 	const giveResources = RESOURCES.filter((r) => give[r] > 0)
 	if (giveResources.length === 0) return null
+
+	if (curseOf(state, playerIdx) === 'provinciality') {
+		const allDivBy5 = giveResources.every((r) => give[r] % 5 === 0)
+		return allDivBy5 ? '5:1' : null
+	}
+
+	const kinds = playerPortKinds(state, playerIdx)
 
 	// Single-resource give → could be any; prefer 2:1 port for that resource,
 	// then 3:1, then 4:1.
@@ -1659,7 +1881,7 @@ async function handlePlaceSettlement(
 		return err(400, 'unknown vertex')
 	const vertex = body.vertex as Vertex
 
-	if (!isValidSettlementVertex(state, vertex))
+	if (!isValidSettlementVertex(state, vertex, meIdx))
 		return err(400, 'invalid settlement placement')
 
 	const round = state.phase.round
@@ -1931,10 +2153,14 @@ async function handleEndTurn(
 
 	// Clear the outgoing active player's one-per-turn dev flag so they can
 	// play again when it becomes their turn again. Round bumps monotonically
-	// so dev-cards bought last turn become playable now.
-	const nextPlayers = state.players.map((p, i) =>
-		i === meIdx ? { ...p, playedDevThisTurn: false } : p
-	)
+	// so dev-cards bought last turn become playable now. Also reset the
+	// age-curse per-turn spend counter.
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		const next: PlayerState = { ...p, playedDevThisTurn: false }
+		if (p.curse === 'age') next.cardsSpentThisTurn = 0
+		return next
+	})
 	const nextRound = state.round + 1
 
 	const { error: stateErr } = await admin
@@ -1992,9 +2218,20 @@ function applyCost(
 	meIdx: number,
 	cost: ResourceHand
 ): PlayerState[] {
-	return players.map((p, i) =>
-		i === meIdx ? { ...p, resources: deductHand(p.resources, cost) } : p
-	)
+	const size = costSize(cost)
+	return players.map((p, i) => {
+		if (i !== meIdx) return p
+		const next: PlayerState = {
+			...p,
+			resources: deductHand(p.resources, cost),
+		}
+		// Age-cursed players accumulate their turn spend; everyone else skips
+		// the field entirely (it's sparse).
+		if (p.curse === 'age') {
+			next.cardsSpentThisTurn = (p.cardsSpentThisTurn ?? 0) + size
+		}
+		return next
+	})
 }
 
 async function handleBuildRoad(
@@ -2050,6 +2287,8 @@ async function handleBuildRoad(
 		const cost = BUILD_COSTS.road
 		if (!canAfford(state.players[meIdx].resources, cost))
 			return err(400, 'insufficient resources')
+		if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
+			return err(400, 'age limit reached this turn')
 		nextPlayers = applyCost(state.players, meIdx, cost)
 	}
 
@@ -2111,6 +2350,8 @@ async function handleBuildSettlement(
 	const cost = BUILD_COSTS.settlement
 	if (!canAfford(state.players[meIdx].resources, cost))
 		return err(400, 'insufficient resources')
+	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
+		return err(400, 'age limit reached this turn')
 
 	const nextVertices = {
 		...state.vertices,
@@ -2174,6 +2415,8 @@ async function handleBuildCity(
 	const cost = BUILD_COSTS.city
 	if (!canAfford(state.players[meIdx].resources, cost))
 		return err(400, 'insufficient resources')
+	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
+		return err(400, 'age limit reached this turn')
 
 	const nextVertices = {
 		...state.vertices,
@@ -2721,16 +2964,23 @@ async function handleBuyDevCard(
 	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
 	if (!canAfford(state.players[meIdx].resources, DEV_CARD_COST))
 		return err(400, 'insufficient resources')
+	if (!canSpendUnderAge(state.players[meIdx], costSize(DEV_CARD_COST)))
+		return err(400, 'age limit reached this turn')
 
 	const card = state.devDeck[0]
 	const nextDeck = state.devDeck.slice(1)
+	const devSpend = costSize(DEV_CARD_COST)
 	const nextPlayers = state.players.map((p, i) => {
 		if (i !== meIdx) return p
-		return {
+		const next: PlayerState = {
 			...p,
 			resources: deductHand(p.resources, DEV_CARD_COST),
 			devCards: [...p.devCards, { id: card, purchasedTurn: state.round }],
 		}
+		if (p.curse === 'age') {
+			next.cardsSpentThisTurn = (p.cardsSpentThisTurn ?? 0) + devSpend
+		}
+		return next
 	})
 
 	const update: Record<string, unknown> = {
