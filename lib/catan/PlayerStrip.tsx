@@ -5,7 +5,7 @@ import { colors, font, radius, spacing } from '../theme'
 import { bonusById, curseById } from './bonuses'
 import { knightsPlayed } from './dev'
 import { longestRoadFor } from './longestRoad'
-import { playerColors } from './palette'
+import { playerColors, resourceColor } from './palette'
 import type { GameState } from './types'
 
 export function PlayerStrip({
@@ -159,6 +159,20 @@ export function PlayerStrip({
 										size={12}
 										color={colors.brand}
 									/>
+									{player?.specialistResource && (
+										<View
+											style={[
+												styles.specialistDot,
+												{
+													backgroundColor:
+														resourceColor[
+															player
+																.specialistResource
+														],
+												},
+											]}
+										/>
+									)}
 								</View>
 							)}
 							{showBonusIcons && curse && (
@@ -237,5 +251,12 @@ const styles = StyleSheet.create({
 		fontSize: font.sm,
 		fontWeight: '600',
 		color: colors.textSecondary,
+	},
+	specialistDot: {
+		width: 8,
+		height: 8,
+		borderRadius: radius.full,
+		borderWidth: 1,
+		borderColor: '#2B2B2B',
 	},
 })

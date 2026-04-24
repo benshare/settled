@@ -133,6 +133,24 @@ export type PlayerState = {
 	// to 0 on end_turn for the outgoing active player. Sparse — only written
 	// for players actually affected.
 	cardsSpentThisTurn?: number
+	// --- Bonus-specific fields (sparse; only set when the owning bonus is
+	// present on this player).
+	//
+	// `specialist`: the resource the player declared during post_placement.
+	// Port bank trades with this resource on the give side get a −1 ratio
+	// (floor of 2:1).
+	specialistResource?: Resource
+	// `gambler`: set to true once the player has used their one per-turn
+	// reroll. Reset on end_turn.
+	rerolledThisTurn?: boolean
+	// `carpenter`: set to true when the player has already bought a Wood→VP
+	// this turn. Reset on end_turn. Paired counter `carpenterVP` cumulative.
+	boughtCarpenterVPThisTurn?: boolean
+	carpenterVP?: number
+	// `veteran`: number of played knights this player has already "tapped"
+	// for the +2 resource effect. The knight stays counted in
+	// devCardsPlayed.knight for Largest Army purposes.
+	tappedKnights?: number
 }
 
 // Per-player card hand during the select_bonus phase. `offered` is the two
@@ -188,7 +206,24 @@ export type Phase =
 	// initial_placement and the kept bonus/curse snapshots onto PlayerState.
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
-	| { kind: 'roll' }
+	// Start-of-game bonus resolutions (specialist declaration, etc). Inserted
+	// between the final initial_placement road and the first roll when any
+	// player has a bonus that requires an up-front decision. `pending` lists
+	// the player indices that still owe an action, per bonus id. Phase
+	// advances to `roll` when every list is empty. Picks are parallel — not
+	// turn-serialized. Phase is skipped entirely when no such bonus is in
+	// play.
+	| {
+			kind: 'post_placement'
+			pending: { specialist: number[] }
+	  }
+	// `roll` is the default pre-roll state. For gambler players, after the
+	// initial roll the dice sit in `pending` while the player decides
+	// between `confirm_roll` (apply distribution / 7-chain) and
+	// `reroll_dice` (once per turn). Non-gambler players skip this
+	// intermediate: their `roll` action distributes / enters 7-chain
+	// atomically.
+	| { kind: 'roll'; pending?: { dice: DiceRoll } }
 	| {
 			kind: 'discard'
 			resume: ResumePhase

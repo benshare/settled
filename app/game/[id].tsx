@@ -1,11 +1,15 @@
 import { useAuth } from '@/lib/auth'
-import type { Hex } from '@/lib/catan/board'
+import { type Hex, type Resource } from '@/lib/catan/board'
 import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
 import {
-	BUILD_COSTS,
-	canAfford,
+	SpecialistDeclareOverlay,
+	SpecialistWaitOverlay,
+} from '@/lib/catan/PostPlacementOverlay'
+import {
+	canAffordPurchase,
+	shouldUseBricklayer,
 	validBuildCityVertices,
 	validBuildRoadEdges,
 	validBuildSettlementVertices,
@@ -16,6 +20,7 @@ import { BuildTradeBar, type BuildCurseHints } from '@/lib/catan/BuildTradeBar'
 import { curseBuildReason } from '@/lib/catan/curses'
 import { canBuyDevCard } from '@/lib/catan/dev'
 import { DevCardHand, type DevPlayPayload } from '@/lib/catan/DevCardHand'
+import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { FinalScoreButton, GameOverOverlay } from '@/lib/catan/GameOverOverlay'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
@@ -107,6 +112,8 @@ function GameBody() {
 	const placeSettlement = useGamesStore((s) => s.placeSettlement)
 	const placeRoad = useGamesStore((s) => s.placeRoad)
 	const roll = useGamesStore((s) => s.roll)
+	const confirmRoll = useGamesStore((s) => s.confirmRoll)
+	const rerollDice = useGamesStore((s) => s.rerollDice)
 	const endTurn = useGamesStore((s) => s.endTurn)
 	const buildRoad = useGamesStore((s) => s.buildRoad)
 	const buildSettlement = useGamesStore((s) => s.buildSettlement)
@@ -120,6 +127,9 @@ function GameBody() {
 	const bankTrade = useGamesStore((s) => s.bankTrade)
 	const buyDevCard = useGamesStore((s) => s.buyDevCard)
 	const playDevCard = useGamesStore((s) => s.playDevCard)
+	const setSpecialistResource = useGamesStore((s) => s.setSpecialistResource)
+	const buyCarpenterVP = useGamesStore((s) => s.buyCarpenterVP)
+	const tapKnight = useGamesStore((s) => s.tapKnight)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
@@ -228,6 +238,8 @@ function GameBody() {
 	const inPlacement =
 		game.status === 'placement' &&
 		gameState?.phase.kind === 'initial_placement'
+	const inPostPlacement =
+		game.status === 'active' && gameState?.phase.kind === 'post_placement'
 	const inMainLoop =
 		game.status === 'active' &&
 		(gameState?.phase.kind === 'roll' || gameState?.phase.kind === 'main')
@@ -247,6 +259,30 @@ function GameBody() {
 		const res = await pickBonus(game.id, bonus)
 		setSubmitting(false)
 		if (res.error) notify('Pick failed', res.error)
+	}
+
+	async function onSetSpecialistResource(resource: Resource) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await setSpecialistResource(game.id, resource)
+		setSubmitting(false)
+		if (res.error) notify('Declare failed', res.error)
+	}
+
+	async function onBuyCarpenterVP() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await buyCarpenterVP(game.id)
+		setSubmitting(false)
+		if (res.error) notify('Purchase failed', res.error)
+	}
+
+	async function onTapKnight(r1: Resource, r2: Resource) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await tapKnight(game.id, r1, r2)
+		setSubmitting(false)
+		if (res.error) notify('Tap failed', res.error)
 	}
 
 	async function onConfirm() {
@@ -272,6 +308,22 @@ function GameBody() {
 		if (res.error) notify('Roll failed', res.error)
 	}
 
+	async function onConfirmRoll() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await confirmRoll(game.id)
+		setSubmitting(false)
+		if (res.error) notify('Confirm failed', res.error)
+	}
+
+	async function onRerollDice() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await rerollDice(game.id)
+		setSubmitting(false)
+		if (res.error) notify('Reroll failed', res.error)
+	}
+
 	async function onEndTurn() {
 		if (!game) return
 		setSubmitting(true)
@@ -283,7 +335,8 @@ function GameBody() {
 	async function onBuyDevCard() {
 		if (!game) return
 		setSubmitting(true)
-		const res = await buyDevCard(game.id)
+		const use = myPlayer ? shouldUseBricklayer(myPlayer, 'dev_card') : false
+		const res = await buyDevCard(game.id, use)
 		setSubmitting(false)
 		if (res.error) notify('Buy failed', res.error)
 	}
@@ -319,12 +372,13 @@ function GameBody() {
 	async function commitBuild(sel: BuildSelection) {
 		if (!game) return
 		setSubmitting(true)
+		const use = myPlayer ? shouldUseBricklayer(myPlayer, sel.kind) : false
 		const res =
 			sel.kind === 'road'
-				? await buildRoad(game.id, sel.edge)
+				? await buildRoad(game.id, sel.edge, use)
 				: sel.kind === 'settlement'
-					? await buildSettlement(game.id, sel.vertex)
-					: await buildCity(game.id, sel.vertex)
+					? await buildSettlement(game.id, sel.vertex, use)
+					: await buildCity(game.id, sel.vertex, use)
 		setSubmitting(false)
 		if (res.error) {
 			notify('Build failed', res.error)
@@ -420,25 +474,27 @@ function GameBody() {
 	}
 
 	// Button enablement: only when it's my main-phase turn, I can afford the
-	// cost, AND there is at least one valid spot on the board.
+	// cost (standard or bricklayer alt), AND there is at least one valid
+	// spot on the board.
 	const myHand = gameState?.players[meIdx]?.resources ?? null
+	const myPlayer = gameState && meIdx >= 0 ? gameState.players[meIdx] : null
 	const canBuildThisTurn =
 		isMyActiveTurn && gameState?.phase.kind === 'main' && !!myHand
 	const buildEnabled = {
 		road:
 			canBuildThisTurn &&
-			!!myHand &&
-			canAfford(myHand, BUILD_COSTS.road) &&
+			!!myPlayer &&
+			canAffordPurchase(myPlayer, 'road') &&
 			validBuildRoadEdges(gameState!, meIdx).length > 0,
 		settlement:
 			canBuildThisTurn &&
-			!!myHand &&
-			canAfford(myHand, BUILD_COSTS.settlement) &&
+			!!myPlayer &&
+			canAffordPurchase(myPlayer, 'settlement') &&
 			validBuildSettlementVertices(gameState!, meIdx).length > 0,
 		city:
 			canBuildThisTurn &&
-			!!myHand &&
-			canAfford(myHand, BUILD_COSTS.city) &&
+			!!myPlayer &&
+			canAffordPurchase(myPlayer, 'city') &&
 			validBuildCityVertices(gameState!, meIdx).length > 0,
 		dev_card:
 			!!gameState &&
@@ -526,9 +582,17 @@ function GameBody() {
 							tradeEnabled={tradeButtonEnabled}
 							tradeActive={tradeButtonActive}
 							devCardsEnabled={!!gameState?.config.devCards}
+							carpenterEnabled={
+								myPlayer?.bonus === 'carpenter'
+									? canBuildThisTurn &&
+										!myPlayer.boughtCarpenterVPThisTurn &&
+										myPlayer.resources.wood >= 4
+									: undefined
+							}
 							onSelect={onBuildToolSelect}
 							onTradePress={onTradePress}
 							onBuyDevCard={onBuyDevCard}
+							onBuyCarpenterVP={onBuyCarpenterVP}
 						/>
 					)}
 					{inRoadBuilding && (
@@ -571,6 +635,33 @@ function GameBody() {
 					onClose={() => setOpenPlayerIdx(null)}
 				/>
 			)}
+
+			{inPostPlacement &&
+				gameState &&
+				gameState.phase.kind === 'post_placement' &&
+				(() => {
+					const pending = gameState.phase.pending.specialist
+					const waitingOn = pending
+						.filter((i) => i !== meIdx)
+						.map(
+							(i) =>
+								profilesById[game.player_order[i]]?.username ??
+								'Player'
+						)
+					if (pending.includes(meIdx)) {
+						return (
+							<SpecialistDeclareOverlay
+								waitingOn={waitingOn}
+								submitting={submitting}
+								onConfirm={onSetSpecialistResource}
+							/>
+						)
+					}
+					if (waitingOn.length > 0) {
+						return <SpecialistWaitOverlay waitingOn={waitingOn} />
+					}
+					return null
+				})()}
 
 			<Animated.View style={styles.boardContainer} layout={BOARD_RESIZE}>
 				{liveOffer && (
@@ -663,6 +754,8 @@ function GameBody() {
 						profilesById={profilesById}
 						submitting={submitting}
 						onRoll={onRoll}
+						onConfirmRoll={onConfirmRoll}
+						onRerollDice={onRerollDice}
 						onEndTurn={onEndTurn}
 					/>
 				</Animated.View>
@@ -704,6 +797,19 @@ function GameBody() {
 									gameState.players[meIdx].playedDevThisTurn
 								}
 								onPlay={onPlayDevCard}
+							/>
+						)}
+						{myPlayer?.bonus === 'veteran' && (
+							<KnightTapBar
+								untappedKnights={
+									(myPlayer.devCardsPlayed.knight ?? 0) -
+									(myPlayer.tappedKnights ?? 0)
+								}
+								enabled={
+									isMyActiveTurn &&
+									gameState.phase.kind === 'main'
+								}
+								onTap={onTapKnight}
 							/>
 						)}
 					</Animated.View>
@@ -781,6 +887,8 @@ function MainLoopBar({
 	profilesById,
 	submitting,
 	onRoll,
+	onConfirmRoll,
+	onRerollDice,
 	onEndTurn,
 }: {
 	game: NonNullable<ReturnType<typeof useGame>['game']>
@@ -790,6 +898,8 @@ function MainLoopBar({
 	profilesById: Record<string, Profile>
 	submitting: boolean
 	onRoll: () => void
+	onConfirmRoll: () => void
+	onRerollDice: () => void
 	onEndTurn: () => void
 }) {
 	const phase = gameState.phase
@@ -802,11 +912,23 @@ function MainLoopBar({
 			? 'You'
 			: (profilesById[currentId]?.username ?? 'Player')
 
-	const dice = phase.kind === 'main' ? phase.roll : null
+	// Gambler pending-dice path: dice are shown but not yet applied. The
+	// player must Confirm (apply distribution / 7-chain) or Reroll (once
+	// per turn). Non-gambler rolls skip this — dice go from roll → main
+	// atomically.
+	const pendingDice =
+		phase.kind === 'roll' ? (phase.pending?.dice ?? null) : null
+	const committedDice = phase.kind === 'main' ? phase.roll : null
+	const dice = pendingDice ?? committedDice
 	const total = dice ? dice.a + dice.b : null
+	const rerolledThisTurn = gameState.players[meIdx]?.rerolledThisTurn ?? false
 
 	let status: string
-	if (phase.kind === 'roll') {
+	if (pendingDice) {
+		status = isMyTurn
+			? `You rolled ${total} — confirm or reroll`
+			: `${currentName} rolled ${total}`
+	} else if (phase.kind === 'roll') {
 		status = isMyTurn
 			? 'Your turn — roll the dice'
 			: `${currentName} to roll`
@@ -830,10 +952,26 @@ function MainLoopBar({
 				<Text style={styles.mainLoopStatus} numberOfLines={2}>
 					{status}
 				</Text>
-				{isMyTurn && phase.kind === 'roll' && (
+				{isMyTurn && phase.kind === 'roll' && !pendingDice && (
 					<Button onPress={onRoll} loading={submitting}>
 						Roll
 					</Button>
+				)}
+				{isMyTurn && pendingDice && (
+					<View style={styles.gamblerActions}>
+						{!rerolledThisTurn && (
+							<Button
+								onPress={onRerollDice}
+								loading={submitting}
+								variant="secondary"
+							>
+								Reroll
+							</Button>
+						)}
+						<Button onPress={onConfirmRoll} loading={submitting}>
+							Confirm
+						</Button>
+					</View>
 				)}
 				{isMyTurn && phase.kind === 'main' && (
 					<Button onPress={onEndTurn} loading={submitting}>
@@ -1175,6 +1313,10 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		gap: spacing.sm,
 		height: 52,
+	},
+	gamblerActions: {
+		flexDirection: 'row',
+		gap: spacing.xs,
 	},
 	diceRow: {
 		flexDirection: 'row',

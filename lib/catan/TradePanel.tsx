@@ -8,6 +8,7 @@ import { RESOURCES, type Resource } from './board'
 import { playerColors, resourceColor } from './palette'
 import {
 	availableBankOptions,
+	effectiveBankRatioFor,
 	isValidBankTradeShape,
 	lockedGiveResource,
 	ratioOf,
@@ -87,6 +88,9 @@ export function TradePanel({
 		<BankCompose
 			choice={mode.choice}
 			myHand={myHand}
+			specialistResource={
+				state.players[meIdx]?.specialistResource ?? null
+			}
 			submitting={submitting}
 			onBack={() =>
 				setMode(
@@ -325,6 +329,7 @@ function BankOptionCard({
 function BankCompose({
 	choice,
 	myHand,
+	specialistResource,
 	submitting,
 	onBack,
 	onCancel,
@@ -332,6 +337,7 @@ function BankCompose({
 }: {
 	choice: BankKind
 	myHand: ResourceHand
+	specialistResource: Resource | null
 	submitting: boolean
 	onBack: () => void
 	onCancel: () => void
@@ -340,21 +346,39 @@ function BankCompose({
 	const [give, setGive] = useState<ResourceHand>(emptyHand)
 	const [receive, setReceive] = useState<ResourceHand>(emptyHand)
 
-	const ratio = ratioOf(choice)
+	const baseRatio = ratioOf(choice)
 	const locked = lockedGiveResource(choice)
+
+	// Recomputes every render so single-resource specialist discount
+	// tracks the current `give`. If the player pivots to a multi-resource
+	// give, the ratio snaps back to the base.
+	const ratio = effectiveBankRatioFor(choice, give, specialistResource)
 
 	const giveTotal = RESOURCES.reduce((a, r) => a + give[r], 0)
 	const receiveTotal = RESOURCES.reduce((a, r) => a + receive[r], 0)
-	const groups = giveTotal / ratio
+	const groups = ratio > 0 ? giveTotal / ratio : 0
 	const slotsRemaining = Math.max(0, groups - receiveTotal)
 
 	function addGive(r: Resource) {
 		setGive((prev) => {
 			if (locked && r !== locked) return prev
+			// Re-evaluate the effective ratio for the hypothetical post-add
+			// give: if the current hand plus a stack of `r` would stay a
+			// single-resource give of the specialist's declared resource, the
+			// discount applies; otherwise we fall back to the base ratio.
+			const hypothetical: ResourceHand = {
+				...prev,
+				[r]: prev[r] + baseRatio,
+			}
+			const effective = effectiveBankRatioFor(
+				choice,
+				hypothetical,
+				specialistResource
+			)
 			const remaining = myHand[r] - prev[r]
-			if (remaining < ratio) return prev
+			if (remaining < effective) return prev
 			if (receive[r] > 0) return prev
-			return { ...prev, [r]: prev[r] + ratio }
+			return { ...prev, [r]: prev[r] + effective }
 		})
 	}
 	function addReceive(r: Resource) {
@@ -370,7 +394,8 @@ function BankCompose({
 	}
 
 	const valid =
-		isValidBankTradeShape(give, receive, choice) && canAfford(myHand, give)
+		isValidBankTradeShape(give, receive, choice, specialistResource) &&
+		canAfford(myHand, give)
 
 	return (
 		<View style={styles.wrap}>
@@ -402,7 +427,13 @@ function BankCompose({
 
 			<Text style={styles.sectionLabel}>
 				You give{' '}
-				<Text style={styles.ratioHint}>(tap = {ratio} at a time)</Text>
+				<Text style={styles.ratioHint}>
+					(tap = {baseRatio} at a time
+					{specialistResource && baseRatio > 2
+						? `, ${baseRatio - 1} for ${specialistResource}`
+						: ''}
+					)
+				</Text>
 			</Text>
 			<ResourceTapRow
 				hand={give}
@@ -410,7 +441,16 @@ function BankCompose({
 				isTappable={(r) => {
 					if (locked && r !== locked) return false
 					if (receive[r] > 0) return false
-					return myHand[r] - give[r] >= ratio
+					const hypothetical: ResourceHand = {
+						...give,
+						[r]: give[r] + baseRatio,
+					}
+					const effective = effectiveBankRatioFor(
+						choice,
+						hypothetical,
+						specialistResource
+					)
+					return myHand[r] - give[r] >= effective
 				}}
 			/>
 

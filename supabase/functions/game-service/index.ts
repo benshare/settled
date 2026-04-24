@@ -71,17 +71,26 @@ type PlaceRoadBody = {
 	edge: string
 }
 type RollBody = { action: 'roll'; game_id: string }
+type ConfirmRollBody = { action: 'confirm_roll'; game_id: string }
+type RerollDiceBody = { action: 'reroll_dice'; game_id: string }
 type EndTurnBody = { action: 'end_turn'; game_id: string }
-type BuildRoadBody = { action: 'build_road'; game_id: string; edge: string }
+type BuildRoadBody = {
+	action: 'build_road'
+	game_id: string
+	edge: string
+	use_bricklayer?: boolean
+}
 type BuildSettlementBody = {
 	action: 'build_settlement'
 	game_id: string
 	vertex: string
+	use_bricklayer?: boolean
 }
 type BuildCityBody = {
 	action: 'build_city'
 	game_id: string
 	vertex: string
+	use_bricklayer?: boolean
 }
 type DiscardBody = {
 	action: 'discard'
@@ -113,12 +122,31 @@ type BankTradeBody = {
 	give: unknown
 	receive: unknown
 }
-type BuyDevCardBody = { action: 'buy_dev_card'; game_id: string }
+type BuyDevCardBody = {
+	action: 'buy_dev_card'
+	game_id: string
+	use_bricklayer?: boolean
+}
 type PlayDevCardBody = {
 	action: 'play_dev_card'
 	game_id: string
 	id: unknown
 	payload?: unknown
+}
+type SetSpecialistResourceBody = {
+	action: 'set_specialist_resource'
+	game_id: string
+	resource: unknown
+}
+type BuyCarpenterVPBody = {
+	action: 'buy_carpenter_vp'
+	game_id: string
+}
+type TapKnightBody = {
+	action: 'tap_knight'
+	game_id: string
+	r1: unknown
+	r2: unknown
 }
 type Body =
 	| RespondBody
@@ -126,6 +154,8 @@ type Body =
 	| PlaceSettlementBody
 	| PlaceRoadBody
 	| RollBody
+	| ConfirmRollBody
+	| RerollDiceBody
 	| EndTurnBody
 	| BuildRoadBody
 	| BuildSettlementBody
@@ -139,6 +169,9 @@ type Body =
 	| BankTradeBody
 	| BuyDevCardBody
 	| PlayDevCardBody
+	| SetSpecialistResourceBody
+	| BuyCarpenterVPBody
+	| TapKnightBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -469,6 +502,12 @@ type PlayerState = {
 	// card buy). Used by the `age` curse. Reset on end_turn for the outgoing
 	// active player. Sparse — only written for cursed players.
 	cardsSpentThisTurn?: number
+	// Bonus-specific sparse fields (see lib/catan/types.ts).
+	specialistResource?: Resource
+	rerolledThisTurn?: boolean
+	boughtCarpenterVPThisTurn?: boolean
+	carpenterVP?: number
+	tappedKnights?: number
 }
 
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
@@ -662,7 +701,8 @@ type ResumePhase =
 type Phase =
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
 	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
-	| { kind: 'roll' }
+	| { kind: 'post_placement'; pending: { specialist: number[] } }
+	| { kind: 'roll'; pending?: { dice: DiceRoll } }
 	| {
 			kind: 'discard'
 			resume: ResumePhase
@@ -698,6 +738,78 @@ function edgeStateOf(state: GameState, e: Edge): EdgeState {
 	return state.edges[e] ?? { occupied: false }
 }
 
+// --- Bonuses (must match lib/catan/bonus) ----------------------------------
+
+function bonusOf(state: GameState, playerIdx: number): BonusId | undefined {
+	return state.players[playerIdx]?.bonus
+}
+
+const BRICKLAYER_COST: ResourceHand = {
+	brick: 4,
+	wood: 0,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
+}
+
+// Nomad: every 7-roll grants each nomad player 1 random resource via a
+// d5. Canonical resource order (brick, wood, sheep, wheat, ore); die
+// faces 1..5 map to indices 0..4.
+const NOMAD_RESOURCES: readonly Resource[] = [
+	'brick',
+	'wood',
+	'sheep',
+	'wheat',
+	'ore',
+]
+
+function nomadDie(): Resource {
+	return NOMAD_RESOURCES[Math.floor(Math.random() * 5)]
+}
+
+function applyNomadProduce(players: PlayerState[]): {
+	players: PlayerState[]
+	events: unknown[]
+} {
+	const events: unknown[] = []
+	const nextPlayers = players.map((p, i) => {
+		if (p.bonus !== 'nomad') return p
+		const resource = nomadDie()
+		events.push({
+			kind: 'nomad_produce',
+			player: i,
+			resource,
+			at: new Date().toISOString(),
+		})
+		return {
+			...p,
+			resources: {
+				...p.resources,
+				[resource]: p.resources[resource] + 1,
+			},
+		}
+	})
+	return { players: nextPlayers, events }
+}
+
+// Resolve the cost for a build/dev-card purchase. If `useBricklayer` is
+// true and the player has the bricklayer bonus and enough brick, pay 4
+// Brick; otherwise pay `standardCost`. Returns null if neither option is
+// affordable given the hand.
+function resolvePurchaseCost(
+	p: PlayerState,
+	standardCost: ResourceHand,
+	useBricklayer: boolean
+): ResourceHand | null {
+	if (useBricklayer) {
+		if (p.bonus !== 'bricklayer') return null
+		if (p.resources.brick < BRICKLAYER_COST.brick) return null
+		return BRICKLAYER_COST
+	}
+	if (!canAfford(p.resources, standardCost)) return null
+	return standardCost
+}
+
 // --- Curses (must match lib/catan/curses) ----------------------------------
 
 const AGE_CARD_LIMIT = 6
@@ -724,8 +836,13 @@ function maxSettlementsFor(
 	return 5
 }
 
-function winVPThresholdFor(curse: CurseId | undefined): number {
-	return curse === 'ambition' ? 11 : 10
+function winVPThresholdFor(
+	bonus: BonusId | undefined,
+	curse: CurseId | undefined
+): number {
+	if (curse === 'ambition') return 11
+	if (bonus === 'thrill_seeker') return 9
+	return 10
 }
 
 function winRoadsRequiredFor(curse: CurseId | undefined): number {
@@ -967,6 +1084,16 @@ function rollDice(): DiceRoll {
 	return { a: d(), b: d() }
 }
 
+const UNDERDOG_NUMBERS = new Set<number>([2, 3, 11, 12])
+
+function underdogMultiplierFor(
+	bonus: BonusId | undefined,
+	hexNumber: number
+): 1 | 2 {
+	if (bonus === 'underdog' && UNDERDOG_NUMBERS.has(hexNumber)) return 2
+	return 1
+}
+
 function distributeResources(
 	state: GameState,
 	total: number
@@ -981,7 +1108,12 @@ function distributeResources(
 		for (const v of adjacentVertices[hex]) {
 			const vs = vertexStateOf(state, v)
 			if (!vs.occupied) continue
-			const gain = vs.building === 'city' ? 2 : 1
+			const base = vs.building === 'city' ? 2 : 1
+			const mult = underdogMultiplierFor(
+				state.players[vs.player]?.bonus,
+				hd.number
+			)
+			const gain = base * mult
 			const hand =
 				result[vs.player] ??
 				(result[vs.player] = {
@@ -1098,6 +1230,7 @@ function handSize(hand: ResourceHand): number {
 function requiredDiscards(players: PlayerState[]): Record<number, number> {
 	const out: Record<number, number> = {}
 	players.forEach((p, i) => {
+		if (p.bonus === 'hoarder') return
 		const total = handSize(p.resources)
 		if (total > 7)
 			out[i] = p.curse === 'avarice' ? total : Math.floor(total / 2)
@@ -1292,8 +1425,9 @@ function recomputeLongestRoad(state: GameState): number | null {
 
 // --- Victory (must match lib/catan/dev.totalVP) ----------------------------
 //
-// Threshold is 10 by default and 11 under the `ambition` curse — see
-// winVPThresholdFor in the Curses section. findWinner does the comparison.
+// Threshold is 10 by default, 11 under the `ambition` curse, 9 under the
+// `thrill_seeker` bonus — see winVPThresholdFor. findWinner does the
+// comparison.
 
 function totalVP(state: GameState, playerIdx: number): number {
 	const p = state.players[playerIdx]
@@ -1305,6 +1439,7 @@ function totalVP(state: GameState, playerIdx: number): number {
 	}
 	if (state.largestArmy === playerIdx) vp += 2
 	if (state.longestRoad === playerIdx) vp += 2
+	vp += p.carpenterVP ?? 0
 	for (const e of p.devCards) {
 		if (e.id === 'victory_point') vp += 1
 	}
@@ -1322,13 +1457,15 @@ function vpCardCountsByPlayer(state: GameState): Record<number, number> {
 }
 
 // Returns the first player (by index) who meets their victory conditions,
-// or null. "Meets" = totalVP ≥ curse-specific VP threshold (10 default, 11
-// under ambition) AND, if cursed with nomadism, ≥ 11 roads on the board.
-// All VP (including hidden VP cards) counts.
+// or null. "Meets" = totalVP ≥ bonus/curse-specific VP threshold (10
+// default, 11 under ambition, 9 under thrill_seeker) AND, if cursed with
+// nomadism, ≥ 11 roads on the board. All VP (including hidden VP cards)
+// counts.
 function findWinner(state: GameState): number | null {
 	for (let i = 0; i < state.players.length; i++) {
+		const bonus = bonusOf(state, i)
 		const curse = curseOf(state, i)
-		if (totalVP(state, i) < winVPThresholdFor(curse)) continue
+		if (totalVP(state, i) < winVPThresholdFor(bonus, curse)) continue
 		const roadsNeeded = winRoadsRequiredFor(curse)
 		if (roadsNeeded > 0 && roadCountFor(state, i) < roadsNeeded) continue
 		return i
@@ -1507,6 +1644,10 @@ function ratioOfBank(kind: BankKind): 2 | 3 | 4 | 5 {
 // use — highest-quality ratio they can support. Returns null if the hand
 // can't be parsed into any kind the player actually has access to. Players
 // under the `provinciality` curse can only use 5:1 regardless of ports.
+//
+// Specialist discount: when the give is a single-resource stack of the
+// player's declared specialty, the divisibility check uses
+// `max(2, baseRatio - 1)` instead of baseRatio.
 function inferBankKind(
 	state: GameState,
 	playerIdx: number,
@@ -1521,20 +1662,31 @@ function inferBankKind(
 	}
 
 	const kinds = playerPortKinds(state, playerIdx)
+	const specialistResource =
+		state.players[playerIdx]?.specialistResource ?? null
+
+	// Effective ratio for a give + candidate kind, applying specialist
+	// discount only when give is a single-resource stack of the declared
+	// specialty.
+	const effective = (kind: BankKind) =>
+		effectiveBankRatioFor(kind, give, specialistResource)
 
 	// Single-resource give → could be any; prefer 2:1 port for that resource,
 	// then 3:1, then 4:1.
 	if (giveResources.length === 1) {
 		const only = giveResources[0]
-		if (kinds.has(only) && give[only] % 2 === 0) {
-			return `2:1-${only}` as BankKind
+		if (kinds.has(only)) {
+			const kind = `2:1-${only}` as BankKind
+			if (give[only] % effective(kind) === 0) return kind
 		}
-		if (kinds.has('3:1') && give[only] % 3 === 0) return '3:1'
-		if (give[only] % 4 === 0) return '4:1'
+		if (kinds.has('3:1') && give[only] % effective('3:1') === 0)
+			return '3:1'
+		if (give[only] % effective('4:1') === 0) return '4:1'
 		return null
 	}
 
 	// Multi-resource give → can't use a 2:1 specific port. Prefer 3:1 then 4:1.
+	// Specialist discount never applies to multi-resource gives.
 	const allDivBy3 = giveResources.every((r) => give[r] % 3 === 0)
 	if (kinds.has('3:1') && allDivBy3) return '3:1'
 	const allDivBy4 = giveResources.every((r) => give[r] % 4 === 0)
@@ -1542,12 +1694,26 @@ function inferBankKind(
 	return null
 }
 
+function effectiveBankRatioFor(
+	kind: BankKind,
+	give: ResourceHand,
+	specialistResource: Resource | null
+): number {
+	const base = ratioOfBank(kind)
+	if (!specialistResource) return base
+	const givers = RESOURCES.filter((r) => give[r] > 0)
+	if (givers.length !== 1) return base
+	if (givers[0] !== specialistResource) return base
+	return Math.max(2, base - 1)
+}
+
 function isValidBankTradeShape(
 	give: ResourceHand,
 	receive: ResourceHand,
-	kind: BankKind
+	kind: BankKind,
+	specialistResource: Resource | null = null
 ): boolean {
-	const ratio = ratioOfBank(kind)
+	const ratio = effectiveBankRatioFor(kind, give, specialistResource)
 	const locked: Resource | null = kind.startsWith('2:1-')
 		? (kind.slice(4) as Resource)
 		: null
@@ -1895,7 +2061,8 @@ async function handlePlaceSettlement(
 	}
 
 	let nextPlayers = state.players
-	if (round === 2) {
+	const myBonus = bonusOf(state, meIdx)
+	if (round === 2 || myBonus === 'aristocrat') {
 		const grant = startingResourcesForVertex(state, vertex)
 		nextPlayers = state.players.map((p, i) => {
 			if (i !== meIdx) return p
@@ -1987,12 +2154,26 @@ async function handlePlaceRoad(
 	}
 
 	if (next === null) {
-		// Last placement — transition to active / roll.
+		// Last placement — transition to active. If any player has a
+		// start-of-game bonus (specialist), enter `post_placement` so they
+		// can resolve their decision. Otherwise go straight to `roll`.
+		const specialistIdxs: number[] = []
+		state.players.forEach((p, i) => {
+			if (p.bonus === 'specialist') specialistIdxs.push(i)
+		})
+		const postPlacementPhase: Phase =
+			specialistIdxs.length > 0
+				? {
+						kind: 'post_placement',
+						pending: { specialist: specialistIdxs },
+					}
+				: { kind: 'roll' }
+
 		const { error: stateErr } = await admin
 			.from('game_states')
 			.update({
 				edges: nextEdges,
-				phase: { kind: 'roll' } satisfies Phase,
+				phase: postPlacementPhase,
 			})
 			.eq('game_id', game.id)
 		if (stateErr) return err(500, 'could not update state')
@@ -2039,58 +2220,60 @@ async function handlePlaceRoad(
 	return json({ ok: true })
 }
 
-async function handleRoll(
+// Applies the downstream effect of a roll — distribution for non-7s, or
+// the 7-chain (discard / move_robber) for 7s. Factored out so that the
+// `confirm_roll` gambler handler and `handleRoll` (non-gambler) can share
+// the tail logic. The caller is responsible for having already appended a
+// `rolled` event for this dice value.
+async function applyRollOutcome(
 	admin: SupabaseClient,
-	me: string,
-	body: RollBody
+	game: { id: string; events: unknown[] | null },
+	state: GameState,
+	dice: DiceRoll,
+	extraEvents: unknown[] = []
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-
-	if (game.status !== 'active') return err(400, 'not active')
-	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
-
-	const meIdx = currentPlayerIndex(game, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
-
-	const dice = rollDice()
 	const total = dice.a + dice.b
-
-	const rollEvent = {
-		kind: 'rolled',
-		player: meIdx,
-		dice: [dice.a, dice.b],
-		total,
-		at: new Date().toISOString(),
-	}
+	const existingEvents = [...(game.events ?? []), ...extraEvents]
 
 	if (total === 7) {
-		const pending = requiredDiscards(state.players)
-		// 7-roll chain always resumes to main (dice are already thrown).
-		const resume: ResumePhase = {
-			kind: 'main',
-			roll: dice,
-			trade: null,
+		// Nomad: each nomad player is granted 1 random resource (d5)
+		// BEFORE discards are computed. This means a nomad who was at 7
+		// pre-roll can be forced into discard range by their own nomad
+		// gain.
+		const nomadResult = applyNomadProduce(state.players)
+		const playersAfterNomad = nomadResult.players
+		const stateAfterNomad: GameState = {
+			...state,
+			players: playersAfterNomad,
 		}
+		const pending = requiredDiscards(playersAfterNomad)
+		const resume: ResumePhase = { kind: 'main', roll: dice, trade: null }
 		const nextPhase: Phase =
 			Object.keys(pending).length > 0
 				? { kind: 'discard', resume, pending }
 				: { kind: 'move_robber', resume }
 
+		const stateUpdate: Record<string, unknown> = { phase: nextPhase }
+		if (nomadResult.events.length > 0) {
+			stateUpdate.players = playersAfterNomad
+		}
 		const { error: stateErr } = await admin
 			.from('game_states')
-			.update({ phase: nextPhase })
+			.update(stateUpdate)
 			.eq('game_id', game.id)
 		if (stateErr) return err(500, 'could not update state')
 
 		const { error: gameErr } = await admin
 			.from('games')
-			.update({ events: [...(game.events ?? []), rollEvent] })
+			.update({
+				events: [...existingEvents, ...nomadResult.events],
+			})
 			.eq('id', game.id)
 		if (gameErr) return err(500, 'could not log event')
 
+		// Keep stateAfterNomad referenced so future tooling can read the
+		// post-grant state easily; not needed here beyond the update.
+		void stateAfterNomad
 		return json({ ok: true, dice, total })
 	}
 
@@ -2115,22 +2298,147 @@ async function handleRoll(
 		.from('game_states')
 		.update({
 			players: nextPlayers,
-			phase: {
-				kind: 'main',
-				roll: dice,
-				trade: null,
-			} satisfies Phase,
+			phase: { kind: 'main', roll: dice, trade: null } satisfies Phase,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({ events: [...(game.events ?? []), rollEvent] })
+		.update({ events: existingEvents })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
 	return json({ ok: true, dice, total })
+}
+
+async function handleRoll(
+	admin: SupabaseClient,
+	me: string,
+	body: RollBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+	if (state.phase.pending?.dice)
+		return err(400, 'dice are already rolled; confirm or reroll')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const dice = rollDice()
+	const total = dice.a + dice.b
+
+	const rollEvent = {
+		kind: 'rolled',
+		player: meIdx,
+		dice: [dice.a, dice.b],
+		total,
+		at: new Date().toISOString(),
+	}
+
+	// Gambler: hold the dice in phase.pending so the player can confirm or
+	// reroll before distribution / 7-chain fires. No event is logged until
+	// the player commits via confirm_roll.
+	if (bonusOf(state, meIdx) === 'gambler') {
+		const { error: stateErr } = await admin
+			.from('game_states')
+			.update({
+				phase: { kind: 'roll', pending: { dice } } satisfies Phase,
+			})
+			.eq('game_id', game.id)
+		if (stateErr) return err(500, 'could not update state')
+		return json({ ok: true, dice, total, pending: true })
+	}
+
+	return applyRollOutcome(admin, game, state, dice, [rollEvent])
+}
+
+async function handleConfirmRoll(
+	admin: SupabaseClient,
+	me: string,
+	body: ConfirmRollBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+	if (!state.phase.pending?.dice)
+		return err(400, 'no pending roll to confirm')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const dice = state.phase.pending.dice
+	const total = dice.a + dice.b
+	const rollEvent = {
+		kind: 'rolled',
+		player: meIdx,
+		dice: [dice.a, dice.b],
+		total,
+		at: new Date().toISOString(),
+	}
+	return applyRollOutcome(admin, game, state, dice, [rollEvent])
+}
+
+async function handleRerollDice(
+	admin: SupabaseClient,
+	me: string,
+	body: RerollDiceBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+	if (!state.phase.pending?.dice)
+		return err(400, 'nothing to reroll — roll first')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (bonusOf(state, meIdx) !== 'gambler') return err(400, 'not a gambler')
+
+	const p = state.players[meIdx]
+	if (p.rerolledThisTurn) return err(400, 'already rerolled this turn')
+
+	const oldDice = state.phase.pending.dice
+	const newDice = rollDice()
+	const nextPlayers = state.players.map((pp, i) => {
+		if (i !== meIdx) return pp
+		return { ...pp, rerolledThisTurn: true }
+	})
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({
+			players: nextPlayers,
+			phase: { kind: 'roll', pending: { dice: newDice } } satisfies Phase,
+		})
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const rerollEvent = {
+		kind: 'reroll',
+		player: meIdx,
+		old_dice: [oldDice.a, oldDice.b],
+		new_dice: [newDice.a, newDice.b],
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), rerollEvent] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true, dice: newDice, total: newDice.a + newDice.b })
 }
 
 async function handleEndTurn(
@@ -2154,11 +2462,14 @@ async function handleEndTurn(
 	// Clear the outgoing active player's one-per-turn dev flag so they can
 	// play again when it becomes their turn again. Round bumps monotonically
 	// so dev-cards bought last turn become playable now. Also reset the
-	// age-curse per-turn spend counter.
+	// age-curse per-turn spend counter, the gambler reroll flag, and the
+	// carpenter per-turn flag.
 	const nextPlayers = state.players.map((p, i) => {
 		if (i !== meIdx) return p
 		const next: PlayerState = { ...p, playedDevThisTurn: false }
 		if (p.curse === 'age') next.cardsSpentThisTurn = 0
+		if (p.rerolledThisTurn) next.rerolledThisTurn = false
+		if (p.boughtCarpenterVPThisTurn) next.boughtCarpenterVPThisTurn = false
 		return next
 	})
 	const nextRound = state.round + 1
@@ -2284,9 +2595,13 @@ async function handleBuildRoad(
 			}
 		}
 	} else {
-		const cost = BUILD_COSTS.road
-		if (!canAfford(state.players[meIdx].resources, cost))
-			return err(400, 'insufficient resources')
+		const useBricklayer = !!body.use_bricklayer
+		const cost = resolvePurchaseCost(
+			state.players[meIdx],
+			BUILD_COSTS.road,
+			useBricklayer
+		)
+		if (!cost) return err(400, 'insufficient resources')
 		if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
 			return err(400, 'age limit reached this turn')
 		nextPlayers = applyCost(state.players, meIdx, cost)
@@ -2347,9 +2662,13 @@ async function handleBuildSettlement(
 
 	if (!isValidBuildSettlementVertex(state, meIdx, vertex))
 		return err(400, 'invalid settlement')
-	const cost = BUILD_COSTS.settlement
-	if (!canAfford(state.players[meIdx].resources, cost))
-		return err(400, 'insufficient resources')
+	const useBricklayer = !!body.use_bricklayer
+	const cost = resolvePurchaseCost(
+		state.players[meIdx],
+		BUILD_COSTS.settlement,
+		useBricklayer
+	)
+	if (!cost) return err(400, 'insufficient resources')
 	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
 		return err(400, 'age limit reached this turn')
 
@@ -2412,9 +2731,13 @@ async function handleBuildCity(
 
 	if (!isValidBuildCityVertex(state, meIdx, vertex))
 		return err(400, 'invalid city target')
-	const cost = BUILD_COSTS.city
-	if (!canAfford(state.players[meIdx].resources, cost))
-		return err(400, 'insufficient resources')
+	const useBricklayer = !!body.use_bricklayer
+	const cost = resolvePurchaseCost(
+		state.players[meIdx],
+		BUILD_COSTS.city,
+		useBricklayer
+	)
+	if (!cost) return err(400, 'insufficient resources')
 	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
 		return err(400, 'age limit reached this turn')
 
@@ -2909,7 +3232,8 @@ async function handleBankTrade(
 
 	const kind = inferBankKind(state, meIdx, give)
 	if (!kind) return err(400, 'no valid bank ratio for this give hand')
-	if (!isValidBankTradeShape(give, receive, kind))
+	const specialistResource = state.players[meIdx]?.specialistResource ?? null
+	if (!isValidBankTradeShape(give, receive, kind, specialistResource))
 		return err(400, 'invalid bank trade shape')
 	if (!canAfford(state.players[meIdx].resources, give))
 		return err(400, 'insufficient resources')
@@ -2926,7 +3250,7 @@ async function handleBankTrade(
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
-	const ratio = ratioOfBank(kind)
+	const ratio = effectiveBankRatioFor(kind, give, specialistResource)
 	const event = {
 		kind: 'bank_trade',
 		player: meIdx,
@@ -2962,19 +3286,24 @@ async function handleBuyDevCard(
 	if (game.current_turn !== meIdx) return err(403, 'not your turn')
 
 	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
-	if (!canAfford(state.players[meIdx].resources, DEV_CARD_COST))
-		return err(400, 'insufficient resources')
-	if (!canSpendUnderAge(state.players[meIdx], costSize(DEV_CARD_COST)))
+	const useBricklayer = !!body.use_bricklayer
+	const cost = resolvePurchaseCost(
+		state.players[meIdx],
+		DEV_CARD_COST,
+		useBricklayer
+	)
+	if (!cost) return err(400, 'insufficient resources')
+	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
 		return err(400, 'age limit reached this turn')
 
 	const card = state.devDeck[0]
 	const nextDeck = state.devDeck.slice(1)
-	const devSpend = costSize(DEV_CARD_COST)
+	const devSpend = costSize(cost)
 	const nextPlayers = state.players.map((p, i) => {
 		if (i !== meIdx) return p
 		const next: PlayerState = {
 			...p,
-			resources: deductHand(p.resources, DEV_CARD_COST),
+			resources: deductHand(p.resources, cost),
 			devCards: [...p.devCards, { id: card, purchasedTurn: state.round }],
 		}
 		if (p.curse === 'age') {
@@ -3020,6 +3349,193 @@ function parseResource(v: unknown): Resource | null {
 	if (typeof v !== 'string') return null
 	if ((RESOURCES as readonly string[]).includes(v)) return v as Resource
 	return null
+}
+
+// --- Veteran (tap played knight → 2 resources) ----------------------------
+
+async function handleTapKnight(
+	admin: SupabaseClient,
+	me: string,
+	body: TapKnightBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const p = state.players[meIdx]
+	if (p.bonus !== 'veteran') return err(400, 'not a veteran')
+
+	const knightsPlayedCount = p.devCardsPlayed.knight ?? 0
+	const alreadyTapped = p.tappedKnights ?? 0
+	if (knightsPlayedCount - alreadyTapped < 1)
+		return err(400, 'no untapped played knight')
+
+	const r1 = parseResource(body.r1)
+	const r2 = parseResource(body.r2)
+	if (!r1 || !r2) return err(400, 'invalid resource selection')
+
+	const nextPlayers = state.players.map((pp, i) => {
+		if (i !== meIdx) return pp
+		const nextRes = { ...pp.resources }
+		nextRes[r1] += 1
+		nextRes[r2] += 1
+		return {
+			...pp,
+			resources: nextRes,
+			tappedKnights: alreadyTapped + 1,
+		}
+	})
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'knight_tapped',
+		player: meIdx,
+		resources: [r1, r2],
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+// --- Carpenter (4 wood → 1 VP) --------------------------------------------
+
+const CARPENTER_WOOD_COST = 4
+
+async function handleBuyCarpenterVP(
+	admin: SupabaseClient,
+	me: string,
+	body: BuyCarpenterVPBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const me0 = state.players[meIdx]
+	if (me0.bonus !== 'carpenter') return err(400, 'not a carpenter')
+	if (me0.boughtCarpenterVPThisTurn)
+		return err(400, 'already bought carpenter VP this turn')
+	if (me0.resources.wood < CARPENTER_WOOD_COST)
+		return err(400, 'insufficient wood')
+
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		return {
+			...p,
+			resources: {
+				...p.resources,
+				wood: p.resources.wood - CARPENTER_WOOD_COST,
+			},
+			carpenterVP: (p.carpenterVP ?? 0) + 1,
+			boughtCarpenterVPThisTurn: true,
+		}
+	})
+
+	const update: Record<string, unknown> = { players: nextPlayers }
+	const nextState: GameState = { ...state, players: nextPlayers }
+	const events: unknown[] = [
+		{
+			kind: 'carpenter_vp',
+			player: meIdx,
+			at: new Date().toISOString(),
+		},
+	]
+	// 1 VP can push the buyer over the threshold; no road-graph change.
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: false,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner
+	)
+	if (commitErr) return commitErr
+	return json({ ok: true })
+}
+
+// --- Specialist declaration (post_placement) ------------------------------
+
+async function handleSetSpecialistResource(
+	admin: SupabaseClient,
+	me: string,
+	body: SetSpecialistResourceBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'post_placement')
+		return err(400, 'expected post_placement phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+
+	const resource = parseResource(body.resource)
+	if (!resource) return err(400, 'unknown resource')
+
+	const specialistPending = state.phase.pending.specialist
+	if (!specialistPending.includes(meIdx))
+		return err(400, 'not in specialist pending list')
+	if (state.players[meIdx]?.bonus !== 'specialist')
+		return err(400, 'not a specialist')
+
+	const nextPlayers = state.players.map((p, i) => {
+		if (i !== meIdx) return p
+		return { ...p, specialistResource: resource }
+	})
+	const nextSpecialistPending = specialistPending.filter((i) => i !== meIdx)
+	const allResolved = nextSpecialistPending.length === 0
+	const nextPhase: Phase = allResolved
+		? { kind: 'roll' }
+		: {
+				kind: 'post_placement',
+				pending: { specialist: nextSpecialistPending },
+			}
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers, phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'specialist_set',
+		player: meIdx,
+		resource,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
 }
 
 async function handlePlayDevCard(
@@ -3246,6 +3762,10 @@ serve(async (req) => {
 			return handlePlaceRoad(admin, me, body)
 		case 'roll':
 			return handleRoll(admin, me, body)
+		case 'confirm_roll':
+			return handleConfirmRoll(admin, me, body)
+		case 'reroll_dice':
+			return handleRerollDice(admin, me, body)
 		case 'end_turn':
 			return handleEndTurn(admin, me, body)
 		case 'build_road':
@@ -3272,6 +3792,12 @@ serve(async (req) => {
 			return handleBuyDevCard(admin, me, body)
 		case 'play_dev_card':
 			return handlePlayDevCard(admin, me, body)
+		case 'set_specialist_resource':
+			return handleSetSpecialistResource(admin, me, body)
+		case 'buy_carpenter_vp':
+			return handleBuyCarpenterVP(admin, me, body)
+		case 'tap_knight':
+			return handleTapKnight(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}

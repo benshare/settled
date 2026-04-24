@@ -3,6 +3,7 @@
 // its duplicated adjacency constants.
 
 import { HEXES, adjacentVertices } from './board'
+import { underdogMultiplierFor } from './bonus'
 import {
 	vertexStateOf,
 	type DiceRoll,
@@ -27,6 +28,10 @@ export function totalDice(r: DiceRoll): number {
 // the building's owner. Returns a sparse per-player gain map. On a 7 the
 // result is empty — robber handling flows through its own phase chain.
 // A hex that the robber sits on is skipped — it produces nothing.
+//
+// The `underdog` bonus doubles the gain for that player on 1- and 2-pip
+// hexes (number tokens 2, 3, 11, 12). The city multiplier stacks on top:
+// a city on a 2-pip hex pays 4 to an underdog player.
 export function distributeResources(
 	state: GameState,
 	total: number
@@ -41,7 +46,12 @@ export function distributeResources(
 		for (const v of adjacentVertices[hex]) {
 			const vs = vertexStateOf(state, v)
 			if (!vs.occupied) continue
-			const gain = vs.building === 'city' ? 2 : 1
+			const base = vs.building === 'city' ? 2 : 1
+			const mult = underdogMultiplierFor(
+				state.players[vs.player]?.bonus,
+				hd.number
+			)
+			const gain = base * mult
 			const hand =
 				result[vs.player] ??
 				(result[vs.player] = {

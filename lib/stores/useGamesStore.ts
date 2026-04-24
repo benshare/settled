@@ -143,16 +143,42 @@ type GamesStore = {
 	) => Promise<RespondResult>
 
 	pickBonus: (gameId: string, bonus: BonusId) => Promise<ActionResult>
+	setSpecialistResource: (
+		gameId: string,
+		resource: Resource
+	) => Promise<ActionResult>
+	buyCarpenterVP: (gameId: string) => Promise<ActionResult>
+	tapKnight: (
+		gameId: string,
+		r1: Resource,
+		r2: Resource
+	) => Promise<ActionResult>
 
 	placeSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
 	placeRoad: (gameId: string, edge: string) => Promise<ActionResult>
 
 	roll: (gameId: string) => Promise<RollResult>
+	confirmRoll: (gameId: string) => Promise<RollResult>
+	rerollDice: (gameId: string) => Promise<RollResult>
 	endTurn: (gameId: string) => Promise<ActionResult>
 
-	buildRoad: (gameId: string, edge: string) => Promise<ActionResult>
-	buildSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
-	buildCity: (gameId: string, vertex: string) => Promise<ActionResult>
+	// `useBricklayer`: pay 4 Brick instead of the standard cost. Ignored by
+	// the edge if the caller doesn't have the bricklayer bonus.
+	buildRoad: (
+		gameId: string,
+		edge: string,
+		useBricklayer?: boolean
+	) => Promise<ActionResult>
+	buildSettlement: (
+		gameId: string,
+		vertex: string,
+		useBricklayer?: boolean
+	) => Promise<ActionResult>
+	buildCity: (
+		gameId: string,
+		vertex: string,
+		useBricklayer?: boolean
+	) => Promise<ActionResult>
 
 	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
 	moveRobber: (gameId: string, hex: string) => Promise<ActionResult>
@@ -172,7 +198,10 @@ type GamesStore = {
 		receive: ResourceHand
 	) => Promise<ActionResult & { ratio?: 2 | 3 | 4 }>
 
-	buyDevCard: (gameId: string) => Promise<ActionResult>
+	buyDevCard: (
+		gameId: string,
+		useBricklayer?: boolean
+	) => Promise<ActionResult>
 	playDevCard: (
 		gameId: string,
 		id: DevCardId,
@@ -340,6 +369,48 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return { error: null }
 	},
 
+	async setSpecialistResource(gameId, resource) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'set_specialist_resource',
+					game_id: gameId,
+					resource,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't set specialty" }
+		return { error: null }
+	},
+
+	async buyCarpenterVP(gameId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'buy_carpenter_vp', game_id: gameId },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't buy VP" }
+		return { error: null }
+	},
+
+	async tapKnight(gameId, r1, r2) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'tap_knight',
+					game_id: gameId,
+					r1,
+					r2,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't tap knight" }
+		return { error: null }
+	},
+
 	async respond(meId, requestId, accept) {
 		const { data, error } = await supabase.functions.invoke(
 			'game-service',
@@ -387,6 +458,28 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return { error: null, dice: data.dice, total: data.total }
 	},
 
+	async confirmRoll(gameId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'confirm_roll', game_id: gameId },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't confirm roll" }
+		return { error: null, dice: data.dice, total: data.total }
+	},
+
+	async rerollDice(gameId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: { action: 'reroll_dice', game_id: gameId },
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't reroll" }
+		return { error: null, dice: data.dice, total: data.total }
+	},
+
 	async endTurn(gameId) {
 		const { data, error } = await supabase.functions.invoke(
 			'game-service',
@@ -398,33 +491,48 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return { error: null }
 	},
 
-	async buildRoad(gameId, edge) {
+	async buildRoad(gameId, edge, useBricklayer) {
 		const { data, error } = await supabase.functions.invoke(
 			'game-service',
 			{
-				body: { action: 'build_road', game_id: gameId, edge },
+				body: {
+					action: 'build_road',
+					game_id: gameId,
+					edge,
+					use_bricklayer: !!useBricklayer,
+				},
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't build road" }
 		return { error: null }
 	},
 
-	async buildSettlement(gameId, vertex) {
+	async buildSettlement(gameId, vertex, useBricklayer) {
 		const { data, error } = await supabase.functions.invoke(
 			'game-service',
 			{
-				body: { action: 'build_settlement', game_id: gameId, vertex },
+				body: {
+					action: 'build_settlement',
+					game_id: gameId,
+					vertex,
+					use_bricklayer: !!useBricklayer,
+				},
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't build settlement" }
 		return { error: null }
 	},
 
-	async buildCity(gameId, vertex) {
+	async buildCity(gameId, vertex, useBricklayer) {
 		const { data, error } = await supabase.functions.invoke(
 			'game-service',
 			{
-				body: { action: 'build_city', game_id: gameId, vertex },
+				body: {
+					action: 'build_city',
+					game_id: gameId,
+					vertex,
+					use_bricklayer: !!useBricklayer,
+				},
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't build city" }
@@ -527,11 +635,15 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return { error: null, ratio: data.ratio }
 	},
 
-	async buyDevCard(gameId) {
+	async buyDevCard(gameId, useBricklayer) {
 		const { data, error } = await supabase.functions.invoke(
 			'game-service',
 			{
-				body: { action: 'buy_dev_card', game_id: gameId },
+				body: {
+					action: 'buy_dev_card',
+					game_id: gameId,
+					use_bricklayer: !!useBricklayer,
+				},
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't buy dev card" }

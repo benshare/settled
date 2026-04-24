@@ -3,14 +3,13 @@
 // and tests. The edge function re-implements the same logic against its
 // duplicated constants.
 
-import { canAfford } from './build'
-import { validBuildRoadEdges } from './build'
+import { bonusOf, carpenterVPOf, winVPThresholdFor } from './bonus'
+import { canAffordPurchase, validBuildRoadEdges } from './build'
 import {
 	curseOf,
 	effectiveKnightsPlayed,
 	roadCountFor,
 	winRoadsRequiredFor,
-	winVPThresholdFor,
 } from './curses'
 import { DEV_CARD_POOL, DEV_DECK_COMPOSITION, type DevCardId } from './devCards'
 import type { GameState, PlayerState, ResourceHand } from './types'
@@ -48,7 +47,7 @@ export function canBuyDevCard(
 	if (state.phase.kind !== 'main') return false
 	if (currentTurn !== meIdx) return false
 	if (state.devDeck.length === 0) return false
-	return canAfford(state.players[meIdx].resources, DEV_CARD_COST)
+	return canAffordPurchase(state.players[meIdx], 'dev_card')
 }
 
 // Dev-card entries in `player.devCards` that are legal to play right now.
@@ -108,6 +107,7 @@ export function totalVP(
 	}
 	if (state.largestArmy === playerIdx) vp += 2
 	if (state.longestRoad === playerIdx) vp += 2
+	vp += carpenterVPOf(p)
 	if (includeHiddenVP) {
 		for (const e of p.devCards) {
 			if (e.id === 'victory_point') vp += 1
@@ -123,17 +123,19 @@ export function hasLegalRoadPlacement(
 	return validBuildRoadEdges(state, meIdx).length > 0
 }
 
-// Baseline victory point count. Curse-aware variants (ambition, nomadism)
-// live in `winVPThresholdFor` / `winRoadsRequiredFor`.
+// Baseline victory point count. Bonus/curse-aware variants (thrill_seeker,
+// ambition, nomadism) live in `winVPThresholdFor` / `winRoadsRequiredFor`.
 export const VICTORY_VP = 10
 
 // First player (by index) who currently meets their victory conditions, or
-// null. "Meets" = totalVP ≥ curse-specific threshold (10 default, 11 under
-// ambition) AND, if cursed with nomadism, ≥ 11 roads on the board.
+// null. "Meets" = totalVP ≥ bonus/curse-specific threshold (10 default,
+// 11 under ambition, 9 under thrill_seeker) AND, if cursed with nomadism,
+// ≥ 11 roads on the board.
 export function findWinner(state: GameState): number | null {
 	for (let i = 0; i < state.players.length; i++) {
+		const bonus = bonusOf(state, i)
 		const curse = curseOf(state, i)
-		if (totalVP(state, i) < winVPThresholdFor(curse)) continue
+		if (totalVP(state, i) < winVPThresholdFor(bonus, curse)) continue
 		const roadsNeeded = winRoadsRequiredFor(curse)
 		if (roadsNeeded > 0 && roadCountFor(state, i) < roadsNeeded) continue
 		return i

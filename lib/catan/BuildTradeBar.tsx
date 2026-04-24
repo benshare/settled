@@ -30,9 +30,11 @@ export function BuildTradeBar({
 	tradeEnabled,
 	tradeActive,
 	devCardsEnabled,
+	carpenterEnabled,
 	onSelect,
 	onTradePress,
 	onBuyDevCard,
+	onBuyCarpenterVP,
 }: {
 	active: BuildKind | null
 	enabled: BuildEnablement
@@ -46,9 +48,13 @@ export function BuildTradeBar({
 	// Config gate: when the game wasn't created with dev cards, the button
 	// is hidden entirely rather than just disabled.
 	devCardsEnabled: boolean
+	// Carpenter-bonus-only button. Undefined = player is not carpenter and
+	// the button is hidden. Boolean = eligible to buy (enabled/disabled).
+	carpenterEnabled?: boolean
 	onSelect: (tool: BuildKind) => void
 	onTradePress: () => void
 	onBuyDevCard: () => void
+	onBuyCarpenterVP?: () => void
 }) {
 	const color = playerColors[meIdx] ?? playerColors[0]
 	const tradeInteractive = tradeEnabled || tradeActive
@@ -79,6 +85,12 @@ export function BuildTradeBar({
 							}}
 						/>
 					))}
+					{carpenterEnabled !== undefined && (
+						<CarpenterVPButton
+							enabled={carpenterEnabled}
+							onPress={() => onBuyCarpenterVP?.()}
+						/>
+					)}
 				</View>
 			</View>
 
@@ -174,6 +186,42 @@ function BuildIconButton({
 	return button
 }
 
+function CarpenterVPButton({
+	enabled,
+	onPress,
+}: {
+	enabled: boolean
+	onPress: () => void
+}) {
+	return (
+		<Pressable
+			disabled={!enabled}
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.iconBtn,
+				styles.carpenterBtn,
+				!enabled && styles.iconBtnDisabled,
+				pressed && enabled && styles.pressed,
+			]}
+			accessibilityLabel="Carpenter: spend 4 Wood for 1 VP"
+		>
+			<Ionicons
+				name="construct-outline"
+				size={20}
+				color={enabled ? colors.white : colors.textMuted}
+			/>
+			<Text
+				style={[
+					styles.carpenterCostLabel,
+					!enabled && { color: colors.textMuted },
+				]}
+			>
+				4W→VP
+			</Text>
+		</Pressable>
+	)
+}
+
 const styles = StyleSheet.create({
 	row: {
 		flexDirection: 'row',
@@ -231,6 +279,18 @@ const styles = StyleSheet.create({
 	},
 	iconBtnDisabled: {
 		opacity: 0.4,
+	},
+	carpenterBtn: {
+		backgroundColor: '#6F5A2A',
+		borderColor: '#3B2D12',
+		flexDirection: 'column',
+		gap: 2,
+	},
+	carpenterCostLabel: {
+		fontSize: 9,
+		fontWeight: '800',
+		color: colors.white,
+		letterSpacing: 0.3,
 	},
 	cancelBadge: {
 		position: 'absolute',

@@ -17,12 +17,14 @@ export function handSize(hand: ResourceHand): number {
 }
 
 // Standard Catan 7-rule: any hand > 7 must discard floor(hand/2). Players
-// under the `avarice` curse discard their entire hand instead.
+// under the `avarice` curse discard their entire hand instead; players
+// with the `hoarder` bonus discard nothing regardless of hand size.
 export function requiredDiscards(
 	players: PlayerState[]
 ): Partial<Record<number, number>> {
 	const out: Partial<Record<number, number>> = {}
 	players.forEach((p, i) => {
+		if (p.bonus === 'hoarder') return
 		const total = handSize(p.resources)
 		if (total > 7)
 			out[i] = p.curse === 'avarice' ? total : Math.floor(total / 2)

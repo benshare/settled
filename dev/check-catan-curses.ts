@@ -29,8 +29,8 @@ import {
 	settlementKeepsYouthOK,
 	touchedResources,
 	winRoadsRequiredFor,
-	winVPThresholdFor,
 } from '../lib/catan/curses'
+import { winVPThresholdFor } from '../lib/catan/bonus'
 import { findWinner, recomputeLargestArmy } from '../lib/catan/dev'
 import { initialGameState } from '../lib/catan/generate'
 import { availableBankOptions, ratioOf } from '../lib/catan/ports'
@@ -156,8 +156,8 @@ function testDecadenceCityCap() {
 // --- ambition ---------------------------------------------------------------
 
 function testAmbitionVPThreshold() {
-	equal(winVPThresholdFor('ambition'), 11, 'ambition threshold')
-	equal(winVPThresholdFor(undefined), 10, 'baseline')
+	equal(winVPThresholdFor(undefined, 'ambition'), 11, 'ambition threshold')
+	equal(winVPThresholdFor(undefined, undefined), 10, 'baseline')
 	// Build a state where player 0 (cursed) has exactly 10 VP — not enough.
 	const s = setCurse(baseState(), 0, 'ambition')
 	// 10 = 5 settlements (5) + Longest Road (+2) + Largest Army (+2) + 1 VP card

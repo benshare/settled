@@ -73,12 +73,18 @@ export function lockedGiveResource(kind: BankKind): Resource | null {
 // multiple of `ratio`, give/receive are non-overlapping, and the number of
 // groups given equals the number of units received (sum(give) === ratio × sum(receive)).
 // For 2:1 specific ports, only the matching resource may appear on `give`.
+//
+// Specialist discount: when `specialistResource` is set (the player's
+// declared specialty) AND the give is a single-resource stack of that same
+// resource, the effective ratio is `max(2, baseRatio - 1)`. Otherwise the
+// base ratio applies.
 export function isValidBankTradeShape(
 	give: ResourceHand,
 	receive: ResourceHand,
-	kind: BankKind
+	kind: BankKind,
+	specialistResource: Resource | null = null
 ): boolean {
-	const ratio = ratioOf(kind)
+	const ratio = effectiveBankRatioFor(kind, give, specialistResource)
 	const locked = lockedGiveResource(kind)
 	let giveTotal = 0
 	let receiveTotal = 0
@@ -91,6 +97,22 @@ export function isValidBankTradeShape(
 		receiveTotal += receive[r]
 	}
 	return giveTotal > 0 && giveTotal === ratio * receiveTotal
+}
+
+// Effective bank ratio for a trade, accounting for the specialist discount
+// when the player gives a single-resource stack of their declared specialty.
+// Returns the base ratio in all other cases.
+export function effectiveBankRatioFor(
+	kind: BankKind,
+	give: ResourceHand,
+	specialistResource: Resource | null
+): number {
+	const base = ratioOf(kind)
+	if (!specialistResource) return base
+	const givers = RESOURCES.filter((r) => give[r] > 0)
+	if (givers.length !== 1) return base
+	if (givers[0] !== specialistResource) return base
+	return Math.max(2, base - 1)
 }
 
 export function applyBankTradeToPlayer(

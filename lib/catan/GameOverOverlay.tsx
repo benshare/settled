@@ -234,6 +234,10 @@ function breakdownFor(state: GameState, playerIdx: number): ScoreChip[] {
 			icon: 'road',
 		})
 	}
+	const carpenterVP = state.players[playerIdx].carpenterVP ?? 0
+	if (carpenterVP > 0) {
+		chips.push({ label: 'Carpenter VP', value: carpenterVP, icon: 'star' })
+	}
 	let vpCards = 0
 	for (const e of state.players[playerIdx].devCards) {
 		if (e.id === 'victory_point') vpCards++

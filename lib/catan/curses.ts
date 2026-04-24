@@ -62,9 +62,8 @@ export function maxSettlementsFor(
 	return 5
 }
 
-export function winVPThresholdFor(curse: CurseId | undefined): number {
-	return curse === 'ambition' ? 11 : 10
-}
+// VP threshold lives in `bonus.ts` — both ambition and thrill_seeker feed
+// into the same helper.
 
 export function winRoadsRequiredFor(curse: CurseId | undefined): number {
 	return curse === 'nomadism' ? 11 : 0

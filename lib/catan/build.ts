@@ -13,6 +13,8 @@ import {
 	type Edge,
 	type Vertex,
 } from './board'
+import { BRICKLAYER_COST } from './bonus'
+import type { BonusId } from './bonuses'
 import {
 	curseOf,
 	maxRoadsFor,
@@ -28,10 +30,14 @@ import {
 	edgeStateOf,
 	vertexStateOf,
 	type GameState,
+	type PlayerState,
 	type ResourceHand,
 } from './types'
 
 export type BuildKind = 'road' | 'settlement' | 'city'
+// Includes the "dev_card" pseudo-kind for affordability checks since
+// bricklayer applies uniformly to roads / settlements / cities / dev cards.
+export type PurchaseKind = BuildKind | 'dev_card'
 
 export const BUILD_COSTS: Record<BuildKind, ResourceHand> = {
 	road: { brick: 1, wood: 1, sheep: 0, wheat: 0, ore: 0 },
@@ -59,6 +65,66 @@ export function deductHand(
 	const out = { ...hand }
 	for (const r of RESOURCES) out[r] = hand[r] - cost[r]
 	return out
+}
+
+// The standard resource cost for a given purchase. `dev_card` pulls from
+// dev.DEV_CARD_COST indirectly — we re-declare the shape here so the
+// bricklayer helpers stay self-contained (no build ↔ dev circular dep).
+const DEV_CARD_STANDARD_COST: ResourceHand = {
+	brick: 0,
+	wood: 0,
+	sheep: 1,
+	wheat: 1,
+	ore: 1,
+}
+
+export function standardCostOf(kind: PurchaseKind): ResourceHand {
+	if (kind === 'dev_card') return DEV_CARD_STANDARD_COST
+	return BUILD_COSTS[kind]
+}
+
+// Is the bricklayer alt cost (4 brick) available to this player for this
+// purchase? Only when bonus is bricklayer and the hand has ≥ 4 brick.
+export function canUseBricklayer(
+	bonus: BonusId | undefined,
+	hand: ResourceHand
+): boolean {
+	return bonus === 'bricklayer' && hand.brick >= BRICKLAYER_COST.brick
+}
+
+// Resolve which cost a player pays for a purchase. Prefers standard cost
+// when affordable; falls back to bricklayer. Returns null if neither
+// works. `useBricklayer` forces the alt cost (for an explicit player
+// override); the caller is responsible for gating on bonus.
+export function effectiveCostFor(
+	p: PlayerState,
+	kind: PurchaseKind,
+	useBricklayer: boolean = false
+): ResourceHand | null {
+	const standard = standardCostOf(kind)
+	if (useBricklayer) {
+		return canUseBricklayer(p.bonus, p.resources) ? BRICKLAYER_COST : null
+	}
+	if (canAfford(p.resources, standard)) return standard
+	if (canUseBricklayer(p.bonus, p.resources)) return BRICKLAYER_COST
+	return null
+}
+
+// Can the player afford the purchase by any legal payment route?
+export function canAffordPurchase(p: PlayerState, kind: PurchaseKind): boolean {
+	return effectiveCostFor(p, kind) !== null
+}
+
+// Should the client request the bricklayer alt cost when submitting a
+// build? True iff the standard cost is unaffordable but the alt is.
+// Default = prefer-standard. UI that wants to force the alt can pass
+// `true` directly to the store action.
+export function shouldUseBricklayer(
+	p: PlayerState,
+	kind: PurchaseKind
+): boolean {
+	if (canAfford(p.resources, standardCostOf(kind))) return false
+	return canUseBricklayer(p.bonus, p.resources)
 }
 
 // --- Roads ------------------------------------------------------------------
