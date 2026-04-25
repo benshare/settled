@@ -283,9 +283,12 @@ const styles = StyleSheet.create({
 		flex: 1,
 		backgroundColor: 'rgba(0,0,0,0.45)',
 		justifyContent: 'center',
+		alignItems: 'center',
 		paddingHorizontal: spacing.lg,
 	},
 	sheet: {
+		width: '100%',
+		maxWidth: 480,
 		backgroundColor: colors.background,
 		borderRadius: radius.lg,
 		borderWidth: 1,

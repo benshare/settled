@@ -1604,6 +1604,9 @@ function confirmBuildTitle(kind: BuildKind): string {
 	}
 }
 
+// On web we trim chrome around the board a bit so the SVG can breathe.
+const isWeb = Platform.OS === 'web'
+
 const styles = StyleSheet.create({
 	safe: {
 		flex: 1,
@@ -1614,12 +1617,12 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		paddingHorizontal: spacing.md,
-		paddingTop: spacing.sm,
-		paddingBottom: spacing.sm,
+		paddingTop: isWeb ? 2 : spacing.sm,
+		paddingBottom: isWeb ? 2 : spacing.sm,
 	},
 	back: {
-		width: 40,
-		height: 40,
+		width: isWeb ? 32 : 40,
+		height: isWeb ? 32 : 40,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
@@ -1684,16 +1687,16 @@ const styles = StyleSheet.create({
 	},
 	actionBar: {
 		paddingHorizontal: spacing.md,
-		paddingTop: spacing.sm,
-		paddingBottom: spacing.md,
-		height: 76,
+		paddingTop: isWeb ? spacing.xs : spacing.sm,
+		paddingBottom: isWeb ? spacing.xs : spacing.md,
+		height: isWeb ? 60 : 76,
 		justifyContent: 'center',
 	},
 	mainLoopBar: {
 		paddingHorizontal: spacing.md,
-		paddingTop: spacing.sm,
-		paddingBottom: spacing.md,
-		height: 76,
+		paddingTop: isWeb ? spacing.xs : spacing.sm,
+		paddingBottom: isWeb ? spacing.xs : spacing.md,
+		height: isWeb ? 60 : 76,
 		justifyContent: 'center',
 	},
 	diceSlot: {

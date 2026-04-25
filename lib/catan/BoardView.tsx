@@ -86,10 +86,15 @@ function BoardSvg({
 	build?: BuildInteraction
 	robber?: RobberInteraction
 }) {
-	const PAD = 16
-	const innerW = Math.max(0, boxW - PAD * 2)
-	const innerH = Math.max(0, boxH - PAD * 2)
-	const layout = computeBoardLayout(innerW, innerH)
+	// Ports sit ~1s outside the hex grid on each edge, so the true bounding
+	// box is (5√3 + 2)s × 10s rather than 5√3s × 8s. Budget that extension
+	// so port badges don't clip at the Svg viewport edges.
+	const SQRT3 = Math.sqrt(3)
+	const PAD = 8
+	const availW = Math.max(0, boxW - PAD * 2)
+	const availH = Math.max(0, boxH - PAD * 2)
+	const s = Math.min(availW / (5 * SQRT3 + 2), availH / 10)
+	const layout = computeBoardLayout(5 * SQRT3 * s, 8 * s)
 	const vertexPositions = computeVertexPositions(layout)
 	const portVisuals = computePortLayout(layout, state.ports ?? [])
 	const offsetX = (boxW - layout.width) / 2

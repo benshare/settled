@@ -1,7 +1,9 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
+
+const isWeb = Platform.OS === 'web'
 import { bonusById, curseById } from './bonuses'
 import { knightsPlayed } from './dev'
 import { longestRoadFor } from './longestRoad'
@@ -206,8 +208,8 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		gap: spacing.xs,
 		paddingHorizontal: spacing.md,
-		paddingTop: spacing.xs,
-		paddingBottom: spacing.sm,
+		paddingTop: isWeb ? 2 : spacing.xs,
+		paddingBottom: isWeb ? spacing.xs : spacing.sm,
 	},
 	box: {
 		flex: 1,
