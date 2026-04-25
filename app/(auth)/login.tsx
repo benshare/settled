@@ -21,6 +21,13 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 const DEV_TEST_USERNAMES = ['ben', 'testuser1', 'testuser2', 'testuser3']
 const DEV_TEST_PASSWORD = 'testpassword'
 
+// App Store reviewer bypass: typing this phone number signs in as the
+// dedicated reviewer account (seeded by dev/seed-appstore-user.mjs) without
+// sending an SMS. Active in release builds.
+const REVIEWER_PHONE_DIGITS = '1234567890'
+const REVIEWER_PHONE = '+11234567890'
+const REVIEWER_PASSWORD = 'testpassword'
+
 export default function LoginScreen() {
 	const [phone, setPhone] = useState('')
 	const [loading, setLoading] = useState(false)
@@ -71,6 +78,29 @@ export default function LoginScreen() {
 	async function handleContinue() {
 		setLoading(true)
 		setError(null)
+
+		if (digits === REVIEWER_PHONE_DIGITS) {
+			const { data, error } = await supabase.auth.signInWithPassword({
+				phone: REVIEWER_PHONE,
+				password: REVIEWER_PASSWORD,
+			})
+			if (error || !data.session?.user) {
+				setLoading(false)
+				setError(error?.message ?? 'reviewer sign-in failed')
+				return
+			}
+			const profile = await useProfileStore
+				.getState()
+				.loadProfile(data.session.user.id)
+			setLoading(false)
+			if (profile) {
+				router.replace('/(app)/play')
+			} else {
+				router.replace('/(auth)/set-username')
+			}
+			return
+		}
+
 		const normalized = digits.length === 10 ? `+1${digits}` : `+${digits}`
 
 		const { error } = await signInWithPhone(normalized)
