@@ -17,6 +17,7 @@ export function PlayerStrip({
 	profilesById,
 	gameState,
 	pointsByPlayer,
+	publicByPlayer,
 	onPressPlayer,
 }: {
 	playerOrder: string[]
@@ -28,6 +29,12 @@ export function PlayerStrip({
 	// the viewer, or fully revealed once the game is over). Sourced from
 	// GameContext so every surface stays in sync.
 	pointsByPlayer: number[]
+	// Strictly-public VP per player (no hidden VP cards). When this is
+	// lower than `pointsByPlayer[i]` we render `public (revealed)` to make
+	// the gap between "what others see" and "what they actually have"
+	// legible — only happens on rows we're allowed to look behind, i.e.
+	// the viewer's own row in an active game and every row at game over.
+	publicByPlayer: number[]
 	onPressPlayer?: (playerIdx: number) => void
 }) {
 	const showBonusIcons = gameState.config.bonuses
@@ -41,6 +48,8 @@ export function PlayerStrip({
 				const name =
 					i === meIdx ? 'You' : (profile?.username ?? 'Player')
 				const points = pointsByPlayer[i] ?? 0
+				const publicPoints = publicByPlayer[i] ?? points
+				const hasHidden = points > publicPoints
 				const cards = sumResources(gameState.players[i]?.resources)
 				const isActive = currentTurn === i
 				const player = gameState.players[i]
@@ -86,7 +95,11 @@ export function PlayerStrip({
 									size={12}
 									color={colors.textSecondary}
 								/>
-								<Text style={styles.statText}>{points}</Text>
+								<Text style={styles.statText}>
+									{hasHidden
+										? `${publicPoints} (${points})`
+										: points}
+								</Text>
 							</View>
 							<View style={styles.stat}>
 								<Ionicons

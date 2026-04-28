@@ -22,6 +22,10 @@ export type PlayerDetailOverlayProps = {
 	// Already-resolved display VP per player. See PlayerStrip /
 	// GameContext for the selection rule.
 	pointsByPlayer: number[]
+	// Strictly-public VP per player (excludes hidden VP cards). When this is
+	// lower than `pointsByPlayer[i]`, the overlay renders `public (revealed)`
+	// in the Points chip — same convention as PlayerStrip.
+	publicByPlayer: number[]
 	onClose: () => void
 }
 
@@ -32,6 +36,7 @@ export function PlayerDetailOverlay({
 	profilesById,
 	gameState,
 	pointsByPlayer,
+	publicByPlayer,
 	onClose,
 }: PlayerDetailOverlayProps) {
 	const open = playerIdx !== null
@@ -52,6 +57,11 @@ export function PlayerDetailOverlay({
 							profilesById={profilesById}
 							gameState={gameState}
 							points={pointsByPlayer[playerIdx] ?? 0}
+							publicPoints={
+								publicByPlayer[playerIdx] ??
+								pointsByPlayer[playerIdx] ??
+								0
+							}
 							onClose={onClose}
 						/>
 					)}
@@ -68,6 +78,7 @@ function Body({
 	profilesById,
 	gameState,
 	points,
+	publicPoints,
 	onClose,
 }: {
 	playerIdx: number
@@ -76,6 +87,7 @@ function Body({
 	profilesById: Record<string, Profile>
 	gameState: GameState
 	points: number
+	publicPoints: number
 	onClose: () => void
 }) {
 	const uid = playerOrder[playerIdx]
@@ -125,7 +137,15 @@ function Body({
 			</View>
 
 			<View style={styles.statsRow}>
-				<StatChip icon="trophy-outline" label="Points" value={points} />
+				<StatChip
+					icon="trophy-outline"
+					label="Points"
+					value={
+						points > publicPoints
+							? `${publicPoints} (${points})`
+							: points
+					}
+				/>
 				<StatChip icon="albums-outline" label="Cards" value={cards} />
 			</View>
 
@@ -189,7 +209,7 @@ function StatChip({
 }: {
 	icon: React.ComponentProps<typeof Ionicons>['name']
 	label: string
-	value: number
+	value: number | string
 }) {
 	return (
 		<View style={styles.chip}>

@@ -1,4 +1,3 @@
-import { useAuth } from '@/lib/auth'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import {
@@ -111,7 +110,6 @@ function ManageRequestsBanner({
 }
 
 function IncomingRow({ incoming }: { incoming: IncomingRequest }) {
-	const { user } = useAuth()
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const acceptRequest = useFriendsStore((s) => s.acceptRequest)
@@ -120,10 +118,9 @@ function IncomingRow({ incoming }: { incoming: IncomingRequest }) {
 	const [error, setError] = useState<string | null>(null)
 
 	async function onAccept() {
-		if (!user?.id) return
 		setBusy('accept')
 		setError(null)
-		const { error } = await acceptRequest(user.id, incoming.request.id)
+		const { error } = await acceptRequest(incoming.request.id)
 		setBusy(null)
 		if (error) setError(error)
 	}

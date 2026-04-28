@@ -3,13 +3,16 @@
 // failure.
 
 import {
+	addresseesOf,
 	applyTradeToPlayers,
 	canAfford,
 	emptyHand,
 	handIsEmpty,
 	isOfferAddressedTo,
+	isOfferRejectedByAll,
 	isValidTradeShape,
 	newTradeId,
+	rejectedByOf,
 } from '../lib/catan/trade'
 import type { PlayerState, ResourceHand, TradeOffer } from '../lib/catan/types'
 
@@ -131,6 +134,44 @@ function testNewTradeId() {
 	assert(ids.size > 90, 'ids are mostly unique')
 }
 
+function testAddresseesOf() {
+	equal(
+		JSON.stringify(addresseesOf(offer({ from: 0, to: [] }), 4)),
+		JSON.stringify([1, 2, 3]),
+		'empty to expands to all-but-proposer'
+	)
+	equal(
+		JSON.stringify(addresseesOf(offer({ from: 1, to: [2, 3] }), 4)),
+		JSON.stringify([2, 3]),
+		'explicit to is preserved'
+	)
+}
+
+function testRejectedHelpers() {
+	equal(
+		JSON.stringify(rejectedByOf(offer({ from: 0 }))),
+		JSON.stringify([]),
+		'missing rejectedBy defaults to empty'
+	)
+	equal(
+		JSON.stringify(rejectedByOf(offer({ from: 0, rejectedBy: [1, 2] }))),
+		JSON.stringify([1, 2]),
+		'present rejectedBy passes through'
+	)
+
+	const all = offer({ from: 0, to: [], rejectedBy: [1, 2, 3] })
+	assert(isOfferRejectedByAll(all, 4), 'all-but-proposer rejected => true')
+	const some = offer({ from: 0, to: [], rejectedBy: [1, 2] })
+	assert(!isOfferRejectedByAll(some, 4), 'partial reject => false')
+	const targeted = offer({ from: 0, to: [2, 3], rejectedBy: [2] })
+	assert(!isOfferRejectedByAll(targeted, 4), 'partial-targeted => false')
+	const targetedAll = offer({ from: 0, to: [2, 3], rejectedBy: [2, 3] })
+	assert(
+		isOfferRejectedByAll(targetedAll, 4),
+		'all-targeted rejected => true'
+	)
+}
+
 // --- Run ------------------------------------------------------------------
 
 const tests: [string, () => void][] = [
@@ -140,6 +181,8 @@ const tests: [string, () => void][] = [
 	['applyTradeToPlayers', testApplyTradeToPlayers],
 	['isOfferAddressedTo', testIsOfferAddressedTo],
 	['newTradeId', testNewTradeId],
+	['addresseesOf', testAddresseesOf],
+	['rejectedByOf / isOfferRejectedByAll', testRejectedHelpers],
 ]
 
 for (const [name, fn] of tests) {

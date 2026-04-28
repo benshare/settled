@@ -1,5 +1,5 @@
 import { useAuth } from '@/lib/auth'
-import { type Hex, type Resource } from '@/lib/catan/board'
+import { RESOURCES, type Hex, type Resource } from '@/lib/catan/board'
 import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
@@ -55,16 +55,21 @@ import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
-import { TradeBanner } from '@/lib/catan/TradeBanner'
+import { StealAnimation } from '@/lib/catan/StealAnimation'
+import { TradeBanner, visibleOfferFor } from '@/lib/catan/TradeBanner'
 import { TradePanel } from '@/lib/catan/TradePanel'
-import type { ResourceHand as ResourceHandType } from '@/lib/catan/types'
+import { isOfferRejectedByAll } from '@/lib/catan/trade'
+import type {
+	PlayerState,
+	ResourceHand as ResourceHandType,
+} from '@/lib/catan/types'
 import { Button } from '@/lib/modules/Button'
-import { useGamesStore } from '@/lib/stores/useGamesStore'
+import { useGamesStore, type GameEvent } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
 import { colors, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
 	ActivityIndicator,
 	Alert,
@@ -84,6 +89,19 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 const BOARD_RESIZE = LinearTransition.duration(220)
 const PANEL_IN = FadeIn.duration(160)
 const PANEL_OUT = FadeOut.duration(120)
+
+// Recover the stolen resource by diffing the victim's hand pre/post a
+// `stolen` event. Returns null if no resource decreased by exactly 1 — which
+// happens when the realtime players[] update lags behind the events log.
+function diffStolenResource(
+	before: ResourceHandType,
+	after: ResourceHandType
+): Resource | null {
+	for (const r of RESOURCES) {
+		if ((before[r] ?? 0) - (after[r] ?? 0) === 1) return r
+	}
+	return null
+}
 
 // Best-effort error notice. Alert.alert is a no-op on react-native-web;
 // fall back to window.alert there. Confirms live inline in the game view
@@ -150,6 +168,7 @@ function GameBody() {
 	const proposeTrade = useGamesStore((s) => s.proposeTrade)
 	const acceptTrade = useGamesStore((s) => s.acceptTrade)
 	const cancelTrade = useGamesStore((s) => s.cancelTrade)
+	const rejectTrade = useGamesStore((s) => s.rejectTrade)
 	const bankTrade = useGamesStore((s) => s.bankTrade)
 	const buyDevCard = useGamesStore((s) => s.buyDevCard)
 	const playDevCard = useGamesStore((s) => s.playDevCard)
@@ -249,8 +268,11 @@ function GameBody() {
 	}, [mainTurnKey])
 
 	// Trade rides on the main phase — there's no top-level field for it.
-	const liveOffer =
+	// `serverOffer` is the raw offer on game state; `liveOffer` is what *I*
+	// should see — null once I (as an addressee) have rejected it.
+	const serverOffer =
 		gameState?.phase.kind === 'main' ? gameState.phase.trade : null
+	const liveOffer = visibleOfferFor(serverOffer, meIdx)
 
 	// Close the compose panel if a live offer appears (we just sent it) or
 	// disappears (someone accepted/cancelled).
@@ -259,6 +281,24 @@ function GameBody() {
 		setTradePanelOpen(false)
 	}, [liveTradeId])
 
+	// Once every addressee has rejected, the proposer's banner shows
+	// "Rejected by everyone" briefly, then auto-cancels. The cancel issuance
+	// is the proposer's responsibility — no other client owns it.
+	const playerCount = game?.player_order.length ?? 0
+	const proposerOfferAllRejected =
+		!!serverOffer &&
+		serverOffer.from === meIdx &&
+		isOfferRejectedByAll(serverOffer, playerCount)
+	useEffect(() => {
+		if (!proposerOfferAllRejected || !game || !serverOffer) return
+		const offerId = serverOffer.id
+		const gameId = game.id
+		const id = setTimeout(() => {
+			cancelTrade(gameId, offerId)
+		}, 2000)
+		return () => clearTimeout(id)
+	}, [proposerOfferAllRejected, game, serverOffer, cancelTrade])
+
 	// Any pending confirm is tied to the current phase/turn. If either flips
 	// under us (realtime), drop the stale confirm so its closure doesn't
 	// fire against the wrong state.
@@ -266,6 +306,92 @@ function GameBody() {
 	useEffect(() => {
 		setPendingConfirm(null)
 	}, [confirmScopeKey])
+
+	// --- Steal animation ---------------------------------------------------
+	// Detect the moment a `stolen` event lands on the events log involving me
+	// (as thief or victim). The resource isn't in the event itself — we recover
+	// it by diffing the victim's hand pre/post — so we keep a ref of the last
+	// players[] we observed. Bystanders never derive a resource and never see
+	// the animation.
+	const [stealAnim, setStealAnim] = useState<{
+		key: string
+		preHand: ResourceHandType
+		stolen: Resource
+		thiefName: string
+		victimName: string
+		meIsThief: boolean
+	} | null>(null)
+	const prevPlayersRef = useRef<PlayerState[] | undefined>(undefined)
+	const lastSeenEventCountRef = useRef<number | null>(null)
+	useEffect(() => {
+		if (!game || !gameState) return
+		const events = (game.events ?? []) as GameEvent[]
+
+		if (lastSeenEventCountRef.current === null) {
+			lastSeenEventCountRef.current = events.length
+			prevPlayersRef.current = gameState.players
+			return
+		}
+		if (events.length === lastSeenEventCountRef.current) {
+			prevPlayersRef.current = gameState.players
+			return
+		}
+
+		const newEvents = events.slice(lastSeenEventCountRef.current)
+		const stealEvent = newEvents.find(
+			(e): e is Extract<GameEvent, { kind: 'stolen' }> =>
+				e?.kind === 'stolen' &&
+				(e.thief === meIdx || e.victim === meIdx)
+		)
+
+		if (!stealEvent) {
+			lastSeenEventCountRef.current = events.length
+			prevPlayersRef.current = gameState.players
+			return
+		}
+
+		const prev = prevPlayersRef.current
+		if (!prev) {
+			lastSeenEventCountRef.current = events.length
+			prevPlayersRef.current = gameState.players
+			return
+		}
+
+		const before = prev[stealEvent.victim]?.resources
+		const after = gameState.players[stealEvent.victim]?.resources
+		const stolen =
+			before && after ? diffStolenResource(before, after) : null
+
+		if (!stolen) {
+			// Players state hasn't caught up yet (events table updated first).
+			// Don't advance refs — the next render with the new players will
+			// resolve correctly.
+			return
+		}
+
+		const thiefName =
+			profilesById[game.player_order[stealEvent.thief]]?.username ??
+			'Player'
+		const victimName =
+			profilesById[game.player_order[stealEvent.victim]]?.username ??
+			'Player'
+
+		setStealAnim({
+			key:
+				stealEvent.at +
+				':' +
+				stealEvent.thief +
+				':' +
+				stealEvent.victim,
+			preHand: before,
+			stolen,
+			thiefName,
+			victimName,
+			meIsThief: stealEvent.thief === meIdx,
+		})
+		lastSeenEventCountRef.current = events.length
+		prevPlayersRef.current = gameState.players
+	}, [game, gameState, meIdx, profilesById])
 
 	if (!ready && !game) {
 		return (
@@ -623,6 +749,14 @@ function GameBody() {
 		if (res.error) notify(res.error)
 	}
 
+	async function onRejectTrade() {
+		if (!game || !liveOffer) return
+		setSubmitting(true)
+		const res = await rejectTrade(game.id, liveOffer.id)
+		setSubmitting(false)
+		if (res.error) notify('Reject failed', res.error)
+	}
+
 	async function onBankTrade(
 		give: ResourceHandType,
 		receive: ResourceHandType
@@ -736,6 +870,7 @@ function GameBody() {
 					profilesById={profilesById}
 					gameState={gameState}
 					pointsByPlayer={displayVP}
+					publicByPlayer={publicVP}
 					onPressPlayer={setOpenPlayerIdx}
 				/>
 			)}
@@ -830,6 +965,7 @@ function GameBody() {
 					profilesById={profilesById}
 					gameState={gameState}
 					pointsByPlayer={displayVP}
+					publicByPlayer={publicVP}
 					onClose={() => setOpenPlayerIdx(null)}
 				/>
 			)}
@@ -1034,6 +1170,7 @@ function GameBody() {
 						submitting={submitting}
 						onAccept={onAcceptTrade}
 						onCancel={onCancelTrade}
+						onReject={onRejectTrade}
 					/>
 				)}
 				{gameState ? (
@@ -1225,12 +1362,25 @@ function GameBody() {
 					profilesById={profilesById}
 					gameState={gameState}
 					pointsByPlayer={displayVP}
+					publicByPlayer={publicVP}
 					onDismiss={() => setGameOverOpen(false)}
 					onBackToGames={() => router.replace('/play')}
 				/>
 			)}
 			{inGameOver && !gameOverOpen && (
 				<FinalScoreButton onPress={() => setGameOverOpen(true)} />
+			)}
+
+			{stealAnim && (
+				<StealAnimation
+					key={stealAnim.key}
+					preHand={stealAnim.preHand}
+					stolen={stealAnim.stolen}
+					thiefName={stealAnim.thiefName}
+					victimName={stealAnim.victimName}
+					meIsThief={stealAnim.meIsThief}
+					onDismiss={() => setStealAnim(null)}
+				/>
 			)}
 		</View>
 	)

@@ -64,6 +64,32 @@ export function isOfferAddressedTo(offer: TradeOffer, meIdx: number): boolean {
 	return offer.to.includes(meIdx)
 }
 
+// Resolve the offer's addressee set to an explicit list of player indexes.
+// Empty `to` is expanded to "every player except the proposer".
+export function addresseesOf(offer: TradeOffer, playerCount: number): number[] {
+	if (offer.to.length > 0) return [...offer.to]
+	const out: number[] = []
+	for (let i = 0; i < playerCount; i += 1) {
+		if (i !== offer.from) out.push(i)
+	}
+	return out
+}
+
+export function rejectedByOf(offer: TradeOffer): number[] {
+	return offer.rejectedBy ?? []
+}
+
+// True iff every addressee has rejected.
+export function isOfferRejectedByAll(
+	offer: TradeOffer,
+	playerCount: number
+): boolean {
+	const addressees = addresseesOf(offer, playerCount)
+	if (addressees.length === 0) return false
+	const rejected = new Set(rejectedByOf(offer))
+	return addressees.every((idx) => rejected.has(idx))
+}
+
 // 8-char base36 id. Sufficient uniqueness for at-most-one-open-trade-at-a-time.
 export function newTradeId(): string {
 	return Math.random().toString(36).slice(2, 10)

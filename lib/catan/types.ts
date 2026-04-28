@@ -199,6 +199,10 @@ export type TradeOffer = {
 	give: ResourceHand
 	receive: ResourceHand
 	createdAt: string
+	// Indexes of addressed players who have rejected. Never contains `from`.
+	// Older offers written before reject existed may omit this; readers should
+	// default a missing array to `[]`.
+	rejectedBy?: number[]
 }
 
 export type Port = { edge: Edge; kind: PortKind }

@@ -80,6 +80,13 @@ export type GameEvent =
 	  }
 	| { kind: 'trade_canceled'; offer_id: string; from: number; at: string }
 	| {
+			kind: 'trade_rejected'
+			offer_id: string
+			from: number
+			by: number
+			at: string
+	  }
+	| {
 			kind: 'bank_trade'
 			player: number
 			give: ResourceHand
@@ -193,6 +200,7 @@ type GamesStore = {
 	) => Promise<ActionResult & { offerId?: string }>
 	acceptTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 	cancelTrade: (gameId: string, offerId: string) => Promise<ActionResult>
+	rejectTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 	bankTrade: (
 		gameId: string,
 		give: ResourceHand,
@@ -674,6 +682,21 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		)
 		if (error || !data?.ok) return { error: "Couldn't cancel trade" }
+		return { error: null }
+	},
+
+	async rejectTrade(gameId, offerId) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'reject_trade',
+					game_id: gameId,
+					offer_id: offerId,
+				},
+			}
+		)
+		if (error || !data?.ok) return { error: "Couldn't reject trade" }
 		return { error: null }
 	},
 

@@ -120,6 +120,11 @@ type CancelTradeBody = {
 	game_id: string
 	offer_id: string
 }
+type RejectTradeBody = {
+	action: 'reject_trade'
+	game_id: string
+	offer_id: string
+}
 type BankTradeBody = {
 	action: 'bank_trade'
 	game_id: string
@@ -218,6 +223,7 @@ type Body =
 	| ProposeTradeBody
 	| AcceptTradeBody
 	| CancelTradeBody
+	| RejectTradeBody
 	| BankTradeBody
 	| BuyDevCardBody
 	| PlayDevCardBody
@@ -595,6 +601,7 @@ type TradeOffer = {
 	give: ResourceHand
 	receive: ResourceHand
 	createdAt: string
+	rejectedBy?: number[]
 }
 
 type PortKind = '3:1' | Resource
@@ -2054,6 +2061,10 @@ function isOfferAddressedTo(offer: TradeOffer, meIdx: number): boolean {
 	if (meIdx === offer.from) return false
 	if (offer.to.length === 0) return true
 	return offer.to.includes(meIdx)
+}
+
+function rejectedByOf(offer: TradeOffer): number[] {
+	return offer.rejectedBy ?? []
 }
 
 function newTradeId(): string {
@@ -3805,6 +3816,7 @@ async function handleProposeTrade(
 		give,
 		receive,
 		createdAt: new Date().toISOString(),
+		rejectedBy: [],
 	}
 
 	const nextPhase: Phase = { ...phase, trade: offer }
@@ -3918,6 +3930,55 @@ async function handleCancelTrade(
 		kind: 'trade_canceled',
 		offer_id: offer.id,
 		from: meIdx,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	return json({ ok: true })
+}
+
+async function handleRejectTrade(
+	admin: SupabaseClient,
+	me: string,
+	body: RejectTradeBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	const phase = state.phase
+	if (phase.kind !== 'main') return err(400, 'expected main phase')
+	const offer = phase.trade
+	if (!offer || offer.id !== body.offer_id) return err(404, 'offer not found')
+
+	const meIdx = game.player_order.indexOf(me)
+	if (meIdx < 0) return err(403, 'not a participant')
+	if (!isOfferAddressedTo(offer, meIdx))
+		return err(403, 'not addressed to you')
+
+	const existing = rejectedByOf(offer)
+	if (existing.includes(meIdx)) return json({ ok: true })
+
+	const nextOffer: TradeOffer = {
+		...offer,
+		rejectedBy: [...existing, meIdx],
+	}
+	const nextPhase: Phase = { ...phase, trade: nextOffer }
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	const event = {
+		kind: 'trade_rejected',
+		offer_id: offer.id,
+		from: offer.from,
+		by: meIdx,
 		at: new Date().toISOString(),
 	}
 	const { error: gameErr } = await admin
@@ -5339,6 +5400,8 @@ serve(async (req) => {
 			return handleAcceptTrade(admin, me, body)
 		case 'cancel_trade':
 			return handleCancelTrade(admin, me, body)
+		case 'reject_trade':
+			return handleRejectTrade(admin, me, body)
 		case 'bank_trade':
 			return handleBankTrade(admin, me, body)
 		case 'buy_dev_card':

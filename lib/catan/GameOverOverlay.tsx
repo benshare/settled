@@ -32,6 +32,11 @@ export type GameOverOverlayProps = {
 	// Final VP per player, fully revealed (includes VP cards). From
 	// GameContext.selfVP since the game is over.
 	pointsByPlayer: number[]
+	// Strictly-public VP per player (excludes hidden VP cards). When this
+	// is lower than `pointsByPlayer[i]`, the row total renders as
+	// `public (revealed)` so the gap is legible — same convention as
+	// PlayerStrip.
+	publicByPlayer: number[]
 	onDismiss: () => void
 	onBackToGames: () => void
 }
@@ -44,6 +49,7 @@ export function GameOverOverlay({
 	profilesById,
 	gameState,
 	pointsByPlayer,
+	publicByPlayer,
 	onDismiss,
 	onBackToGames,
 }: GameOverOverlayProps) {
@@ -72,6 +78,7 @@ export function GameOverOverlay({
 						meIdx={meIdx}
 						profilesById={profilesById}
 						pointsByPlayer={pointsByPlayer}
+						publicByPlayer={publicByPlayer}
 					/>
 					<View style={styles.buttons}>
 						<Button variant="secondary" onPress={onDismiss}>
@@ -117,22 +124,27 @@ function Scoreboard({
 	meIdx,
 	profilesById,
 	pointsByPlayer,
+	publicByPlayer,
 }: {
 	gameState: GameState
 	playerOrder: string[]
 	meIdx: number
 	profilesById: Record<string, Profile>
 	pointsByPlayer: number[]
+	publicByPlayer: number[]
 }) {
 	const rows = playerOrder.map((uid, i) => {
 		const profile = profilesById[uid]
 		const name = i === meIdx ? 'You' : (profile?.username ?? 'Player')
+		const total = pointsByPlayer[i] ?? 0
+		const publicTotal = publicByPlayer[i] ?? total
 		return {
 			i,
 			name,
 			color: playerColors[i] ?? playerColors[0],
 			breakdown: breakdownFor(gameState, i),
-			total: pointsByPlayer[i] ?? 0,
+			total,
+			publicTotal,
 		}
 	})
 	// Highest score first.
@@ -150,7 +162,11 @@ function Scoreboard({
 							style={[styles.dot, { backgroundColor: row.color }]}
 						/>
 						<Text style={styles.rowName}>{row.name}</Text>
-						<Text style={styles.rowTotal}>{row.total}</Text>
+						<Text style={styles.rowTotal}>
+							{row.total > row.publicTotal
+								? `${row.publicTotal} (${row.total})`
+								: row.total}
+						</Text>
 					</View>
 					<View style={styles.breakdown}>
 						{row.breakdown.map((chip) => (

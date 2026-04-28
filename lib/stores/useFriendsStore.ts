@@ -1,3 +1,4 @@
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
 import type { Database } from '../database-types'
 import { supabase } from '../supabase'
@@ -5,6 +6,7 @@ import type { AutoLoadedStore } from './index'
 import type { Profile } from './useProfileStore'
 
 type FriendRequest = Database['public']['Tables']['friend_requests']['Row']
+type FriendRow = Database['public']['Tables']['friends']['Row']
 
 const PROFILE_COLS =
 	'id, username, avatar_path, created_at, updated_at, dev, game_defaults'
@@ -12,6 +14,9 @@ const PROFILE_COLS =
 // In production builds, exclude profiles flagged `dev = true` from user-facing
 // lists. See lib/stores/CLAUDE.md for the full convention.
 const HIDE_DEV_PROFILES = !__DEV__
+
+let requestsChannel: RealtimeChannel | null = null
+let friendsChannel: RealtimeChannel | null = null
 
 export type FriendEntry = {
 	otherId: string
@@ -49,7 +54,7 @@ type FriendsStore = {
 
 	sendRequest: (meId: string, targetId: string) => Promise<ActionResult>
 	cancelRequest: (requestId: string) => Promise<ActionResult>
-	acceptRequest: (meId: string, requestId: string) => Promise<ActionResult>
+	acceptRequest: (requestId: string) => Promise<ActionResult>
 	rejectRequest: (requestId: string) => Promise<ActionResult>
 
 	search: (meId: string, query: string) => Promise<SearchResult[]>
@@ -144,9 +149,37 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
 			pendingOutgoing,
 			loading: false,
 		})
+
+		if (requestsChannel) supabase.removeChannel(requestsChannel)
+		requestsChannel = supabase
+			.channel('friend_requests_rtu')
+			.on(
+				'postgres_changes',
+				{ event: '*', schema: 'public', table: 'friend_requests' },
+				(payload) => handleRequestChange(payload, userId, get, set)
+			)
+			.subscribe()
+
+		if (friendsChannel) supabase.removeChannel(friendsChannel)
+		friendsChannel = supabase
+			.channel('friends_rtu')
+			.on(
+				'postgres_changes',
+				{ event: '*', schema: 'public', table: 'friends' },
+				(payload) => handleFriendChange(payload, userId, get, set)
+			)
+			.subscribe()
 	},
 
 	clear() {
+		if (requestsChannel) {
+			supabase.removeChannel(requestsChannel)
+			requestsChannel = null
+		}
+		if (friendsChannel) {
+			supabase.removeChannel(friendsChannel)
+			friendsChannel = null
+		}
 		set({
 			friends: [],
 			pendingIncoming: [],
@@ -162,7 +195,6 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
 		if (error) {
 			return { error: "Couldn't send request" }
 		}
-		await get().loadForUser(meId)
 		return { error: null }
 	},
 
@@ -182,14 +214,18 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
 		return { error: null }
 	},
 
-	async acceptRequest(meId, requestId) {
+	async acceptRequest(requestId) {
 		const { error } = await supabase.rpc('accept_friend_request', {
 			request_id: requestId,
 		})
 		if (error) {
 			return { error: "Couldn't accept request" }
 		}
-		await get().loadForUser(meId)
+		set({
+			pendingIncoming: get().pendingIncoming.filter(
+				(r) => r.request.id !== requestId
+			),
+		})
 		return { error: null }
 	},
 
@@ -278,6 +314,118 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
 		}))
 	},
 }))
+
+async function handleRequestChange(
+	payload: {
+		eventType: string
+		new: Record<string, unknown>
+		old: Record<string, unknown>
+	},
+	meId: string,
+	get: () => FriendsStore,
+	set: (partial: Partial<FriendsStore>) => void
+) {
+	if (payload.eventType === 'DELETE') {
+		const oldId = (payload.old as { id?: string }).id
+		if (!oldId) return
+		set({
+			pendingIncoming: get().pendingIncoming.filter(
+				(r) => r.request.id !== oldId
+			),
+			pendingOutgoing: get().pendingOutgoing.filter(
+				(r) => r.request.id !== oldId
+			),
+		})
+		return
+	}
+
+	const row = payload.new as FriendRequest
+
+	if (payload.eventType === 'UPDATE') {
+		if (row.status !== 'pending') {
+			set({
+				pendingIncoming: get().pendingIncoming.filter(
+					(r) => r.request.id !== row.id
+				),
+				pendingOutgoing: get().pendingOutgoing.filter(
+					(r) => r.request.id !== row.id
+				),
+			})
+		}
+		return
+	}
+
+	if (payload.eventType === 'INSERT') {
+		if (row.status !== 'pending') return
+
+		const otherId = row.sender_id === meId ? row.receiver_id : row.sender_id
+		const { data: profile } = await supabase
+			.from('profiles')
+			.select(PROFILE_COLS)
+			.eq('id', otherId)
+			.maybeSingle()
+		if (!profile) return
+		if (HIDE_DEV_PROFILES && profile.dev) return
+
+		if (row.receiver_id === meId) {
+			const existing = get().pendingIncoming
+			if (existing.some((r) => r.request.id === row.id)) return
+			set({
+				pendingIncoming: [{ request: row, profile }, ...existing],
+			})
+		} else if (row.sender_id === meId) {
+			const existing = get().pendingOutgoing
+			if (existing.some((r) => r.request.id === row.id)) return
+			set({
+				pendingOutgoing: [{ request: row, profile }, ...existing],
+			})
+		}
+	}
+}
+
+async function handleFriendChange(
+	payload: {
+		eventType: string
+		new: Record<string, unknown>
+		old: Record<string, unknown>
+	},
+	meId: string,
+	get: () => FriendsStore,
+	set: (partial: Partial<FriendsStore>) => void
+) {
+	if (payload.eventType === 'DELETE') {
+		const old = payload.old as Partial<FriendRow>
+		if (!old.user_id_a || !old.user_id_b) return
+		const otherId = old.user_id_a === meId ? old.user_id_b : old.user_id_a
+		set({
+			friends: get().friends.filter((f) => f.otherId !== otherId),
+		})
+		return
+	}
+
+	if (payload.eventType !== 'INSERT') return
+
+	const row = payload.new as FriendRow
+	if (row.user_id_a !== meId && row.user_id_b !== meId) return
+	const otherId = row.user_id_a === meId ? row.user_id_b : row.user_id_a
+
+	if (get().friends.some((f) => f.otherId === otherId)) return
+
+	const { data: profile } = await supabase
+		.from('profiles')
+		.select(PROFILE_COLS)
+		.eq('id', otherId)
+		.maybeSingle()
+	if (!profile) return
+	if (HIDE_DEV_PROFILES && profile.dev) return
+
+	set({
+		friends: [
+			{ otherId, profile, time_added: row.time_added },
+			...get().friends,
+		],
+	})
+}
 
 export const friendsStoreRegistration: AutoLoadedStore = {
 	name: 'friends',
