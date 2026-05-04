@@ -208,6 +208,7 @@ function GameBody() {
 		run: () => void | Promise<void>
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
+	const [bonusPaneCollapsed, setBonusPaneCollapsed] = useState(false)
 	// Game-over overlay starts open when the game is complete; user can
 	// dismiss to inspect the final board and reopen via FinalScoreButton.
 	const [gameOverOpen, setGameOverOpen] = useState(true)
@@ -834,31 +835,28 @@ function GameBody() {
 	const accountantEnabled =
 		canBuildThisTurn && !!myPlayer && myPlayer.bonus === 'accountant'
 
-	if (
-		inBonusSelection &&
-		gameState &&
-		gameState.phase.kind === 'select_bonus'
-	) {
-		const myHand = meIdx >= 0 ? gameState.phase.hands[meIdx] : undefined
-		const waitingOn = game.player_order
-			.map((uid, i) => ({ uid, i }))
-			.filter(({ i }) => {
-				if (gameState.phase.kind !== 'select_bonus') return false
-				return gameState.phase.hands[i]?.chosen == null
-			})
-			.filter(({ i }) => i !== meIdx)
-			.map(({ uid }) => profilesById[uid]?.username ?? 'Player')
-		return (
-			<View style={styles.bodyRoot}>
-				<BonusSelection
-					hand={myHand}
-					waitingOn={waitingOn}
-					submitting={submitting}
-					onPick={onPickBonus}
-				/>
-			</View>
-		)
-	}
+	const bonusSelectionData =
+		inBonusSelection && gameState && gameState.phase.kind === 'select_bonus'
+			? {
+					phaseHands: gameState.phase.hands,
+					myHand:
+						meIdx >= 0 ? gameState.phase.hands[meIdx] : undefined,
+					waitingOn: game.player_order
+						.map((uid, i) => ({ uid, i }))
+						.filter(({ i }) => {
+							if (
+								!gameState ||
+								gameState.phase.kind !== 'select_bonus'
+							)
+								return false
+							return gameState.phase.hands[i]?.chosen == null
+						})
+						.filter(({ i }) => i !== meIdx)
+						.map(
+							({ uid }) => profilesById[uid]?.username ?? 'Player'
+						),
+				}
+			: null
 
 	return (
 		<View style={styles.bodyRoot}>
@@ -885,7 +883,7 @@ function GameBody() {
 				/>
 			)}
 
-			{!inPlacement && !inGameOver && gameState && (
+			{!inPlacement && !inGameOver && !inBonusSelection && gameState && (
 				<>
 					{!inRoadBuilding && (
 						<BuildTradeBar
@@ -1240,6 +1238,30 @@ function GameBody() {
 						onCancel={() => setPendingConfirm(null)}
 					/>
 				)}
+				{bonusSelectionData && (
+					<View
+						style={[
+							styles.bonusPaneFloat,
+							bonusPaneCollapsed &&
+								styles.bonusPaneFloatCollapsed,
+						]}
+					>
+						<BonusSelection
+							hand={bonusSelectionData.myHand}
+							waitingOn={bonusSelectionData.waitingOn}
+							submitting={submitting}
+							collapsed={bonusPaneCollapsed}
+							onToggleCollapsed={() =>
+								setBonusPaneCollapsed((prev) => !prev)
+							}
+							onPick={onPickBonus}
+							playerOrder={game.player_order}
+							meIdx={meIdx}
+							profilesById={profilesById}
+							phaseHands={bonusSelectionData.phaseHands}
+						/>
+					</View>
+				)}
 			</Animated.View>
 
 			{inPlacement && isMyPlacementTurn && (
@@ -1317,6 +1339,7 @@ function GameBody() {
 
 			{!inPlacement &&
 				!inGameOver &&
+				!inBonusSelection &&
 				!tradePanelOpen &&
 				gameState &&
 				meIdx >= 0 &&
@@ -1853,6 +1876,17 @@ const styles = StyleSheet.create({
 		width: 72,
 		height: 32,
 		justifyContent: 'center',
+	},
+	bonusPaneFloat: {
+		position: 'absolute',
+		top: spacing.sm,
+		left: spacing.sm,
+		right: spacing.sm,
+		bottom: spacing.sm,
+		zIndex: 5,
+	},
+	bonusPaneFloatCollapsed: {
+		bottom: undefined,
 	},
 	confirmFloat: {
 		position: 'absolute',

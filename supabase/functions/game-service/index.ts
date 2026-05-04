@@ -3371,23 +3371,23 @@ async function handleBuildCity(
 
 	if (!isValidBuildCityVertex(state, meIdx, vertex))
 		return err(400, 'invalid city target')
-	const me = state.players[meIdx]
+	const meP = state.players[meIdx]
 	const useBricklayer = !!body.use_bricklayer
 	const requestedSwap = Number.isFinite(body.swap_wheat_to_ore)
 		? Number(body.swap_wheat_to_ore)
 		: 0
-	const swapDelta = metropolitanWheatSwapDelta(me.bonus, requestedSwap)
+	const swapDelta = metropolitanWheatSwapDelta(meP.bonus, requestedSwap)
 	let cost: ResourceHand | null
 	if (useBricklayer) {
-		cost = resolvePurchaseCost(me, BUILD_COSTS.city, true)
+		cost = resolvePurchaseCost(meP, BUILD_COSTS.city, true)
 	} else if (swapDelta > 0) {
-		const altCost = metropolitanCityCost(me.bonus, swapDelta)
-		cost = canAfford(me.resources, altCost) ? altCost : null
+		const altCost = metropolitanCityCost(meP.bonus, swapDelta)
+		cost = canAfford(meP.resources, altCost) ? altCost : null
 	} else {
-		cost = resolvePurchaseCost(me, BUILD_COSTS.city, false)
+		cost = resolvePurchaseCost(meP, BUILD_COSTS.city, false)
 	}
 	if (!cost) return err(400, 'insufficient resources')
-	if (!canSpendUnderAge(me, costSize(cost)))
+	if (!canSpendUnderAge(meP, costSize(cost)))
 		return err(400, 'age limit reached this turn')
 
 	const nextVertices = {
@@ -4419,9 +4419,9 @@ async function handleLiquidate(
 		if (kind === 'dev_card') {
 			const idx = target.index as number
 			if (typeof idx !== 'number' || !Number.isInteger(idx)) return null
-			const me = state.players[meIdx]
-			if (idx < 0 || idx >= me.devCards.length) return null
-			const entry = me.devCards[idx]
+			const meP = state.players[meIdx]
+			if (idx < 0 || idx >= meP.devCards.length) return null
+			const entry = meP.devCards[idx]
 			if (entry.purchasedTurn >= state.round) return null
 			return {
 				hand: DEV_CARD_REFUND,
