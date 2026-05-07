@@ -1,5 +1,6 @@
 import { useAuth } from '@/lib/auth'
 import { RESOURCES, type Hex, type Resource } from '@/lib/catan/board'
+import { BoardLegend } from '@/lib/catan/BoardLegend'
 import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
@@ -1230,6 +1231,11 @@ function GameBody() {
 				)}
 				<View pointerEvents="none" style={styles.boardInsetTop} />
 				<View pointerEvents="none" style={styles.boardInsetBottom} />
+				{gameState && !inBonusSelection && (
+					<BoardLegend
+						devCardsEnabled={!!gameState.config.devCards}
+					/>
+				)}
 				{pendingConfirm && (
 					<ConfirmBar
 						title={pendingConfirm.title}
