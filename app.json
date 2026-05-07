@@ -1,63 +1,64 @@
 {
-	"expo": {
-		"name": "Settled",
-		"slug": "settled",
-		"version": "1.0.0",
-		"orientation": "portrait",
-		"icon": "./assets/images/icon.png",
-		"scheme": "settled",
-		"userInterfaceStyle": "automatic",
-		"newArchEnabled": true,
-		"ios": {
-			"bundleIdentifier": "com.benshare.settled",
-			"supportsTablet": true,
-			"infoPlist": {
-				"ITSAppUsesNonExemptEncryption": false,
-				"NSPhotoLibraryUsageDescription": "Allow Settled to access your photos so you can set a profile picture."
-			},
-			"runtimeVersion": {
-				"policy": "appVersion"
-			}
-		},
-		"android": {
-			"package": "com.benshare.settled",
-			"edgeToEdgeEnabled": true,
-			"predictiveBackGestureEnabled": false
-		},
-		"web": {
-			"output": "static",
-			"favicon": "./assets/images/favicon.png"
-		},
-		"plugins": [
-			"expo-router",
-			[
-				"expo-splash-screen",
-				{
-					"image": "./assets/images/splash-icon.png",
-					"imageWidth": 200,
-					"resizeMode": "contain",
-					"backgroundColor": "#ffffff",
-					"dark": {
-						"backgroundColor": "#000000"
-					}
-				}
-			],
-			"expo-secure-store",
-			"expo-notifications",
-			"expo-updates"
-		],
-		"experiments": {
-			"typedRoutes": true,
-			"reactCompiler": true
-		},
-		"extra": {
-			"eas": {
-				"projectId": "ba0c1196-575e-4e19-a4a9-6601e698f983"
-			}
-		},
-		"owner": "benshare",
-		"updates": {
-			"url": "https://u.expo.dev/ba0c1196-575e-4e19-a4a9-6601e698f983"
-		}
-	}
+    "expo": {
+        "name": "Settled",
+        "slug": "settled",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "icon": "./assets/images/icon.png",
+        "scheme": "settled",
+        "userInterfaceStyle": "automatic",
+        "newArchEnabled": true,
+        "ios": {
+            "bundleIdentifier": "com.benshare.settled",
+            "supportsTablet": true,
+            "infoPlist": {
+                "ITSAppUsesNonExemptEncryption": false,
+                "NSPhotoLibraryUsageDescription": "Allow Settled to access your photos so you can set a profile picture."
+            },
+            "runtimeVersion": {
+                "policy": "appVersion"
+            }
+        },
+        "android": {
+            "package": "com.benshare.settled",
+            "edgeToEdgeEnabled": true,
+            "predictiveBackGestureEnabled": false
+        },
+        "web": {
+            "output": "static",
+            "favicon": "./assets/images/favicon.png"
+        },
+        "plugins": [
+            "expo-router",
+            [
+                "expo-splash-screen",
+                {
+                    "image": "./assets/images/splash-icon.png",
+                    "imageWidth": 200,
+                    "resizeMode": "contain",
+                    "backgroundColor": "#ffffff",
+                    "dark": {
+                        "backgroundColor": "#000000"
+                    }
+                }
+            ],
+            "expo-secure-store",
+            "expo-notifications",
+            "expo-updates",
+            "expo-web-browser"
+        ],
+        "experiments": {
+            "typedRoutes": true,
+            "reactCompiler": true
+        },
+        "extra": {
+            "eas": {
+                "projectId": "ba0c1196-575e-4e19-a4a9-6601e698f983"
+            }
+        },
+        "owner": "benshare",
+        "updates": {
+            "url": "https://u.expo.dev/ba0c1196-575e-4e19-a4a9-6601e698f983"
+        }
+    }
 }

@@ -1245,13 +1245,7 @@ function GameBody() {
 					/>
 				)}
 				{bonusSelectionData && (
-					<View
-						style={[
-							styles.bonusPaneFloat,
-							bonusPaneCollapsed &&
-								styles.bonusPaneFloatCollapsed,
-						]}
-					>
+					<View style={styles.bonusPaneFloat}>
 						<BonusSelection
 							hand={bonusSelectionData.myHand}
 							waitingOn={bonusSelectionData.waitingOn}
@@ -1890,9 +1884,6 @@ const styles = StyleSheet.create({
 		right: spacing.sm,
 		bottom: spacing.sm,
 		zIndex: 5,
-	},
-	bonusPaneFloatCollapsed: {
-		bottom: undefined,
 	},
 	confirmFloat: {
 		position: 'absolute',

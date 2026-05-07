@@ -1,6 +1,6 @@
 _Make sure friend list refreshes when a friend request is sent_
 _"" accepted_
-Need to be able to see board and other people's bonus choices
+_Need to be able to see board and other people's bonus choices_
 Add legend and building costs
 Add terrain? icon tesselation? to hexes
 _Can't reject trade_

@@ -18,12 +18,19 @@ import { Button } from '@/lib/modules/Button'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import Animated, {
+	useAnimatedStyle,
+	useSharedValue,
+	withTiming,
+} from 'react-native-reanimated'
 import type { Profile } from '../stores/useProfileStore'
 import { bonusById, curseById, type BonusId } from './bonuses'
 import { playerColors } from './palette'
 import type { SelectBonusHand } from './types'
+
+const ANIM_DURATION = 240
 
 export type BonusSelectionProps = {
 	hand: SelectBonusHand | undefined
@@ -60,6 +67,31 @@ export function BonusSelection({
 
 	const committed = hand ? hand.chosen !== null : false
 
+	const outerHeightSV = useSharedValue(0)
+	const headerHeightSV = useSharedValue(0)
+	const progress = useSharedValue(collapsed ? 0 : 1)
+
+	useEffect(() => {
+		progress.value = withTiming(collapsed ? 0 : 1, {
+			duration: ANIM_DURATION,
+		})
+	}, [collapsed, progress])
+
+	const wrapAnimStyle = useAnimatedStyle(() => {
+		if (outerHeightSV.value === 0 || headerHeightSV.value === 0) return {}
+		const min = headerHeightSV.value
+		const max = outerHeightSV.value
+		return { height: min + (max - min) * progress.value }
+	})
+
+	const bodyAnimStyle = useAnimatedStyle(() => ({
+		opacity: progress.value,
+	}))
+
+	const chevronAnimStyle = useAnimatedStyle(() => ({
+		transform: [{ rotate: `${progress.value * 180}deg` }],
+	}))
+
 	async function onConfirm() {
 		if (pick === null || !hand) return
 		onPick(hand.offered[pick])
@@ -72,159 +104,166 @@ export function BonusSelection({
 		: 'Bonus selection'
 
 	return (
-		<View style={styles.wrap}>
-			<Pressable
-				onPress={onToggleCollapsed}
-				style={({ pressed }) => [
-					styles.header,
-					pressed && styles.pressed,
-				]}
-			>
-				<Ionicons
-					name={collapsed ? 'chevron-down' : 'chevron-up'}
-					size={18}
-					color={colors.textSecondary}
-				/>
-				<Text style={styles.headerTitle}>{headerLabel}</Text>
-				<Text style={styles.headerHint}>
-					{collapsed ? 'Tap to expand' : 'Tap to see board'}
-				</Text>
-			</Pressable>
-
-			{!collapsed && (
-				<ScrollView
-					style={styles.scroll}
-					contentContainerStyle={styles.body}
-					showsVerticalScrollIndicator={false}
+		<View
+			style={styles.outer}
+			onLayout={(e) => {
+				outerHeightSV.value = e.nativeEvent.layout.height
+			}}
+		>
+			<Animated.View style={[styles.wrap, wrapAnimStyle]}>
+				<Pressable
+					onPress={onToggleCollapsed}
+					onLayout={(e) => {
+						headerHeightSV.value = e.nativeEvent.layout.height
+					}}
+					style={({ pressed }) => [
+						styles.header,
+						pressed && styles.pressed,
+					]}
 				>
-					{hand ? (
-						<>
-							<Text style={styles.subheading}>
-								Keep one bonus card. The other will be
-								discarded. Your curse card stays either way.
-							</Text>
-							<View style={styles.bonusRow}>
-								{hand.offered.map((bonusId, i) => {
-									const b = bonusById(bonusId)!
-									const isPicked = committed
-										? hand.offered[i] === hand.chosen
-										: pick === i
-									const isDiscarded = committed && !isPicked
-									return (
-										<Pressable
-											key={i}
-											onPress={() =>
-												!committed &&
-												setPick(i as 0 | 1)
-											}
-											disabled={committed || submitting}
-											style={({ pressed }) => [
-												styles.card,
-												isPicked && styles.cardPicked,
-												isDiscarded && styles.cardFaded,
-												pressed &&
+					<Animated.View style={chevronAnimStyle}>
+						<Ionicons
+							name="chevron-up"
+							size={18}
+							color={colors.textSecondary}
+						/>
+					</Animated.View>
+					<Text style={styles.headerTitle}>{headerLabel}</Text>
+				</Pressable>
+
+				<Animated.View
+					style={[styles.bodyWrap, bodyAnimStyle]}
+					pointerEvents={collapsed ? 'none' : 'auto'}
+				>
+					<ScrollView
+						style={styles.scroll}
+						contentContainerStyle={styles.body}
+						showsVerticalScrollIndicator={false}
+					>
+						{hand ? (
+							<>
+								<Text style={styles.subheading}>
+									Keep one bonus card. The other will be
+									discarded. Your curse card stays either way.
+								</Text>
+								<View style={styles.bonusRow}>
+									{hand.offered.map((bonusId, i) => {
+										const b = bonusById(bonusId)!
+										const isPicked = committed
+											? hand.offered[i] === hand.chosen
+											: pick === i
+										const isDiscarded =
+											committed && !isPicked
+										return (
+											<Pressable
+												key={i}
+												onPress={() =>
 													!committed &&
-													styles.pressed,
-											]}
-										>
-											<View style={styles.cardIcon}>
-												<Ionicons
-													name={b.icon}
-													size={28}
-													color={
-														isDiscarded
-															? colors.textMuted
-															: colors.brand
-													}
-												/>
-											</View>
-											<Text style={styles.cardTitle}>
-												{b.title}
-											</Text>
-											<Text
-												style={styles.cardDescription}
+													setPick(i as 0 | 1)
+												}
+												disabled={
+													committed || submitting
+												}
+												style={({ pressed }) => [
+													styles.card,
+													isPicked &&
+														styles.cardPicked,
+													isDiscarded &&
+														styles.cardFaded,
+													pressed &&
+														!committed &&
+														styles.pressed,
+												]}
 											>
-												{b.description}
-											</Text>
-											{isPicked && (
-												<View style={styles.cardBadge}>
+												<View style={styles.cardIcon}>
 													<Ionicons
-														name="checkmark"
-														size={14}
-														color={colors.white}
-													/>
-													<Text
-														style={
-															styles.cardBadgeText
+														name={b.icon}
+														size={28}
+														color={
+															isDiscarded
+																? colors.textMuted
+																: colors.brand
 														}
-													>
-														Keep
-													</Text>
+													/>
 												</View>
-											)}
-										</Pressable>
-									)
-								})}
-							</View>
-
-							<View style={[styles.card, styles.curseCard]}>
-								<View style={styles.cardIcon}>
-									<Ionicons
-										name={curseById(hand.curse)!.icon}
-										size={28}
-										color={colors.error}
-									/>
+												<Text style={styles.cardTitle}>
+													{b.title}
+												</Text>
+												<Text
+													style={
+														styles.cardDescription
+													}
+												>
+													{b.description}
+												</Text>
+											</Pressable>
+										)
+									})}
 								</View>
-								<Text style={styles.cardTitle}>
-									{curseById(hand.curse)!.title}
-								</Text>
-								<Text style={styles.cardDescription}>
-									{curseById(hand.curse)!.description}
-								</Text>
-							</View>
 
-							{committed ? (
-								<View style={styles.waitingRow}>
-									<Text style={styles.waitingText}>
-										{waitingOn.length === 0
-											? 'Everyone is ready — starting placement…'
-											: `Waiting for ${formatList(waitingOn)} to pick`}
+								<View style={[styles.card, styles.curseCard]}>
+									<View style={styles.cardIcon}>
+										<Ionicons
+											name={curseById(hand.curse)!.icon}
+											size={28}
+											color={colors.error}
+										/>
+									</View>
+									<Text style={styles.cardTitle}>
+										{curseById(hand.curse)!.title}
+									</Text>
+									<Text style={styles.cardDescription}>
+										{curseById(hand.curse)!.description}
 									</Text>
 								</View>
-							) : (
-								<View style={styles.actionRow}>
-									<Button
-										onPress={onConfirm}
-										disabled={pick === null || submitting}
-										loading={submitting}
-									>
-										{pick === null
-											? 'Pick a bonus'
-											: 'Confirm'}
-									</Button>
-								</View>
-							)}
-						</>
-					) : (
-						<Text style={styles.subheading}>
-							Players are choosing their bonus cards.
-						</Text>
-					)}
 
-					<PlayOrderFooter
-						playerOrder={playerOrder}
-						meIdx={meIdx}
-						profilesById={profilesById}
-						phaseHands={phaseHands}
-						revealedIdx={revealedIdx}
-						onToggleReveal={(i) =>
-							setRevealedIdx((prev) => (prev === i ? null : i))
-						}
-						styles={styles}
-						colors={colors}
-					/>
-				</ScrollView>
-			)}
+								{committed ? (
+									<View style={styles.waitingRow}>
+										<Text style={styles.waitingText}>
+											{waitingOn.length === 0
+												? 'Everyone is ready — starting placement…'
+												: `Waiting for ${formatList(waitingOn)} to pick`}
+										</Text>
+									</View>
+								) : (
+									<View style={styles.actionRow}>
+										<Button
+											onPress={onConfirm}
+											disabled={
+												pick === null || submitting
+											}
+											loading={submitting}
+										>
+											{pick === null
+												? 'Pick a bonus'
+												: 'Confirm'}
+										</Button>
+									</View>
+								)}
+							</>
+						) : (
+							<Text style={styles.subheading}>
+								Players are choosing their bonus cards.
+							</Text>
+						)}
+
+						<PlayOrderFooter
+							playerOrder={playerOrder}
+							meIdx={meIdx}
+							profilesById={profilesById}
+							phaseHands={phaseHands}
+							revealedIdx={revealedIdx}
+							onToggleReveal={(i) =>
+								setRevealedIdx((prev) =>
+									prev === i ? null : i
+								)
+							}
+							styles={styles}
+							colors={colors}
+						/>
+					</ScrollView>
+				</Animated.View>
+			</Animated.View>
 		</View>
 	)
 }
@@ -363,6 +402,10 @@ function formatList(names: string[]): string {
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
+		outer: {
+			flex: 1,
+			justifyContent: 'flex-end',
+		},
 		wrap: {
 			backgroundColor: colors.card,
 			borderWidth: 1,
@@ -391,12 +434,11 @@ function makeStyles(colors: ColorScheme) {
 			fontWeight: '700',
 			color: colors.text,
 		},
-		headerHint: {
-			fontSize: font.xs,
-			color: colors.textMuted,
+		bodyWrap: {
+			flex: 1,
 		},
 		scroll: {
-			flexGrow: 0,
+			flex: 1,
 		},
 		body: {
 			padding: spacing.md,
@@ -448,22 +490,6 @@ function makeStyles(colors: ColorScheme) {
 		cardDescription: {
 			fontSize: font.sm,
 			color: colors.textSecondary,
-		},
-		cardBadge: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			alignSelf: 'flex-start',
-			gap: 4,
-			paddingHorizontal: spacing.sm,
-			paddingVertical: 2,
-			borderRadius: radius.full,
-			backgroundColor: colors.brand,
-			marginTop: spacing.xs,
-		},
-		cardBadgeText: {
-			fontSize: font.xs,
-			fontWeight: '700',
-			color: colors.white,
 		},
 		curseCard: {
 			flexGrow: 0,
