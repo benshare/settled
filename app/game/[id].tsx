@@ -56,6 +56,7 @@ import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
+import { NomadAnimation } from '@/lib/catan/NomadAnimation'
 import { StealAnimation } from '@/lib/catan/StealAnimation'
 import { TradeBanner, visibleOfferFor } from '@/lib/catan/TradeBanner'
 import { TradePanel } from '@/lib/catan/TradePanel'
@@ -394,6 +395,47 @@ function GameBody() {
 		lastSeenEventCountRef.current = events.length
 		prevPlayersRef.current = gameState.players
 	}, [game, gameState, meIdx, profilesById])
+
+	// --- Nomad animation ---------------------------------------------------
+	// `nomad_produce` events are already self-describing (resource + count
+	// in the event payload), so detection doesn't depend on hand diffing.
+	// Multiple nomads can produce on the same 7-roll, so animations queue.
+	const [nomadAnimQueue, setNomadAnimQueue] = useState<
+		{
+			key: string
+			produced: Resource
+			count: number
+			playerName: string
+			meIsNomad: boolean
+		}[]
+	>([])
+	const lastSeenNomadIndexRef = useRef<number | null>(null)
+	useEffect(() => {
+		if (!game) return
+		const events = (game.events ?? []) as GameEvent[]
+		if (lastSeenNomadIndexRef.current === null) {
+			lastSeenNomadIndexRef.current = events.length
+			return
+		}
+		if (events.length === lastSeenNomadIndexRef.current) return
+		const newEvents = events.slice(lastSeenNomadIndexRef.current)
+		const queued: typeof nomadAnimQueue = []
+		for (const e of newEvents) {
+			if (e?.kind !== 'nomad_produce') continue
+			const playerName =
+				profilesById[game.player_order[e.player]]?.username ?? 'Player'
+			queued.push({
+				key: e.at + ':' + e.player,
+				produced: e.resource,
+				count: e.count,
+				playerName,
+				meIsNomad: e.player === meIdx,
+			})
+		}
+		lastSeenNomadIndexRef.current = events.length
+		if (queued.length > 0) setNomadAnimQueue((q) => [...q, ...queued])
+	}, [game, meIdx, profilesById])
+	const nomadAnim = nomadAnimQueue[0] ?? null
 
 	if (!ready && !game) {
 		return (
@@ -1403,6 +1445,17 @@ function GameBody() {
 					victimName={stealAnim.victimName}
 					meIsThief={stealAnim.meIsThief}
 					onDismiss={() => setStealAnim(null)}
+				/>
+			)}
+
+			{nomadAnim && (
+				<NomadAnimation
+					key={nomadAnim.key}
+					produced={nomadAnim.produced}
+					count={nomadAnim.count}
+					playerName={nomadAnim.playerName}
+					meIsNomad={nomadAnim.meIsNomad}
+					onDismiss={() => setNomadAnimQueue((q) => q.slice(1))}
 				/>
 			)}
 		</View>

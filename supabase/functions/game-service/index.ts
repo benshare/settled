@@ -868,9 +868,10 @@ const BRICKLAYER_COST: ResourceHand = {
 	ore: 0,
 }
 
-// Nomad: every 7-roll grants each nomad player 1 random resource via a
-// d5. Canonical resource order (brick, wood, sheep, wheat, ore); die
-// faces 1..5 map to indices 0..4.
+// Nomad: every 7-roll picks a random resource via a d5. The desert behaves
+// like a regular hex for nomad players — they collect that resource per
+// adjacent building (settlement = 1, city = 2, super_city = 3). No buildings
+// on desert means no production (and no event).
 const NOMAD_RESOURCES: readonly Resource[] = [
 	'brick',
 	'wood',
@@ -883,25 +884,44 @@ function nomadDie(): Resource {
 	return NOMAD_RESOURCES[Math.floor(Math.random() * 5)]
 }
 
-function applyNomadProduce(players: PlayerState[]): {
+function nomadProductionAt(
+	state: GameState,
+	playerIdx: number,
+	hex: Hex
+): number {
+	let n = 0
+	for (const v of adjacentVertices[hex]) {
+		const vs = vertexStateOf(state, v)
+		if (!vs.occupied || vs.player !== playerIdx) continue
+		n += vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
+	}
+	return n
+}
+
+function applyNomadProduce(state: GameState): {
 	players: PlayerState[]
 	events: unknown[]
 } {
 	const events: unknown[] = []
-	const nextPlayers = players.map((p, i) => {
+	const desertHexes = HEXES.filter((h) => state.hexes[h].resource === null)
+	const nextPlayers = state.players.map((p, i) => {
 		if (p.bonus !== 'nomad') return p
+		let count = 0
+		for (const h of desertHexes) count += nomadProductionAt(state, i, h)
+		if (count <= 0) return p
 		const resource = nomadDie()
 		events.push({
 			kind: 'nomad_produce',
 			player: i,
 			resource,
+			count,
 			at: new Date().toISOString(),
 		})
 		return {
 			...p,
 			resources: {
 				...p.resources,
-				[resource]: p.resources[resource] + 1,
+				[resource]: p.resources[resource] + count,
 			},
 		}
 	})
@@ -2705,11 +2725,11 @@ async function applyRollOutcome(
 	const activeIdx = game.current_turn ?? 0
 
 	if (total === 7) {
-		// Nomad: each nomad player is granted 1 random resource (d5)
-		// BEFORE discards are computed. This means a nomad who was at 7
-		// pre-roll can be forced into discard range by their own nomad
-		// gain.
-		const nomadResult = applyNomadProduce(state.players)
+		// Nomad: each nomad player produces from the desert (settlement=1,
+		// city=2, super_city=3 of a randomly chosen resource) BEFORE
+		// discards are computed. A nomad who was at 7 pre-roll can be
+		// forced into discard range by their own nomad gain.
+		const nomadResult = applyNomadProduce(state)
 		const playersAfterNomad = nomadResult.players
 		const stateAfterNomad: GameState = {
 			...state,
@@ -3044,16 +3064,10 @@ async function handleRerollDice(
 		if (i !== meIdx) return pp
 		return { ...pp, rerolledThisTurn: true }
 	})
-
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({
-			players: nextPlayers,
-			phase: { kind: 'roll', pending: { dice: newDice } } satisfies Phase,
-		})
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
+	// The reroll is the gambler's last roll for the turn — apply outcome
+	// directly instead of holding it pending again. The UI shows it like any
+	// other roll, with no further confirm/reroll affordance.
+	const newState: GameState = { ...state, players: nextPlayers }
 	const rerollEvent = {
 		kind: 'reroll',
 		player: meIdx,
@@ -3061,12 +3075,17 @@ async function handleRerollDice(
 		new_dice: [newDice.a, newDice.b],
 		at: new Date().toISOString(),
 	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), rerollEvent] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
-	return json({ ok: true, dice: newDice, total: newDice.a + newDice.b })
+	const rolledEvent = {
+		kind: 'rolled',
+		player: meIdx,
+		dice: [newDice.a, newDice.b],
+		total: newDice.a + newDice.b,
+		at: new Date().toISOString(),
+	}
+	return applyRollOutcome(admin, game, newState, newDice, [
+		rerollEvent,
+		rolledEvent,
+	])
 }
 
 async function handleEndTurn(

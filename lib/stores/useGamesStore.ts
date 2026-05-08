@@ -114,6 +114,16 @@ export type GameEvent =
 	// announces that the current holder lost the bonus with no successor —
 	// common when a settlement severs a chain below the 5-segment threshold.
 	| { kind: 'longest_road_changed'; player: number | null; at: string }
+	// Nomad bonus: a 7 was rolled and this nomad has buildings on the desert.
+	// `count` is total production (settlement=1, city=2, super_city=3 summed
+	// across desert hexes). Surfaced in UI as a roulette-reveal animation.
+	| {
+			kind: 'nomad_produce'
+			player: number
+			resource: Resource
+			count: number
+			at: string
+	  }
 	// Terminal event. Written once per game when a player reaches 10 VP.
 	// `vpCards` reveals each player's previously-hidden VP card count so
 	// clients can render a final scoreboard without a separate read.

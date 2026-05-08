@@ -173,6 +173,9 @@ function BuildIconButton({
 	// curse, so the button must be non-interactive regardless of other
 	// enablement signals.
 	const interactive = (enabled || active) && !curseHint
+	// Curse-disabled buttons stay visually present (no dimming) so the curse
+	// badge reads as the cause; resource/turn-disabled buttons dim normally.
+	const dim = !interactive && !curseHint
 	const button = (
 		<Pressable
 			disabled={!interactive}
@@ -180,7 +183,7 @@ function BuildIconButton({
 			style={({ pressed }) => [
 				styles.iconBtn,
 				active && { borderColor: color, borderWidth: 2 },
-				!interactive && styles.iconBtnDisabled,
+				dim && styles.iconBtnDisabled,
 				pressed && interactive && styles.pressed,
 			]}
 			accessibilityLabel={

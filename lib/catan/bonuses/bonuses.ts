@@ -99,7 +99,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'nomad',
 		title: 'Nomad',
 		description:
-			'For you, the desert is a random resource activated by 7. After the robber is moved, roll a die to determine which resource it produces.',
+			'For you, the desert is a random resource activated by 7. Settlements/cities on the desert produce that resource (1/2/3 each) like a normal hex.',
 		icon: 'compass-outline',
 		set: '1',
 	},
