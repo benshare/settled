@@ -14,7 +14,8 @@
     "migrate": "npx supabase db push",
     "edge": "npx supabase functions deploy",
     "types": "supabase gen types typescript --project-id ymbtisbqwehsgpidntag > lib/database-types.ts",
-    "build:native": "EAS_BUILD_NO_EXPO_GO_WARNING=true eas build --platform ios --profile production --auto-submit"
+    "build:native": "EAS_BUILD_NO_EXPO_GO_WARNING=true eas build --platform ios --profile production --auto-submit",
+    "update": "eas update --branch production --auto"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

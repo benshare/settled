@@ -4,7 +4,8 @@ import { ThemeProvider, useTheme } from '@/lib/ThemeContext'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
-import { useEffect } from 'react'
+import * as Updates from 'expo-updates'
+import { useEffect, useState } from 'react'
 import { Platform, View } from 'react-native'
 import 'react-native-reanimated'
 
@@ -35,6 +36,7 @@ export default function RootLayout() {
 function RootNav() {
 	const { loading, user } = useAuth()
 	const { colors, resolved } = useTheme()
+	const [updateChecked, setUpdateChecked] = useState(false)
 
 	useEffect(() => {
 		if (user?.id) {
@@ -43,12 +45,31 @@ function RootNav() {
 	}, [user?.id])
 
 	useEffect(() => {
-		if (!loading) {
+		async function applyUpdate() {
+			try {
+				if (Updates.isEnabled) {
+					const update = await Updates.checkForUpdateAsync()
+					if (update.isAvailable) {
+						await Updates.fetchUpdateAsync()
+						await Updates.reloadAsync()
+						return
+					}
+				}
+			} catch {
+				// proceed normally if update check fails
+			}
+			setUpdateChecked(true)
+		}
+		applyUpdate()
+	}, [])
+
+	useEffect(() => {
+		if (!loading && updateChecked) {
 			SplashScreen.hideAsync()
 		}
-	}, [loading])
+	}, [loading, updateChecked])
 
-	if (loading) return null
+	if (loading || !updateChecked) return null
 
 	return (
 		<View

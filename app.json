@@ -58,7 +58,10 @@
         },
         "owner": "benshare",
         "updates": {
-            "url": "https://u.expo.dev/ba0c1196-575e-4e19-a4a9-6601e698f983"
+            "enabled": true,
+            "url": "https://u.expo.dev/ba0c1196-575e-4e19-a4a9-6601e698f983",
+            "fallbackToCacheTimeout": 0,
+            "checkAutomatically": "ON_LOAD"
         }
     }
 }
