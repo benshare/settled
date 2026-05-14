@@ -11,8 +11,8 @@ import {
 import { clearAllUserStores } from '@/lib/stores'
 import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
-import { ThemeMode, useTheme } from '@/lib/ThemeContext'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
+import { ThemeMode, useTheme } from '@/lib/ThemeContext'
 import * as ImagePicker from 'expo-image-picker'
 import * as Notifications from 'expo-notifications'
 import { useFocusEffect, useRouter } from 'expo-router'
@@ -451,11 +451,13 @@ function NotifToggleRow({
 			]}
 		>
 			<Text style={styles.rowValue}>{label}</Text>
-			<Switch
-				value={value}
-				onValueChange={onToggle}
-				disabled={disabled}
-			/>
+			<View style={styles.notifSwitchWrap}>
+				<Switch
+					value={value}
+					onValueChange={onToggle}
+					disabled={disabled}
+				/>
+			</View>
 		</Pressable>
 	)
 }
@@ -658,6 +660,10 @@ function makeStyles(colors: ColorScheme) {
 		},
 		notifRowDimmed: {
 			opacity: 0.5,
+		},
+		notifSwitchWrap: {
+			alignSelf: 'stretch',
+			justifyContent: 'center',
 		},
 	})
 }
