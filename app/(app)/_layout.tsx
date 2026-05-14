@@ -1,10 +1,16 @@
 import { useAuth } from '@/lib/auth'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
+import {
+	ensurePermissionAndRegister,
+	resolveNotificationLink,
+} from '@/lib/notifications'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
-import { Tabs } from 'expo-router'
+import * as Notifications from 'expo-notifications'
+import { Tabs, useRouter } from 'expo-router'
+import { useEffect } from 'react'
 
 export const unstable_settings = {
 	initialRouteName: 'play',
@@ -12,6 +18,34 @@ export const unstable_settings = {
 
 export default function AppLayout() {
 	const { colors } = useTheme()
+	const { user } = useAuth()
+	const router = useRouter()
+
+	useEffect(() => {
+		if (!user?.id) return
+		ensurePermissionAndRegister(user.id)
+	}, [user?.id])
+
+	useEffect(() => {
+		const sub = Notifications.addNotificationResponseReceivedListener(
+			(resp) => {
+				const link = resolveNotificationLink(
+					resp.notification.request.content.data
+				)
+				if (link) router.push(link)
+			}
+		)
+		// Cold-start case: the app was launched by tapping a notification.
+		Notifications.getLastNotificationResponseAsync().then((resp) => {
+			if (!resp) return
+			const link = resolveNotificationLink(
+				resp.notification.request.content.data
+			)
+			if (link) router.replace(link)
+		})
+		return () => sub.remove()
+	}, [router])
+
 	return (
 		<Tabs
 			screenOptions={{

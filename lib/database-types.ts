@@ -129,6 +129,7 @@ export type Database = {
 					game_id: string
 					hexes: Json
 					largest_army: number | null
+					longest_road: number | null
 					phase: Json
 					players: Json
 					ports: Json | null
@@ -145,6 +146,7 @@ export type Database = {
 					game_id: string
 					hexes: Json
 					largest_army?: number | null
+					longest_road?: number | null
 					phase: Json
 					players: Json
 					ports?: Json | null
@@ -161,6 +163,7 @@ export type Database = {
 					game_id?: string
 					hexes?: Json
 					largest_army?: number | null
+					longest_road?: number | null
 					phase?: Json
 					players?: Json
 					ports?: Json | null
@@ -220,6 +223,7 @@ export type Database = {
 					dev: boolean
 					game_defaults: Json
 					id: string
+					notification_prefs: Json
 					updated_at: string
 					username: string
 				}
@@ -229,6 +233,7 @@ export type Database = {
 					dev?: boolean
 					game_defaults?: Json
 					id: string
+					notification_prefs?: Json
 					updated_at?: string
 					username: string
 				}
@@ -238,10 +243,40 @@ export type Database = {
 					dev?: boolean
 					game_defaults?: Json
 					id?: string
+					notification_prefs?: Json
 					updated_at?: string
 					username?: string
 				}
 				Relationships: []
+			}
+			push_tokens: {
+				Row: {
+					platform: string
+					token: string
+					updated_at: string
+					user_id: string
+				}
+				Insert: {
+					platform: string
+					token: string
+					updated_at?: string
+					user_id: string
+				}
+				Update: {
+					platform?: string
+					token?: string
+					updated_at?: string
+					user_id?: string
+				}
+				Relationships: [
+					{
+						foreignKeyName: 'push_tokens_user_id_fkey'
+						columns: ['user_id']
+						isOneToOne: false
+						referencedRelation: 'profiles'
+						referencedColumns: ['id']
+					},
+				]
 			}
 		}
 		Views: {
@@ -251,10 +286,6 @@ export type Database = {
 			accept_friend_request: {
 				Args: { request_id: string }
 				Returns: undefined
-			}
-			propose_game: {
-				Args: { config: Json; invited_user_ids: string[] }
-				Returns: string
 			}
 		}
 		Enums: {

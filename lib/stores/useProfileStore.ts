@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Database } from '../database-types'
+import type { NotificationPrefs } from '../notifications'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
 
@@ -48,7 +49,7 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 }
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs'
 
 type UpdateResult = { error: string | null }
 
@@ -60,6 +61,7 @@ type ProfileStore = {
 	updateUsername: (username: string) => Promise<UpdateResult>
 	updateAvatarPath: (path: string | null) => Promise<UpdateResult>
 	updateGameDefaults: (defaults: GameDefaults) => Promise<UpdateResult>
+	updateNotificationPrefs: (prefs: NotificationPrefs) => Promise<UpdateResult>
 }
 
 export const useProfileStore = create<ProfileStore>((set, get) => ({
@@ -142,7 +144,26 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 			.single()
 
 		if (error) {
-			return { error: 'Something went wrong' }
+			return { error: error.message || 'Something went wrong' }
+		}
+
+		set({ profile: data as Profile })
+		return { error: null }
+	},
+
+	async updateNotificationPrefs(prefs) {
+		const current = get().profile
+		if (!current) return { error: 'No profile loaded' }
+
+		const { data, error } = await supabase
+			.from('profiles')
+			.update({ notification_prefs: prefs })
+			.eq('id', current.id)
+			.select(PROFILE_COLS)
+			.single()
+
+		if (error) {
+			return { error: error.message || 'Something went wrong' }
 		}
 
 		set({ profile: data as Profile })
