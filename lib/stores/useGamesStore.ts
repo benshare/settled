@@ -13,7 +13,7 @@ type GameRow = Database['public']['Tables']['games']['Row']
 type GameRequestRow = Database['public']['Tables']['game_requests']['Row']
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs'
 
 let requestsChannel: RealtimeChannel | null = null
 let gamesChannel: RealtimeChannel | null = null
@@ -425,12 +425,26 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		})
 	},
 
-	async createRequest(meId, invitedIds, config) {
-		const { error } = await supabase.rpc('propose_game', {
-			invited_user_ids: invitedIds,
-			config,
-		})
-		return { error: error ? "Couldn't create game" : null }
+	async createRequest(_meId, invitedIds, config) {
+		const { data, error } = await supabase.functions.invoke(
+			'game-service',
+			{
+				body: {
+					action: 'propose_game',
+					invited_user_ids: invitedIds,
+					config,
+				},
+			}
+		)
+		if (error || !data?.ok) {
+			return {
+				error:
+					(data?.error as string | undefined) ||
+					error?.message ||
+					"Couldn't create game",
+			}
+		}
+		return { error: null }
 	},
 
 	async pickBonus(gameId, bonus) {

@@ -9,7 +9,7 @@ type FriendRequest = Database['public']['Tables']['friend_requests']['Row']
 type FriendRow = Database['public']['Tables']['friends']['Row']
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs'
 
 // In production builds, exclude profiles flagged `dev = true` from user-facing
 // lists. See lib/stores/CLAUDE.md for the full convention.
@@ -188,12 +188,20 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
 		})
 	},
 
-	async sendRequest(meId, targetId) {
-		const { error } = await supabase
-			.from('friend_requests')
-			.insert({ sender_id: meId, receiver_id: targetId })
-		if (error) {
-			return { error: "Couldn't send request" }
+	async sendRequest(_meId, targetId) {
+		const { data, error } = await supabase.functions.invoke(
+			'friends-service',
+			{
+				body: { action: 'send', target_id: targetId },
+			}
+		)
+		if (error || !data?.ok) {
+			return {
+				error:
+					(data?.error as string | undefined) ||
+					error?.message ||
+					"Couldn't send request",
+			}
 		}
 		return { error: null }
 	},

@@ -48,12 +48,20 @@ import {
 	createClient,
 	SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2'
+import { sendNotifications } from '../_notify/index.ts'
+
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void }
 
 type InvitedEntry = {
 	user: string
 	status: 'pending' | 'accepted' | 'rejected'
 }
 
+type ProposeGameBody = {
+	action: 'propose_game'
+	invited_user_ids: unknown
+	config: unknown
+}
 type RespondBody = { action: 'respond'; request_id: string; accept: boolean }
 type PickBonusBody = {
 	action: 'pick_bonus'
@@ -206,6 +214,7 @@ type ConfirmScoutCardBody = {
 	index: unknown
 }
 type Body =
+	| ProposeGameBody
 	| RespondBody
 	| PickBonusBody
 	| PlaceSettlementBody
@@ -2346,6 +2355,55 @@ function currentPlayerIndex(game: GameRow, me: string): number | null {
 	return idx
 }
 
+async function handleProposeGame(
+	admin: SupabaseClient,
+	me: string,
+	body: ProposeGameBody
+): Promise<Response> {
+	const invitedRaw = body.invited_user_ids
+	if (!Array.isArray(invitedRaw) || invitedRaw.length === 0) {
+		return err(400, 'must invite at least one user')
+	}
+	if (!invitedRaw.every((u): u is string => typeof u === 'string')) {
+		return err(400, 'invited_user_ids must be strings')
+	}
+	const invitedIds = invitedRaw as string[]
+	if (invitedIds.includes(me)) return err(400, 'cannot invite yourself')
+
+	const config = body.config
+	if (!config || typeof config !== 'object' || Array.isArray(config)) {
+		return err(400, 'config must be an object')
+	}
+
+	const invited: InvitedEntry[] = invitedIds.map((u) => ({
+		user: u,
+		status: 'pending',
+	}))
+
+	const { data, error } = await admin
+		.from('game_requests')
+		.insert({ proposer: me, invited, config })
+		.select('id')
+		.single()
+	if (error || !data) {
+		return err(500, error?.message || 'could not create request')
+	}
+
+	EdgeRuntime.waitUntil(
+		sendNotifications(
+			admin,
+			invitedIds.map((userId) => ({
+				userId,
+				kind: 'game_invite',
+				gate: 'gameInvite',
+				senderProfileId: me,
+			}))
+		)
+	)
+
+	return json({ ok: true, id: data.id })
+}
+
 async function handleRespond(
 	admin: SupabaseClient,
 	me: string,
@@ -2428,6 +2486,20 @@ async function handleRespond(
 			.delete()
 			.eq('id', body.request_id)
 		if (delErr) return err(500, 'could not clear request')
+
+		const firstPlayerId = playerOrder[0]
+		EdgeRuntime.waitUntil(
+			sendNotifications(
+				admin,
+				participants.map((userId) => ({
+					userId,
+					kind: 'game_started',
+					gate: 'yourTurn',
+					gameId: inserted.id,
+					firstPlayer: userId === firstPlayerId,
+				}))
+			)
+		)
 
 		return json({ ok: true, game_id: inserted.id })
 	}
@@ -2704,6 +2776,20 @@ async function handlePlaceRoad(
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
 
+	const nextUserId = game.player_order[next.currentTurn]
+	if (nextUserId) {
+		EdgeRuntime.waitUntil(
+			sendNotifications(admin, [
+				{
+					userId: nextUserId,
+					kind: 'your_turn',
+					gate: 'yourTurn',
+					gameId: game.id,
+				},
+			])
+		)
+	}
+
 	return json({ ok: true })
 }
 
@@ -2714,7 +2800,12 @@ async function handlePlaceRoad(
 // `rolled` event for this dice value.
 async function applyRollOutcome(
 	admin: SupabaseClient,
-	game: { id: string; events: unknown[] | null; current_turn: number | null },
+	game: {
+		id: string
+		events: unknown[] | null
+		current_turn: number | null
+		player_order: string[]
+	},
 	state: GameState,
 	dice: DiceRoll,
 	extraEvents: unknown[] = [],
@@ -2763,6 +2854,26 @@ async function applyRollOutcome(
 		// Keep stateAfterNomad referenced so future tooling can read the
 		// post-grant state easily; not needed here beyond the update.
 		void stateAfterNomad
+
+		if (nextPhase.kind === 'discard') {
+			const targets = Object.keys(pending)
+				.map((idxStr) => game.player_order[Number(idxStr)])
+				.filter((id): id is string => typeof id === 'string')
+			if (targets.length > 0) {
+				EdgeRuntime.waitUntil(
+					sendNotifications(
+						admin,
+						targets.map((userId) => ({
+							userId,
+							kind: 'discard_required' as const,
+							gate: 'yourTurn' as const,
+							gameId: game.id,
+						}))
+					)
+				)
+			}
+		}
+
 		return json({ ok: true, dice, total })
 	}
 
@@ -3147,6 +3258,20 @@ async function handleEndTurn(
 		})
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
+
+	const nextUserId = game.player_order[nextTurn]
+	if (nextUserId) {
+		EdgeRuntime.waitUntil(
+			sendNotifications(admin, [
+				{
+					userId: nextUserId,
+					kind: 'your_turn',
+					gate: 'yourTurn',
+					gameId: game.id,
+				},
+			])
+		)
+	}
 
 	return json({ ok: true })
 }
@@ -3859,6 +3984,24 @@ async function handleProposeTrade(
 		.update({ events: [...(game.events ?? []), event] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
+
+	const toUserIds = to
+		.map((idx) => game.player_order[idx])
+		.filter((id): id is string => typeof id === 'string')
+	if (toUserIds.length > 0) {
+		EdgeRuntime.waitUntil(
+			sendNotifications(
+				admin,
+				toUserIds.map((userId) => ({
+					userId,
+					kind: 'trade_proposed',
+					gate: 'yourTurn',
+					senderProfileId: me,
+					gameId: game.id,
+				}))
+			)
+		)
+	}
 
 	return json({ ok: true, offer_id: offer.id })
 }
@@ -5385,6 +5528,8 @@ serve(async (req) => {
 	const admin = adminClient()
 
 	switch (body.action) {
+		case 'propose_game':
+			return handleProposeGame(admin, me, body)
 		case 'respond':
 			return handleRespond(admin, me, body)
 		case 'pick_bonus':
