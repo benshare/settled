@@ -75,20 +75,42 @@ export function generatePorts(variant: Variant): Port[] {
 	})
 }
 
-// Deal a single player's select_bonus hand: two bonuses drawn from the
-// subset of BONUS_POOL whose `set` is included in `bonusSets` (with
-// replacement) and one curse drawn from the full CURSE_POOL. Falls back to
-// the full bonus pool when the filter produces nothing, so a misconfigured
-// game never deals an empty hand.
-export function dealBonusHand(bonusSets: readonly string[]): SelectBonusHand {
-	const pick = <T>(xs: readonly T[]): T =>
-		xs[Math.floor(Math.random() * xs.length)]
+// Deal every player's select_bonus hand at once. Two bonuses + one curse per
+// player, all drawn WITHOUT replacement across the whole table, so no bonus and
+// no curse is ever offered to two players or twice to the same player. Bonuses
+// come from the subset of BONUS_POOL whose `set` is in `bonusSets`, falling
+// back to the full pool when the filter produces nothing. A pool smaller than
+// the cards needed is reshuffled for further passes (the only case repeats can
+// occur), so a tiny `bonusSets` config still deals a full table.
+export function dealBonusHands(
+	playerCount: number,
+	bonusSets: readonly string[]
+): Record<number, SelectBonusHand> {
 	const filtered = BONUS_POOL.filter((b) => bonusSets.includes(b.set))
-	const pool = filtered.length > 0 ? filtered : BONUS_POOL
-	const b0 = pick(pool).id as BonusId
-	const b1 = pick(pool).id as BonusId
-	const curse = pick(CURSE_POOL).id as CurseId
-	return { offered: [b0, b1], curse, chosen: null }
+	const bonusPool = filtered.length > 0 ? filtered : BONUS_POOL
+	const bonusBag = drawWithoutReplacement(bonusPool, playerCount * 2)
+	const curseBag = drawWithoutReplacement(CURSE_POOL, playerCount)
+	const hands: Record<number, SelectBonusHand> = {}
+	for (let i = 0; i < playerCount; i++) {
+		hands[i] = {
+			offered: [
+				bonusBag[i * 2].id as BonusId,
+				bonusBag[i * 2 + 1].id as BonusId,
+			],
+			curse: curseBag[i].id as CurseId,
+			chosen: null,
+		}
+	}
+	return hands
+}
+
+// Draw `count` items from `pool` without replacement. When `count` exceeds the
+// pool size the pool is reshuffled for further passes (so repeats are only
+// possible across a pass boundary), so callers never deal short.
+function drawWithoutReplacement<T>(pool: readonly T[], count: number): T[] {
+	const out: T[] = []
+	while (out.length < count) out.push(...shuffle(pool))
+	return out.slice(0, count)
 }
 
 export function initialGameState(
@@ -101,10 +123,10 @@ export function initialGameState(
 	if (!desert) throw new Error('no desert in generated board')
 	let phase: Phase
 	if (config.bonuses) {
-		const hands: Record<number, SelectBonusHand> = {}
-		for (let i = 0; i < playerCount; i++)
-			hands[i] = dealBonusHand(config.bonusSets)
-		phase = { kind: 'select_bonus', hands }
+		phase = {
+			kind: 'select_bonus',
+			hands: dealBonusHands(playerCount, config.bonusSets),
+		}
 	} else {
 		phase = { kind: 'initial_placement', round: 1, step: 'settlement' }
 	}

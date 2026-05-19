@@ -763,18 +763,35 @@ const BONUS_SET_OF: Record<BonusId, '1' | '2' | '3'> = {
 	haunt: '3',
 }
 
-function dealBonusHand(bonusSets: readonly string[]): SelectBonusHand {
-	const pick = <T>(xs: readonly T[]): T =>
-		xs[Math.floor(Math.random() * xs.length)]
+// Mirror of lib/catan/generate.ts dealBonusHands: deal every player's hand at
+// once, drawing bonuses and curses WITHOUT replacement across the whole table
+// so no card is ever offered to two players or twice to one player. Pools too
+// small for the table are reshuffled for further passes.
+function dealBonusHands(
+	playerCount: number,
+	bonusSets: readonly string[]
+): Record<number, SelectBonusHand> {
 	const filtered = BONUS_IDS.filter((id) =>
 		bonusSets.includes(BONUS_SET_OF[id])
 	)
-	const pool = filtered.length > 0 ? filtered : BONUS_IDS
-	return {
-		offered: [pick(pool), pick(pool)],
-		curse: pick(CURSE_IDS),
-		chosen: null,
+	const bonusPool = filtered.length > 0 ? filtered : BONUS_IDS
+	const bonusBag = drawWithoutReplacement(bonusPool, playerCount * 2)
+	const curseBag = drawWithoutReplacement(CURSE_IDS, playerCount)
+	const hands: Record<number, SelectBonusHand> = {}
+	for (let i = 0; i < playerCount; i++) {
+		hands[i] = {
+			offered: [bonusBag[i * 2], bonusBag[i * 2 + 1]],
+			curse: curseBag[i],
+			chosen: null,
+		}
 	}
+	return hands
+}
+
+function drawWithoutReplacement<T>(pool: readonly T[], count: number): T[] {
+	const out: T[] = []
+	while (out.length < count) out.push(...shuffle(pool))
+	return out.slice(0, count)
 }
 
 // --- Config ----------------------------------------------------------------
@@ -2456,10 +2473,10 @@ async function handleRespond(
 		const config = request.config as GameConfig
 		let initialPhase: Phase
 		if (config.bonuses) {
-			const hands: Record<number, SelectBonusHand> = {}
-			for (let i = 0; i < playerOrder.length; i++)
-				hands[i] = dealBonusHand(config.bonusSets)
-			initialPhase = { kind: 'select_bonus', hands }
+			initialPhase = {
+				kind: 'select_bonus',
+				hands: dealBonusHands(playerOrder.length, config.bonusSets),
+			}
 		} else {
 			initialPhase = INITIAL_PHASE
 		}
