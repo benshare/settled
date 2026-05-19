@@ -113,6 +113,18 @@ export const catanColors = {
 		desert: '#E2C98A',
 	} as Record<Resource | 'desert', string>,
 
+	// Desaturated "ghost" variants — each `resource` hue blended heavily toward
+	// a warm neutral gray. Used for shadow cards (the receive-side source hand
+	// in the trade composer): still faintly tinted so the resource is legible,
+	// but visibly not-yet-real next to a solid card.
+	resourceShadow: {
+		wood: '#93A985',
+		wheat: '#D1BB85',
+		sheep: '#BAC594',
+		brick: '#C49A80',
+		ore: '#B0AB9D',
+	} as Record<Resource, string>,
+
 	tokenFace: '#F4EAD0',
 	tokenRing: '#2B2B2B',
 	tokenTextCool: '#1A1A1A',

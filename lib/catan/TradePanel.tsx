@@ -1,6 +1,13 @@
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import {
+	Pressable,
+	ScrollView,
+	StyleSheet,
+	Text,
+	useWindowDimensions,
+	View,
+} from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
@@ -13,6 +20,7 @@ import {
 	lockedGiveResource,
 	ratioOf,
 } from './ports'
+import { CardFan, type CardFanEntry } from './ResourceHand'
 import { canAfford, emptyHand, isValidTradeShape } from './trade'
 import type { BankKind, GameState, ResourceHand } from './types'
 
@@ -21,9 +29,32 @@ type Mode =
 	| { kind: 'bank_select' } // picking which ratio / port to use
 	| { kind: 'bank_compose'; choice: BankKind }
 
+const SHADOW_ENTRIES: CardFanEntry[] = RESOURCES.map((r) => ({
+	resource: r,
+	count: 0,
+}))
+
+function handEntries(h: ResourceHand): CardFanEntry[] {
+	return RESOURCES.filter((r) => h[r] > 0).map((r) => ({
+		resource: r,
+		count: h[r],
+	}))
+}
+
+function remainingEntries(
+	myHand: ResourceHand,
+	give: ResourceHand
+): CardFanEntry[] {
+	return RESOURCES.filter((r) => myHand[r] - give[r] > 0).map((r) => ({
+		resource: r,
+		count: myHand[r] - give[r],
+	}))
+}
+
 // Form that replaces the main action bar when the proposer is composing a
 // trade. Player-trade mode is the default; a Bank button switches into a
-// two-step bank-trade flow.
+// two-step bank-trade flow. Both the player and bank composers render the
+// trade as two side-by-side hands (give / receive) — see TradeSidePanel.
 export function TradePanel({
 	meIdx,
 	myHand,
@@ -124,6 +155,7 @@ function PlayerTrade({
 	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
 	onCancel: () => void
 }) {
+	const { height } = useWindowDimensions()
 	const [give, setGive] = useState<ResourceHand>(emptyHand)
 	const [receive, setReceive] = useState<ResourceHand>(emptyHand)
 	const [addressed, setAddressed] = useState<number[]>(() =>
@@ -164,6 +196,9 @@ function PlayerTrade({
 		onSend(give, receive, to)
 	}
 
+	const giveSourceDisabled = RESOURCES.filter((r) => receive[r] > 0)
+	const receiveSourceDisabled = RESOURCES.filter((r) => give[r] > 0)
+
 	return (
 		<View style={styles.wrap}>
 			<View style={styles.headerRow}>
@@ -183,37 +218,57 @@ function PlayerTrade({
 					<Text style={styles.bankBtnLabel}>Trade with bank</Text>
 				</Pressable>
 			</View>
-			<Text style={styles.sectionLabel}>You give</Text>
-			<ResourceStepperRow
-				hand={give}
-				cap={myHand}
-				onBump={bumpGive}
-				otherSide={receive}
-			/>
-			<Text style={styles.sectionLabel}>You receive</Text>
-			<ResourceStepperRow
-				hand={receive}
-				cap={null}
-				onBump={bumpReceive}
-				otherSide={give}
-			/>
-			<Text style={styles.sectionLabel}>To</Text>
-			<View style={styles.chipRow}>
-				{otherIndices.map((i) => {
-					const profile = profilesById[playerOrder[i]]
-					const name = profile?.username ?? `P${i + 1}`
-					const color = playerColors[i] ?? playerColors[0]
-					return (
-						<PlayerChip
-							key={i}
-							label={name}
-							color={color}
-							active={addressed.includes(i)}
-							onPress={() => toggle(i)}
-						/>
-					)
-				})}
-			</View>
+
+			<ScrollView
+				style={{ maxHeight: Math.round(height * 0.55) }}
+				contentContainerStyle={styles.scrollBody}
+				nestedScrollEnabled
+				showsVerticalScrollIndicator={false}
+			>
+				<View style={styles.panelsRow}>
+					<TradeSidePanel
+						title="You give"
+						tradingEntries={handEntries(give)}
+						onTradingPress={(r) => bumpGive(r, -1)}
+						sourceTitle="From your hand"
+						sourceEntries={remainingEntries(myHand, give)}
+						sourceVariant="solid"
+						sourceShowCount
+						sourceDisabled={giveSourceDisabled}
+						onSourcePress={(r) => bumpGive(r, 1)}
+					/>
+					<TradeSidePanel
+						title="You receive"
+						tradingEntries={handEntries(receive)}
+						onTradingPress={(r) => bumpReceive(r, -1)}
+						sourceTitle="Add a resource"
+						sourceEntries={SHADOW_ENTRIES}
+						sourceVariant="shadow"
+						sourceShowCount={false}
+						sourceDisabled={receiveSourceDisabled}
+						onSourcePress={(r) => bumpReceive(r, 1)}
+					/>
+				</View>
+
+				<Text style={styles.sectionLabel}>To</Text>
+				<View style={styles.chipRow}>
+					{otherIndices.map((i) => {
+						const profile = profilesById[playerOrder[i]]
+						const name = profile?.username ?? `P${i + 1}`
+						const color = playerColors[i] ?? playerColors[0]
+						return (
+							<PlayerChip
+								key={i}
+								label={name}
+								color={color}
+								active={addressed.includes(i)}
+								onPress={() => toggle(i)}
+							/>
+						)
+					})}
+				</View>
+			</ScrollView>
+
 			<View style={styles.buttons}>
 				<Button
 					variant="secondary"
@@ -343,15 +398,16 @@ function BankCompose({
 	onCancel: () => void
 	onSend: (give: ResourceHand, receive: ResourceHand) => void
 }) {
+	const { height } = useWindowDimensions()
 	const [give, setGive] = useState<ResourceHand>(emptyHand)
 	const [receive, setReceive] = useState<ResourceHand>(emptyHand)
 
 	const baseRatio = ratioOf(choice)
 	const locked = lockedGiveResource(choice)
 
-	// Recomputes every render so single-resource specialist discount
-	// tracks the current `give`. If the player pivots to a multi-resource
-	// give, the ratio snaps back to the base.
+	// Recomputes every render so single-resource specialist discount tracks
+	// the current `give`. If the player pivots to a multi-resource give, the
+	// ratio snaps back to the base.
 	const ratio = effectiveBankRatioFor(choice, give, specialistResource)
 
 	const giveTotal = RESOURCES.reduce((a, r) => a + give[r], 0)
@@ -359,13 +415,13 @@ function BankCompose({
 	const groups = ratio > 0 ? giveTotal / ratio : 0
 	const slotsRemaining = Math.max(0, groups - receiveTotal)
 
+	// A give is added one whole group at a time. The increment is the
+	// effective ratio for the hypothetical post-add hand (so the specialist
+	// discount applies only while the give stays a single stack of the
+	// declared resource).
 	function addGive(r: Resource) {
 		setGive((prev) => {
 			if (locked && r !== locked) return prev
-			// Re-evaluate the effective ratio for the hypothetical post-add
-			// give: if the current hand plus a stack of `r` would stay a
-			// single-resource give of the specialist's declared resource, the
-			// discount applies; otherwise we fall back to the base ratio.
 			const hypothetical: ResourceHand = {
 				...prev,
 				[r]: prev[r] + baseRatio,
@@ -381,11 +437,23 @@ function BankCompose({
 			return { ...prev, [r]: prev[r] + effective }
 		})
 	}
+	// Tapping a give card takes that whole pile back out. Clearing (vs.
+	// removing one group) keeps `give[r] % ratio === 0` valid regardless of
+	// how the specialist discount shifted while it was being built up.
+	function clearGive(r: Resource) {
+		setGive((prev) => (prev[r] === 0 ? prev : { ...prev, [r]: 0 }))
+	}
 	function addReceive(r: Resource) {
 		setReceive((prev) => {
 			if (slotsRemaining <= 0) return prev
 			if (give[r] > 0) return prev
 			return { ...prev, [r]: prev[r] + 1 }
+		})
+	}
+	function decReceive(r: Resource) {
+		setReceive((prev) => {
+			if (prev[r] <= 0) return prev
+			return { ...prev, [r]: prev[r] - 1 }
 		})
 	}
 	function reset() {
@@ -397,18 +465,38 @@ function BankCompose({
 		isValidBankTradeShape(give, receive, choice, specialistResource) &&
 		canAfford(myHand, give)
 
+	function giveTappable(r: Resource): boolean {
+		if (locked && r !== locked) return false
+		if (receive[r] > 0) return false
+		const hypothetical: ResourceHand = {
+			...give,
+			[r]: give[r] + baseRatio,
+		}
+		const effective = effectiveBankRatioFor(
+			choice,
+			hypothetical,
+			specialistResource
+		)
+		return myHand[r] - give[r] >= effective
+	}
+
+	const giveSourceDisabled = RESOURCES.filter((r) => !giveTappable(r))
+	const receiveSourceDisabled = RESOURCES.filter(
+		(r) => !(slotsRemaining > 0 && give[r] === 0)
+	)
+
+	const heading = locked
+		? `2:1 ${RESOURCE_LABELS[locked]} port`
+		: choice === '3:1'
+			? '3:1 generic port'
+			: choice === '5:1'
+				? '5:1 bank (Curse of Provinciality)'
+				: '4:1 bank'
+
 	return (
 		<View style={styles.wrap}>
 			<View style={styles.headerRow}>
-				<Text style={styles.heading}>
-					{locked
-						? `2:1 ${RESOURCE_LABELS[locked]} port`
-						: choice === '3:1'
-							? '3:1 generic port'
-							: choice === '5:1'
-								? '5:1 bank (Curse of Provinciality)'
-								: '4:1 bank'}
-				</Text>
+				<Text style={styles.heading}>{heading}</Text>
 				<Pressable
 					onPress={onBack}
 					style={({ pressed }) => [
@@ -425,41 +513,45 @@ function BankCompose({
 				</Pressable>
 			</View>
 
-			<Text style={styles.sectionLabel}>
-				You give{' '}
-				<Text style={styles.ratioHint}>
-					(tap = {baseRatio} at a time
-					{specialistResource && baseRatio > 2
-						? `, ${baseRatio - 1} for ${specialistResource}`
-						: ''}
-					)
-				</Text>
+			<Text style={styles.ratioHint}>
+				Tap a card to give {baseRatio} at a time
+				{specialistResource && baseRatio > 2
+					? ` (${baseRatio - 1} for ${specialistResource})`
+					: ''}
+				.
 			</Text>
-			<ResourceTapRow
-				hand={give}
-				onTap={addGive}
-				isTappable={(r) => {
-					if (locked && r !== locked) return false
-					if (receive[r] > 0) return false
-					const hypothetical: ResourceHand = {
-						...give,
-						[r]: give[r] + baseRatio,
-					}
-					const effective = effectiveBankRatioFor(
-						choice,
-						hypothetical,
-						specialistResource
-					)
-					return myHand[r] - give[r] >= effective
-				}}
-			/>
 
-			<Text style={styles.sectionLabel}>You receive</Text>
-			<ResourceTapRow
-				hand={receive}
-				onTap={addReceive}
-				isTappable={(r) => slotsRemaining > 0 && give[r] === 0}
-			/>
+			<ScrollView
+				style={{ maxHeight: Math.round(height * 0.5) }}
+				contentContainerStyle={styles.scrollBody}
+				nestedScrollEnabled
+				showsVerticalScrollIndicator={false}
+			>
+				<View style={styles.panelsRow}>
+					<TradeSidePanel
+						title="You give"
+						tradingEntries={handEntries(give)}
+						onTradingPress={clearGive}
+						sourceTitle="From your hand"
+						sourceEntries={remainingEntries(myHand, give)}
+						sourceVariant="solid"
+						sourceShowCount
+						sourceDisabled={giveSourceDisabled}
+						onSourcePress={addGive}
+					/>
+					<TradeSidePanel
+						title="You receive"
+						tradingEntries={handEntries(receive)}
+						onTradingPress={decReceive}
+						sourceTitle="Add a resource"
+						sourceEntries={SHADOW_ENTRIES}
+						sourceVariant="shadow"
+						sourceShowCount={false}
+						sourceDisabled={receiveSourceDisabled}
+						onSourcePress={addReceive}
+					/>
+				</View>
+			</ScrollView>
 
 			<View style={styles.bankFooterRow}>
 				<Text style={styles.bankSummary}>
@@ -504,119 +596,49 @@ function BankCompose({
 	)
 }
 
-function ResourceStepperRow({
-	hand,
-	cap,
-	onBump,
-	otherSide,
+// One half of the composer: the trade-side hand on top (tap a card to pull
+// one back out), the source hand below it (tap a card to add). Presentational
+// only — the smart parent decides what a tap does and which cards are locked.
+function TradeSidePanel({
+	title,
+	tradingEntries,
+	onTradingPress,
+	sourceTitle,
+	sourceEntries,
+	sourceVariant,
+	sourceShowCount,
+	sourceDisabled,
+	onSourcePress,
 }: {
-	hand: ResourceHand
-	cap: ResourceHand | null
-	otherSide: ResourceHand
-	onBump: (r: Resource, delta: 1 | -1) => void
+	title: string
+	tradingEntries: CardFanEntry[]
+	onTradingPress: (r: Resource) => void
+	sourceTitle: string
+	sourceEntries: CardFanEntry[]
+	sourceVariant: 'solid' | 'shadow'
+	sourceShowCount: boolean
+	sourceDisabled: readonly Resource[]
+	onSourcePress: (r: Resource) => void
 }) {
 	return (
-		<View style={styles.resourceRow}>
-			{RESOURCES.map((r) => {
-				const atCap = cap ? hand[r] >= cap[r] : false
-				const blockedByOverlap = otherSide[r] > 0
-				const canPlus = !atCap && !blockedByOverlap
-				const canMinus = hand[r] > 0
-				const cellDisabled = cap !== null && cap[r] === 0
-				return (
-					<View
-						key={r}
-						style={[
-							styles.resourceCell,
-							{ backgroundColor: resourceColor[r] },
-							cellDisabled && styles.resourceCellDisabled,
-						]}
-					>
-						<Text style={styles.resourceLabel}>
-							{RESOURCE_LABELS[r]}
-						</Text>
-						<View style={styles.stepper}>
-							<StepperBtn
-								sign="-"
-								disabled={!canMinus || cellDisabled}
-								onPress={() => onBump(r, -1)}
-							/>
-							<Text style={styles.count}>{hand[r]}</Text>
-							<StepperBtn
-								sign="+"
-								disabled={!canPlus || cellDisabled}
-								onPress={() => onBump(r, 1)}
-							/>
-						</View>
-					</View>
-				)
-			})}
-		</View>
-	)
-}
-
-function ResourceTapRow({
-	hand,
-	isTappable,
-	onTap,
-}: {
-	hand: ResourceHand
-	isTappable: (r: Resource) => boolean
-	onTap: (r: Resource) => void
-}) {
-	return (
-		<View style={styles.resourceRow}>
-			{RESOURCES.map((r) => {
-				const tappable = isTappable(r)
-				return (
-					<Pressable
-						key={r}
-						disabled={!tappable}
-						onPress={() => onTap(r)}
-						style={({ pressed }) => [
-							styles.tapCell,
-							{ backgroundColor: resourceColor[r] },
-							!tappable && styles.resourceCellDisabled,
-							pressed && tappable && styles.pressed,
-						]}
-					>
-						<Text style={styles.resourceLabel}>
-							{RESOURCE_LABELS[r]}
-						</Text>
-						<Text style={styles.tapCount}>{hand[r]}</Text>
-					</Pressable>
-				)
-			})}
-		</View>
-	)
-}
-
-function StepperBtn({
-	sign,
-	disabled,
-	onPress,
-}: {
-	sign: '+' | '-'
-	disabled: boolean
-	onPress: () => void
-}) {
-	return (
-		<Pressable
-			disabled={disabled}
-			onPress={onPress}
-			style={({ pressed }) => [
-				styles.stepperBtn,
-				disabled && styles.stepperBtnDisabled,
-				pressed && !disabled && styles.pressed,
-			]}
-			hitSlop={6}
-		>
-			<Ionicons
-				name={sign === '+' ? 'add' : 'remove'}
-				size={14}
-				color={colors.text}
+		<View style={styles.side}>
+			<Text style={styles.sectionLabel}>{title}</Text>
+			<CardFan
+				entries={tradingEntries}
+				size="compact"
+				onCardPress={onTradingPress}
 			/>
-		</Pressable>
+			<View style={styles.sideDivider} />
+			<Text style={styles.sourceLabel}>{sourceTitle}</Text>
+			<CardFan
+				entries={sourceEntries}
+				size="compact"
+				variant={sourceVariant}
+				showCount={sourceShowCount}
+				disabledResources={sourceDisabled}
+				onCardPress={onSourcePress}
+			/>
+		</View>
 	)
 }
 
@@ -721,8 +743,27 @@ const styles = StyleSheet.create({
 		fontSize: font.sm,
 		fontWeight: '500',
 		color: colors.textMuted,
-		textTransform: 'none',
-		letterSpacing: 0,
+	},
+	scrollBody: {
+		gap: spacing.xs,
+	},
+	panelsRow: {
+		flexDirection: 'row',
+		gap: spacing.sm,
+	},
+	side: {
+		flex: 1,
+		gap: 2,
+	},
+	sideDivider: {
+		height: StyleSheet.hairlineWidth,
+		backgroundColor: colors.border,
+		marginVertical: 2,
+	},
+	sourceLabel: {
+		fontSize: font.sm,
+		fontWeight: '600',
+		color: colors.textMuted,
 	},
 	optionCol: {
 		gap: spacing.xs,
@@ -761,60 +802,6 @@ const styles = StyleSheet.create({
 	optionSubtitle: {
 		fontSize: font.sm,
 		color: colors.textSecondary,
-	},
-	resourceRow: {
-		flexDirection: 'row',
-		gap: spacing.xs,
-	},
-	resourceCell: {
-		flex: 1,
-		borderRadius: radius.sm,
-		paddingVertical: spacing.xs,
-		alignItems: 'center',
-		gap: 2,
-	},
-	tapCell: {
-		flex: 1,
-		borderRadius: radius.sm,
-		paddingVertical: spacing.xs + 2,
-		alignItems: 'center',
-		gap: 2,
-	},
-	tapCount: {
-		fontSize: font.md,
-		fontWeight: '700',
-		color: colors.white,
-	},
-	resourceCellDisabled: {
-		opacity: 0.35,
-	},
-	resourceLabel: {
-		fontSize: 11,
-		fontWeight: '700',
-		color: '#1A1A1A',
-	},
-	stepper: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: 2,
-	},
-	stepperBtn: {
-		width: 22,
-		height: 22,
-		borderRadius: radius.sm,
-		backgroundColor: colors.white,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	stepperBtnDisabled: {
-		opacity: 0.35,
-	},
-	count: {
-		minWidth: 18,
-		textAlign: 'center',
-		fontSize: font.sm,
-		fontWeight: '700',
-		color: colors.white,
 	},
 	chipRow: {
 		flexDirection: 'row',

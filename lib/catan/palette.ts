@@ -9,6 +9,7 @@ export const hexStroke = catanColors.hexStroke
 export const hexStrokeWidth = catanColors.hexStrokeWidth
 
 export const resourceColor = catanColors.resource
+export const resourceShadowColor = catanColors.resourceShadow
 
 export const tokenFace = catanColors.tokenFace
 export const tokenRing = catanColors.tokenRing
