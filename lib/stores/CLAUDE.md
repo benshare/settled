@@ -29,7 +29,31 @@ A single store can serve both roles: `useProfileStore` registers in `autoLoadedS
 
 3. Import and add it to `autoLoadedStores` in `index.ts`.
 
-`app/(app)/_layout.tsx` calls `loadAllUserStores(user.id)` on mount; `account.tsx` calls `clearAllUserStores()` on sign out.
+`app/_layout.tsx` calls `loadAllUserStores(user.id)` on mount; `account.tsx` calls `clearAllUserStores()` on sign out.
+
+## Realtime is best-effort — resync on foreground
+
+While the app is backgrounded the OS suspends the JS thread and closes the
+WebSocket, and Supabase realtime does **not** replay events on reconnect. Every
+`postgres_changes` event emitted during that window is lost. A store that
+subscribes once at load and then trusts its channel will silently drift (this is
+how a player kept seeing a pending game invite for a game that had already
+started).
+
+So `app/_layout.tsx` also calls `loadAllUserStores(user.id)` from
+`useAppForeground` (`lib/appState.ts`) on every background → foreground
+transition. This works because `loadForUser` refetches _and_ re-creates its
+channels — keep both properties when writing a new store:
+
+- `loadForUser` must be idempotent and safe to call repeatedly.
+- It must not wipe its data back to `undefined` on entry (set a `loading` flag
+  instead), or a resync will flash every consumer into its loading state.
+- It must `removeChannel` any existing channel before subscribing a new one, or
+  a resync leaks a channel per foreground.
+
+Any component that subscribes to its own channel outside a store (e.g.
+`GameProvider`) owes the same debt: refetch and re-subscribe from
+`useAppForeground`.
 
 ## Dev-flagged profiles
 

@@ -2,6 +2,7 @@
 // game_states row (fetched on mount + realtime), and exposes both through
 // useGame() so descendants don't have to re-derive the same subscriptions.
 
+import { useAppForeground } from '@/lib/appState'
 import { useGamesStore, type Game } from '@/lib/stores/useGamesStore'
 import { supabase } from '@/lib/supabase'
 import {
@@ -61,8 +62,25 @@ export function GameProvider({
 		if (storeGame && !liveGame) setLiveGame(storeGame)
 	}, [storeGame, liveGame])
 
+	// Nothing that happened while the app was backgrounded reached these
+	// channels — the socket was closed and realtime doesn't replay. Bumping the
+	// nonce on foreground re-runs both effects, which re-fetch their row and
+	// re-subscribe.
+	const [resyncNonce, setResyncNonce] = useState(0)
+	useAppForeground(() => setResyncNonce((n) => n + 1))
+
 	useEffect(() => {
 		if (!gameId) return
+		let cancelled = false
+		supabase
+			.from('games')
+			.select('*')
+			.eq('id', gameId)
+			.maybeSingle()
+			.then(({ data }) => {
+				if (cancelled || !data) return
+				setLiveGame(data as Game)
+			})
 		const channel = supabase
 			.channel(`game:${gameId}`)
 			.on(
@@ -77,16 +95,24 @@ export function GameProvider({
 			)
 			.subscribe()
 		return () => {
+			cancelled = true
 			supabase.removeChannel(channel)
 		}
-	}, [gameId])
+	}, [gameId, resyncNonce])
 
 	const [gameState, setGameState] = useState<GameState | undefined>()
 	const [stateLoaded, setStateLoaded] = useState(false)
+
+	// Only a change of game empties the board. A resync re-fetches in place, so
+	// foregrounding doesn't flash back to the loading state.
+	useEffect(() => {
+		setGameState(undefined)
+		setStateLoaded(false)
+	}, [gameId])
+
 	useEffect(() => {
 		if (!gameId) return
 		let cancelled = false
-		setStateLoaded(false)
 		supabase
 			.from('game_states')
 			.select('*')
@@ -120,7 +146,7 @@ export function GameProvider({
 			cancelled = true
 			supabase.removeChannel(channel)
 		}
-	}, [gameId])
+	}, [gameId, resyncNonce])
 
 	const { publicVP, selfVP } = useMemo(() => {
 		if (!gameState) return { publicVP: [], selfVP: [] }

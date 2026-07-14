@@ -1,3 +1,4 @@
+import { useAppForeground } from '@/lib/appState'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { loadAllUserStores } from '@/lib/stores'
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext'
@@ -54,6 +55,12 @@ function RootNav() {
 			loadAllUserStores(user.id)
 		}
 	}, [user?.id])
+
+	// Any realtime event emitted while we were backgrounded is gone — re-read
+	// every store (which also re-creates their channels) on the way back in.
+	useAppForeground(() => {
+		if (user?.id) loadAllUserStores(user.id)
+	})
 
 	useEffect(() => {
 		async function applyUpdate() {

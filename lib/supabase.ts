@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store'
 import { createClient } from '@supabase/supabase-js'
 import Constants from 'expo-constants'
-import { Platform } from 'react-native'
+import { AppState, Platform } from 'react-native'
 import type { Database } from './database-types'
 
 const { supabaseUrl, supabasePublicKey } = Constants.expoConfig?.extra ?? {}
@@ -70,3 +70,15 @@ export const supabase = createClient<Database>(supabaseUrl, supabasePublicKey, {
 		detectSessionInUrl: false,
 	},
 })
+
+// The refresh timer can't run while the app is suspended, and a token that
+// expires in the background leaves realtime unable to rejoin its channels on
+// reconnect. Drive it off AppState instead (per the Supabase RN docs). Separate
+// from `lib/appState.ts` on purpose: this one reacts to every state change,
+// including `inactive`, and must not depend on React.
+if (isNative) {
+	AppState.addEventListener('change', (state) => {
+		if (state === 'active') supabase.auth.startAutoRefresh()
+		else supabase.auth.stopAutoRefresh()
+	})
+}
