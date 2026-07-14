@@ -17,7 +17,7 @@ Everything Catan-specific lives here. Split by what it describes:
 - `dev.ts` — pure rules for development cards: cost, deck build + shuffle, buy/play validity, Largest Army recomputation, `totalVP` (including Longest Road +2 and hidden VP cards for self-views). No I/O.
 - `longestRoad.ts` — pure rules for the Longest Road bonus: `longestRoadFor` walks an edge-disjoint trail per player (opponent buildings block pass-through at interior vertices); `recomputeLongestRoad` returns the new holder (≥5 trail, strict majority; ties keep current holder). No I/O.
 - `GameOverOverlay.tsx` — final-scoreboard modal shown when `games.status === 'complete'`. Reveals every player's hidden VP cards. Exports `FinalScoreButton` for the reopen affordance after dismiss.
-- `gameContext.tsx` — React context that loads the per-game `games` row + `game_states` row and subscribes to realtime. Use `useGame()` in any subtree under `<GameProvider>`.
+- `gameContext.tsx` — React context that loads the per-game `games` row + `game_states` row and subscribes to realtime. Use `useGame()` in any subtree under `<GameProvider>`. Both rows are re-fetched and both channels re-subscribed on every app foreground (`useAppForeground`), because realtime events emitted while the app was backgrounded are never delivered — see `lib/stores/CLAUDE.md`.
 - `ResourceHand.tsx` — exports `ResourceHand` (the read-only full-size player hand) and the shared `CardFan` primitive it's built on (fanned/overlapping resource cards, solid|shadow variant, full|compact size, optional per-card tap + disabled set). Reuse `CardFan` for any fanned resource-card display rather than re-implementing the fan math; `TradePanel`'s give/receive composer is built from it.
 
 ## Constants are duplicated in the edge function
