@@ -7,7 +7,11 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
 
-export type NotificationPrefKey = 'gameInvite' | 'yourTurn' | 'friendRequest'
+export type NotificationPrefKey =
+	| 'gameInvite'
+	| 'yourTurn'
+	| 'trade'
+	| 'friendRequest'
 
 export type NotificationKind =
 	| 'game_invite'
@@ -15,6 +19,8 @@ export type NotificationKind =
 	| 'your_turn'
 	| 'discard_required'
 	| 'trade_proposed'
+	| 'trade_accepted'
+	| 'trade_rejected_all'
 	| 'friend_request'
 
 export type NotifyTarget = {
@@ -152,6 +158,11 @@ function renderBody(t: NotifyTarget, sender: string | undefined): string {
 			return 'You rolled a 7 — discard cards.'
 		case 'trade_proposed':
 			return `${sender ?? 'Someone'} proposed a trade.`
+		case 'trade_accepted':
+			return `${sender ?? 'Someone'} accepted your trade.`
+		// Collective outcome — naming one of the N rejecters would be arbitrary.
+		case 'trade_rejected_all':
+			return 'Your trade was turned down.'
 		case 'friend_request':
 			return `${sender ?? 'Someone'} sent you a friend request.`
 	}

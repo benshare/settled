@@ -2121,8 +2121,25 @@ function isOfferAddressedTo(offer: TradeOffer, meIdx: number): boolean {
 	return offer.to.includes(meIdx)
 }
 
+// An empty `to` means "everyone but the proposer" — resolve it to real indexes.
+function addresseesOf(offer: TradeOffer, playerCount: number): number[] {
+	if (offer.to.length > 0) return [...offer.to]
+	const out: number[] = []
+	for (let i = 0; i < playerCount; i += 1) {
+		if (i !== offer.from) out.push(i)
+	}
+	return out
+}
+
 function rejectedByOf(offer: TradeOffer): number[] {
 	return offer.rejectedBy ?? []
+}
+
+function isOfferRejectedByAll(offer: TradeOffer, playerCount: number): boolean {
+	const addressees = addresseesOf(offer, playerCount)
+	if (addressees.length === 0) return false
+	const rejected = new Set(rejectedByOf(offer))
+	return addressees.every((idx) => rejected.has(idx))
 }
 
 function newTradeId(): string {
@@ -4014,7 +4031,7 @@ async function handleProposeTrade(
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
-	const toUserIds = to
+	const toUserIds = addresseesOf(offer, state.players.length)
 		.map((idx) => game.player_order[idx])
 		.filter((id): id is string => typeof id === 'string')
 	if (toUserIds.length > 0) {
@@ -4024,7 +4041,7 @@ async function handleProposeTrade(
 				toUserIds.map((userId) => ({
 					userId,
 					kind: 'trade_proposed',
-					gate: 'yourTurn',
+					gate: 'trade',
 					senderProfileId: me,
 					gameId: game.id,
 				}))
@@ -4088,6 +4105,21 @@ async function handleAcceptTrade(
 		.update({ events: [...(game.events ?? []), event] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
+
+	const proposerId = game.player_order[offer.from]
+	if (proposerId && proposerId !== me) {
+		EdgeRuntime.waitUntil(
+			sendNotifications(admin, [
+				{
+					userId: proposerId,
+					kind: 'trade_accepted',
+					gate: 'trade',
+					senderProfileId: me,
+					gameId: game.id,
+				},
+			])
+		)
+	}
 
 	return json({ ok: true })
 }
@@ -4177,6 +4209,23 @@ async function handleRejectTrade(
 		.update({ events: [...(game.events ?? []), event] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
+
+	// Only the rejection that kills the offer notifies the proposer, so an
+	// offer produces at most one response push. The duplicate-rejection guard
+	// above means this transition is reached exactly once.
+	const proposerId = game.player_order[offer.from]
+	if (proposerId && isOfferRejectedByAll(nextOffer, state.players.length)) {
+		EdgeRuntime.waitUntil(
+			sendNotifications(admin, [
+				{
+					userId: proposerId,
+					kind: 'trade_rejected_all',
+					gate: 'trade',
+					gameId: game.id,
+				},
+			])
+		)
+	}
 
 	return json({ ok: true })
 }

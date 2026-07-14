@@ -1,12 +1,14 @@
 export type NotificationPrefs = {
 	gameInvite: boolean
 	yourTurn: boolean
+	trade: boolean
 	friendRequest: boolean
 }
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
 	gameInvite: true,
 	yourTurn: true,
+	trade: true,
 	friendRequest: true,
 }
 
@@ -24,6 +26,10 @@ export function parseNotificationPrefs(raw: unknown): NotificationPrefs {
 			typeof src.yourTurn === 'boolean'
 				? src.yourTurn
 				: DEFAULT_NOTIFICATION_PREFS.yourTurn,
+		trade:
+			typeof src.trade === 'boolean'
+				? src.trade
+				: DEFAULT_NOTIFICATION_PREFS.trade,
 		friendRequest:
 			typeof src.friendRequest === 'boolean'
 				? src.friendRequest

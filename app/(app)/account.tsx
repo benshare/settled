@@ -471,6 +471,14 @@ function NotificationsSettings() {
 				styles={styles}
 			/>
 			<NotifToggleRow
+				label="Trade offers"
+				value={prefs.trade}
+				onToggle={() => toggle('trade')}
+				disabled={!granted || savingKey === 'trade'}
+				dimmed={!granted}
+				styles={styles}
+			/>
+			<NotifToggleRow
 				label="Friend requests"
 				value={prefs.friendRequest}
 				onToggle={() => toggle('friendRequest')}
