@@ -2,7 +2,7 @@ import { useAppForeground } from '@/lib/appState'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { loadAllUserStores } from '@/lib/stores'
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext'
-import Constants from 'expo-constants'
+import { VERSION_LABEL } from '@/lib/version'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
@@ -10,16 +10,6 @@ import * as Updates from 'expo-updates'
 import { useEffect, useState } from 'react'
 import { Image, Platform, Text, View } from 'react-native'
 import 'react-native-reanimated'
-
-const APP_VERSION = Constants.expoConfig?.version ?? '?'
-// `Updates.createdAt` is the publish time of the running JS bundle — for OTA
-// builds this changes each release, for dev/Expo Go it's null.
-const OTA_DATE = Updates.createdAt
-	? Updates.createdAt.toISOString().slice(0, 10)
-	: null
-const VERSION_LABEL = OTA_DATE
-	? `v${APP_VERSION} · ${OTA_DATE}`
-	: `v${APP_VERSION} · dev`
 
 // Desktop browsers stretch the native layout to the full viewport, which
 // looks broken for a phone-first app. On web we clamp the whole app to a

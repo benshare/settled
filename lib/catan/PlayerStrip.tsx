@@ -255,11 +255,14 @@ const styles = StyleSheet.create({
 	},
 	stats: {
 		flexDirection: 'row',
-		gap: spacing.sm,
+		flexWrap: 'wrap',
+		columnGap: spacing.sm,
+		rowGap: spacing.xs,
 	},
 	stat: {
 		flexDirection: 'row',
 		alignItems: 'center',
+		flexShrink: 0,
 		gap: 3,
 	},
 	statText: {

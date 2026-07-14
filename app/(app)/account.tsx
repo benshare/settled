@@ -13,9 +13,11 @@ import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { ThemeMode, useTheme } from '@/lib/ThemeContext'
+import { VERSION_LABEL } from '@/lib/version'
 import * as ImagePicker from 'expo-image-picker'
 import * as Notifications from 'expo-notifications'
 import { useFocusEffect, useRouter } from 'expo-router'
+import * as Updates from 'expo-updates'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	ActivityIndicator,
@@ -290,6 +292,11 @@ export default function AccountScreen() {
 					</View>
 				)}
 
+				<View style={styles.section}>
+					<Text style={styles.sectionLabel}>About</Text>
+					<UpdatesSettings />
+				</View>
+
 				<View style={styles.signOutWrap}>
 					<Button variant="secondary" onPress={handleSignOut}>
 						Sign out
@@ -297,6 +304,56 @@ export default function AccountScreen() {
 				</View>
 			</ScrollView>
 		</SafeAreaView>
+	)
+}
+
+function UpdatesSettings() {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	const [checking, setChecking] = useState(false)
+	const [status, setStatus] = useState<string | null>(null)
+	const [error, setError] = useState<string | null>(null)
+
+	async function handleCheck() {
+		if (!Updates.isEnabled) {
+			setStatus(null)
+			setError('Over-the-air updates are disabled in this build.')
+			return
+		}
+		setChecking(true)
+		setStatus(null)
+		setError(null)
+		try {
+			const result = await Updates.checkForUpdateAsync()
+			if (!result.isAvailable) {
+				setStatus("You're up to date.")
+				return
+			}
+			setStatus('Downloading update…')
+			await Updates.fetchUpdateAsync()
+			// Reload swaps in the new bundle; nothing after this runs.
+			await Updates.reloadAsync()
+		} catch (err) {
+			setStatus(null)
+			setError((err as Error).message || 'Update check failed.')
+		} finally {
+			setChecking(false)
+		}
+	}
+
+	return (
+		<View style={styles.updatesBlock}>
+			<View style={styles.row}>
+				<Text style={styles.rowValue}>{VERSION_LABEL}</Text>
+				<Pressable onPress={handleCheck} disabled={checking}>
+					<Text style={styles.rowAction}>
+						{checking ? 'Checking…' : 'Check for updates'}
+					</Text>
+				</Pressable>
+			</View>
+			{status && <Text style={styles.hintText}>{status}</Text>}
+			{error && <Text style={styles.errorText}>{error}</Text>}
+		</View>
 	)
 }
 
@@ -607,6 +664,13 @@ function makeStyles(colors: ColorScheme) {
 		errorText: {
 			color: colors.error,
 			fontSize: font.sm,
+		},
+		hintText: {
+			color: colors.textSecondary,
+			fontSize: font.sm,
+		},
+		updatesBlock: {
+			gap: spacing.sm,
 		},
 		signOutWrap: {
 			marginTop: spacing.xl,
