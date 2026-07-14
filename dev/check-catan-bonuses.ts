@@ -47,7 +47,7 @@ import {
 	standardCostOf,
 } from '../lib/catan/build'
 import { findWinner } from '../lib/catan/dev'
-import { initialGameState } from '../lib/catan/generate'
+import { dealBonusHands, initialGameState } from '../lib/catan/generate'
 import {
 	effectiveBankRatioFor,
 	isValidBankTradeShape,
@@ -731,6 +731,47 @@ function testAccountantSplit() {
 	)
 }
 
+// A player's two offered bonuses are always distinct, and no bonus or curse is
+// offered to two players while the pool is big enough for the table. Set 3 (7
+// bonuses) with 4 players is the oversubscribed case: cross-player repeats are
+// unavoidable there, but a single hand must still hold two different bonuses.
+function testDealNoDuplicates() {
+	const cases: { sets: string[]; players: number; unique: boolean }[] = [
+		{ sets: ['1'], players: 4, unique: true },
+		{ sets: ['1', '2', '3'], players: 6, unique: true },
+		{ sets: ['3'], players: 4, unique: false },
+		{ sets: ['3'], players: 8, unique: false },
+	]
+	for (const { sets, players, unique } of cases) {
+		for (let trial = 0; trial < 200; trial++) {
+			const hands = dealBonusHands(players, sets)
+			const label = `sets ${sets.join('+')} × ${players}p`
+			const bonuses: string[] = []
+			const curses: string[] = []
+			for (let i = 0; i < players; i++) {
+				const hand = hands[i]
+				assert(hand, `${label}: hand ${i} dealt`)
+				assert(
+					hand.offered[0] !== hand.offered[1],
+					`${label}: hand ${i} offers two distinct bonuses`
+				)
+				bonuses.push(...hand.offered)
+				curses.push(hand.curse)
+			}
+			assert(
+				new Set(curses).size === players,
+				`${label}: curses unique across table`
+			)
+			if (unique) {
+				assert(
+					new Set(bonuses).size === players * 2,
+					`${label}: bonuses unique across table`
+				)
+			}
+		}
+	}
+}
+
 function main() {
 	const tests: Array<[string, () => void]> = [
 		['bonusOf sparse', testBonusOf],
@@ -755,6 +796,7 @@ function main() {
 		['set2: forger', testForger],
 		['set2: scout', testScout],
 		['set2: accountant split check', testAccountantSplit],
+		['deal: no duplicate offers', testDealNoDuplicates],
 	]
 	for (const [name, fn] of tests) {
 		fn()

@@ -79,38 +79,44 @@ export function generatePorts(variant: Variant): Port[] {
 // player, all drawn WITHOUT replacement across the whole table, so no bonus and
 // no curse is ever offered to two players or twice to the same player. Bonuses
 // come from the subset of BONUS_POOL whose `set` is in `bonusSets`, falling
-// back to the full pool when the filter produces nothing. A pool smaller than
-// the cards needed is reshuffled for further passes (the only case repeats can
-// occur), so a tiny `bonusSets` config still deals a full table.
+// back to the full pool when the filter produces nothing.
 export function dealBonusHands(
 	playerCount: number,
 	bonusSets: readonly string[]
 ): Record<number, SelectBonusHand> {
 	const filtered = BONUS_POOL.filter((b) => bonusSets.includes(b.set))
 	const bonusPool = filtered.length > 0 ? filtered : BONUS_POOL
-	const bonusBag = drawWithoutReplacement(bonusPool, playerCount * 2)
-	const curseBag = drawWithoutReplacement(CURSE_POOL, playerCount)
+	const drawBonus = dealer(bonusPool.map((b) => b.id as BonusId))
+	const drawCurse = dealer(CURSE_POOL.map((c) => c.id as CurseId))
 	const hands: Record<number, SelectBonusHand> = {}
 	for (let i = 0; i < playerCount; i++) {
+		const first = drawBonus()
 		hands[i] = {
-			offered: [
-				bonusBag[i * 2].id as BonusId,
-				bonusBag[i * 2 + 1].id as BonusId,
-			],
-			curse: curseBag[i].id as CurseId,
+			offered: [first, drawBonus(first)],
+			curse: drawCurse(),
 			chosen: null,
 		}
 	}
 	return hands
 }
 
-// Draw `count` items from `pool` without replacement. When `count` exceeds the
-// pool size the pool is reshuffled for further passes (so repeats are only
-// possible across a pass boundary), so callers never deal short.
-function drawWithoutReplacement<T>(pool: readonly T[], count: number): T[] {
-	const out: T[] = []
-	while (out.length < count) out.push(...shuffle(pool))
-	return out.slice(0, count)
+// Deals from a shuffled pass over `pool`, reshuffling only once the pass is
+// exhausted — so a card repeats only after every other card has been dealt.
+// `exclude` skips a card the caller is already holding, which keeps a player's
+// two offered bonuses distinct even when the pool is smaller than the table
+// needs (e.g. set 3 alone is 7 cards, and a 4-player table wants 8).
+function dealer<T>(pool: readonly T[]): (exclude?: T) => T {
+	if (pool.length < 2) throw new Error('pool too small to deal')
+	let bag: T[] = []
+	return (exclude?: T) => {
+		if (bag.length === 0) bag = shuffle(pool)
+		let idx = bag.findIndex((x) => x !== exclude)
+		if (idx < 0) {
+			bag = shuffle(pool)
+			idx = bag.findIndex((x) => x !== exclude)
+		}
+		return bag.splice(idx, 1)[0]
+	}
 }
 
 export function initialGameState(

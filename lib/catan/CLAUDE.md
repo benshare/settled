@@ -4,7 +4,7 @@ Everything Catan-specific lives here. Split by what it describes:
 
 - `board.ts` — static structure: hex/vertex/edge IDs, adjacency maps, resource and number constants. Pure data + tiny helpers, no game state.
 - `types.ts` — `GameState`, `Phase`, sparse-storage helpers (`vertexStateOf`, `edgeStateOf`). All persisted shapes.
-- `generate.ts` — fresh-game initialization: variant-keyed hex generation, `initialGameState`.
+- `generate.ts` — fresh-game initialization: variant-keyed hex generation, `initialGameState`, and `dealBonusHands` (every player's `select_bonus` hand dealt in one pass, drawing bonuses/curses without replacement across the whole table; a hand's two offered bonuses are always distinct even when `config.bonusSets` filters the pool below `2 × playerCount`). Real games are dealt by the edge function's mirror of `dealBonusHands` — `initialGameState` is only reached from the `dev/` check scripts, so an edge deploy (`npm run edge`) is required for any deal-rules change to reach players.
 - `placement.ts` — pure rules for the initial-placement phase (validity, target-settlement derivation, snake-order turn advance, starting-resource grant). No I/O; callable from UI helpers and tests.
 - `roll.ts` — pure rules for the main-phase loop (dice roll, per-hex resource distribution, forward turn rotation). No I/O; callable from UI helpers and tests.
 - `build.ts` — pure rules for main-phase builds (road, settlement, city): costs, affordability, validity (including the "no road through opponent settlement" rule). No I/O; callable from UI helpers and tests.

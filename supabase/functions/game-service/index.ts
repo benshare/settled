@@ -765,8 +765,7 @@ const BONUS_SET_OF: Record<BonusId, '1' | '2' | '3'> = {
 
 // Mirror of lib/catan/generate.ts dealBonusHands: deal every player's hand at
 // once, drawing bonuses and curses WITHOUT replacement across the whole table
-// so no card is ever offered to two players or twice to one player. Pools too
-// small for the table are reshuffled for further passes.
+// so no card is ever offered to two players or twice to one player.
 function dealBonusHands(
 	playerCount: number,
 	bonusSets: readonly string[]
@@ -775,23 +774,36 @@ function dealBonusHands(
 		bonusSets.includes(BONUS_SET_OF[id])
 	)
 	const bonusPool = filtered.length > 0 ? filtered : BONUS_IDS
-	const bonusBag = drawWithoutReplacement(bonusPool, playerCount * 2)
-	const curseBag = drawWithoutReplacement(CURSE_IDS, playerCount)
+	const drawBonus = dealer(bonusPool)
+	const drawCurse = dealer(CURSE_IDS)
 	const hands: Record<number, SelectBonusHand> = {}
 	for (let i = 0; i < playerCount; i++) {
+		const first = drawBonus()
 		hands[i] = {
-			offered: [bonusBag[i * 2], bonusBag[i * 2 + 1]],
-			curse: curseBag[i],
+			offered: [first, drawBonus(first)],
+			curse: drawCurse(),
 			chosen: null,
 		}
 	}
 	return hands
 }
 
-function drawWithoutReplacement<T>(pool: readonly T[], count: number): T[] {
-	const out: T[] = []
-	while (out.length < count) out.push(...shuffle(pool))
-	return out.slice(0, count)
+// Deals from a shuffled pass over `pool`, reshuffling only once the pass is
+// exhausted. `exclude` skips a card the caller is already holding, keeping a
+// player's two offered bonuses distinct even when the pool is smaller than the
+// table needs (set 3 alone is 7 cards; a 4-player table wants 8).
+function dealer<T>(pool: readonly T[]): (exclude?: T) => T {
+	if (pool.length < 2) throw new Error('pool too small to deal')
+	let bag: T[] = []
+	return (exclude?: T) => {
+		if (bag.length === 0) bag = shuffle(pool)
+		let idx = bag.findIndex((x) => x !== exclude)
+		if (idx < 0) {
+			bag = shuffle(pool)
+			idx = bag.findIndex((x) => x !== exclude)
+		}
+		return bag.splice(idx, 1)[0]
+	}
 }
 
 // --- Config ----------------------------------------------------------------
