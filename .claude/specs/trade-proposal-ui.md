@@ -67,8 +67,8 @@ of `give`/`receive` changes.
 Left ("You give") panel:
 
 - **Trading hand (top):** fan of `r` where `give[r] > 0`, count = `give[r]`, dedup
-  + on-card number identical to `ResourceHand`. Omit types with `give[r] === 0`.
-  Tap a card → `give[r] -= 1` (floor 0).
+    - on-card number identical to `ResourceHand`. Omit types with `give[r] === 0`.
+      Tap a card → `give[r] -= 1` (floor 0).
 - **Source hand (bottom):** fan of `r` where `myHand[r] - give[r] > 0`, count =
   `myHand[r] - give[r]`. Omit types fully moved into the trade. Tap a card →
   `give[r] += 1`, capped at `myHand[r]`. A tap is a no-op (card disabled/dimmed)
@@ -101,8 +101,8 @@ canAfford(myHand, give) && addressed.length > 0`; Send disabled until met.
   the primitive with read-only, full-size, real-color config).
 - `CardFan` (new) — the reusable primitive:
   `{ entries: { resource: Resource; count: number }[]; variant: 'solid' |
-  'shadow'; showCount: boolean; size?: 'full' | 'compact'; onCardPress?:
-  (r: Resource) => void; disabledResources?: Resource[]; emptyLabel?: string }`.
+'shadow'; showCount: boolean; size?: 'full' | 'compact'; onCardPress?:
+(r: Resource) => void; disabledResources?: Resource[]; emptyLabel?: string }`.
   Keeps the existing fan math (overlap, per-card rotation, arc lift, z-stack),
   scaled by `size`. `shadow` variant = faded/ghost card (see open question 3),
   no number. `compact` size shrinks `CARD_W`/`CARD_H`/`OVERLAP` proportionally so
@@ -148,11 +148,11 @@ conventions.
       it). Counts shown. Reset still clears everything.
     - **Right shadow source:** all five resources, desaturated-solid ghost cards,
       no number. Tap → `receive[r] += 1`, gated by `slotsRemaining > 0 &&
-      give[r] === 0` (current `addReceive`); disabled cards dimmed further.
+give[r] === 0` (current `addReceive`); disabled cards dimmed further.
     - **Right trading hand (receive):** tapping a receive card → `receive[r] -= 1`,
       floor 0. Counts shown.
     - The footer summary (`Pick N of a resource to start.` / `X → Y of Z
-      available`), the per-tap ratio hint, **Reset**, **Back**, and Cancel/Send
+available`), the per-tap ratio hint, **Reset**, **Back**, and Cancel/Send
       all stay, placed below the two panels.
 2. **Container → grow panel, shrink board.** No change to `app/game/[id].tsx`
    structure: `boardContainer` is `flex: 1`, so growing the panel below it

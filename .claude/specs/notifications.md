@@ -288,17 +288,15 @@ export async function ensurePermissionAndRegister(
 	const platform: 'ios' | 'android' =
 		Platform.OS === 'ios' ? 'ios' : 'android'
 
-	await supabase
-		.from('push_tokens')
-		.upsert(
-			{
-				token,
-				user_id: userId,
-				platform,
-				updated_at: new Date().toISOString(),
-			},
-			{ onConflict: 'token' }
-		)
+	await supabase.from('push_tokens').upsert(
+		{
+			token,
+			user_id: userId,
+			platform,
+			updated_at: new Date().toISOString(),
+		},
+		{ onConflict: 'token' }
+	)
 }
 
 /** Best-effort: delete this device's token row before sign-out. */
