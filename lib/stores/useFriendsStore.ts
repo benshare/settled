@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
 import type { Database } from '../database-types'
+import { uniqueTopic } from '../realtime'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
 import type { Profile } from './useProfileStore'
@@ -152,7 +153,7 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
 
 		if (requestsChannel) supabase.removeChannel(requestsChannel)
 		requestsChannel = supabase
-			.channel('friend_requests_rtu')
+			.channel(uniqueTopic('friend_requests_rtu'))
 			.on(
 				'postgres_changes',
 				{ event: '*', schema: 'public', table: 'friend_requests' },
@@ -162,7 +163,7 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
 
 		if (friendsChannel) supabase.removeChannel(friendsChannel)
 		friendsChannel = supabase
-			.channel('friends_rtu')
+			.channel(uniqueTopic('friends_rtu'))
 			.on(
 				'postgres_changes',
 				{ event: '*', schema: 'public', table: 'friends' },

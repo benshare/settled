@@ -5,6 +5,8 @@ import type { BonusId } from '../catan/bonuses'
 import type { DevCardId } from '../catan/devCards'
 import type { DiceRoll, GameConfig, ResourceHand } from '../catan/types'
 import type { Database } from '../database-types'
+import { emitGameMutated } from '../gameSync'
+import { uniqueTopic } from '../realtime'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
 import type { Profile } from './useProfileStore'
@@ -137,6 +139,60 @@ export type GameEvent =
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
 type RollResult = ActionResult & { dice?: DiceRoll; total?: number }
+
+type ServiceData = Record<string, unknown>
+
+/**
+ * The single entry point for every game-service call.
+ *
+ * Carries the edge function's own error string back to the caller — supabase-js
+ * buries the body of a non-2xx response inside the thrown error, so it has to be
+ * read back out — and pings `gameSync` on success so the acting player's board
+ * advances without waiting on realtime.
+ */
+async function callGameService(
+	body: ServiceData,
+	fallback: string
+): Promise<ActionResult & { data: ServiceData }> {
+	const { data, error } = await supabase.functions.invoke('game-service', {
+		body,
+	})
+
+	if (error) {
+		const message = await edgeErrorMessage(error)
+		return { error: message || fallback, data: {} }
+	}
+
+	const res = (data ?? {}) as ServiceData
+	if (!res.ok) {
+		return {
+			error: (res.error as string | undefined) || fallback,
+			data: res,
+		}
+	}
+
+	const gameId = body.game_id
+	if (typeof gameId === 'string') emitGameMutated(gameId)
+	return { error: null, data: res }
+}
+
+// A FunctionsHttpError carries the raw Response on `context`; its own `message`
+// is the same boilerplate for every failure ("non-2xx status code"), so the
+// body's `error` is the only thing that says what actually went wrong. Network
+// failures have no body — there `message` is all we have, and it's the truth.
+async function edgeErrorMessage(error: unknown): Promise<string | null> {
+	const context = (error as { context?: unknown }).context
+	if (context && typeof (context as Response).json === 'function') {
+		try {
+			const body = await (context as Response).json()
+			const message = (body as { error?: unknown })?.error
+			if (typeof message === 'string' && message) return message
+		} catch {
+			// Not a JSON body — fall through to the error's own message.
+		}
+	}
+	return (error as Error).message || null
+}
 
 type GamesStore = {
 	pendingRequests: GameRequest[] | undefined
@@ -388,7 +444,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		// Subscribe to game_requests and games changes for live updates.
 		if (requestsChannel) supabase.removeChannel(requestsChannel)
 		requestsChannel = supabase
-			.channel('game_requests_rtu')
+			.channel(uniqueTopic('game_requests_rtu'))
 			.on(
 				'postgres_changes',
 				{ event: '*', schema: 'public', table: 'game_requests' },
@@ -398,7 +454,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 
 		if (gamesChannel) supabase.removeChannel(gamesChannel)
 		gamesChannel = supabase
-			.channel('games_rtu')
+			.channel(uniqueTopic('games_rtu'))
 			.on(
 				'postgres_changes',
 				{ event: '*', schema: 'public', table: 'games' },
@@ -426,488 +482,311 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 	},
 
 	async createRequest(_meId, invitedIds, config) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		return callGameService(
 			{
-				body: {
-					action: 'propose_game',
-					invited_user_ids: invitedIds,
-					config,
-				},
-			}
+				action: 'propose_game',
+				invited_user_ids: invitedIds,
+				config,
+			},
+			"Couldn't create game"
 		)
-		if (error || !data?.ok) {
-			return {
-				error:
-					(data?.error as string | undefined) ||
-					error?.message ||
-					"Couldn't create game",
-			}
-		}
-		return { error: null }
 	},
 
 	async pickBonus(gameId, bonus) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'pick_bonus', game_id: gameId, bonus },
-			}
+		return callGameService(
+			{ action: 'pick_bonus', game_id: gameId, bonus },
+			"Couldn't pick bonus"
 		)
-		if (error || !data?.ok) return { error: "Couldn't pick bonus" }
-		return { error: null }
 	},
 
 	async setSpecialistResource(gameId, resource) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		return callGameService(
 			{
-				body: {
-					action: 'set_specialist_resource',
-					game_id: gameId,
-					resource,
-				},
-			}
+				action: 'set_specialist_resource',
+				game_id: gameId,
+				resource,
+			},
+			"Couldn't set specialty"
 		)
-		if (error || !data?.ok) return { error: "Couldn't set specialty" }
-		return { error: null }
 	},
 
 	async buyCarpenterVP(gameId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'buy_carpenter_vp', game_id: gameId },
-			}
+		return callGameService(
+			{ action: 'buy_carpenter_vp', game_id: gameId },
+			"Couldn't buy VP"
 		)
-		if (error || !data?.ok) return { error: "Couldn't buy VP" }
-		return { error: null }
 	},
 
 	async tapKnight(gameId, r1, r2) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'tap_knight',
-					game_id: gameId,
-					r1,
-					r2,
-				},
-			}
+		return callGameService(
+			{ action: 'tap_knight', game_id: gameId, r1, r2 },
+			"Couldn't tap knight"
 		)
-		if (error || !data?.ok) return { error: "Couldn't tap knight" }
-		return { error: null }
 	},
 
 	async respond(meId, requestId, accept) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'respond', request_id: requestId, accept },
-			}
+		const { error, data } = await callGameService(
+			{ action: 'respond', request_id: requestId, accept },
+			"Couldn't respond"
 		)
-		if (error || !data?.ok) {
-			return { error: "Couldn't respond" }
-		}
+		if (error) return { error }
 		await get().loadForUser(meId)
-		return { error: null, gameId: data.game_id }
+		return { error: null, gameId: data.game_id as string | undefined }
 	},
 
 	async placeSettlement(gameId, vertex) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'place_settlement', game_id: gameId, vertex },
-			}
+		return callGameService(
+			{ action: 'place_settlement', game_id: gameId, vertex },
+			"Couldn't place settlement"
 		)
-		if (error || !data?.ok) return { error: "Couldn't place settlement" }
-		return { error: null }
 	},
 
 	async placeRoad(gameId, edge) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'place_road', game_id: gameId, edge },
-			}
+		return callGameService(
+			{ action: 'place_road', game_id: gameId, edge },
+			"Couldn't place road"
 		)
-		if (error || !data?.ok) return { error: "Couldn't place road" }
-		return { error: null }
 	},
 
 	async roll(gameId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'roll', game_id: gameId },
-			}
+		const { error, data } = await callGameService(
+			{ action: 'roll', game_id: gameId },
+			"Couldn't roll"
 		)
-		if (error || !data?.ok) return { error: "Couldn't roll" }
-		return { error: null, dice: data.dice, total: data.total }
+		if (error) return { error }
+		return {
+			error: null,
+			dice: data.dice as DiceRoll,
+			total: data.total as number,
+		}
 	},
 
 	async confirmRoll(gameId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'confirm_roll', game_id: gameId },
-			}
+		const { error, data } = await callGameService(
+			{ action: 'confirm_roll', game_id: gameId },
+			"Couldn't confirm roll"
 		)
-		if (error || !data?.ok) return { error: "Couldn't confirm roll" }
-		return { error: null, dice: data.dice, total: data.total }
+		if (error) return { error }
+		return {
+			error: null,
+			dice: data.dice as DiceRoll,
+			total: data.total as number,
+		}
 	},
 
 	async rerollDice(gameId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'reroll_dice', game_id: gameId },
-			}
+		const { error, data } = await callGameService(
+			{ action: 'reroll_dice', game_id: gameId },
+			"Couldn't reroll"
 		)
-		if (error || !data?.ok) return { error: "Couldn't reroll" }
-		return { error: null, dice: data.dice, total: data.total }
+		if (error) return { error }
+		return {
+			error: null,
+			dice: data.dice as DiceRoll,
+			total: data.total as number,
+		}
 	},
 
 	async endTurn(gameId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'end_turn', game_id: gameId },
-			}
+		return callGameService(
+			{ action: 'end_turn', game_id: gameId },
+			"Couldn't end turn"
 		)
-		if (error || !data?.ok) return { error: "Couldn't end turn" }
-		return { error: null }
 	},
 
 	async buildRoad(gameId, edge, useBricklayer) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		return callGameService(
 			{
-				body: {
-					action: 'build_road',
-					game_id: gameId,
-					edge,
-					use_bricklayer: !!useBricklayer,
-				},
-			}
+				action: 'build_road',
+				game_id: gameId,
+				edge,
+				use_bricklayer: !!useBricklayer,
+			},
+			"Couldn't build road"
 		)
-		if (error || !data?.ok) return { error: "Couldn't build road" }
-		return { error: null }
 	},
 
 	async buildSettlement(gameId, vertex, useBricklayer) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		return callGameService(
 			{
-				body: {
-					action: 'build_settlement',
-					game_id: gameId,
-					vertex,
-					use_bricklayer: !!useBricklayer,
-				},
-			}
+				action: 'build_settlement',
+				game_id: gameId,
+				vertex,
+				use_bricklayer: !!useBricklayer,
+			},
+			"Couldn't build settlement"
 		)
-		if (error || !data?.ok) return { error: "Couldn't build settlement" }
-		return { error: null }
 	},
 
 	async buildCity(gameId, vertex, useBricklayer, swapDelta) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		return callGameService(
 			{
-				body: {
-					action: 'build_city',
-					game_id: gameId,
-					vertex,
-					use_bricklayer: !!useBricklayer,
-					swap_wheat_to_ore: swapDelta ?? 0,
-				},
-			}
+				action: 'build_city',
+				game_id: gameId,
+				vertex,
+				use_bricklayer: !!useBricklayer,
+				swap_wheat_to_ore: swapDelta ?? 0,
+			},
+			"Couldn't build city"
 		)
-		if (error || !data?.ok) return { error: "Couldn't build city" }
-		return { error: null }
 	},
 
 	async discard(gameId, discard) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'discard', game_id: gameId, discard },
-			}
+		return callGameService(
+			{ action: 'discard', game_id: gameId, discard },
+			"Couldn't discard"
 		)
-		if (error || !data?.ok) return { error: "Couldn't discard" }
-		return { error: null }
 	},
 
 	async moveRobber(gameId, hex) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'move_robber', game_id: gameId, hex },
-			}
+		return callGameService(
+			{ action: 'move_robber', game_id: gameId, hex },
+			"Couldn't move robber"
 		)
-		if (error || !data?.ok) return { error: "Couldn't move robber" }
-		return { error: null }
 	},
 
 	async steal(gameId, victim) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: { action: 'steal', game_id: gameId, victim },
-			}
+		return callGameService(
+			{ action: 'steal', game_id: gameId, victim },
+			"Couldn't steal"
 		)
-		if (error || !data?.ok) return { error: "Couldn't steal" }
-		return { error: null }
 	},
 
 	async proposeTrade(gameId, give, receive, to) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		const { error, data } = await callGameService(
 			{
-				body: {
-					action: 'propose_trade',
-					game_id: gameId,
-					give,
-					receive,
-					to,
-				},
-			}
+				action: 'propose_trade',
+				game_id: gameId,
+				give,
+				receive,
+				to,
+			},
+			"Couldn't propose trade"
 		)
-		if (error || !data?.ok) return { error: "Couldn't propose trade" }
-		return { error: null, offerId: data.offer_id }
+		if (error) return { error }
+		return { error: null, offerId: data.offer_id as string | undefined }
 	},
 
 	async acceptTrade(gameId, offerId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'accept_trade',
-					game_id: gameId,
-					offer_id: offerId,
-				},
-			}
+		return callGameService(
+			{ action: 'accept_trade', game_id: gameId, offer_id: offerId },
+			"Couldn't accept trade"
 		)
-		if (error || !data?.ok) return { error: "Couldn't accept trade" }
-		return { error: null }
 	},
 
 	async cancelTrade(gameId, offerId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'cancel_trade',
-					game_id: gameId,
-					offer_id: offerId,
-				},
-			}
+		return callGameService(
+			{ action: 'cancel_trade', game_id: gameId, offer_id: offerId },
+			"Couldn't cancel trade"
 		)
-		if (error || !data?.ok) return { error: "Couldn't cancel trade" }
-		return { error: null }
 	},
 
 	async rejectTrade(gameId, offerId) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'reject_trade',
-					game_id: gameId,
-					offer_id: offerId,
-				},
-			}
+		return callGameService(
+			{ action: 'reject_trade', game_id: gameId, offer_id: offerId },
+			"Couldn't reject trade"
 		)
-		if (error || !data?.ok) return { error: "Couldn't reject trade" }
-		return { error: null }
 	},
 
 	async bankTrade(gameId, give, receive) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'bank_trade',
-					game_id: gameId,
-					give,
-					receive,
-				},
-			}
+		const { error, data } = await callGameService(
+			{ action: 'bank_trade', game_id: gameId, give, receive },
+			"Couldn't trade with bank"
 		)
-		if (error || !data?.ok) return { error: "Couldn't trade with bank" }
-		return { error: null, ratio: data.ratio }
+		if (error) return { error }
+		return { error: null, ratio: data.ratio as 2 | 3 | 4 | undefined }
 	},
 
 	async buyDevCard(gameId, useBricklayer, scoutSwap) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		return callGameService(
 			{
-				body: {
-					action: 'buy_dev_card',
-					game_id: gameId,
-					use_bricklayer: !!useBricklayer,
-					scout_swap: scoutSwap ?? null,
-				},
-			}
+				action: 'buy_dev_card',
+				game_id: gameId,
+				use_bricklayer: !!useBricklayer,
+				scout_swap: scoutSwap ?? null,
+			},
+			"Couldn't buy dev card"
 		)
-		if (error || !data?.ok) return { error: "Couldn't buy dev card" }
-		return { error: null }
 	},
 
 	async playDevCard(gameId, id, payload) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		return callGameService(
 			{
-				body: {
-					action: 'play_dev_card',
-					game_id: gameId,
-					id,
-					payload: payload ?? null,
-				},
-			}
+				action: 'play_dev_card',
+				game_id: gameId,
+				id,
+				payload: payload ?? null,
+			},
+			"Couldn't play dev card"
 		)
-		if (error || !data?.ok) return { error: "Couldn't play dev card" }
-		return { error: null }
 	},
 
 	async buildSuperCity(gameId, vertex, swapDelta) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
+		return callGameService(
 			{
-				body: {
-					action: 'build_super_city',
-					game_id: gameId,
-					vertex,
-					swap_wheat_to_ore: swapDelta ?? 0,
-				},
-			}
+				action: 'build_super_city',
+				game_id: gameId,
+				vertex,
+				swap_wheat_to_ore: swapDelta ?? 0,
+			},
+			"Couldn't upgrade to super city"
 		)
-		if (error || !data?.ok)
-			return { error: "Couldn't upgrade to super city" }
-		return { error: null }
 	},
 
 	async liquidate(gameId, target) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'liquidate',
-					game_id: gameId,
-					target,
-				},
-			}
+		return callGameService(
+			{ action: 'liquidate', game_id: gameId, target },
+			"Couldn't liquidate"
 		)
-		if (error || !data?.ok) return { error: "Couldn't liquidate" }
-		return { error: null }
 	},
 
 	async placeExplorerRoad(gameId, edge) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'place_explorer_road',
-					game_id: gameId,
-					edge,
-				},
-			}
+		return callGameService(
+			{ action: 'place_explorer_road', game_id: gameId, edge },
+			"Couldn't place explorer road"
 		)
-		if (error || !data?.ok) return { error: "Couldn't place explorer road" }
-		return { error: null }
 	},
 
 	async ritualRoll(gameId, discard, total) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'ritual_roll',
-					game_id: gameId,
-					discard,
-					total,
-				},
-			}
+		return callGameService(
+			{ action: 'ritual_roll', game_id: gameId, discard, total },
+			"Couldn't ritual roll"
 		)
-		if (error || !data?.ok) return { error: "Couldn't ritual roll" }
-		return { error: null }
 	},
 
 	async shepherdSwap(gameId, take) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'shepherd_swap',
-					game_id: gameId,
-					take,
-				},
-			}
+		return callGameService(
+			{ action: 'shepherd_swap', game_id: gameId, take },
+			"Couldn't swap sheep"
 		)
-		if (error || !data?.ok) return { error: "Couldn't swap sheep" }
-		return { error: null }
 	},
 
 	async claimCurio(gameId, take) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'claim_curio',
-					game_id: gameId,
-					take,
-				},
-			}
+		return callGameService(
+			{ action: 'claim_curio', game_id: gameId, take },
+			"Couldn't claim curio"
 		)
-		if (error || !data?.ok) return { error: "Couldn't claim curio" }
-		return { error: null }
 	},
 
 	async moveForgerToken(gameId, hex) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'move_forger_token',
-					game_id: gameId,
-					hex,
-				},
-			}
+		return callGameService(
+			{ action: 'move_forger_token', game_id: gameId, hex },
+			"Couldn't move forger token"
 		)
-		if (error || !data?.ok) return { error: "Couldn't move forger token" }
-		return { error: null }
 	},
 
 	async pickForgerTarget(gameId, target) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'pick_forger_target',
-					game_id: gameId,
-					target,
-				},
-			}
+		return callGameService(
+			{ action: 'pick_forger_target', game_id: gameId, target },
+			"Couldn't pick forger target"
 		)
-		if (error || !data?.ok) return { error: "Couldn't pick forger target" }
-		return { error: null }
 	},
 
 	async confirmScoutCard(gameId, index) {
-		const { data, error } = await supabase.functions.invoke(
-			'game-service',
-			{
-				body: {
-					action: 'confirm_scout_card',
-					game_id: gameId,
-					index,
-				},
-			}
+		return callGameService(
+			{ action: 'confirm_scout_card', game_id: gameId, index },
+			"Couldn't confirm scout card"
 		)
-		if (error || !data?.ok) return { error: "Couldn't confirm scout card" }
-		return { error: null }
 	},
 }))
 

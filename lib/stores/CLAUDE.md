@@ -50,10 +50,35 @@ channels — keep both properties when writing a new store:
   instead), or a resync will flash every consumer into its loading state.
 - It must `removeChannel` any existing channel before subscribing a new one, or
   a resync leaks a channel per foreground.
+- **It must name that channel with `uniqueTopic()` (`lib/realtime.ts`), never a
+  bare string.** A socket holds one channel per topic, and `removeChannel` is
+  async — on a socket that died in the background its `leave` may never land at
+  all. Rejoining the same topic in that window is refused by the server, and
+  `.subscribe()` has nowhere to report it, so realtime goes quiet for the rest of
+  the session. (This is exactly how a robber placement appeared to fail: the move
+  succeeded server-side, the board never advanced, and the retry was rejected as
+  out-of-phase.)
 
 Any component that subscribes to its own channel outside a store (e.g.
 `GameProvider`) owes the same debt: refetch and re-subscribe from
 `useAppForeground`.
+
+Two further guards, because none of the above is worth trusting on its own:
+
+- **Refetch from the `subscribe()` status callback on `SUBSCRIBED`.** The fetch
+  and the join race each other, so an event landing between the fetch's snapshot
+  and the join reaches nobody. Reading once the channel is actually live closes
+  that gap — on the first join and on every automatic rejoin after a drop.
+- **Never make a player wait on realtime to see their own move.** Every
+  game-service call goes through `callGameService` in `useGamesStore`, which
+  pings `lib/gameSync.ts` on success; `GameProvider` re-reads the rows it just
+  changed. The edge function's 200 already confirmed the write — the channel is
+  not the only path to the result. This is a re-read, not an optimistic update.
+
+`lib/appState.ts` also force-bounces the realtime socket
+(`disconnect()` → `connect()`) on foreground, because React Native doesn't
+reliably surface the close and supabase-js will otherwise keep rejoining a dead
+one.
 
 ## Dev-flagged profiles
 

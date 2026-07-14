@@ -29,6 +29,17 @@ async function handleChange(next: AppStateStatus) {
 	// the channel rejoins that follow it — run with a valid JWT.
 	await supabase.auth.getSession().catch(() => {})
 
+	// The OS closed the socket while the app was suspended, but React Native
+	// doesn't reliably surface that close: supabase-js can go on believing it's
+	// connected, and channels rejoined on the dead socket receive nothing. Force
+	// a fresh one. Deliberately not awaited — closing a wedged socket can sit on
+	// the adapter's 10s timeout, and the refetches below shouldn't wait on it.
+	// Joins pushed in the meantime are buffered and flush on the new connection.
+	supabase.realtime
+		.disconnect()
+		.then(() => supabase.realtime.connect())
+		.catch(() => {})
+
 	for (const listener of listeners) listener()
 }
 

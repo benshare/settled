@@ -3,13 +3,17 @@
 // useGame() so descendants don't have to re-derive the same subscriptions.
 
 import { useAppForeground } from '@/lib/appState'
+import { onGameMutated } from '@/lib/gameSync'
+import { uniqueTopic } from '@/lib/realtime'
 import { useGamesStore, type Game } from '@/lib/stores/useGamesStore'
 import { supabase } from '@/lib/supabase'
 import {
 	createContext,
+	useCallback,
 	useContext,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 	type ReactNode,
 } from 'react'
@@ -69,20 +73,51 @@ export function GameProvider({
 	const [resyncNonce, setResyncNonce] = useState(0)
 	useAppForeground(() => setResyncNonce((n) => n + 1))
 
+	const [gameState, setGameState] = useState<GameState | undefined>()
+	const [stateLoaded, setStateLoaded] = useState(false)
+
+	// A fetch in flight when the game changes must not land on the new game.
+	const currentId = useRef(gameId)
 	useEffect(() => {
-		if (!gameId) return
-		let cancelled = false
-		supabase
+		currentId.current = gameId
+	}, [gameId])
+
+	const fetchGame = useCallback(async () => {
+		const { data } = await supabase
 			.from('games')
 			.select('*')
 			.eq('id', gameId)
 			.maybeSingle()
-			.then(({ data }) => {
-				if (cancelled || !data) return
-				setLiveGame(data as Game)
-			})
+		if (currentId.current !== gameId || !data) return
+		setLiveGame(data as Game)
+	}, [gameId])
+
+	const fetchState = useCallback(async () => {
+		const { data } = await supabase
+			.from('game_states')
+			.select('*')
+			.eq('game_id', gameId)
+			.maybeSingle()
+		if (currentId.current !== gameId) return
+		setGameState(data ? rowToState(data) : undefined)
+		setStateLoaded(true)
+	}, [gameId])
+
+	// A move we made ourselves is confirmed by the edge function's response, so
+	// the board advances on that rather than on a channel that may have quietly
+	// died. See lib/gameSync.ts.
+	useEffect(() => {
+		if (!gameId) return
+		return onGameMutated(gameId, () => {
+			fetchGame()
+			fetchState()
+		})
+	}, [gameId, fetchGame, fetchState])
+
+	useEffect(() => {
+		if (!gameId) return
 		const channel = supabase
-			.channel(`game:${gameId}`)
+			.channel(uniqueTopic(`game:${gameId}`))
 			.on(
 				'postgres_changes',
 				{
@@ -93,15 +128,18 @@ export function GameProvider({
 				},
 				(payload) => setLiveGame(payload.new as Game)
 			)
-			.subscribe()
+			// Fetching and joining race each other, and an event landing between
+			// the fetch's snapshot and the join is delivered to nobody. Reading
+			// once the channel is live closes that gap — on the first join and on
+			// every automatic rejoin after a dropped connection.
+			.subscribe((status) => {
+				if (status === 'SUBSCRIBED') fetchGame()
+			})
+		fetchGame()
 		return () => {
-			cancelled = true
 			supabase.removeChannel(channel)
 		}
-	}, [gameId, resyncNonce])
-
-	const [gameState, setGameState] = useState<GameState | undefined>()
-	const [stateLoaded, setStateLoaded] = useState(false)
+	}, [gameId, resyncNonce, fetchGame])
 
 	// Only a change of game empties the board. A resync re-fetches in place, so
 	// foregrounding doesn't flash back to the loading state.
@@ -112,19 +150,8 @@ export function GameProvider({
 
 	useEffect(() => {
 		if (!gameId) return
-		let cancelled = false
-		supabase
-			.from('game_states')
-			.select('*')
-			.eq('game_id', gameId)
-			.maybeSingle()
-			.then(({ data }) => {
-				if (cancelled) return
-				setGameState(data ? rowToState(data) : undefined)
-				setStateLoaded(true)
-			})
 		const channel = supabase
-			.channel(`game_state:${gameId}`)
+			.channel(uniqueTopic(`game_state:${gameId}`))
 			.on(
 				'postgres_changes',
 				{
@@ -141,12 +168,14 @@ export function GameProvider({
 					setGameState(rowToState(payload.new))
 				}
 			)
-			.subscribe()
+			.subscribe((status) => {
+				if (status === 'SUBSCRIBED') fetchState()
+			})
+		fetchState()
 		return () => {
-			cancelled = true
 			supabase.removeChannel(channel)
 		}
-	}, [gameId, resyncNonce])
+	}, [gameId, resyncNonce, fetchState])
 
 	const { publicVP, selfVP } = useMemo(() => {
 		if (!gameState) return { publicVP: [], selfVP: [] }
