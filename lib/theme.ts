@@ -132,7 +132,9 @@ export const catanColors = {
 
 	hotNumbers: new Set([6, 8]) as ReadonlySet<number>,
 
-	players: ['#D32F2F', '#1565C0', '#F57C00', '#FFFFFF'] as const,
+	// Seats 5 and 6 are the 5–6 player extension's green and brown. Green is
+	// pulled brighter than the wood hex (#1F7A3A) so pieces stay legible on it.
+	players: ['#D32F2F', '#1565C0', '#F57C00', '#FFFFFF', '#43A047', '#6D4C41'] as const,
 
 	pieceStroke: '#2B2B2B',
 }
