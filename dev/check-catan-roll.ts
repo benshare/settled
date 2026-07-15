@@ -11,12 +11,14 @@ import {
 } from '../lib/catan/board'
 import { initialGameState } from '../lib/catan/generate'
 import {
+	acrossSeat,
 	distributeResources,
 	nextMainTurn,
 	rollDice,
+	specialBuildQueue,
 	totalDice,
 } from '../lib/catan/roll'
-import type { GameState } from '../lib/catan/types'
+import type { ExtraBuildConfig, GameState } from '../lib/catan/types'
 
 function assert(cond: unknown, msg: string): asserts cond {
 	if (!cond) throw new Error(`assert: ${msg}`)
@@ -58,7 +60,7 @@ function testRolledSevenYieldsNothing() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuildTimes: 'off',
+		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
 	})
 	const gains = distributeResources(s, 7)
 	equal(Object.keys(gains).length, 0, 'rolling 7 returns empty gains')
@@ -70,7 +72,7 @@ function testSettlementGetsOne() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuildTimes: 'off',
+		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
 	})
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -88,7 +90,7 @@ function testCityGetsTwo() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuildTimes: 'off',
+		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
 	})
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -105,7 +107,7 @@ function testMismatchedRollPaysNothing() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuildTimes: 'off',
+		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
 	})
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -136,6 +138,50 @@ function testRollDiceBounds() {
 	}
 }
 
+function ebq(
+	enabled: boolean,
+	buildPhases: 'every' | 'across'
+): ExtraBuildConfig {
+	return { enabled, buildPhases, moreThanSeven: false }
+}
+
+function arrEqual(a: number[], b: number[], msg: string) {
+	equal(a.join(','), b.join(','), msg)
+}
+
+function testAcrossSeat() {
+	equal(acrossSeat(0, 6), 3, '6p: 0 across 3')
+	equal(acrossSeat(3, 6), 0, '6p: 3 across 0')
+	equal(acrossSeat(5, 6), 2, '6p: 5 across 2')
+	equal(acrossSeat(0, 5), 2, '5p: 0 across 2 (floor)')
+	equal(acrossSeat(4, 5), 1, '5p: 4 across 1')
+}
+
+function testSpecialBuildQueue() {
+	arrEqual(specialBuildQueue(ebq(false, 'every'), 0, 6), [], 'disabled -> []')
+	arrEqual(specialBuildQueue(ebq(true, 'every'), 0, 4), [], '4 players -> []')
+	// every: all others, clockwise from the next seat (next roller included)
+	arrEqual(
+		specialBuildQueue(ebq(true, 'every'), 0, 6),
+		[1, 2, 3, 4, 5],
+		'6p every from 0'
+	)
+	arrEqual(
+		specialBuildQueue(ebq(true, 'every'), 2, 5),
+		[3, 4, 0, 1],
+		'5p every from 2'
+	)
+	// across: exactly one builder
+	arrEqual(specialBuildQueue(ebq(true, 'across'), 0, 6), [3], '6p across 0')
+	arrEqual(specialBuildQueue(ebq(true, 'across'), 3, 6), [0], '6p across 3')
+	// across over a full 5-player round is a permutation (each player once)
+	const builders = [0, 1, 2, 3, 4].map(
+		(x) => specialBuildQueue(ebq(true, 'across'), x, 5)[0]
+	)
+	arrEqual(builders, [2, 3, 4, 0, 1], '5p across full round')
+	equal(new Set(builders).size, 5, '5p across -> each player once')
+}
+
 // --- Run ------------------------------------------------------------------
 
 const tests: [string, () => void][] = [
@@ -145,6 +191,8 @@ const tests: [string, () => void][] = [
 	['mismatched roll pays nothing', testMismatchedRollPaysNothing],
 	['nextMainTurn wraps', testNextMainTurnWraps],
 	['rollDice bounds', testRollDiceBounds],
+	['acrossSeat mapping', testAcrossSeat],
+	['specialBuildQueue', testSpecialBuildQueue],
 ]
 
 for (const [name, fn] of tests) {

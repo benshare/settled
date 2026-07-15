@@ -1,9 +1,8 @@
 import { useAuth } from '@/lib/auth'
 import {
-	EXTRA_BUILD_TIMES,
 	MAX_PLAYERS,
 	sameStringSet,
-	type ExtraBuildTimes,
+	type BuildPhaseFrequency,
 	type NumberLayout,
 } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
@@ -60,8 +59,14 @@ export default function CreateGameScreen() {
 	const [numberLayout, setNumberLayout] = useState<NumberLayout>(
 		savedDefaults.settings.numberLayout
 	)
-	const [extraBuildTimes, setExtraBuildTimes] = useState<ExtraBuildTimes>(
-		savedDefaults.settings.extraBuildTimes
+	const [extraBuildEnabled, setExtraBuildEnabled] = useState(
+		savedDefaults.settings.extraBuild.enabled
+	)
+	const [buildPhases, setBuildPhases] = useState<BuildPhaseFrequency>(
+		savedDefaults.settings.extraBuild.buildPhases
+	)
+	const [moreThanSeven, setMoreThanSeven] = useState(
+		savedDefaults.settings.extraBuild.moreThanSeven
 	)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [extrasOpen, setExtrasOpen] = useState(false)
@@ -77,33 +82,47 @@ export default function CreateGameScreen() {
 	const savedBonusSets = savedDefaults.extras.bonusSets
 	const savedDevCards = savedDefaults.settings.devCards
 	const savedNumberLayout = savedDefaults.settings.numberLayout
-	const savedExtraBuildTimes = savedDefaults.settings.extraBuildTimes
+	const savedExtraBuild = savedDefaults.settings.extraBuild
 	useEffect(() => {
 		if (touched) return
 		setBonuses(savedBonuses)
 		setBonusSets(savedBonusSets)
 		setDevCards(savedDevCards)
 		setNumberLayout(savedNumberLayout)
-		setExtraBuildTimes(savedExtraBuildTimes)
+		setExtraBuildEnabled(savedExtraBuild.enabled)
+		setBuildPhases(savedExtraBuild.buildPhases)
+		setMoreThanSeven(savedExtraBuild.moreThanSeven)
 	}, [
 		savedBonuses,
 		savedBonusSets,
 		savedDevCards,
 		savedNumberLayout,
-		savedExtraBuildTimes,
+		savedExtraBuild,
 		touched,
 	])
 
 	const currentDefaults: GameDefaults = {
-		settings: { devCards, numberLayout, extraBuildTimes },
+		settings: {
+			devCards,
+			numberLayout,
+			extraBuild: {
+				enabled: extraBuildEnabled,
+				buildPhases,
+				moreThanSeven,
+			},
+		},
 		extras: { bonuses, bonusSets },
 	}
 	const dirty =
 		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
 		currentDefaults.settings.numberLayout !==
 			savedDefaults.settings.numberLayout ||
-		currentDefaults.settings.extraBuildTimes !==
-			savedDefaults.settings.extraBuildTimes ||
+		currentDefaults.settings.extraBuild.enabled !==
+			savedExtraBuild.enabled ||
+		currentDefaults.settings.extraBuild.buildPhases !==
+			savedExtraBuild.buildPhases ||
+		currentDefaults.settings.extraBuild.moreThanSeven !==
+			savedExtraBuild.moreThanSeven ||
 		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses ||
 		!sameStringSet(
 			currentDefaults.extras.bonusSets,
@@ -122,10 +141,10 @@ export default function CreateGameScreen() {
 	// expanded board automatically.
 	const maxInvites = MAX_PLAYERS - 1
 	const atInviteCap = selected.size >= maxInvites
-	// Proposer + invitees. Extra build times only apply to >4 player games, so
+	// Proposer + invitees. Extra build phases only apply to >4 player games, so
 	// the control only appears once the table would seat 5+.
 	const playerCount = selected.size + 1
-	const showExtraBuildTimes = playerCount > 4
+	const showExtraBuild = playerCount > 4
 
 	function toggle(id: string) {
 		setSelected((prev) => {
@@ -145,7 +164,11 @@ export default function CreateGameScreen() {
 			bonusSets,
 			devCards,
 			numberLayout,
-			extraBuildTimes,
+			extraBuild: {
+				enabled: extraBuildEnabled,
+				buildPhases,
+				moreThanSeven,
+			},
 		})
 		setBusy(false)
 		if (error) {
@@ -296,17 +319,55 @@ export default function CreateGameScreen() {
 											setTouched(true)
 										}}
 									/>
-									{showExtraBuildTimes && (
-										<CompactChoiceRow
-											icon="construct"
-											title="Extra build times"
-											description="Special build phase between turns (5–6 player games)."
-											value={extraBuildTimes}
-											onSelect={(v) => {
-												setExtraBuildTimes(v)
-												setTouched(true)
-											}}
-										/>
+									{showExtraBuild && (
+										<>
+											<CompactToggleRow
+												icon="construct"
+												title="Extra build phases"
+												description="Let players build between turns (5–6 player games)."
+												value={extraBuildEnabled}
+												onToggle={() => {
+													setExtraBuildEnabled(
+														(v) => !v
+													)
+													setTouched(true)
+												}}
+											/>
+											{extraBuildEnabled && (
+												<View style={styles.subOptions}>
+													<SegmentedRow
+														label="Build phases"
+														options={
+															BUILD_PHASE_OPTIONS
+														}
+														value={buildPhases}
+														onSelect={(v) => {
+															setBuildPhases(
+																v as BuildPhaseFrequency
+															)
+															setTouched(true)
+														}}
+													/>
+													<SegmentedRow
+														label="Allow building"
+														options={
+															ALLOW_BUILD_OPTIONS
+														}
+														value={
+															moreThanSeven
+																? 'over'
+																: 'always'
+														}
+														onSelect={(v) => {
+															setMoreThanSeven(
+																v === 'over'
+															)
+															setTouched(true)
+														}}
+													/>
+												</View>
+											)}
+										</>
 									)}
 								</CollapsibleSection>
 
@@ -527,58 +588,57 @@ function CompactToggleRow({
 	)
 }
 
-const EXTRA_BUILD_LABELS: Record<ExtraBuildTimes, string> = {
-	'every-turn': 'Every roll',
-	across: 'Across',
-	off: 'Off',
-}
+const BUILD_PHASE_OPTIONS = [
+	{ key: 'every', label: 'Every roll' },
+	{ key: 'across', label: 'Across' },
+]
+const ALLOW_BUILD_OPTIONS = [
+	{ key: 'always', label: 'Always' },
+	{ key: 'over', label: 'Over 7 cards' },
+]
 
-function CompactChoiceRow({
-	icon,
-	title,
-	description,
+// A labelled two/three-option segmented control. Used for the extra-build
+// sub-options (build cadence + who may build). `value` is the active key.
+function SegmentedRow({
+	label,
+	options,
 	value,
 	onSelect,
 }: {
-	icon: React.ComponentProps<typeof Ionicons>['name']
-	title: string
-	description: string
-	value: ExtraBuildTimes
-	onSelect: (value: ExtraBuildTimes) => void
+	label: string
+	options: { key: string; label: string }[]
+	value: string
+	onSelect: (value: string) => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
-		<View style={styles.choiceRow}>
-			<Ionicons name={icon} size={18} color={colors.textSecondary} />
-			<View style={styles.compactTextWrap}>
-				<Text style={styles.compactTitle}>{title}</Text>
-				<Text style={styles.compactDescription}>{description}</Text>
-				<View style={styles.segmentControl}>
-					{EXTRA_BUILD_TIMES.map((opt) => {
-						const active = value === opt
-						return (
-							<Pressable
-								key={opt}
-								onPress={() => onSelect(opt)}
-								style={({ pressed }) => [
-									styles.segmentPill,
-									active && styles.segmentPillActive,
-									pressed && !active && styles.pressed,
+		<View style={styles.segmentedRow}>
+			<Text style={styles.segmentedLabel}>{label}</Text>
+			<View style={styles.segmentControl}>
+				{options.map((opt) => {
+					const active = value === opt.key
+					return (
+						<Pressable
+							key={opt.key}
+							onPress={() => onSelect(opt.key)}
+							style={({ pressed }) => [
+								styles.segmentPill,
+								active && styles.segmentPillActive,
+								pressed && !active && styles.pressed,
+							]}
+						>
+							<Text
+								style={[
+									styles.segmentLabel,
+									active && styles.segmentLabelActive,
 								]}
 							>
-								<Text
-									style={[
-										styles.segmentLabel,
-										active && styles.segmentLabelActive,
-									]}
-								>
-									{EXTRA_BUILD_LABELS[opt]}
-								</Text>
-							</Pressable>
-						)
-					})}
-				</View>
+								{opt.label}
+							</Text>
+						</Pressable>
+					)
+				})}
 			</View>
 		</View>
 	)
@@ -742,11 +802,13 @@ function makeStyles(colors: ColorScheme) {
 			gap: spacing.sm,
 			paddingVertical: spacing.xs,
 		},
-		choiceRow: {
-			flexDirection: 'row',
-			alignItems: 'flex-start',
-			gap: spacing.sm,
+		segmentedRow: {
 			paddingVertical: spacing.xs,
+		},
+		segmentedLabel: {
+			fontSize: font.xs,
+			fontWeight: '600',
+			color: colors.textSecondary,
 		},
 		segmentControl: {
 			flexDirection: 'row',

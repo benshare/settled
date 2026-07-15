@@ -28,6 +28,7 @@ import {
 	canPlaceUnderPower,
 	settlementKeepsYouthOK,
 } from './curses'
+import { canBankTrade } from './ports'
 import {
 	edgeStateOf,
 	vertexStateOf,
@@ -327,4 +328,50 @@ export function canAffordMetropolitanCost(
 	swapDelta: number
 ): boolean {
 	return canAfford(p.resources, metropolitanCostOf(p, swapDelta))
+}
+
+// --- Special build phase ---------------------------------------------------
+
+// Total resource cards in a player's hand (the discard-threshold count).
+export function handSize(p: PlayerState): number {
+	let n = 0
+	for (const r of RESOURCES) n += p.resources[r]
+	return n
+}
+
+// Can player `idx` take ANY action in a special build phase right now — build a
+// road/settlement/city, buy a dev card, or bank/port trade? Used to auto-skip a
+// queued player with nothing to do and to gate slot actions. Honors the
+// `moreThanSeven` house rule: while it's set, a player at or below 7 cards may
+// not build at all (a bank trade down is still counted, since that's exactly
+// how such a player spends below the discard threshold).
+export function canTakeSpecialBuildAction(
+	state: GameState,
+	idx: number
+): boolean {
+	const p = state.players[idx]
+	if (!p) return false
+	if (state.config.extraBuild.moreThanSeven && handSize(p) <= 7) return false
+	if (
+		canAffordPurchase(p, 'road') &&
+		validBuildRoadEdges(state, idx).length > 0
+	)
+		return true
+	if (
+		canAffordPurchase(p, 'settlement') &&
+		validBuildSettlementVertices(state, idx).length > 0
+	)
+		return true
+	if (
+		canAffordPurchase(p, 'city') &&
+		validBuildCityVertices(state, idx).length > 0
+	)
+		return true
+	if (
+		state.config.devCards &&
+		state.devDeck.length > 0 &&
+		canAffordPurchase(p, 'dev_card')
+	)
+		return true
+	return canBankTrade(state, idx)
 }

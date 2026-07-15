@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import {
-	EXTRA_BUILD_TIMES,
-	type ExtraBuildTimes,
+	parseExtraBuild,
+	type ExtraBuildConfig,
 	type NumberLayout,
 } from '../catan/types'
 import type { Database } from '../database-types'
@@ -17,7 +17,7 @@ export type GameDefaults = {
 	settings: {
 		devCards: boolean
 		numberLayout: NumberLayout
-		extraBuildTimes: ExtraBuildTimes
+		extraBuild: ExtraBuildConfig
 	}
 	extras: { bonuses: boolean; bonusSets: string[] }
 }
@@ -30,7 +30,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 	settings: {
 		devCards: true,
 		numberLayout: 'spiral',
-		extraBuildTimes: 'every-turn',
+		extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
 	},
 	extras: { bonuses: false, bonusSets: ['1'] },
 }
@@ -52,11 +52,10 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				settings?.numberLayout === 'random'
 					? settings.numberLayout
 					: DEFAULT_GAME_DEFAULTS.settings.numberLayout,
-			extraBuildTimes: EXTRA_BUILD_TIMES.includes(
-				settings?.extraBuildTimes as ExtraBuildTimes
-			)
-				? (settings!.extraBuildTimes as ExtraBuildTimes)
-				: DEFAULT_GAME_DEFAULTS.settings.extraBuildTimes,
+			extraBuild: parseExtraBuild(
+				settings?.extraBuild,
+				DEFAULT_GAME_DEFAULTS.settings.extraBuild
+			),
 		},
 		extras: {
 			bonuses:
