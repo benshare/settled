@@ -5,9 +5,7 @@
 //
 // The pane toggles between an expanded body (cards + confirm + play-order
 // footer) and a collapsed header bar via the chevron. The footer shows each
-// player in turn order; tapping a chip reveals the bonuses + curse that
-// player was dealt — useful for inferring opponents' likely picks before
-// committing.
+// player in turn order (read-only) along with whether they've committed yet.
 //
 // After submit, the local player shows a waiting state until every other
 // player has also chosen. When the last player commits, the edge function
@@ -63,7 +61,6 @@ export function BonusSelection({
 	// Track the player's in-flight pick separately from `hand.chosen` so the
 	// UI can show a selected state before the realtime update lands.
 	const [pick, setPick] = useState<0 | 1 | null>(null)
-	const [revealedIdx, setRevealedIdx] = useState<number | null>(null)
 
 	const committed = hand ? hand.chosen !== null : false
 
@@ -124,8 +121,8 @@ export function BonusSelection({
 					<Animated.View style={chevronAnimStyle}>
 						<Ionicons
 							name="chevron-up"
-							size={18}
-							color={colors.textSecondary}
+							size={20}
+							color={colors.text}
 						/>
 					</Animated.View>
 					<Text style={styles.headerTitle}>{headerLabel}</Text>
@@ -252,12 +249,6 @@ export function BonusSelection({
 							meIdx={meIdx}
 							profilesById={profilesById}
 							phaseHands={phaseHands}
-							revealedIdx={revealedIdx}
-							onToggleReveal={(i) =>
-								setRevealedIdx((prev) =>
-									prev === i ? null : i
-								)
-							}
 							styles={styles}
 							colors={colors}
 						/>
@@ -273,8 +264,6 @@ function PlayOrderFooter({
 	meIdx,
 	profilesById,
 	phaseHands,
-	revealedIdx,
-	onToggleReveal,
 	styles,
 	colors,
 }: {
@@ -282,13 +271,9 @@ function PlayOrderFooter({
 	meIdx: number
 	profilesById: Record<string, Profile>
 	phaseHands: Record<number, SelectBonusHand>
-	revealedIdx: number | null
-	onToggleReveal: (idx: number) => void
 	styles: ReturnType<typeof makeStyles>
 	colors: ColorScheme
 }) {
-	const revealedHand =
-		revealedIdx !== null ? phaseHands[revealedIdx] : undefined
 	return (
 		<View style={styles.footer}>
 			<Text style={styles.footerLabel}>Order of play</Text>
@@ -300,17 +285,8 @@ function PlayOrderFooter({
 					const color = playerColors[i] ?? playerColors[0]
 					const playerHand = phaseHands[i]
 					const picked = playerHand?.chosen != null
-					const active = revealedIdx === i
 					return (
-						<Pressable
-							key={uid}
-							onPress={() => onToggleReveal(i)}
-							style={({ pressed }) => [
-								styles.chip,
-								active && styles.chipActive,
-								pressed && styles.pressed,
-							]}
-						>
+						<View key={uid} style={styles.chip}>
 							<View
 								style={[
 									styles.chipDot,
@@ -331,64 +307,10 @@ function PlayOrderFooter({
 									picked ? colors.success : colors.textMuted
 								}
 							/>
-						</Pressable>
+						</View>
 					)
 				})}
 			</View>
-
-			{revealedHand && revealedIdx !== null && (
-				<View style={styles.revealCard}>
-					<Text style={styles.revealHeader}>
-						{revealedIdx === meIdx
-							? 'Your cards'
-							: `${profilesById[playerOrder[revealedIdx]]?.username ?? 'Player'} was dealt`}
-					</Text>
-					<View style={styles.revealList}>
-						{revealedHand.offered.map((bonusId, j) => {
-							const b = bonusById(bonusId)!
-							const isChosen = revealedHand.chosen === bonusId
-							return (
-								<View key={`b-${j}`} style={styles.revealRow}>
-									<Ionicons
-										name={b.icon}
-										size={16}
-										color={colors.brand}
-									/>
-									<View style={styles.revealText}>
-										<Text style={styles.revealTitle}>
-											{b.title}
-											{isChosen ? ' (kept)' : ''}
-										</Text>
-										<Text style={styles.revealDescription}>
-											{b.description}
-										</Text>
-									</View>
-								</View>
-							)
-						})}
-						{(() => {
-							const c = curseById(revealedHand.curse)!
-							return (
-								<View style={styles.revealRow}>
-									<Ionicons
-										name={c.icon}
-										size={16}
-										color={colors.error}
-									/>
-									<View style={styles.revealText}>
-										<Text style={styles.revealTitle}>
-											{c.title}
-										</Text>
-										<Text style={styles.revealDescription}>
-											{c.description}
-										</Text>
-									</View>
-								</View>
-							)
-						})()}
-					</View>
-				</View>
-			)}
 		</View>
 	)
 }
@@ -538,10 +460,6 @@ function makeStyles(colors: ColorScheme) {
 			borderColor: colors.border,
 			backgroundColor: colors.background,
 		},
-		chipActive: {
-			borderColor: colors.brand,
-			backgroundColor: colors.brandDim,
-		},
 		chipDot: {
 			width: 8,
 			height: 8,
@@ -551,40 +469,6 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.sm,
 			fontWeight: '600',
 			color: colors.text,
-		},
-		revealCard: {
-			marginTop: spacing.xs,
-			padding: spacing.sm,
-			borderRadius: radius.md,
-			borderWidth: 1,
-			borderColor: colors.border,
-			backgroundColor: colors.background,
-			gap: spacing.xs,
-		},
-		revealHeader: {
-			fontSize: font.sm,
-			fontWeight: '700',
-			color: colors.text,
-		},
-		revealList: {
-			gap: spacing.xs,
-		},
-		revealRow: {
-			flexDirection: 'row',
-			alignItems: 'flex-start',
-			gap: spacing.xs,
-		},
-		revealText: {
-			flex: 1,
-		},
-		revealTitle: {
-			fontSize: font.sm,
-			fontWeight: '600',
-			color: colors.text,
-		},
-		revealDescription: {
-			fontSize: font.xs,
-			color: colors.textSecondary,
 		},
 	})
 }
