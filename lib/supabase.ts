@@ -6,6 +6,18 @@ import type { Database } from './database-types'
 
 const { supabaseUrl, supabasePublicKey } = Constants.expoConfig?.extra ?? {}
 
+// These are baked into `extra` when app.config.js is evaluated, so a miss here
+// means the config was built with no env. A missing SUPABASE_PROJECT_ID leaves
+// the literal "https://undefined.supabase.co" (truthy), so check for that too.
+// Fail loudly: `eas update` does not load .env, so publishing OTA without
+// `--environment production` produces a bundle that crashes at launch, which
+// expo-updates then blacklists per-device and reverts to the embedded build.
+if (!supabaseUrl || !supabasePublicKey || supabaseUrl.includes('undefined')) {
+	throw new Error(
+		'[supabase] Missing SUPABASE_PROJECT_ID / SUPABASE_PUBLIC_KEY. Locally: copy .env.example to .env. On EAS: publish with `--environment production` (see the "ota" script) and check `eas env:list --environment production`.'
+	)
+}
+
 // expo-secure-store is native-only; on web fall back to localStorage.
 const SecureStoreAdapter = {
 	getItem: (key: string) => SecureStore.getItemAsync(key),
