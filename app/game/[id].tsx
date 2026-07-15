@@ -58,6 +58,7 @@ import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { NomadAnimation } from '@/lib/catan/NomadAnimation'
+import { FortuneTellerAnimation } from '@/lib/catan/FortuneTellerAnimation'
 import { StealAnimation } from '@/lib/catan/StealAnimation'
 import { TradeBanner, visibleOfferFor } from '@/lib/catan/TradeBanner'
 import { TradePanel } from '@/lib/catan/TradePanel'
@@ -444,6 +445,55 @@ function GameBody() {
 		if (queued.length > 0) setNomadAnimQueue((q) => [...q, ...queued])
 	}, [game, meIdx, profilesById])
 	const nomadAnim = nomadAnimQueue[0] ?? null
+
+	// --- Fortune teller animation ------------------------------------------
+	// `fortune_teller_roll` events carry the bonus roll's dice + gain. Only
+	// rolls that actually paid the FT player get an animation; empty-gain
+	// bonus rolls (a bonus 7 or a miss) still appear in the log but don't pop
+	// a modal. A single roll can chain into several events, so they queue.
+	const [ftAnimQueue, setFtAnimQueue] = useState<
+		{
+			key: string
+			dice: [number, number]
+			total: number
+			gain: ResourceHandType
+			playerName: string
+			meIsFortuneTeller: boolean
+		}[]
+	>([])
+	const lastSeenFtIndexRef = useRef<number | null>(null)
+	useEffect(() => {
+		if (!game) return
+		const events = (game.events ?? []) as GameEvent[]
+		if (lastSeenFtIndexRef.current === null) {
+			lastSeenFtIndexRef.current = events.length
+			return
+		}
+		if (events.length === lastSeenFtIndexRef.current) return
+		const newEvents = events.slice(lastSeenFtIndexRef.current)
+		const queued: typeof ftAnimQueue = []
+		for (const e of newEvents) {
+			if (e?.kind !== 'fortune_teller_roll') continue
+			const gainCount = RESOURCES.reduce(
+				(n, r) => n + (e.gain[r] ?? 0),
+				0
+			)
+			if (gainCount <= 0) continue
+			const playerName =
+				profilesById[game.player_order[e.player]]?.username ?? 'Player'
+			queued.push({
+				key: e.at + ':' + e.player,
+				dice: e.dice,
+				total: e.total,
+				gain: e.gain,
+				playerName,
+				meIsFortuneTeller: e.player === meIdx,
+			})
+		}
+		lastSeenFtIndexRef.current = events.length
+		if (queued.length > 0) setFtAnimQueue((q) => [...q, ...queued])
+	}, [game, meIdx, profilesById])
+	const ftAnim = ftAnimQueue[0] ?? null
 
 	if (!ready && !game) {
 		return (
@@ -1476,6 +1526,18 @@ function GameBody() {
 					playerName={nomadAnim.playerName}
 					meIsNomad={nomadAnim.meIsNomad}
 					onDismiss={() => setNomadAnimQueue((q) => q.slice(1))}
+				/>
+			)}
+
+			{ftAnim && (
+				<FortuneTellerAnimation
+					key={ftAnim.key}
+					dice={ftAnim.dice}
+					total={ftAnim.total}
+					gain={ftAnim.gain}
+					playerName={ftAnim.playerName}
+					meIsFortuneTeller={ftAnim.meIsFortuneTeller}
+					onDismiss={() => setFtAnimQueue((q) => q.slice(1))}
 				/>
 			)}
 		</View>

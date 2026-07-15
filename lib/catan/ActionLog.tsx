@@ -10,7 +10,7 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
-import type { Resource } from './board'
+import { RESOURCES, type Resource } from './board'
 import { devCardById } from './devCards'
 import { playerColors } from './palette'
 
@@ -206,6 +206,16 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				text: `${who(e.player)} gained ${e.count} ${RESOURCE_LABELS[e.resource]} (nomad)`,
 				player: e.player,
 			}
+		case 'fortune_teller_roll': {
+			const parts = RESOURCES.filter((r) => e.gain[r] > 0).map(
+				(r) => `${e.gain[r]} ${RESOURCE_LABELS[r]}`
+			)
+			const gained = parts.length > 0 ? parts.join(', ') : 'nothing'
+			return {
+				text: `${who(e.player)} rolled ${e.total} (fortune teller), gained ${gained}`,
+				player: e.player,
+			}
+		}
 		case 'game_complete': {
 			// Two historical shapes carry the winner under different keys.
 			const winner = 'winner' in e ? e.winner : e.winner_index

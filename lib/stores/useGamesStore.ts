@@ -126,6 +126,19 @@ export type GameEvent =
 			count: number
 			at: string
 	  }
+	// Fortune teller bonus: the FT player rolled doubles or a 7, triggering one
+	// or more bonus dice rolls that pay only them. One event per bonus roll (the
+	// chain continues on doubles/7). `gain` is that roll's production and may be
+	// empty when the bonus roll is a 7 or hits none of their hexes. Surfaced in
+	// UI as a dice-reveal animation (empty gains show in the log only).
+	| {
+			kind: 'fortune_teller_roll'
+			player: number
+			dice: [number, number]
+			total: number
+			gain: ResourceHand
+			at: string
+	  }
 	// Terminal event. Written once per game when a player reaches 10 VP.
 	// `vpCards` reveals each player's previously-hidden VP card count so
 	// clients can render a final scoreboard without a separate read.
