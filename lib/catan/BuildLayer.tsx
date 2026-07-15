@@ -12,6 +12,7 @@ import { EdgePiece } from './EdgePiece'
 import { playerColors } from './palette'
 import { PulsingDot } from './PulsingDot'
 import type { GameState } from './types'
+import { VertexPiece } from './VertexPiece'
 
 // `super_city` is the metropolitan upgrade (cities → super_city). It uses
 // the build-bar pulse layer the same way as the standard kinds, but is gated
@@ -120,18 +121,34 @@ export function BuildLayer({
 				? validBuildCityVertices(state, meIdx)
 				: validBuildSuperCityVertices(state, meIdx)
 
+	const pendingVertex =
+		pending && pending.kind === tool && 'vertex' in pending
+			? pending.vertex
+			: null
+
 	return (
 		<G>
 			{valids.map((v) => {
 				const p = vertexPositions[v]
+				const isPending = v === pendingVertex
 				return (
 					<Fragment key={v}>
-						<PulsingDot
-							cx={p.x}
-							cy={p.y}
-							r={layoutS * 0.22}
-							color={color}
-						/>
+						{isPending ? (
+							<VertexPiece
+								cx={p.x}
+								cy={p.y}
+								size={layoutS}
+								building={tool}
+								player={meIdx}
+							/>
+						) : (
+							<PulsingDot
+								cx={p.x}
+								cy={p.y}
+								r={layoutS * 0.22}
+								color={color}
+							/>
+						)}
 						<Circle
 							cx={p.x}
 							cy={p.y}
