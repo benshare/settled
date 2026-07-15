@@ -39,6 +39,8 @@ export type BuildInteraction = {
 	meIdx: number
 	tool: BoardTool | null
 	onSelect: (selection: BuildSelection) => void
+	// The spot awaiting confirmation, previewed as a solid piece on the board.
+	pending?: BuildSelection | null
 }
 
 export type RobberInteraction = {
@@ -252,6 +254,7 @@ function BoardSvg({
 						vertexPositions={vertexPositions}
 						tool={build.tool}
 						onSelect={build.onSelect}
+						pending={build.pending}
 					/>
 				)}
 				{robber && (

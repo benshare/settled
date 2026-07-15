@@ -208,6 +208,9 @@ function GameBody() {
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		run: () => void | Promise<void>
+		// A build spot awaiting confirmation, previewed on the board so the
+		// choice is visible while the confirm bar is up.
+		preview?: BuildSelection
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
 	const [bonusPaneCollapsed, setBonusPaneCollapsed] = useState(false)
@@ -216,8 +219,12 @@ function GameBody() {
 	const [gameOverOpen, setGameOverOpen] = useState(true)
 	const router = useRouter()
 
-	function confirmAction(title: string, run: () => void | Promise<void>) {
-		setPendingConfirm({ title, run })
+	function confirmAction(
+		title: string,
+		run: () => void | Promise<void>,
+		preview?: BuildSelection
+	) {
+		setPendingConfirm({ title, run, preview })
 	}
 
 	async function runPendingConfirm() {
@@ -691,8 +698,10 @@ function GameBody() {
 		// metropolitan branch). Narrow for confirmAction + commitBuild.
 		if (sel.kind === 'super_city') return
 		const standardSel = sel
-		confirmAction(confirmBuildTitle(standardSel.kind), () =>
-			commitBuild(standardSel)
+		confirmAction(
+			confirmBuildTitle(standardSel.kind),
+			() => commitBuild(standardSel),
+			standardSel
 		)
 	}
 
@@ -1232,12 +1241,14 @@ function GameBody() {
 										meIdx,
 										tool: buildTool,
 										onSelect: onBuildSpotSelect,
+										pending: pendingConfirm?.preview,
 									}
 								: inRoadBuilding && isCurrentPlayer
 									? {
 											meIdx,
 											tool: 'road',
 											onSelect: onBuildSpotSelect,
+											pending: pendingConfirm?.preview,
 										}
 									: inPostPlacement &&
 										  gameState.phase.kind ===

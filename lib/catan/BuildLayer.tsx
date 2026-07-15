@@ -8,6 +8,7 @@ import {
 	validBuildSuperCityVertices,
 	type BuildKind,
 } from './build'
+import { EdgePiece } from './EdgePiece'
 import { playerColors } from './palette'
 import { PulsingDot } from './PulsingDot'
 import type { GameState } from './types'
@@ -37,6 +38,7 @@ export function BuildLayer({
 	layoutS,
 	vertexPositions,
 	onSelect,
+	pending,
 }: {
 	state: GameState
 	meIdx: number
@@ -44,6 +46,10 @@ export function BuildLayer({
 	layoutS: number
 	vertexPositions: Record<Vertex, { x: number; y: number }>
 	onSelect: (selection: BuildSelection) => void
+	// The spot the player has tapped and is being asked to confirm. Rendered
+	// as a solid preview piece so the choice is visible while the confirm bar
+	// is up, instead of blending into the pulsing valid-spot dots.
+	pending?: BuildSelection | null
 }) {
 	if (!tool) return null
 	const inMain = state.phase.kind === 'main'
@@ -62,6 +68,7 @@ export function BuildLayer({
 	if (tool === 'road' || tool === 'explorer_road') {
 		const valids = validBuildRoadEdges(state, meIdx)
 		const pickKind = tool
+		const pendingEdge = pending?.kind === 'road' ? pending.edge : null
 		return (
 			<G>
 				{valids.map((e) => {
@@ -70,14 +77,26 @@ export function BuildLayer({
 					const pb = vertexPositions[vb]
 					const mx = (pa.x + pb.x) / 2
 					const my = (pa.y + pb.y) / 2
+					const isPending = e === pendingEdge
 					return (
 						<Fragment key={e}>
-							<PulsingDot
-								cx={mx}
-								cy={my}
-								r={layoutS * 0.2}
-								color={color}
-							/>
+							{isPending ? (
+								<EdgePiece
+									x1={pa.x}
+									y1={pa.y}
+									x2={pb.x}
+									y2={pb.y}
+									size={layoutS}
+									player={meIdx}
+								/>
+							) : (
+								<PulsingDot
+									cx={mx}
+									cy={my}
+									r={layoutS * 0.2}
+									color={color}
+								/>
+							)}
 							<Circle
 								cx={mx}
 								cy={my}
