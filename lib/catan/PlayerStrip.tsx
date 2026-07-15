@@ -88,8 +88,8 @@ export function PlayerStrip({
 								{name}
 							</Text>
 						</View>
-						<View style={styles.stats}>
-							<View style={styles.stat}>
+						<View style={styles.statsGrid}>
+							<View style={styles.gridStat}>
 								<Ionicons
 									name="trophy"
 									size={12}
@@ -101,7 +101,7 @@ export function PlayerStrip({
 										: points}
 								</Text>
 							</View>
-							<View style={styles.stat}>
+							<View style={styles.gridStat}>
 								<Ionicons
 									name="albums"
 									size={12}
@@ -110,7 +110,7 @@ export function PlayerStrip({
 								<Text style={styles.statText}>{cards}</Text>
 							</View>
 							{showDevCards && devCount > 0 && (
-								<View style={styles.stat}>
+								<View style={styles.gridStat}>
 									<Ionicons
 										name="shield"
 										size={12}
@@ -122,7 +122,7 @@ export function PlayerStrip({
 								</View>
 							)}
 							{showDevCards && knights > 0 && (
-								<View style={styles.stat}>
+								<View style={styles.gridStat}>
 									<MaterialCommunityIcons
 										name="sword"
 										size={12}
@@ -145,7 +145,7 @@ export function PlayerStrip({
 								</View>
 							)}
 							{longestRoadLen > 0 && (
-								<View style={styles.stat}>
+								<View style={styles.gridStat}>
 									<MaterialCommunityIcons
 										name="road-variant"
 										size={12}
@@ -167,39 +167,43 @@ export function PlayerStrip({
 									</Text>
 								</View>
 							)}
-							{showBonusIcons && bonus && (
-								<View style={styles.stat}>
-									<Ionicons
-										name={bonus.icon}
-										size={12}
-										color={colors.brand}
-									/>
-									{player?.specialistResource && (
-										<View
-											style={[
-												styles.specialistDot,
-												{
-													backgroundColor:
-														resourceColor[
-															player
-																.specialistResource
-														],
-												},
-											]}
-										/>
-									)}
-								</View>
-							)}
-							{showBonusIcons && curse && (
-								<View style={styles.stat}>
-									<Ionicons
-										name={curse.icon}
-										size={12}
-										color={colors.error}
-									/>
-								</View>
-							)}
 						</View>
+						{showBonusIcons && (bonus || curse) && (
+							<View style={styles.badgeRow}>
+								{bonus && (
+									<View style={styles.stat}>
+										<Ionicons
+											name={bonus.icon}
+											size={12}
+											color={colors.success}
+										/>
+										{player?.specialistResource && (
+											<View
+												style={[
+													styles.specialistDot,
+													{
+														backgroundColor:
+															resourceColor[
+																player
+																	.specialistResource
+															],
+													},
+												]}
+											/>
+										)}
+									</View>
+								)}
+								{curse && (
+									<View style={styles.stat}>
+										<Ionicons
+											name={curse.icon}
+											size={12}
+											color={colors.error}
+										/>
+									</View>
+								)}
+							</View>
+						)}
 					</Pressable>
 				)
 			})}
@@ -253,7 +257,18 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		color: colors.text,
 	},
-	stats: {
+	statsGrid: {
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		rowGap: spacing.xs,
+	},
+	gridStat: {
+		flexBasis: '50%',
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 3,
+	},
+	badgeRow: {
 		flexDirection: 'row',
 		flexWrap: 'wrap',
 		columnGap: spacing.sm,
