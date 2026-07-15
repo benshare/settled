@@ -483,6 +483,12 @@ const STANDARD_NUMBERS = [
 	2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12,
 ] as const
 
+// Fixed token order for the 'spiral' number layout — mirror of lib/catan/board.
+// Authentic Catan A-R order.
+const STANDARD_SPIRAL_SEQUENCE = [
+	5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 5, 6, 3, 11, 4,
+] as const
+
 type HexData = { resource: null } | { resource: Resource; number: number }
 
 // Each hex's 6 corner vertices in clockwise order. Hand-authored; everything
@@ -959,6 +965,14 @@ const EXPANDED_NUMBERS = [
 	11, 11, 12, 12,
 ] as const
 
+// Spiral token order for the custom 30-hex board — mirror of lib/catan/board.
+// Tuned so reds never land adjacent (see lib/catan/board comment).
+// deno-fmt-ignore
+const EXPANDED_SPIRAL_SEQUENCE = [
+	6, 11, 8, 9, 6, 5, 3, 6, 11, 2, 10, 5, 12, 4, 10, 9, 11, 5, 3, 4, 2, 3, 9, 8,
+	12, 8, 4, 10,
+] as const
+
 const EXPANDED_PORT_KINDS: readonly PortKind[] = [
 	'3:1',
 	'3:1',
@@ -989,6 +1003,7 @@ type Board = {
 	portSlots: readonly Edge[]
 	resourceCounts: Record<Resource, number>
 	numbers: readonly number[]
+	spiralNumberSequence: readonly number[]
 	portKinds: readonly PortKind[]
 }
 
@@ -1000,6 +1015,7 @@ function buildBoard(parts: {
 	portSlots: readonly Edge[]
 	resourceCounts: Record<Resource, number>
 	numbers: readonly number[]
+	spiralNumberSequence: readonly number[]
 	portKinds: readonly PortKind[]
 }): Board {
 	return {
@@ -1023,6 +1039,7 @@ const BOARDS: Record<Variant, Board> = {
 		portSlots: PORT_SLOTS,
 		resourceCounts: STANDARD_RESOURCE_COUNTS,
 		numbers: STANDARD_NUMBERS,
+		spiralNumberSequence: STANDARD_SPIRAL_SEQUENCE,
 		portKinds: STANDARD_PORT_KINDS,
 	}),
 	expanded: buildBoard({
@@ -1033,6 +1050,7 @@ const BOARDS: Record<Variant, Board> = {
 		portSlots: EXPANDED_PORT_SLOTS,
 		resourceCounts: EXPANDED_RESOURCE_COUNTS,
 		numbers: EXPANDED_NUMBERS,
+		spiralNumberSequence: EXPANDED_SPIRAL_SEQUENCE,
 		portKinds: EXPANDED_PORT_KINDS,
 	}),
 }
@@ -1218,10 +1236,13 @@ function dealer<T>(pool: readonly T[]): (exclude?: T) => T {
 
 // --- Config ----------------------------------------------------------------
 
+type NumberLayout = 'spiral' | 'random'
+
 type GameConfig = {
 	bonuses: boolean
 	bonusSets: string[]
 	devCards: boolean
+	numberLayout: NumberLayout
 }
 
 type ResumePhase =
@@ -2714,7 +2735,10 @@ function generatePorts(variant: Variant): Port[] {
 
 // --- Game generation -------------------------------------------------------
 
-function generateHexes(variant: Variant): {
+function generateHexes(
+	variant: Variant,
+	layout: NumberLayout
+): {
 	hexes: Record<Hex, HexData>
 	desert: Hex
 } {
@@ -2727,11 +2751,14 @@ function generateHexes(variant: Variant): {
 	const desertCount = board.hexes.length - bag.length
 	for (let i = 0; i < desertCount; i++) bag.push(null)
 	const resources = shuffle(bag)
-	const numbers = shuffle(board.numbers)
+	// Token per hex: shuffled bag ('random') or spiral sequence ('spiral').
+	const numberFor =
+		layout === 'random'
+			? assignRandomNumbers(board, resources)
+			: assignSpiralNumbers(board, resources)
 
 	const out = {} as Record<Hex, HexData>
 	let desert: Hex | null = null
-	let numIdx = 0
 	for (let i = 0; i < board.hexes.length; i++) {
 		const hex = board.hexes[i]
 		const r = resources[i]
@@ -2739,11 +2766,121 @@ function generateHexes(variant: Variant): {
 			out[hex] = { resource: null }
 			desert = hex
 		} else {
-			out[hex] = { resource: r, number: numbers[numIdx++] }
+			out[hex] = { resource: r, number: numberFor.get(hex) as number }
 		}
 	}
 	if (!desert) throw new Error('no desert generated')
 	return { hexes: out, desert }
+}
+
+// Random layout: shuffle the token bag onto resource hexes in board order.
+function assignRandomNumbers(
+	board: Board,
+	resources: readonly (Resource | null)[]
+): Map<Hex, number> {
+	const numbers = shuffle(board.numbers)
+	const out = new Map<Hex, number>()
+	let numIdx = 0
+	for (let i = 0; i < board.hexes.length; i++) {
+		if (resources[i] !== null) out.set(board.hexes[i], numbers[numIdx++])
+	}
+	return out
+}
+
+// Spiral layout: walk hexes outer ring → center (random corner + direction) and
+// lay the fixed token sequence, skipping deserts. Mirror of lib/catan/generate.
+function assignSpiralNumbers(
+	board: Board,
+	resources: readonly (Resource | null)[]
+): Map<Hex, number> {
+	const isDesert = new Map<Hex, boolean>()
+	board.hexes.forEach((h, i) => isDesert.set(h, resources[i] === null))
+	const order = spiralHexOrder(board)
+	const seq = board.spiralNumberSequence
+	const out = new Map<Hex, number>()
+	let seqIdx = 0
+	for (const hex of order) {
+		if (isDesert.get(hex)) continue
+		out.set(hex, seq[seqIdx++])
+	}
+	return out
+}
+
+type HexGeom = { hex: Hex; q: number; r: number; cx: number; cy: number }
+
+const SQRT3 = Math.sqrt(3)
+
+// Group the row-major hex list into rows by ID prefix (hex IDs are
+// `<rowNumber><letter>`). Kept ID-derived so this stays identical to lib.
+function boardRows(board: Board): Hex[][] {
+	const rows: Hex[][] = []
+	let lastRow = -1
+	for (const hex of board.hexes) {
+		const r = parseInt(hex, 10)
+		if (r !== lastRow) {
+			rows.push([])
+			lastRow = r
+		}
+		rows[rows.length - 1].push(hex)
+	}
+	return rows
+}
+
+function hexGeometry(board: Board): HexGeom[] {
+	const rows = boardRows(board)
+	const maxW = Math.max(...rows.map((r) => r.length))
+	const out: HexGeom[] = []
+	rows.forEach((ids, r) => {
+		const indent = (maxW - ids.length) / 2
+		ids.forEach((hex, c) => {
+			out.push({
+				hex,
+				q: indent + c - r / 2,
+				r,
+				cx: (indent + c + 0.5) * SQRT3,
+				cy: r * 1.5 + 1,
+			})
+		})
+	})
+	return out
+}
+
+function ringDistance(a: HexGeom, b: HexGeom): number {
+	const ax = a.q
+	const az = a.r
+	const bx = b.q
+	const bz = b.r
+	return (
+		(Math.abs(ax - bx) +
+			Math.abs(az - bz) +
+			Math.abs(-ax - az - (-bx - bz))) /
+		2
+	)
+}
+
+function spiralHexOrder(board: Board): Hex[] {
+	const geom = hexGeometry(board)
+	const cxMean = geom.reduce((s, g) => s + g.cx, 0) / geom.length
+	const cyMean = geom.reduce((s, g) => s + g.cy, 0) / geom.length
+	const center = geom.reduce((best, g) => {
+		const d = (g.cx - cxMean) ** 2 + (g.cy - cyMean) ** 2
+		const bd = (best.cx - cxMean) ** 2 + (best.cy - cyMean) ** 2
+		return d < bd ? g : best
+	})
+	const theta0 = Math.random() * 2 * Math.PI
+	const dir = Math.random() < 0.5 ? 1 : -1
+	const TWO_PI = 2 * Math.PI
+	const angle = (g: HexGeom) => {
+		const a = dir * Math.atan2(g.cy - cyMean, g.cx - cxMean) + theta0
+		return ((a % TWO_PI) + TWO_PI) % TWO_PI
+	}
+	return [...geom]
+		.sort((a, b) => {
+			const rd = ringDistance(b, center) - ringDistance(a, center)
+			if (rd !== 0) return rd
+			return angle(a) - angle(b)
+		})
+		.map((g) => g.hex)
 }
 
 function initialPlayers(count: number): PlayerState[] {
@@ -2928,8 +3065,12 @@ async function handleRespond(
 
 		// 5-6 player games auto-select the expanded 30-hex board.
 		const variant = variantForPlayerCount(playerOrder.length)
-		const { hexes: generatedHexes, desert } = generateHexes(variant)
 		const config = request.config as GameConfig
+		// Older requests predate numberLayout — default to spiral.
+		const { hexes: generatedHexes, desert } = generateHexes(
+			variant,
+			config.numberLayout ?? 'spiral'
+		)
 		let initialPhase: Phase
 		if (config.bonuses) {
 			initialPhase = {

@@ -222,6 +222,26 @@ export const EXPANDED_NUMBERS: readonly HexNumber[] = [
 	11, 11, 12, 12,
 ]
 
+// Ordered token sequences for the 'spiral' number layout. Laid along a spiral
+// path over the board (skipping deserts) so consecutive tokens alternate
+// high/low pips and the red numbers (6/8) stay spaced apart — the classic Catan
+// number-placement feel. Each sequence's multiset equals the variant's *_NUMBERS
+// bag (validated by dev/check-catan-board.ts).
+
+// Authentic Catan A-R token order (A=5, B=2, C=6, … R=4).
+export const STANDARD_SPIRAL_SEQUENCE: readonly HexNumber[] = [
+	5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 5, 6, 3, 11, 4,
+]
+
+// Authored for this app's custom 30-hex board (no official 5-6 spiral exists).
+// Tuned against the actual spiral geometry (dev search over randomized
+// corner/direction/desert) so the six red tokens (6/8) never land adjacent —
+// verified 0 adjacent-red pairs over 40k generations by dev/check-catan-board.
+export const EXPANDED_SPIRAL_SEQUENCE: readonly HexNumber[] = [
+	6, 11, 8, 9, 6, 5, 3, 6, 11, 2, 10, 5, 12, 4, 10, 9, 11, 5, 3, 4, 2, 3, 9,
+	8, 12, 8, 4, 10,
+]
+
 // Vertex buildings only. An occupied edge is implicitly a road.
 // `super_city` is the metropolitan-bonus upgrade above `city` — worth 3 VP
 // and yielding 3 resources per producing adjacent hex.
@@ -440,6 +460,9 @@ export type Board = {
 	portSlots: readonly Edge[]
 	resourceCounts: Record<Resource, number>
 	numbers: readonly HexNumber[]
+	// Fixed high/low token order for the 'spiral' number layout. Same multiset
+	// as `numbers`; laid along a spiral path instead of shuffled.
+	spiralNumberSequence: readonly HexNumber[]
 	portKinds: readonly PortKind[]
 	// Board natural dimensions in units of hex circumradius s, for layout.
 	// Standard is 5√3 × 8; expanded (7 hex rows) is 6√3 × 11.
@@ -457,6 +480,7 @@ function buildBoard(parts: {
 	portSlots: readonly Edge[]
 	resourceCounts: Record<Resource, number>
 	numbers: readonly HexNumber[]
+	spiralNumberSequence: readonly HexNumber[]
 	portKinds: readonly PortKind[]
 	naturalWidthUnits: number
 	naturalHeightUnits: number
@@ -491,6 +515,7 @@ const STANDARD_BOARD: Board = buildBoard({
 	portSlots: PORT_SLOTS,
 	resourceCounts: STANDARD_RESOURCE_COUNTS,
 	numbers: STANDARD_NUMBERS,
+	spiralNumberSequence: STANDARD_SPIRAL_SEQUENCE,
 	portKinds: STANDARD_PORT_KINDS,
 	naturalWidthUnits: 5 * Math.sqrt(3),
 	naturalHeightUnits: 8,
@@ -506,6 +531,7 @@ const EXPANDED_BOARD: Board = buildBoard({
 	portSlots: EXPANDED_PORT_SLOTS,
 	resourceCounts: EXPANDED_RESOURCE_COUNTS,
 	numbers: EXPANDED_NUMBERS,
+	spiralNumberSequence: EXPANDED_SPIRAL_SEQUENCE,
 	portKinds: EXPANDED_PORT_KINDS,
 	naturalWidthUnits: 6 * Math.sqrt(3),
 	naturalHeightUnits: 11,

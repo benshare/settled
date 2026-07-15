@@ -103,6 +103,7 @@ function checkGenerate() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	assert(gs.ports && gs.ports.length === 9, 'initialGameState seeds ports')
 }
@@ -112,6 +113,7 @@ function stateWithSettlement(vertex: string, portKind: string): GameState {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	// Force a port of the given kind onto the adjacent edge.
 	// Find an edge in PORT_SLOTS that has `vertex` as an endpoint.
@@ -163,6 +165,7 @@ function checkAvailableOptions() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const only = availableBankOptions(noPort, 0)
 	assert(only.length === 1 && only[0] === '4:1', 'only 4:1 when no ports')

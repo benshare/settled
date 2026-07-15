@@ -1,10 +1,18 @@
-import { boardFor, RESOURCES, type Hex, type Resource } from './board'
+import {
+	boardFor,
+	RESOURCES,
+	type Board,
+	type Hex,
+	type HexNumber,
+	type Resource,
+} from './board'
 import { BONUS_POOL, CURSE_POOL, type BonusId, type CurseId } from './bonuses'
 import { buildInitialDevDeck } from './dev'
 import {
 	type GameConfig,
 	type GameState,
 	type HexData,
+	type NumberLayout,
 	type Phase,
 	type Port,
 	type SelectBonusHand,
@@ -33,13 +41,20 @@ function hexBag(variant: Variant): (Resource | null)[] {
 	return bag
 }
 
-export function generateHexes(variant: Variant): Record<Hex, HexData> {
+export function generateHexes(
+	variant: Variant,
+	layout: NumberLayout = 'spiral'
+): Record<Hex, HexData> {
 	const board = boardFor(variant)
 	const resources = shuffle(hexBag(variant))
-	const numbers = shuffle(board.numbers)
+	// Number tokens per hex: shuffled bag for 'random', spiral sequence for
+	// 'spiral'. Either way, resources/deserts are placed by the same shuffle.
+	const numberFor =
+		layout === 'random'
+			? assignRandomNumbers(board, resources)
+			: assignSpiralNumbers(board, resources)
 
 	const out = {} as Record<Hex, HexData>
-	let numIdx = 0
 	for (let i = 0; i < board.hexes.length; i++) {
 		const hex = board.hexes[i]
 		const resource = resources[i]
@@ -47,9 +62,127 @@ export function generateHexes(variant: Variant): Record<Hex, HexData> {
 			out[hex] = { resource: null }
 			continue
 		}
-		out[hex] = { resource, number: numbers[numIdx++] }
+		out[hex] = { resource, number: numberFor.get(hex) as HexNumber }
 	}
 	return out
+}
+
+// Random layout: shuffle the token bag onto the resource hexes in board order.
+function assignRandomNumbers(
+	board: Board,
+	resources: readonly (Resource | null)[]
+): Map<Hex, HexNumber> {
+	const numbers = shuffle(board.numbers)
+	const out = new Map<Hex, HexNumber>()
+	let numIdx = 0
+	for (let i = 0; i < board.hexes.length; i++) {
+		if (resources[i] !== null) out.set(board.hexes[i], numbers[numIdx++])
+	}
+	return out
+}
+
+// Spiral layout: walk the board's hexes in spiral order (outer ring inward,
+// from a random corner + direction) and lay the fixed token sequence, skipping
+// deserts. Resources are still placed randomly by board index.
+function assignSpiralNumbers(
+	board: Board,
+	resources: readonly (Resource | null)[]
+): Map<Hex, HexNumber> {
+	const isDesert = new Map<Hex, boolean>()
+	board.hexes.forEach((h, i) => isDesert.set(h, resources[i] === null))
+	const order = spiralHexOrder(board)
+	const seq = board.spiralNumberSequence
+	const out = new Map<Hex, HexNumber>()
+	let seqIdx = 0
+	for (const hex of order) {
+		if (isDesert.get(hex)) continue
+		out.set(hex, seq[seqIdx++])
+	}
+	return out
+}
+
+// Unit-scale geometry for one hex, derived from the board's row layout (the
+// same pointy-top, centered-rows geometry layout.ts renders): axial (q, r) for
+// exact ring distance, pixel (cx, cy) for angular ordering.
+type HexGeom = { hex: Hex; q: number; r: number; cx: number; cy: number }
+
+const SQRT3 = Math.sqrt(3)
+
+// Group the row-major hex list into rows by ID prefix (hex IDs are
+// `<rowNumber><letter>`). Kept ID-derived rather than reading board.hexRows so
+// this helper stays byte-identical to the edge-function mirror.
+function boardRows(board: Board): Hex[][] {
+	const rows: Hex[][] = []
+	let lastRow = -1
+	for (const hex of board.hexes) {
+		const r = parseInt(hex, 10)
+		if (r !== lastRow) {
+			rows.push([])
+			lastRow = r
+		}
+		rows[rows.length - 1].push(hex)
+	}
+	return rows
+}
+
+function hexGeometry(board: Board): HexGeom[] {
+	const rows = boardRows(board)
+	const maxW = Math.max(...rows.map((r) => r.length))
+	const out: HexGeom[] = []
+	rows.forEach((ids, r) => {
+		const indent = (maxW - ids.length) / 2
+		ids.forEach((hex, c) => {
+			out.push({
+				hex,
+				q: indent + c - r / 2,
+				r,
+				cx: (indent + c + 0.5) * SQRT3,
+				cy: r * 1.5 + 1,
+			})
+		})
+	})
+	return out
+}
+
+// Cube distance between two axial coords (rings from the board center).
+function ringDistance(a: HexGeom, b: HexGeom): number {
+	const ax = a.q
+	const az = a.r
+	const bx = b.q
+	const bz = b.r
+	return (
+		(Math.abs(ax - bx) +
+			Math.abs(az - bz) +
+			Math.abs(-ax - az - (-bx - bz))) /
+		2
+	)
+}
+
+// All hexes ordered outer ring → center, walking each ring by angle. The start
+// corner (angular offset) and direction (CW/CCW) are randomized per game.
+function spiralHexOrder(board: Board): Hex[] {
+	const geom = hexGeometry(board)
+	const cxMean = geom.reduce((s, g) => s + g.cx, 0) / geom.length
+	const cyMean = geom.reduce((s, g) => s + g.cy, 0) / geom.length
+	const center = geom.reduce((best, g) => {
+		const d = (g.cx - cxMean) ** 2 + (g.cy - cyMean) ** 2
+		const bd = (best.cx - cxMean) ** 2 + (best.cy - cyMean) ** 2
+		return d < bd ? g : best
+	})
+	const theta0 = Math.random() * 2 * Math.PI
+	const dir = Math.random() < 0.5 ? 1 : -1
+	const TWO_PI = 2 * Math.PI
+	const angle = (g: HexGeom) => {
+		const a = dir * Math.atan2(g.cy - cyMean, g.cx - cxMean) + theta0
+		return ((a % TWO_PI) + TWO_PI) % TWO_PI
+	}
+	return [...geom]
+		.sort((a, b) => {
+			const rd = ringDistance(b, center) - ringDistance(a, center)
+			if (rd !== 0) return rd
+			return angle(a) - angle(b)
+		})
+		.map((g) => g.hex)
 }
 
 // Port kinds alternate 2:1 / 3:1 around the canonical ring. With 5 × 2:1 and
@@ -122,7 +255,7 @@ export function initialGameState(
 	playerCount: number,
 	config: GameConfig
 ): GameState {
-	const hexes = generateHexes(variant)
+	const hexes = generateHexes(variant, config.numberLayout)
 	// Expanded has two deserts; the robber starts on the first.
 	const desert = boardFor(variant).hexes.find(
 		(h) => hexes[h].resource === null

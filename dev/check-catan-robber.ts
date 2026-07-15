@@ -112,6 +112,7 @@ function testValidRobberHexes() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const valids = validRobberHexes(s)
 	equal(valids.length, 18, 'exactly 18 valid hexes (all except current)')
@@ -123,6 +124,7 @@ function testStealCandidatesOpponentWithCards() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -143,6 +145,7 @@ function testStealCandidatesEmptyHand() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -157,6 +160,7 @@ function testStealCandidatesExcludesSelf() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -176,6 +180,7 @@ function testDistributeSkipsRobberHex() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const hex = firstResourceHex(s0)
 	const hd = s0.hexes[hex]

@@ -57,6 +57,7 @@ function testRolledSevenYieldsNothing() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const gains = distributeResources(s, 7)
 	equal(Object.keys(gains).length, 0, 'rolling 7 returns empty gains')
@@ -67,6 +68,7 @@ function testSettlementGetsOne() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -83,6 +85,7 @@ function testCityGetsTwo() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -98,6 +101,7 @@ function testMismatchedRollPaysNothing() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	const { hex, number } = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex

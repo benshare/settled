@@ -27,6 +27,13 @@ export function variantForPlayerCount(playerCount: number): Variant {
 // Max players supported (expanded board tops out at 6).
 export const MAX_PLAYERS = 6
 
+// How number tokens are placed on the board. 'spiral' lays the fixed high/low
+// token sequence along a spiral path (like classic Catan, so 6s/8s spread out);
+// 'random' shuffles the token bag onto the hexes with no spacing guarantees.
+// Resource/desert placement is always random regardless.
+export const NUMBER_LAYOUTS = ['spiral', 'random'] as const
+export type NumberLayout = (typeof NUMBER_LAYOUTS)[number]
+
 // Top-level game config. Serialized to JSONB on game_requests and
 // game_states. New options get added here (and wired through the
 // propose_game RPC + handleRespond in the edge function).
@@ -36,6 +43,7 @@ export type GameConfig = {
 	// live today; '2' and '3' are defined in the data but disabled in the UI.
 	bonusSets: string[]
 	devCards: boolean
+	numberLayout: NumberLayout
 }
 
 // System-shipped defaults for a standard game. Used as the reference when
@@ -46,6 +54,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	bonuses: false,
 	bonusSets: ['1'],
 	devCards: true,
+	numberLayout: 'spiral',
 }
 
 // Defensive JSON reader. `raw` comes off `game_requests.config` /
@@ -68,6 +77,10 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			typeof src.devCards === 'boolean'
 				? src.devCards
 				: DEFAULT_CONFIG.devCards,
+		numberLayout:
+			src.numberLayout === 'spiral' || src.numberLayout === 'random'
+				? src.numberLayout
+				: DEFAULT_CONFIG.numberLayout,
 	}
 }
 
@@ -98,6 +111,13 @@ export function summarizeGameConfig(
 	}
 	if (config.devCards !== DEFAULT_CONFIG.devCards) {
 		parts.push(config.devCards ? 'Dev cards enabled' : 'Dev cards disabled')
+	}
+	if (config.numberLayout !== DEFAULT_CONFIG.numberLayout) {
+		parts.push(
+			config.numberLayout === 'random'
+				? 'Random numbers'
+				: 'Spiral numbers'
+		)
 	}
 	return parts.join('. ')
 }
