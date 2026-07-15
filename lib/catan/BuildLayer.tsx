@@ -48,8 +48,12 @@ export function BuildLayer({
 	if (!tool) return null
 	const inMain = state.phase.kind === 'main'
 	const inPostPlacement = state.phase.kind === 'post_placement'
+	const inRoadBuilding = state.phase.kind === 'road_building'
 	if (tool === 'explorer_road') {
 		if (!inPostPlacement) return null
+	} else if (tool === 'road') {
+		// Road Building dev card places free roads outside the main phase.
+		if (!inMain && !inRoadBuilding) return null
 	} else {
 		if (!inMain) return null
 	}
