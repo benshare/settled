@@ -1,6 +1,7 @@
 import { useAuth } from '@/lib/auth'
 import { RESOURCES, type Hex, type Resource } from '@/lib/catan/board'
 import { BoardLegend } from '@/lib/catan/BoardLegend'
+import { ActionLog } from '@/lib/catan/ActionLog'
 import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
@@ -1287,6 +1288,14 @@ function GameBody() {
 				{gameState && !inBonusSelection && (
 					<BoardLegend
 						devCardsEnabled={!!gameState.config.devCards}
+					/>
+				)}
+				{gameState && !inBonusSelection && (
+					<ActionLog
+						events={(game.events ?? []) as GameEvent[]}
+						playerOrder={game.player_order}
+						profilesById={profilesById}
+						meIdx={meIdx}
 					/>
 				)}
 				{pendingConfirm && (
