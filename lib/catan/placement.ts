@@ -3,12 +3,9 @@
 // the same logic against its duplicated adjacency constants.
 
 import {
+	boardFor,
 	RESOURCES,
-	VERTICES,
-	adjacentEdges,
-	adjacentHexes,
 	edgeEndpoints,
-	neighborVertices,
 	type Edge,
 	type Vertex,
 } from './board'
@@ -68,7 +65,7 @@ export function isValidSettlementVertex(
 	playerIdx?: number
 ): boolean {
 	if (vertexStateOf(state, vertex).occupied) return false
-	for (const n of neighborVertices[vertex]) {
+	for (const n of boardFor(state.variant).neighborVertices[vertex]) {
 		if (vertexStateOf(state, n).occupied) return false
 	}
 	if (playerIdx !== undefined) {
@@ -82,7 +79,9 @@ export function validSettlementVertices(
 	state: GameState,
 	playerIdx?: number
 ): Vertex[] {
-	return VERTICES.filter((v) => isValidSettlementVertex(state, v, playerIdx))
+	return boardFor(state.variant).vertices.filter((v) =>
+		isValidSettlementVertex(state, v, playerIdx)
+	)
 }
 
 // --- Road validity ----------------------------------------------------------
@@ -95,11 +94,12 @@ export function targetSettlement(
 	state: GameState,
 	playerIdx: number
 ): Vertex | null {
+	const board = boardFor(state.variant)
 	let found: Vertex | null = null
-	for (const v of VERTICES) {
+	for (const v of board.vertices) {
 		const vs = vertexStateOf(state, v)
 		if (!vs.occupied || vs.player !== playerIdx) continue
-		const hasOwnRoad = adjacentEdges[v].some((e) => {
+		const hasOwnRoad = board.adjacentEdges[v].some((e) => {
 			const es = edgeStateOf(state, e)
 			return es.occupied && es.player === playerIdx
 		})
@@ -116,7 +116,9 @@ export function targetSettlement(
 export function validRoadEdges(state: GameState, playerIdx: number): Edge[] {
 	const target = targetSettlement(state, playerIdx)
 	if (!target) return []
-	return adjacentEdges[target].filter((e) => !edgeStateOf(state, e).occupied)
+	return boardFor(state.variant).adjacentEdges[target].filter(
+		(e) => !edgeStateOf(state, e).occupied
+	)
 }
 
 export function isValidRoadEdge(
@@ -126,7 +128,8 @@ export function isValidRoadEdge(
 ): boolean {
 	const target = targetSettlement(state, playerIdx)
 	if (!target) return false
-	if (!adjacentEdges[target].includes(edge)) return false
+	if (!boardFor(state.variant).adjacentEdges[target].includes(edge))
+		return false
 	return !edgeStateOf(state, edge).occupied
 }
 
@@ -145,7 +148,7 @@ export function startingResourcesForVertex(
 		wheat: 0,
 		ore: 0,
 	}
-	for (const h of adjacentHexes[vertex]) {
+	for (const h of boardFor(state.variant).adjacentHexes[vertex]) {
 		const hd = state.hexes[h]
 		if (hd.resource === null) continue
 		hand[hd.resource] += 1

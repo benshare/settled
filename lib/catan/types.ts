@@ -15,7 +15,17 @@ import type { DevCardId } from './devCards'
 // stamped with the current round. Used by the accountant bonus to gate
 // liquidation ("not the same turn the piece was bought").
 
-export type Variant = 'standard'
+// 'standard' = 19-hex board (2-4 players); 'expanded' = 30-hex 5-6 player
+// extension board. Chosen automatically from player count, not user config.
+export type Variant = 'standard' | 'expanded'
+
+// The expanded board is used for 5-6 player games; 2-4 players use standard.
+export function variantForPlayerCount(playerCount: number): Variant {
+	return playerCount >= 5 ? 'expanded' : 'standard'
+}
+
+// Max players supported (expanded board tops out at 6).
+export const MAX_PLAYERS = 6
 
 // Top-level game config. Serialized to JSONB on game_requests and
 // game_states. New options get added here (and wired through the

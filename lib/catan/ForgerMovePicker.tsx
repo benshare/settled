@@ -36,7 +36,10 @@ export function ForgerMovePicker({
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const [pick, setPick] = useState<Hex | null>(null)
-	const candidates = useMemo(() => hexesAdjacentTo(currentHex), [currentHex])
+	const candidates = useMemo(
+		() => hexesAdjacentTo(currentHex, state.variant),
+		[currentHex, state.variant]
+	)
 
 	return (
 		<Modal

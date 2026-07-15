@@ -11,7 +11,7 @@ import Animated, {
 	withTiming,
 } from 'react-native-reanimated'
 import Svg, { G } from 'react-native-svg'
-import { edgeEndpoints, type Edge, type Hex, type Vertex } from './board'
+import { boardFor, edgeEndpoints, type Edge, type Hex, type Vertex } from './board'
 import { BuildLayer, type BoardTool, type BuildSelection } from './BuildLayer'
 import { EdgePiece } from './EdgePiece'
 import { HexTile } from './HexTile'
@@ -165,14 +165,23 @@ function BoardSvg({
 	robber?: RobberInteraction
 }) {
 	// Ports sit ~1s outside the hex grid on each edge, so the true bounding
-	// box is (5√3 + 2)s × 10s rather than 5√3s × 8s. Budget that extension
-	// so port badges don't clip at the Svg viewport edges.
-	const SQRT3 = Math.sqrt(3)
+	// box is (naturalW + 2)s × (naturalH + 2)s rather than the bare grid.
+	// Budget that extension so port badges don't clip at the Svg viewport
+	// edges. Natural dims are variant-specific (standard 5√3 × 8, expanded
+	// 6√3 × 11).
+	const board = boardFor(state.variant)
 	const PAD = 8
 	const availW = Math.max(0, boxW - PAD * 2)
 	const availH = Math.max(0, boxH - PAD * 2)
-	const s = Math.min(availW / (5 * SQRT3 + 2), availH / 10)
-	const layout = computeBoardLayout(5 * SQRT3 * s, 8 * s)
+	const s = Math.min(
+		availW / (board.naturalWidthUnits + 2),
+		availH / (board.naturalHeightUnits + 2)
+	)
+	const layout = computeBoardLayout(
+		state.variant,
+		board.naturalWidthUnits * s,
+		board.naturalHeightUnits * s
+	)
 	const vertexPositions = computeVertexPositions(layout)
 	const portVisuals = computePortLayout(layout, state.ports ?? [])
 	const offsetX = (boxW - layout.width) / 2
