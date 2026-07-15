@@ -165,6 +165,18 @@ export function GameProvider({
 						setGameState(undefined)
 						return
 					}
+					// Postgres logical replication omits unchanged TOASTed
+					// columns from UPDATE payloads, so a write that only
+					// touches `phase` (propose / reject / cancel a trade)
+					// arrives with the large jsonb blobs (players, hexes,
+					// vertices, edges) absent. Feeding that straight into
+					// rowToState strands the board with undefined players
+					// and crashes VP computation. Re-read the full row
+					// instead whenever the payload is partial.
+					if (isPartialStateRow(payload.new)) {
+						fetchState()
+						return
+					}
 					setGameState(rowToState(payload.new))
 				}
 			)
@@ -208,6 +220,19 @@ export function GameProvider({
 	)
 
 	return <GameContext.Provider value={value}>{children}</GameContext.Provider>
+}
+
+// A realtime UPDATE payload is partial when Postgres dropped unchanged TOASTed
+// columns (see the game_states subscription). These blobs are `not null` in the
+// schema, so an absent (`undefined`) value can only mean the column was omitted
+// — never a legitimate null. Any one missing makes rowToState unsafe.
+function isPartialStateRow(row: Record<string, unknown>): boolean {
+	return (
+		row.players === undefined ||
+		row.hexes === undefined ||
+		row.vertices === undefined ||
+		row.edges === undefined
+	)
 }
 
 function rowToState(row: Record<string, unknown>): GameState {
