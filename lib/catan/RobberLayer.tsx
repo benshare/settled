@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import { Circle, G } from 'react-native-svg'
-import { adjacentVertices, type Hex, type Vertex } from './board'
+import { boardFor, type Hex, type Vertex } from './board'
 import type { HexLayout } from './layout'
 import { playerColors, tokenFace, tokenRing } from './palette'
 import { PulsingDot } from './PulsingDot'
@@ -80,6 +80,7 @@ export function RobberLayer({
 	if (phase.kind === 'steal') {
 		const color = playerColors[meIdx] ?? playerColors[0]
 		const candidateSet = new Set(phase.candidates)
+		const adjacentVertices = boardFor(state.variant).adjacentVertices
 		return (
 			<G>
 				{adjacentVertices[phase.hex].map((v) => {
