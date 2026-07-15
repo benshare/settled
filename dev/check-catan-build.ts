@@ -97,6 +97,7 @@ function testRoadValidity() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		extraBuildTimes: 'off',
 	})
 	s = placeSettlement(s, '3F', 0)
 	const firstEdge = adjacentEdges['3F'][0] as Edge
@@ -115,6 +116,7 @@ function testRoadBlockedByOpponentSettlement() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		extraBuildTimes: 'off',
 	})
 	// Player 0 settles at 3E and builds a road out to 4E.
 	s = placeSettlement(s, '3E', 0)
@@ -147,6 +149,7 @@ function testSettlementValidity() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		extraBuildTimes: 'off',
 	})
 	s = placeSettlement(s, '3F', 0)
 	const myEdge = adjacentEdges['3F'][0] as Edge
@@ -171,6 +174,7 @@ function testSettlementNeedsRoad() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		extraBuildTimes: 'off',
 	})
 	s = placeSettlement(s, '3F', 0)
 	// No road yet — no valid settlement sites.
@@ -187,6 +191,7 @@ function testCityValidity() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		extraBuildTimes: 'off',
 	})
 	s = placeSettlement(s, '3F', 0)
 	s = placeSettlement(s, '1A', 1)

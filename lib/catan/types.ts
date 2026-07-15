@@ -34,6 +34,16 @@ export const MAX_PLAYERS = 6
 export const NUMBER_LAYOUTS = ['spiral', 'random'] as const
 export type NumberLayout = (typeof NUMBER_LAYOUTS)[number]
 
+// Special build phase for 5-6 player games (standard Catan expansion rule):
+// between one player's turn and the next, the other players get a chance to
+// build/buy (no rolling, no trading). 'every-turn' inserts that phase after
+// every turn (the expansion default); 'across' only after the turn of the
+// player seated across from you (fewer, faster phases); 'off' disables it.
+// Only meaningful for games with >4 players — ignored on 2-4 player games.
+// Persisted on GameConfig but not yet consumed by the turn engine.
+export const EXTRA_BUILD_TIMES = ['every-turn', 'across', 'off'] as const
+export type ExtraBuildTimes = (typeof EXTRA_BUILD_TIMES)[number]
+
 // Top-level game config. Serialized to JSONB on game_requests and
 // game_states. New options get added here (and wired through the
 // propose_game RPC + handleRespond in the edge function).
@@ -44,6 +54,9 @@ export type GameConfig = {
 	bonusSets: string[]
 	devCards: boolean
 	numberLayout: NumberLayout
+	// See EXTRA_BUILD_TIMES. Only affects games with >4 players; ignored
+	// otherwise. Not yet consumed by the turn engine.
+	extraBuildTimes: ExtraBuildTimes
 }
 
 // System-shipped defaults for a standard game. Used as the reference when
@@ -55,6 +68,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	bonusSets: ['1'],
 	devCards: true,
 	numberLayout: 'spiral',
+	extraBuildTimes: 'every-turn',
 }
 
 // Defensive JSON reader. `raw` comes off `game_requests.config` /
@@ -81,6 +95,11 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			src.numberLayout === 'spiral' || src.numberLayout === 'random'
 				? src.numberLayout
 				: DEFAULT_CONFIG.numberLayout,
+		extraBuildTimes: EXTRA_BUILD_TIMES.includes(
+			src.extraBuildTimes as ExtraBuildTimes
+		)
+			? (src.extraBuildTimes as ExtraBuildTimes)
+			: DEFAULT_CONFIG.extraBuildTimes,
 	}
 }
 
@@ -117,6 +136,18 @@ export function summarizeGameConfig(
 			config.numberLayout === 'random'
 				? 'Random numbers'
 				: 'Spiral numbers'
+		)
+	}
+	// Extra build times only apply to >4 player games, so only surface a
+	// non-default value there.
+	if (
+		playerCount > 4 &&
+		config.extraBuildTimes !== DEFAULT_CONFIG.extraBuildTimes
+	) {
+		parts.push(
+			config.extraBuildTimes === 'off'
+				? 'Extra build times off'
+				: 'Extra build times (across only)'
 		)
 	}
 	return parts.join('. ')

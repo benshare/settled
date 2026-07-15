@@ -1238,11 +1238,17 @@ function dealer<T>(pool: readonly T[]): (exclude?: T) => T {
 
 type NumberLayout = 'spiral' | 'random'
 
+// Only affects games with >4 players; not yet consumed by the turn engine.
+// The client's config blob is persisted onto game_states wholesale, so this
+// field round-trips even though the server never reads it.
+type ExtraBuildTimes = 'every-turn' | 'across' | 'off'
+
 type GameConfig = {
 	bonuses: boolean
 	bonusSets: string[]
 	devCards: boolean
 	numberLayout: NumberLayout
+	extraBuildTimes: ExtraBuildTimes
 }
 
 type ResumePhase =

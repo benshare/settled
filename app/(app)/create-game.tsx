@@ -1,7 +1,9 @@
 import { useAuth } from '@/lib/auth'
 import {
+	EXTRA_BUILD_TIMES,
 	MAX_PLAYERS,
 	sameStringSet,
+	type ExtraBuildTimes,
 	type NumberLayout,
 } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
@@ -58,6 +60,9 @@ export default function CreateGameScreen() {
 	const [numberLayout, setNumberLayout] = useState<NumberLayout>(
 		savedDefaults.settings.numberLayout
 	)
+	const [extraBuildTimes, setExtraBuildTimes] = useState<ExtraBuildTimes>(
+		savedDefaults.settings.extraBuildTimes
+	)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [extrasOpen, setExtrasOpen] = useState(false)
 	const [busy, setBusy] = useState(false)
@@ -72,28 +77,33 @@ export default function CreateGameScreen() {
 	const savedBonusSets = savedDefaults.extras.bonusSets
 	const savedDevCards = savedDefaults.settings.devCards
 	const savedNumberLayout = savedDefaults.settings.numberLayout
+	const savedExtraBuildTimes = savedDefaults.settings.extraBuildTimes
 	useEffect(() => {
 		if (touched) return
 		setBonuses(savedBonuses)
 		setBonusSets(savedBonusSets)
 		setDevCards(savedDevCards)
 		setNumberLayout(savedNumberLayout)
+		setExtraBuildTimes(savedExtraBuildTimes)
 	}, [
 		savedBonuses,
 		savedBonusSets,
 		savedDevCards,
 		savedNumberLayout,
+		savedExtraBuildTimes,
 		touched,
 	])
 
 	const currentDefaults: GameDefaults = {
-		settings: { devCards, numberLayout },
+		settings: { devCards, numberLayout, extraBuildTimes },
 		extras: { bonuses, bonusSets },
 	}
 	const dirty =
 		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
 		currentDefaults.settings.numberLayout !==
 			savedDefaults.settings.numberLayout ||
+		currentDefaults.settings.extraBuildTimes !==
+			savedDefaults.settings.extraBuildTimes ||
 		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses ||
 		!sameStringSet(
 			currentDefaults.extras.bonusSets,
@@ -112,6 +122,10 @@ export default function CreateGameScreen() {
 	// expanded board automatically.
 	const maxInvites = MAX_PLAYERS - 1
 	const atInviteCap = selected.size >= maxInvites
+	// Proposer + invitees. Extra build times only apply to >4 player games, so
+	// the control only appears once the table would seat 5+.
+	const playerCount = selected.size + 1
+	const showExtraBuildTimes = playerCount > 4
 
 	function toggle(id: string) {
 		setSelected((prev) => {
@@ -131,6 +145,7 @@ export default function CreateGameScreen() {
 			bonusSets,
 			devCards,
 			numberLayout,
+			extraBuildTimes,
 		})
 		setBusy(false)
 		if (error) {
@@ -281,6 +296,18 @@ export default function CreateGameScreen() {
 											setTouched(true)
 										}}
 									/>
+									{showExtraBuildTimes && (
+										<CompactChoiceRow
+											icon="construct"
+											title="Extra build times"
+											description="Special build phase between turns (5–6 player games)."
+											value={extraBuildTimes}
+											onSelect={(v) => {
+												setExtraBuildTimes(v)
+												setTouched(true)
+											}}
+										/>
+									)}
 								</CollapsibleSection>
 
 								<CollapsibleSection
@@ -500,6 +527,63 @@ function CompactToggleRow({
 	)
 }
 
+const EXTRA_BUILD_LABELS: Record<ExtraBuildTimes, string> = {
+	'every-turn': 'Every roll',
+	across: 'Across',
+	off: 'Off',
+}
+
+function CompactChoiceRow({
+	icon,
+	title,
+	description,
+	value,
+	onSelect,
+}: {
+	icon: React.ComponentProps<typeof Ionicons>['name']
+	title: string
+	description: string
+	value: ExtraBuildTimes
+	onSelect: (value: ExtraBuildTimes) => void
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View style={styles.choiceRow}>
+			<Ionicons name={icon} size={18} color={colors.textSecondary} />
+			<View style={styles.compactTextWrap}>
+				<Text style={styles.compactTitle}>{title}</Text>
+				<Text style={styles.compactDescription}>{description}</Text>
+				<View style={styles.segmentControl}>
+					{EXTRA_BUILD_TIMES.map((opt) => {
+						const active = value === opt
+						return (
+							<Pressable
+								key={opt}
+								onPress={() => onSelect(opt)}
+								style={({ pressed }) => [
+									styles.segmentPill,
+									active && styles.segmentPillActive,
+									pressed && !active && styles.pressed,
+								]}
+							>
+								<Text
+									style={[
+										styles.segmentLabel,
+										active && styles.segmentLabelActive,
+									]}
+								>
+									{EXTRA_BUILD_LABELS[opt]}
+								</Text>
+							</Pressable>
+						)
+					})}
+				</View>
+			</View>
+		</View>
+	)
+}
+
 function FriendToggleRow({
 	friend,
 	selected,
@@ -657,6 +741,39 @@ function makeStyles(colors: ColorScheme) {
 			alignItems: 'center',
 			gap: spacing.sm,
 			paddingVertical: spacing.xs,
+		},
+		choiceRow: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			gap: spacing.sm,
+			paddingVertical: spacing.xs,
+		},
+		segmentControl: {
+			flexDirection: 'row',
+			marginTop: spacing.xs,
+			borderRadius: radius.full,
+			padding: 3,
+			gap: 2,
+			backgroundColor: colors.cardAlt,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		segmentPill: {
+			flex: 1,
+			paddingVertical: 6,
+			borderRadius: radius.full,
+			alignItems: 'center',
+		},
+		segmentPillActive: {
+			backgroundColor: colors.brand,
+		},
+		segmentLabel: {
+			fontSize: font.xs,
+			fontWeight: '600',
+			color: colors.textSecondary,
+		},
+		segmentLabelActive: {
+			color: colors.white,
 		},
 		compactTextWrap: {
 			flex: 1,
