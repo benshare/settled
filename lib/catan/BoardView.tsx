@@ -11,15 +11,23 @@ import Animated, {
 	withTiming,
 } from 'react-native-reanimated'
 import Svg, { G } from 'react-native-svg'
-import { boardFor, edgeEndpoints, type Edge, type Hex, type Vertex } from './board'
+import {
+	boardFor,
+	edgeEndpoints,
+	type Edge,
+	type Hex,
+	type Vertex,
+} from './board'
 import { BuildLayer, type BoardTool, type BuildSelection } from './BuildLayer'
 import { EdgePiece } from './EdgePiece'
+import { ForgerTokenPiece } from './ForgerTokenPiece'
 import { HexTile } from './HexTile'
 import {
 	computeBoardLayout,
 	computePortLayout,
 	computeVertexPositions,
 } from './layout'
+import { playerColors } from './palette'
 import { PlacementLayer, type PlacementSelection } from './PlacementLayer'
 import { PortBadge } from './PortBadge'
 import { RobberLayer } from './RobberLayer'
@@ -245,6 +253,20 @@ function BoardSvg({
 						/>
 					)
 				})()}
+				{state.players.map((p, i) => {
+					if (p.bonus !== 'forger' || !p.forgerToken) return null
+					const hex = layout.hexes.find((h) => h.id === p.forgerToken)
+					if (!hex) return null
+					return (
+						<ForgerTokenPiece
+							key={`forger-${i}`}
+							cx={hex.cx}
+							cy={hex.cy}
+							size={layout.s}
+							color={playerColors[i] ?? playerColors[0]}
+						/>
+					)
+				})}
 				{interaction && (
 					<PlacementLayer
 						state={state}
