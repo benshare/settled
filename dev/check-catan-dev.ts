@@ -82,6 +82,7 @@ function testCanBuyDevCard() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: true,
+		numberLayout: 'random',
 	})
 	// Forced into main phase + affordable hand.
 	const s: GameState = {
@@ -109,7 +110,12 @@ function testCanBuyDevCard() {
 	// Config off.
 	const noConfig: GameState = {
 		...s,
-		config: { bonuses: false, bonusSets: ['1'], devCards: false },
+		config: {
+			bonuses: false,
+			bonusSets: ['1'],
+			devCards: false,
+			numberLayout: 'random',
+		},
 	}
 	assert(!canBuyDevCard(noConfig, 0, 0), 'config off → false')
 }
@@ -146,6 +152,7 @@ function testLargestArmyStrictOvertake() {
 			bonuses: false,
 			bonusSets: ['1'],
 			devCards: true,
+			numberLayout: 'random',
 		})
 		return {
 			...base,
@@ -177,6 +184,7 @@ function testTotalVP() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: true,
+		numberLayout: 'random',
 	})
 	const state: GameState = {
 		...base,
@@ -242,6 +250,7 @@ function testInitialGameStateSeedsDevState() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: true,
+		numberLayout: 'random',
 	})
 	equal(on.devDeck.length, 25, 'deck seeded when config on')
 	equal(on.largestArmy, null, 'no one holds largest army at start')
@@ -255,6 +264,7 @@ function testInitialGameStateSeedsDevState() {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: false,
+		numberLayout: 'random',
 	})
 	equal(off.devDeck.length, 0, 'empty deck when config off')
 }

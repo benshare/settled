@@ -1,5 +1,9 @@
 import { useAuth } from '@/lib/auth'
-import { MAX_PLAYERS, sameStringSet } from '@/lib/catan/types'
+import {
+	MAX_PLAYERS,
+	sameStringSet,
+	type NumberLayout,
+} from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
@@ -51,6 +55,9 @@ export default function CreateGameScreen() {
 		savedDefaults.extras.bonusSets
 	)
 	const [devCards, setDevCards] = useState(savedDefaults.settings.devCards)
+	const [numberLayout, setNumberLayout] = useState<NumberLayout>(
+		savedDefaults.settings.numberLayout
+	)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [extrasOpen, setExtrasOpen] = useState(false)
 	const [busy, setBusy] = useState(false)
@@ -64,19 +71,29 @@ export default function CreateGameScreen() {
 	const savedBonuses = savedDefaults.extras.bonuses
 	const savedBonusSets = savedDefaults.extras.bonusSets
 	const savedDevCards = savedDefaults.settings.devCards
+	const savedNumberLayout = savedDefaults.settings.numberLayout
 	useEffect(() => {
 		if (touched) return
 		setBonuses(savedBonuses)
 		setBonusSets(savedBonusSets)
 		setDevCards(savedDevCards)
-	}, [savedBonuses, savedBonusSets, savedDevCards, touched])
+		setNumberLayout(savedNumberLayout)
+	}, [
+		savedBonuses,
+		savedBonusSets,
+		savedDevCards,
+		savedNumberLayout,
+		touched,
+	])
 
 	const currentDefaults: GameDefaults = {
-		settings: { devCards },
+		settings: { devCards, numberLayout },
 		extras: { bonuses, bonusSets },
 	}
 	const dirty =
 		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
+		currentDefaults.settings.numberLayout !==
+			savedDefaults.settings.numberLayout ||
 		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses ||
 		!sameStringSet(
 			currentDefaults.extras.bonusSets,
@@ -113,6 +130,7 @@ export default function CreateGameScreen() {
 			bonuses,
 			bonusSets,
 			devCards,
+			numberLayout,
 		})
 		setBusy(false)
 		if (error) {
@@ -249,6 +267,20 @@ export default function CreateGameScreen() {
 											setTouched(true)
 										}}
 									/>
+									<CompactToggleRow
+										icon="shuffle"
+										title="Random numbers"
+										description="Scatter number tokens instead of the classic spiral placement."
+										value={numberLayout === 'random'}
+										onToggle={() => {
+											setNumberLayout((v) =>
+												v === 'random'
+													? 'spiral'
+													: 'random'
+											)
+											setTouched(true)
+										}}
+									/>
 								</CollapsibleSection>
 
 								<CollapsibleSection
@@ -271,8 +303,8 @@ export default function CreateGameScreen() {
 											{(['1', '2', '3'] as const).map(
 												(setId) => {
 													// Sets 1 and 2 are live; set 3 isn't
-										// implemented yet.
-										const locked = setId === '3'
+													// implemented yet.
+													const locked = setId === '3'
 													return (
 														<CheckboxRow
 															key={setId}

@@ -20,6 +20,7 @@ function fresh(players = 3): GameState {
 		bonuses: false,
 		bonusSets: ['1'],
 		devCards: true,
+		numberLayout: 'random',
 	})
 }
 

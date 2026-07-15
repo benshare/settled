@@ -12,8 +12,10 @@ import {
 	type Board,
 	type Edge,
 	type Hex,
+	type HexNumber,
 	type Vertex,
 } from '../lib/catan/board'
+import { generateHexes } from '../lib/catan/generate'
 import type { Variant } from '../lib/catan/types'
 
 type Expected = {
@@ -62,6 +64,7 @@ function validateBoard(variant: Variant, board: Board): void {
 		portSlots,
 		resourceCounts,
 		numbers,
+		spiralNumberSequence,
 		portKinds,
 	} = board
 
@@ -245,12 +248,66 @@ function validateBoard(variant: Variant, board: Board): void {
 		throw new Error(
 			`${label} numbers ${numbers.length} !== ${exp.resourceHexes}`
 		)
+
+	// The spiral token sequence is the same multiset as the shuffled bag.
+	if (spiralNumberSequence.length !== numbers.length)
+		throw new Error(
+			`${label} spiralNumberSequence ${spiralNumberSequence.length} !== numbers ${numbers.length}`
+		)
+	if (!sameMultiset(spiralNumberSequence, numbers))
+		throw new Error(
+			`${label} spiralNumberSequence multiset differs from numbers`
+		)
+}
+
+function tally(xs: readonly HexNumber[]): Map<HexNumber, number> {
+	const m = new Map<HexNumber, number>()
+	for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1)
+	return m
+}
+
+function sameMultiset(
+	a: readonly HexNumber[],
+	b: readonly HexNumber[]
+): boolean {
+	if (a.length !== b.length) return false
+	const ta = tally(a)
+	const tb = tally(b)
+	if (ta.size !== tb.size) return false
+	for (const [k, v] of ta) if (tb.get(k) !== v) return false
+	return true
+}
+
+// Spiral generation: over many randomized (corner/direction) samples, every
+// non-desert hex gets exactly one token and the produced number multiset always
+// equals the bag. (Pure positional — no adjacent-red guarantee is asserted.)
+function validateSpiralGeneration(variant: Variant, board: Board): void {
+	const label = `[${variant}]`
+	const bag = board.numbers
+	for (let sample = 0; sample < 200; sample++) {
+		const hexes = generateHexes(variant, 'spiral')
+		const produced: HexNumber[] = []
+		for (const h of board.hexes) {
+			const data = hexes[h]
+			if (data.resource === null) {
+				if ('number' in data)
+					throw new Error(`${label} desert ${h} got a number`)
+			} else {
+				produced.push(data.number)
+			}
+		}
+		if (!sameMultiset(produced, bag))
+			throw new Error(
+				`${label} spiral sample ${sample}: produced numbers != bag`
+			)
+	}
 }
 
 for (const variant of Object.keys(BOARDS) as Variant[]) {
 	const b = BOARDS[variant]
 	validateBoard(variant, b)
+	validateSpiralGeneration(variant, b)
 	console.log(
-		`OK [${variant}]: ${b.hexes.length} hexes, ${b.vertices.length} vertices, ${b.edges.length} edges, ${b.coastalEdges.length} coastal, ${b.portSlots.length} ports.`
+		`OK [${variant}]: ${b.hexes.length} hexes, ${b.vertices.length} vertices, ${b.edges.length} edges, ${b.coastalEdges.length} coastal, ${b.portSlots.length} ports, spiral seq ${b.spiralNumberSequence.length}.`
 	)
 }

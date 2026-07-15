@@ -72,6 +72,7 @@ function baseState(): GameState {
 		bonuses: true,
 		bonusSets: ['1'],
 		devCards: true,
+		numberLayout: 'random',
 	})
 }
 
