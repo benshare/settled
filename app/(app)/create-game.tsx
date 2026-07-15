@@ -255,7 +255,9 @@ export default function CreateGameScreen() {
 										<View style={styles.subOptions}>
 											{(['1', '2', '3'] as const).map(
 												(setId) => {
-													const locked = setId !== '1'
+													// Sets 1 and 2 are live; set 3 isn't
+										// implemented yet.
+										const locked = setId === '3'
 													return (
 														<CheckboxRow
 															key={setId}
