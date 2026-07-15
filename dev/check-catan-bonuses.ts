@@ -632,7 +632,7 @@ function testMetropolitan() {
 }
 
 function testForger() {
-	const adj = hexesAdjacentTo('3C' as never)
+	const adj = hexesAdjacentTo('3C' as never, 'standard')
 	assert(adj.length > 0, 'forger adj has results')
 	assert(!adj.includes('3C' as never), 'forger adj excludes self')
 	const p: PlayerState = {
@@ -642,18 +642,24 @@ function testForger() {
 		devCardsPlayed: {},
 		playedDevThisTurn: false,
 	}
-	assert(!canMoveForgerToken(p, '3C' as never), 'no token → cannot move')
+	assert(
+		!canMoveForgerToken(p, '3C' as never, 'standard'),
+		'no token → cannot move'
+	)
 	const active = { ...p, forgerToken: '3C' as never }
 	assert(
-		canMoveForgerToken(active, adj[0]),
+		canMoveForgerToken(active, adj[0], 'standard'),
 		'forger with token → can move to adjacent'
 	)
 	assert(
-		!canMoveForgerToken(active, '3C' as never),
+		!canMoveForgerToken(active, '3C' as never, 'standard'),
 		'cannot move to same hex'
 	)
 	const used = { ...active, forgerMovedThisTurn: true }
-	assert(!canMoveForgerToken(used, adj[0]), 'already moved cannot move')
+	assert(
+		!canMoveForgerToken(used, adj[0], 'standard'),
+		'already moved cannot move'
+	)
 }
 
 function testScout() {

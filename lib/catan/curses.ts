@@ -9,10 +9,8 @@
 // stay small and the per-curse rules stay readable.
 
 import {
-	HEXES,
+	boardFor,
 	RESOURCES,
-	adjacentHexes,
-	adjacentVertices,
 	type Hex,
 	type Resource,
 	type Vertex,
@@ -159,7 +157,7 @@ export function hexPowerForPlayer(
 	hex: Hex
 ): number {
 	let power = 0
-	for (const v of adjacentVertices[hex]) {
+	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
 		const vs = vertexStateOf(state, v)
 		if (!vs.occupied || vs.player !== playerIdx) continue
 		power +=
@@ -173,7 +171,7 @@ export function countHexesAtMaxPower(
 	playerIdx: number
 ): number {
 	let n = 0
-	for (const h of HEXES) {
+	for (const h of boardFor(state.variant).hexes) {
 		if (hexPowerForPlayer(state, playerIdx, h) === POWER_HEX_LIMIT) n++
 	}
 	return n
@@ -189,7 +187,7 @@ export function canPlaceUnderPower(
 	vertex: Vertex
 ): boolean {
 	if (curseOf(state, playerIdx) !== 'power') return true
-	const hexes = adjacentHexes[vertex]
+	const hexes = boardFor(state.variant).adjacentHexes[vertex]
 	let hexesAtMax = countHexesAtMaxPower(state, playerIdx)
 	for (const h of hexes) {
 		const before = hexPowerForPlayer(state, playerIdx, h)
@@ -212,9 +210,10 @@ export function touchedResources(
 	playerIdx: number
 ): Set<Resource> {
 	const out = new Set<Resource>()
+	const board = boardFor(state.variant)
 	for (const [vid, vs] of Object.entries(state.vertices)) {
 		if (!vs?.occupied || vs.player !== playerIdx) continue
-		for (const h of adjacentHexes[vid as Vertex]) {
+		for (const h of board.adjacentHexes[vid as Vertex]) {
 			const hd = state.hexes[h]
 			if (hd.resource !== null) out.add(hd.resource)
 		}
@@ -233,7 +232,7 @@ export function settlementKeepsYouthOK(
 	const touched = touchedResources(state, playerIdx)
 	if (touched.size === RESOURCES.length) return false
 	const next = new Set(touched)
-	for (const h of adjacentHexes[vertex]) {
+	for (const h of boardFor(state.variant).adjacentHexes[vertex]) {
 		const hd = state.hexes[h]
 		if (hd.resource !== null) next.add(hd.resource)
 	}

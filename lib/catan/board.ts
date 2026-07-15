@@ -1,6 +1,20 @@
-// Standard Catan board — fixed structure. IDs, adjacency, and constants.
+// Catan board structure — IDs, adjacency, and constants for both variants.
+// The top-level HEXES/VERTICES/EDGES/adjacency exports describe the STANDARD
+// 19-hex board; the expanded 30-hex board's geometry lives in ./boardExpanded.
+// Resolve the variant-correct bundle with boardFor(variant) (see BOARDS below).
 // Per-game state (which resource/number lands on which hex, placed pieces,
 // hands, phase) lives in GameState (see ./types.ts), not here.
+
+import {
+	EXPANDED_HEXES,
+	EXPANDED_VERTICES,
+	EXPANDED_EDGES,
+	EXPANDED_HEX_ROWS,
+	EXPANDED_adjacentVertices,
+	EXPANDED_COASTAL_EDGES,
+	EXPANDED_PORT_SLOTS,
+} from './boardExpanded'
+import type { Variant } from './types'
 
 // --- IDs -------------------------------------------------------------------
 
@@ -26,7 +40,12 @@ export const HEXES = [
 	'5B',
 	'5C',
 ] as const
-export type Hex = (typeof HEXES)[number]
+// Board IDs are opaque strings so the two board variants (standard 19-hex and
+// expanded 30-hex, whose ID namespaces overlap and differ in totality) share
+// one type. Per-variant validity is enforced at runtime by the check scripts,
+// not the compiler. `HEXES`/`VERTICES`/`EDGES` here are the STANDARD board;
+// use `boardFor(variant)` for the variant-correct data.
+export type Hex = string
 
 // 54 vertices, six rows of widths 7, 9, 11, 11, 9, 7.
 export const VERTICES = [
@@ -85,7 +104,7 @@ export const VERTICES = [
 	'6F',
 	'6G',
 ] as const
-export type Vertex = (typeof VERTICES)[number]
+export type Vertex = string
 
 // 72 edges. Canonical form is `"${a} - ${b}"` with a < b lexically.
 export const EDGES = [
@@ -162,7 +181,7 @@ export const EDGES = [
 	'6E - 6F',
 	'6F - 6G',
 ] as const
-export type Edge = (typeof EDGES)[number]
+export type Edge = string
 
 // --- Resources, numbers, buildings -----------------------------------------
 
@@ -186,6 +205,22 @@ export const STANDARD_NUMBERS = [
 	2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12,
 ] as const
 export type HexNumber = (typeof STANDARD_NUMBERS)[number]
+
+// Expanded (5-6 player) board: 3/5/6/6/6/5 + 2 deserts = 30 hexes. Adds the
+// extension's +2 each of wheat/wood/sheep/ore/brick and +1 desert to standard.
+export const EXPANDED_RESOURCE_COUNTS: Record<Resource, number> = {
+	brick: 5,
+	wood: 6,
+	sheep: 6,
+	wheat: 6,
+	ore: 5,
+}
+
+// 28 tokens for the 28 non-desert hexes of the expanded board.
+export const EXPANDED_NUMBERS: readonly HexNumber[] = [
+	2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 8, 8, 8, 9, 9, 9, 10, 10, 10, 11,
+	11, 11, 12, 12,
+]
 
 // Vertex buildings only. An occupied edge is implicitly a road.
 // `super_city` is the metropolitan-bonus upgrade above `city` — worth 3 VP
@@ -273,6 +308,22 @@ export const STANDARD_PORT_KINDS: readonly PortKind[] = [
 	'ore',
 ]
 
+// Expanded distribution: 5 generic + 1 per resource + an extra sheep 2:1 = 11
+// (the extension adds one 3:1 and one wool/sheep 2:1 to the standard 9).
+export const EXPANDED_PORT_KINDS: readonly PortKind[] = [
+	'3:1',
+	'3:1',
+	'3:1',
+	'3:1',
+	'3:1',
+	'brick',
+	'wood',
+	'sheep',
+	'sheep',
+	'wheat',
+	'ore',
+]
+
 // --- Adjacency -------------------------------------------------------------
 
 // Each hex's 6 corner vertices in clockwise order starting from N.
@@ -300,39 +351,59 @@ export const adjacentVertices: Record<Hex, readonly Vertex[]> = {
 	'5C': ['5G', '5H', '6G', '6F', '6E', '5F'],
 }
 
-export const adjacentHexes: Record<Vertex, readonly Hex[]> = (() => {
+// Derive the three adjacency maps from a board's hand-authored parts. Shared by
+// both variants (see BOARDS below). Vertices are pre-populated so a lookup for
+// any listed vertex returns an array, never undefined.
+function deriveAdjacentHexes(
+	hexes: readonly Hex[],
+	vertices: readonly Vertex[],
+	adjVerts: Record<Hex, readonly Vertex[]>
+): Record<Vertex, readonly Hex[]> {
 	const out: Record<Vertex, Hex[]> = Object.fromEntries(
-		VERTICES.map((v) => [v, [] as Hex[]])
-	) as Record<Vertex, Hex[]>
-	for (const h of HEXES) {
-		for (const v of adjacentVertices[h]) out[v].push(h)
-	}
+		vertices.map((v) => [v, [] as Hex[]])
+	)
+	for (const h of hexes) for (const v of adjVerts[h]) out[v].push(h)
 	return out
-})()
+}
 
-export const neighborVertices: Record<Vertex, readonly Vertex[]> = (() => {
+function deriveNeighborVertices(
+	vertices: readonly Vertex[],
+	edges: readonly Edge[]
+): Record<Vertex, readonly Vertex[]> {
 	const out: Record<Vertex, Vertex[]> = Object.fromEntries(
-		VERTICES.map((v) => [v, [] as Vertex[]])
-	) as Record<Vertex, Vertex[]>
-	for (const e of EDGES) {
+		vertices.map((v) => [v, [] as Vertex[]])
+	)
+	for (const e of edges) {
 		const [a, b] = edgeEndpoints(e)
 		out[a].push(b)
 		out[b].push(a)
 	}
 	return out
-})()
+}
 
-export const adjacentEdges: Record<Vertex, readonly Edge[]> = (() => {
+function deriveAdjacentEdges(
+	vertices: readonly Vertex[],
+	edges: readonly Edge[]
+): Record<Vertex, readonly Edge[]> {
 	const out: Record<Vertex, Edge[]> = Object.fromEntries(
-		VERTICES.map((v) => [v, [] as Edge[]])
-	) as Record<Vertex, Edge[]>
-	for (const e of EDGES) {
+		vertices.map((v) => [v, [] as Edge[]])
+	)
+	for (const e of edges) {
 		const [a, b] = edgeEndpoints(e)
 		out[a].push(e)
 		out[b].push(e)
 	}
 	return out
-})()
+}
+
+// Standard-board derived adjacency, kept as top-level exports for standard-only
+// consumers and the check scripts. Variant-aware code uses boardFor(variant).
+export const adjacentHexes: Record<Vertex, readonly Hex[]> =
+	deriveAdjacentHexes(HEXES, VERTICES, adjacentVertices)
+export const neighborVertices: Record<Vertex, readonly Vertex[]> =
+	deriveNeighborVertices(VERTICES, EDGES)
+export const adjacentEdges: Record<Vertex, readonly Edge[]> =
+	deriveAdjacentEdges(VERTICES, EDGES)
 
 // --- Helpers ---------------------------------------------------------------
 
@@ -341,10 +412,112 @@ export function edgeEndpoints(e: Edge): [Vertex, Vertex] {
 	return [a, b]
 }
 
-export function edgeBetween(a: Vertex, b: Vertex): Edge | undefined {
+export function edgeBetween(
+	a: Vertex,
+	b: Vertex,
+	edges: readonly Edge[] = EDGES
+): Edge | undefined {
 	const [x, y] = a < b ? [a, b] : [b, a]
 	const id = `${x} - ${y}`
-	return (EDGES as readonly string[]).includes(id) ? (id as Edge) : undefined
+	return edges.includes(id) ? id : undefined
+}
+
+// --- Board bundles (per variant) -------------------------------------------
+
+// All static, variant-specific board data in one object. Resolve the right one
+// with boardFor(state.variant); rule/render code should never reach for the
+// top-level standard constants once it knows the game's variant.
+export type Board = {
+	hexes: readonly Hex[]
+	vertices: readonly Vertex[]
+	edges: readonly Edge[]
+	hexRows: readonly (readonly Hex[])[]
+	adjacentVertices: Record<Hex, readonly Vertex[]>
+	adjacentHexes: Record<Vertex, readonly Hex[]>
+	neighborVertices: Record<Vertex, readonly Vertex[]>
+	adjacentEdges: Record<Vertex, readonly Edge[]>
+	coastalEdges: readonly Edge[]
+	portSlots: readonly Edge[]
+	resourceCounts: Record<Resource, number>
+	numbers: readonly HexNumber[]
+	portKinds: readonly PortKind[]
+	// Board natural dimensions in units of hex circumradius s, for layout.
+	// Standard is 5√3 × 8; expanded (7 hex rows) is 6√3 × 11.
+	naturalWidthUnits: number
+	naturalHeightUnits: number
+}
+
+function buildBoard(parts: {
+	hexes: readonly Hex[]
+	vertices: readonly Vertex[]
+	edges: readonly Edge[]
+	hexRows: readonly (readonly Hex[])[]
+	adjacentVertices: Record<Hex, readonly Vertex[]>
+	coastalEdges: readonly Edge[]
+	portSlots: readonly Edge[]
+	resourceCounts: Record<Resource, number>
+	numbers: readonly HexNumber[]
+	portKinds: readonly PortKind[]
+	naturalWidthUnits: number
+	naturalHeightUnits: number
+}): Board {
+	return {
+		...parts,
+		adjacentHexes: deriveAdjacentHexes(
+			parts.hexes,
+			parts.vertices,
+			parts.adjacentVertices
+		),
+		neighborVertices: deriveNeighborVertices(parts.vertices, parts.edges),
+		adjacentEdges: deriveAdjacentEdges(parts.vertices, parts.edges),
+	}
+}
+
+const STANDARD_HEX_ROWS: readonly (readonly Hex[])[] = [
+	['1A', '1B', '1C'],
+	['2A', '2B', '2C', '2D'],
+	['3A', '3B', '3C', '3D', '3E'],
+	['4A', '4B', '4C', '4D'],
+	['5A', '5B', '5C'],
+]
+
+const STANDARD_BOARD: Board = buildBoard({
+	hexes: HEXES,
+	vertices: VERTICES,
+	edges: EDGES,
+	hexRows: STANDARD_HEX_ROWS,
+	adjacentVertices,
+	coastalEdges: COASTAL_EDGES,
+	portSlots: PORT_SLOTS,
+	resourceCounts: STANDARD_RESOURCE_COUNTS,
+	numbers: STANDARD_NUMBERS,
+	portKinds: STANDARD_PORT_KINDS,
+	naturalWidthUnits: 5 * Math.sqrt(3),
+	naturalHeightUnits: 8,
+})
+
+const EXPANDED_BOARD: Board = buildBoard({
+	hexes: EXPANDED_HEXES,
+	vertices: EXPANDED_VERTICES,
+	edges: EXPANDED_EDGES,
+	hexRows: EXPANDED_HEX_ROWS,
+	adjacentVertices: EXPANDED_adjacentVertices,
+	coastalEdges: EXPANDED_COASTAL_EDGES,
+	portSlots: EXPANDED_PORT_SLOTS,
+	resourceCounts: EXPANDED_RESOURCE_COUNTS,
+	numbers: EXPANDED_NUMBERS,
+	portKinds: EXPANDED_PORT_KINDS,
+	naturalWidthUnits: 6 * Math.sqrt(3),
+	naturalHeightUnits: 11,
+})
+
+export const BOARDS: Record<Variant, Board> = {
+	standard: STANDARD_BOARD,
+	expanded: EXPANDED_BOARD,
+}
+
+export function boardFor(variant: Variant): Board {
+	return BOARDS[variant]
 }
 
 // To verify the hand-authored adjacencies after edits, run

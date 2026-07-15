@@ -1,29 +1,21 @@
 import {
-	adjacentHexes,
-	adjacentVertices,
+	boardFor,
 	edgeEndpoints,
 	type Hex,
 	type HexNumber,
 	type Vertex,
 } from './board'
-import type { Port } from './types'
+import type { Port, Variant } from './types'
 
 // Pointy-top hex with circumradius s:
 //   width = √3 · s, height = 2s
 //   horizontal center spacing within a row: √3·s
 //   vertical center spacing between rows:   1.5·s
 
-export const HEX_ROWS: Record<1 | 2 | 3 | 4 | 5, readonly Hex[]> = {
-	1: ['1A', '1B', '1C'],
-	2: ['2A', '2B', '2C', '2D'],
-	3: ['3A', '3B', '3C', '3D', '3E'],
-	4: ['4A', '4B', '4C', '4D'],
-	5: ['5A', '5B', '5C'],
-}
-
 export type HexLayout = { id: Hex; cx: number; cy: number }
 
 export type BoardLayout = {
+	variant: Variant
 	s: number
 	width: number
 	height: number
@@ -32,39 +24,38 @@ export type BoardLayout = {
 
 const SQRT3 = Math.sqrt(3)
 
-// Board natural dimensions in units of s: width 5√3 · s, height 8s.
-// Pick s so the whole board fits inside (targetW × targetH).
+// Board natural dimensions in units of s come from the variant's board
+// (standard 5√3 × 8, expanded 6√3 × 11). Pick s so the whole board fits
+// inside (targetW × targetH), then lay out each hex row centered.
 export function computeBoardLayout(
+	variant: Variant,
 	targetW: number,
 	targetH: number
 ): BoardLayout {
-	const sFromW = targetW / (5 * SQRT3)
-	const sFromH = targetH / 8
-	const s = Math.min(sFromW, sFromH)
-	const W = SQRT3 * s
-	const width = 5 * W
-	const height = 8 * s
+	const board = boardFor(variant)
+	const rows = board.hexRows
+	const maxW = Math.max(...rows.map((r) => r.length))
 
-	const rows: [1 | 2 | 3 | 4 | 5, readonly Hex[]][] = [
-		[1, HEX_ROWS[1]],
-		[2, HEX_ROWS[2]],
-		[3, HEX_ROWS[3]],
-		[4, HEX_ROWS[4]],
-		[5, HEX_ROWS[5]],
-	]
+	const s = Math.min(
+		targetW / board.naturalWidthUnits,
+		targetH / board.naturalHeightUnits
+	)
+	const W = SQRT3 * s
+	const width = maxW * W
+	const height = board.naturalHeightUnits * s
 
 	const hexes: HexLayout[] = []
-	for (const [rowIdx, ids] of rows) {
+	rows.forEach((ids, r) => {
 		const w = ids.length
-		const indent = ((5 - w) / 2) * W
-		const cy = (rowIdx - 1) * 1.5 * s + s
+		const indent = ((maxW - w) / 2) * W
+		const cy = r * 1.5 * s + s
 		for (let c = 0; c < w; c++) {
 			const cx = indent + c * W + W / 2
 			hexes.push({ id: ids[c], cx, cy })
 		}
-	}
+	})
 
-	return { s, width, height, hexes }
+	return { variant, s, width, height, hexes }
 }
 
 // Six pointy-top corners, clockwise from the top point.
@@ -86,10 +77,11 @@ export function hexCorners(
 export function computeVertexPositions(
 	layout: BoardLayout
 ): Record<Vertex, { x: number; y: number }> {
+	const board = boardFor(layout.variant)
 	const out: Partial<Record<Vertex, { x: number; y: number }>> = {}
 	for (const h of layout.hexes) {
 		const corners = hexCorners(h.cx, h.cy, layout.s)
-		const ids = adjacentVertices[h.id]
+		const ids = board.adjacentVertices[h.id]
 		for (let i = 0; i < 6; i++) {
 			if (!out[ids[i]]) {
 				out[ids[i]] = { x: corners[i][0], y: corners[i][1] }
@@ -129,6 +121,7 @@ export function computePortLayout(
 	layout: BoardLayout,
 	ports: readonly Port[]
 ): PortVisual[] {
+	const board = boardFor(layout.variant)
 	const vertexPos = computeVertexPositions(layout)
 	const hexById = new Map(layout.hexes.map((h) => [h.id, h]))
 	const out: PortVisual[] = []
@@ -138,7 +131,7 @@ export function computePortLayout(
 		const pb = vertexPos[vb]
 		const mid = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 }
 		// Every port edge has exactly one adjacent land hex.
-		const landHexId = commonHex(va, vb)
+		const landHexId = commonHex(va, vb, board.adjacentHexes)
 		if (!landHexId) continue
 		const h = hexById.get(landHexId)
 		if (!h) continue
@@ -155,7 +148,11 @@ export function computePortLayout(
 	return out
 }
 
-function commonHex(va: Vertex, vb: Vertex): Hex | null {
+function commonHex(
+	va: Vertex,
+	vb: Vertex,
+	adjacentHexes: Record<Vertex, readonly Hex[]>
+): Hex | null {
 	const set = new Set(adjacentHexes[va])
 	for (const h of adjacentHexes[vb]) {
 		if (set.has(h)) return h

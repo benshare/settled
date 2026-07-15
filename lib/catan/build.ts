@@ -5,11 +5,9 @@
 // adjacency constants.
 
 import {
+	boardFor,
 	RESOURCES,
-	VERTICES,
-	adjacentEdges,
 	edgeEndpoints,
-	neighborVertices,
 	type Edge,
 	type Vertex,
 } from './board'
@@ -146,7 +144,7 @@ function roadConnectsVia(
 ): boolean {
 	const vs = vertexStateOf(state, vertex)
 	if (vs.occupied) return vs.player === playerIdx
-	for (const e of adjacentEdges[vertex]) {
+	for (const e of boardFor(state.variant).adjacentEdges[vertex]) {
 		if (e === edge) continue
 		const es = edgeStateOf(state, e)
 		if (es.occupied && es.player === playerIdx) return true
@@ -204,19 +202,20 @@ export function validBuildRoadEdges(
 ): Edge[] {
 	const out: Edge[] = []
 	const seen = new Set<Edge>()
+	const board = boardFor(state.variant)
 	// Iterate candidate edges via the player's owned roads + buildings so we
-	// don't scan all 72 edges when most aren't touched by the player at all.
-	for (const v of VERTICES) {
+	// don't scan every edge when most aren't touched by the player at all.
+	for (const v of board.vertices) {
 		const vs = vertexStateOf(state, v)
 		const ownsVertex = vs.occupied && vs.player === playerIdx
-		const hasAdjOwnRoad = adjacentEdges[v].some((e) => {
+		const hasAdjOwnRoad = board.adjacentEdges[v].some((e) => {
 			const es = edgeStateOf(state, e)
 			return es.occupied && es.player === playerIdx
 		})
 		if (!ownsVertex && !hasAdjOwnRoad) continue
 		// If the vertex is an opponent's building, it blocks chaining through it.
 		if (vs.occupied && vs.player !== playerIdx) continue
-		for (const e of adjacentEdges[v]) {
+		for (const e of board.adjacentEdges[v]) {
 			if (seen.has(e)) continue
 			seen.add(e)
 			if (isValidBuildRoadEdge(state, playerIdx, e)) out.push(e)
@@ -234,12 +233,13 @@ export function isValidBuildSettlementVertex(
 ): boolean {
 	if (!canBuildMoreSettlements(state, playerIdx)) return false
 	if (vertexStateOf(state, vertex).occupied) return false
-	for (const n of neighborVertices[vertex]) {
+	const board = boardFor(state.variant)
+	for (const n of board.neighborVertices[vertex]) {
 		if (vertexStateOf(state, n).occupied) return false
 	}
 	if (!canPlaceUnderPower(state, playerIdx, vertex)) return false
 	if (!settlementKeepsYouthOK(state, playerIdx, vertex)) return false
-	return adjacentEdges[vertex].some((e) => {
+	return board.adjacentEdges[vertex].some((e) => {
 		const es = edgeStateOf(state, e)
 		return es.occupied && es.player === playerIdx
 	})
@@ -249,7 +249,7 @@ export function validBuildSettlementVertices(
 	state: GameState,
 	playerIdx: number
 ): Vertex[] {
-	return VERTICES.filter((v) =>
+	return boardFor(state.variant).vertices.filter((v) =>
 		isValidBuildSettlementVertex(state, playerIdx, v)
 	)
 }
@@ -279,7 +279,9 @@ export function validBuildCityVertices(
 	state: GameState,
 	playerIdx: number
 ): Vertex[] {
-	return VERTICES.filter((v) => isValidBuildCityVertex(state, playerIdx, v))
+	return boardFor(state.variant).vertices.filter((v) =>
+		isValidBuildCityVertex(state, playerIdx, v)
+	)
 }
 
 // --- Super cities (metropolitan bonus only) --------------------------------
@@ -304,7 +306,7 @@ export function validBuildSuperCityVertices(
 	state: GameState,
 	playerIdx: number
 ): Vertex[] {
-	return VERTICES.filter((v) =>
+	return boardFor(state.variant).vertices.filter((v) =>
 		isValidBuildSuperCityVertex(state, playerIdx, v)
 	)
 }

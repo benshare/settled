@@ -128,7 +128,12 @@ function stateWithSettlement(vertex: string, portKind: string): GameState {
 		},
 	]
 	base.vertices = {
-		[vertex]: { occupied: true, player: 0, building: 'settlement' },
+		[vertex]: {
+			occupied: true,
+			player: 0,
+			building: 'settlement',
+			placedTurn: 0,
+		},
 	}
 	return base
 }

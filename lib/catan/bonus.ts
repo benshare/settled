@@ -8,11 +8,8 @@
 // readable.
 
 import {
-	HEXES,
+	boardFor,
 	RESOURCES,
-	adjacentEdges,
-	adjacentHexes,
-	adjacentVertices,
 	edgeEndpoints,
 	type Edge,
 	type Hex,
@@ -29,6 +26,7 @@ import {
 	type GameState,
 	type PlayerState,
 	type ResourceHand,
+	type Variant,
 } from './types'
 
 export function bonusOf(
@@ -230,7 +228,7 @@ export function pipCountFor(hexNumber: HexNumber): number {
 // modifier.
 export function pipsAtVertex(state: GameState, vertex: Vertex): number {
 	let pips = 0
-	for (const h of adjacentHexes[vertex]) {
+	for (const h of boardFor(state.variant).adjacentHexes[vertex]) {
 		const hd = state.hexes[h]
 		if (hd.resource === null) continue
 		pips += pipCountFor(hd.number)
@@ -422,10 +420,11 @@ export function forgerActive(p: PlayerState): boolean {
 
 // Hexes adjacent to `hex` (i.e. share at least one vertex). Used to gate
 // the forger's pre-roll token move. The token's current hex is excluded.
-export function hexesAdjacentTo(hex: Hex): Hex[] {
+export function hexesAdjacentTo(hex: Hex, variant: Variant): Hex[] {
+	const board = boardFor(variant)
 	const seen = new Set<Hex>()
-	for (const v of adjacentVertices[hex]) {
-		for (const h of adjacentHexes[v]) {
+	for (const v of board.adjacentVertices[hex]) {
+		for (const h of board.adjacentHexes[v]) {
 			if (h === hex) continue
 			seen.add(h)
 		}
@@ -433,17 +432,17 @@ export function hexesAdjacentTo(hex: Hex): Hex[] {
 	return Array.from(seen)
 }
 
-export function canMoveForgerToken(p: PlayerState, target: Hex): boolean {
+export function canMoveForgerToken(
+	p: PlayerState,
+	target: Hex,
+	variant: Variant
+): boolean {
 	if (p.bonus !== 'forger') return false
 	if (p.forgerMovedThisTurn) return false
 	if (!p.forgerToken) return false
 	if (target === p.forgerToken) return false
-	return hexesAdjacentTo(p.forgerToken).includes(target)
+	return hexesAdjacentTo(p.forgerToken, variant).includes(target)
 }
-
-// All hexes by id — re-exported here because consumers of bonus.ts may
-// otherwise have to dual-import board for forger UI helpers.
-export const ALL_HEXES = HEXES
 
 // --- Scout ------------------------------------------------------------------
 //
@@ -546,12 +545,13 @@ export function roadRemovalSplitsBuildings(
 	}
 	if (myBuildings.length <= 1) return false
 
+	const board = boardFor(state.variant)
 	const seed = myBuildings[0]
 	const visited = new Set<Vertex>([seed])
 	const stack: Vertex[] = [seed]
 	while (stack.length > 0) {
 		const v = stack.pop()!
-		for (const e of adjacentEdges[v]) {
+		for (const e of board.adjacentEdges[v]) {
 			if (e === edge) continue
 			const es = state.edges[e]
 			if (!es?.occupied || es.player !== playerIdx) continue

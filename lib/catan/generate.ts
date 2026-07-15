@@ -1,12 +1,4 @@
-import {
-	HEXES,
-	PORT_SLOTS,
-	RESOURCES,
-	STANDARD_NUMBERS,
-	STANDARD_RESOURCE_COUNTS,
-	type Hex,
-	type Resource,
-} from './board'
+import { boardFor, RESOURCES, type Hex, type Resource } from './board'
 import { BONUS_POOL, CURSE_POOL, type BonusId, type CurseId } from './bonuses'
 import { buildInitialDevDeck } from './dev'
 import {
@@ -28,26 +20,28 @@ function shuffle<T>(xs: readonly T[]): T[] {
 	return a
 }
 
-// 18 resource tiles + 1 desert = 19 total, matching HEXES.length.
+// Resource tiles + deserts, sized to the variant's board (19 standard / 30
+// expanded). Desert count is whatever's left after the resource counts.
 function hexBag(variant: Variant): (Resource | null)[] {
-	if (variant !== 'standard') {
-		throw new Error(`unknown variant: ${variant}`)
-	}
-	const bag: (Resource | null)[] = [null]
+	const board = boardFor(variant)
+	const bag: (Resource | null)[] = []
 	for (const r of RESOURCES) {
-		for (let i = 0; i < STANDARD_RESOURCE_COUNTS[r]; i++) bag.push(r)
+		for (let i = 0; i < board.resourceCounts[r]; i++) bag.push(r)
 	}
+	const desertCount = board.hexes.length - bag.length
+	for (let i = 0; i < desertCount; i++) bag.push(null)
 	return bag
 }
 
 export function generateHexes(variant: Variant): Record<Hex, HexData> {
+	const board = boardFor(variant)
 	const resources = shuffle(hexBag(variant))
-	const numbers = shuffle(STANDARD_NUMBERS)
+	const numbers = shuffle(board.numbers)
 
 	const out = {} as Record<Hex, HexData>
 	let numIdx = 0
-	for (let i = 0; i < HEXES.length; i++) {
-		const hex = HEXES[i]
+	for (let i = 0; i < board.hexes.length; i++) {
+		const hex = board.hexes[i]
 		const resource = resources[i]
 		if (resource === null) {
 			out[hex] = { resource: null }
@@ -64,15 +58,19 @@ export function generateHexes(variant: Variant): Record<Hex, HexData> {
 // standard Catan pattern of "alternating, with one adjacent pair of 2:1s."
 // Only the 2:1 resource assignments are shuffled; all 3:1s are identical.
 export function generatePorts(variant: Variant): Port[] {
-	if (variant !== 'standard') {
-		throw new Error(`unknown variant: ${variant}`)
+	const board = boardFor(variant)
+	if (variant === 'standard') {
+		const twoOnes = shuffle(RESOURCES) as Resource[]
+		let twoIdx = 0
+		return board.portSlots.map((edge, i) => {
+			if (i % 2 === 0) return { edge, kind: twoOnes[twoIdx++] }
+			return { edge, kind: '3:1' as const }
+		})
 	}
-	const twoOnes = shuffle(RESOURCES) as Resource[]
-	let twoIdx = 0
-	return PORT_SLOTS.map((edge, i) => {
-		if (i % 2 === 0) return { edge, kind: twoOnes[twoIdx++] }
-		return { edge, kind: '3:1' as const }
-	})
+	// Expanded (and any future variant): shuffle the fixed port-kind
+	// composition onto the fixed slots. Positions stay put; kinds are dealt.
+	const kinds = shuffle(board.portKinds)
+	return board.portSlots.map((edge, i) => ({ edge, kind: kinds[i] }))
 }
 
 // Deal every player's select_bonus hand at once. Two bonuses + one curse per
@@ -125,7 +123,10 @@ export function initialGameState(
 	config: GameConfig
 ): GameState {
 	const hexes = generateHexes(variant)
-	const desert = HEXES.find((h) => hexes[h].resource === null)
+	// Expanded has two deserts; the robber starts on the first.
+	const desert = boardFor(variant).hexes.find(
+		(h) => hexes[h].resource === null
+	)
 	if (!desert) throw new Error('no desert in generated board')
 	let phase: Phase
 	if (config.bonuses) {

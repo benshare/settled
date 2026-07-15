@@ -1,5 +1,5 @@
 import { useAuth } from '@/lib/auth'
-import { sameStringSet } from '@/lib/catan/types'
+import { MAX_PLAYERS, sameStringSet } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
@@ -91,11 +91,16 @@ export default function CreateGameScreen() {
 		)
 	}, [friends, query])
 
+	// Proposer + invites can't exceed MAX_PLAYERS (6). 5-6 player games use the
+	// expanded board automatically.
+	const maxInvites = MAX_PLAYERS - 1
+	const atInviteCap = selected.size >= maxInvites
+
 	function toggle(id: string) {
 		setSelected((prev) => {
 			const next = new Set(prev)
 			if (next.has(id)) next.delete(id)
-			else next.add(id)
+			else if (next.size < maxInvites) next.add(id)
 			return next
 		})
 	}
@@ -180,10 +185,20 @@ export default function CreateGameScreen() {
 											key={f.otherId}
 											friend={f}
 											selected={selected.has(f.otherId)}
+											disabled={
+												atInviteCap &&
+												!selected.has(f.otherId)
+											}
 											onToggle={() => toggle(f.otherId)}
 										/>
 									))}
 								</View>
+							)}
+							{atInviteCap && (
+								<Text style={styles.hint}>
+									Up to {MAX_PLAYERS} players per game. 5–6
+									players use the larger board.
+								</Text>
 							)}
 
 							<View style={styles.optionsBlock}>
@@ -454,10 +469,12 @@ function CompactToggleRow({
 function FriendToggleRow({
 	friend,
 	selected,
+	disabled,
 	onToggle,
 }: {
 	friend: FriendEntry
 	selected: boolean
+	disabled?: boolean
 	onToggle: () => void
 }) {
 	const { colors } = useTheme()
@@ -465,7 +482,12 @@ function FriendToggleRow({
 	return (
 		<Pressable
 			onPress={onToggle}
-			style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+			disabled={disabled}
+			style={({ pressed }) => [
+				styles.row,
+				pressed && styles.pressed,
+				disabled && styles.rowDisabled,
+			]}
 		>
 			<Avatar profile={friend.profile} size={40} />
 			<Text style={styles.rowUsername} numberOfLines={1}>
@@ -533,6 +555,9 @@ function makeStyles(colors: ColorScheme) {
 			alignItems: 'center',
 			gap: spacing.sm,
 			paddingVertical: spacing.sm,
+		},
+		rowDisabled: {
+			opacity: 0.4,
 		},
 		rowUsername: {
 			flex: 1,

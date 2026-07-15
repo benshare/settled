@@ -2,7 +2,7 @@
 // or tests. The edge function re-implements the same logic against its
 // duplicated constants.
 
-import { HEXES, RESOURCES, adjacentVertices, type Hex } from './board'
+import { boardFor, RESOURCES, type Hex } from './board'
 import {
 	vertexStateOf,
 	type GameState,
@@ -55,7 +55,7 @@ export function isValidDiscardSelection(
 }
 
 export function validRobberHexes(state: GameState): Hex[] {
-	return HEXES.filter((h) => h !== state.robber)
+	return boardFor(state.variant).hexes.filter((h) => h !== state.robber)
 }
 
 // Distinct opponent player indices whose settlement/city touches `hex` and
@@ -67,7 +67,7 @@ export function stealCandidates(
 	meIdx: number
 ): number[] {
 	const set = new Set<number>()
-	for (const v of adjacentVertices[hex]) {
+	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
 		const vs = vertexStateOf(state, v)
 		if (!vs.occupied) continue
 		if (vs.player === meIdx) continue

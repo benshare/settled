@@ -12,13 +12,7 @@
 // - Bonus goes to the player with the strictly longest trail ≥ 5. Ties keep
 //   the current holder; falling below 5 releases the bonus.
 
-import {
-	adjacentEdges,
-	edgeEndpoints,
-	EDGES,
-	type Edge,
-	type Vertex,
-} from './board'
+import { boardFor, edgeEndpoints, type Edge, type Vertex } from './board'
 import { effectiveLongestRoadLength } from './curses'
 import { edgeStateOf, vertexStateOf, type GameState } from './types'
 
@@ -27,7 +21,7 @@ export const LONGEST_ROAD_THRESHOLD = 5
 export function longestRoadFor(state: GameState, playerIdx: number): number {
 	// Collect the player's roads. Small: up to 15 per player.
 	const ownEdges: Edge[] = []
-	for (const edge of EDGES) {
+	for (const edge of boardFor(state.variant).edges) {
 		const es = edgeStateOf(state, edge)
 		if (es.occupied && es.player === playerIdx) ownEdges.push(edge)
 	}
@@ -62,7 +56,7 @@ function walk(
 	if (vs.occupied && vs.player !== playerIdx) return used.size
 
 	let best = used.size
-	for (const e of adjacentEdges[head]) {
+	for (const e of boardFor(state.variant).adjacentEdges[head]) {
 		if (used.has(e)) continue
 		const es = edgeStateOf(state, e)
 		if (!es.occupied || es.player !== playerIdx) continue

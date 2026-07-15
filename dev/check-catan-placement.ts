@@ -38,7 +38,12 @@ function placeSettlement(s: GameState, v: Vertex, player: number): GameState {
 		...s,
 		vertices: {
 			...s.vertices,
-			[v]: { occupied: true, player, building: 'settlement' },
+			[v]: {
+				occupied: true,
+				player,
+				building: 'settlement',
+				placedTurn: 0,
+			},
 		},
 	}
 }
@@ -46,7 +51,7 @@ function placeSettlement(s: GameState, v: Vertex, player: number): GameState {
 function placeRoad(s: GameState, e: Edge, player: number): GameState {
 	return {
 		...s,
-		edges: { ...s.edges, [e]: { occupied: true, player } },
+		edges: { ...s.edges, [e]: { occupied: true, player, placedTurn: 0 } },
 	}
 }
 

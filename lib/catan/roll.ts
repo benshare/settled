@@ -2,7 +2,7 @@
 // (display) or tests. The edge function re-implements the same logic against
 // its duplicated adjacency constants.
 
-import { HEXES, adjacentVertices, type Hex } from './board'
+import { boardFor, type Hex } from './board'
 import { underdogMultiplierFor } from './bonus'
 import {
 	vertexStateOf,
@@ -38,12 +38,13 @@ export function distributeResources(
 ): Record<number, ResourceHand> {
 	const result: Record<number, ResourceHand> = {}
 	if (total === 7) return result
-	for (const hex of HEXES) {
+	const board = boardFor(state.variant)
+	for (const hex of board.hexes) {
 		if (hex === state.robber) continue
 		const hd = state.hexes[hex]
 		if (hd.resource === null) continue
 		if (hd.number !== total) continue
-		for (const v of adjacentVertices[hex]) {
+		for (const v of board.adjacentVertices[hex]) {
 			const vs = vertexStateOf(state, v)
 			if (!vs.occupied) continue
 			const base =
@@ -88,13 +89,14 @@ export function distributeResourcesByHex(
 ): Partial<Record<Hex, Record<number, ResourceHand>>> {
 	const out: Partial<Record<Hex, Record<number, ResourceHand>>> = {}
 	if (total === 7) return out
-	for (const hex of HEXES) {
+	const board = boardFor(state.variant)
+	for (const hex of board.hexes) {
 		if (hex === state.robber) continue
 		const hd = state.hexes[hex]
 		if (hd.resource === null) continue
 		if (hd.number !== total) continue
 		const perPlayer: Record<number, ResourceHand> = {}
-		for (const v of adjacentVertices[hex]) {
+		for (const v of board.adjacentVertices[hex]) {
 			const vs = vertexStateOf(state, v)
 			if (!vs.occupied) continue
 			const base =

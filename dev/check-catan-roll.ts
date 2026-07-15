@@ -36,7 +36,7 @@ function placeBuilding(
 		...s,
 		vertices: {
 			...s.vertices,
-			[v]: { occupied: true, player, building },
+			[v]: { occupied: true, player, building, placedTurn: 0 },
 		},
 	}
 }
