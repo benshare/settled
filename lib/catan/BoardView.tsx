@@ -1,5 +1,15 @@
 import { useState } from 'react'
 import { type LayoutChangeEvent, View } from 'react-native'
+import {
+	Gesture,
+	GestureDetector,
+	GestureHandlerRootView,
+} from 'react-native-gesture-handler'
+import Animated, {
+	useAnimatedStyle,
+	useSharedValue,
+	withTiming,
+} from 'react-native-reanimated'
 import Svg, { G } from 'react-native-svg'
 import { edgeEndpoints, type Edge, type Hex, type Vertex } from './board'
 import { BuildLayer, type BoardTool, type BuildSelection } from './BuildLayer'
@@ -37,6 +47,9 @@ export type RobberInteraction = {
 	onSteal: (victim: number) => void
 }
 
+const MIN_SCALE = 1
+const MAX_SCALE = 4
+
 export function BoardView({
 	state,
 	interaction,
@@ -50,24 +63,87 @@ export function BoardView({
 }) {
 	const [box, setBox] = useState<{ w: number; h: number } | null>(null)
 
+	const scale = useSharedValue(1)
+	const savedScale = useSharedValue(1)
+	const translateX = useSharedValue(0)
+	const translateY = useSharedValue(0)
+	const savedTranslateX = useSharedValue(0)
+	const savedTranslateY = useSharedValue(0)
+
 	const onLayout = (e: LayoutChangeEvent) => {
 		const { width, height } = e.nativeEvent.layout
 		setBox({ w: width, h: height })
 	}
 
+	// Zoom is anchored at the board's centre; a two-finger pan repositions it,
+	// clamped so the scaled board can't be dragged past the container edges.
+	// Pinch and pan both require two pointers, leaving single-finger taps to
+	// flow through to the placement / build / robber interaction layers.
+	const pinch = Gesture.Pinch()
+		.onUpdate((e) => {
+			scale.value = Math.min(
+				Math.max(savedScale.value * e.scale, MIN_SCALE),
+				MAX_SCALE
+			)
+		})
+		.onEnd(() => {
+			savedScale.value = scale.value
+			if (scale.value <= MIN_SCALE) {
+				translateX.value = withTiming(0)
+				translateY.value = withTiming(0)
+				savedTranslateX.value = 0
+				savedTranslateY.value = 0
+			}
+		})
+
+	const pan = Gesture.Pan()
+		.minPointers(2)
+		.onUpdate((e) => {
+			const maxX = ((box?.w ?? 0) * (scale.value - 1)) / 2
+			const maxY = ((box?.h ?? 0) * (scale.value - 1)) / 2
+			translateX.value = Math.min(
+				Math.max(savedTranslateX.value + e.translationX, -maxX),
+				maxX
+			)
+			translateY.value = Math.min(
+				Math.max(savedTranslateY.value + e.translationY, -maxY),
+				maxY
+			)
+		})
+		.onEnd(() => {
+			savedTranslateX.value = translateX.value
+			savedTranslateY.value = translateY.value
+		})
+
+	const gesture = Gesture.Simultaneous(pinch, pan)
+
+	const animatedStyle = useAnimatedStyle(() => ({
+		transform: [
+			{ translateX: translateX.value },
+			{ translateY: translateY.value },
+			{ scale: scale.value },
+		],
+	}))
+
 	return (
-		<View style={{ flex: 1, width: '100%' }} onLayout={onLayout}>
-			{box && box.w > 0 && box.h > 0 && (
-				<BoardSvg
-					state={state}
-					boxW={box.w}
-					boxH={box.h}
-					interaction={interaction}
-					build={build}
-					robber={robber}
-				/>
-			)}
-		</View>
+		<GestureHandlerRootView style={{ flex: 1, width: '100%' }}>
+			<View style={{ flex: 1, overflow: 'hidden' }} onLayout={onLayout}>
+				{box && box.w > 0 && box.h > 0 && (
+					<GestureDetector gesture={gesture}>
+						<Animated.View style={[{ flex: 1 }, animatedStyle]}>
+							<BoardSvg
+								state={state}
+								boxW={box.w}
+								boxH={box.h}
+								interaction={interaction}
+								build={build}
+								robber={robber}
+							/>
+						</Animated.View>
+					</GestureDetector>
+				)}
+			</View>
+		</GestureHandlerRootView>
 	)
 }
 
