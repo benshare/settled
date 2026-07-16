@@ -51,6 +51,7 @@ import { ShepherdSwapPicker } from '@/lib/catan/ShepherdSwapPicker'
 import {
 	canAffordPurchase,
 	canAffordMetropolitanCost,
+	handSize,
 	shouldUseBricklayer,
 	smithSwapFor,
 	validBuildCityVertices,
@@ -180,6 +181,7 @@ function GameBody() {
 	const confirmRoll = useGamesStore((s) => s.confirmRoll)
 	const rerollDice = useGamesStore((s) => s.rerollDice)
 	const endTurn = useGamesStore((s) => s.endTurn)
+	const endSpecialBuild = useGamesStore((s) => s.endSpecialBuild)
 	const buildRoad = useGamesStore((s) => s.buildRoad)
 	const buildSettlement = useGamesStore((s) => s.buildSettlement)
 	const buildCity = useGamesStore((s) => s.buildCity)
@@ -285,6 +287,16 @@ function GameBody() {
 	const isMyPlacementTurn = isCurrentPlayer && game?.status === 'placement'
 	const isMyActiveTurn = isCurrentPlayer && game?.status === 'active'
 
+	// Special build phase (5-6 player games). The acting builder is the head of
+	// the queue and is NOT the turn-holder, so it's derived from the phase, not
+	// current_turn. `isMySpecialBuild` unlocks build/buy/bank for that player.
+	const sbActor =
+		gameState?.phase.kind === 'special_build'
+			? (gameState.phase.queue[0] ?? null)
+			: null
+	const isMySpecialBuild =
+		sbActor !== null && sbActor === meIdx && game?.status === 'active'
+
 	// Reset selection when the turn or phase step changes under us.
 	const placementKey =
 		gameState?.phase.kind === 'initial_placement'
@@ -294,11 +306,15 @@ function GameBody() {
 		setSelection(null)
 	}, [placementKey])
 
-	// Clear build tool + trade panel when the turn flips away or we leave main.
-	const mainTurnKey =
-		gameState?.phase.kind === 'main' && isMyActiveTurn
-			? `${game?.current_turn}`
-			: 'off'
+	// Clear build tool + trade panel when we can no longer build — the turn
+	// flips away / we leave main, or a special-build slot passes to someone
+	// else. The key also changes between distinct special-build slots so the
+	// tool resets for each actor.
+	const canActBuild =
+		(gameState?.phase.kind === 'main' && isMyActiveTurn) || isMySpecialBuild
+	const mainTurnKey = canActBuild
+		? `${game?.current_turn}-${gameState?.phase.kind}-${sbActor ?? ''}`
+		: 'off'
 	useEffect(() => {
 		if (mainTurnKey === 'off') {
 			setBuildTool(null)
@@ -780,6 +796,14 @@ function GameBody() {
 		if (res.error) notify(res.error)
 	}
 
+	async function onEndSpecialBuild() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await endSpecialBuild(game.id)
+		setSubmitting(false)
+		if (res.error) notify(res.error)
+	}
+
 	async function onBuyDevCard() {
 		if (!game) return
 		setSubmitting(true)
@@ -1021,24 +1045,35 @@ function GameBody() {
 	const myPlayer = gameState && meIdx >= 0 ? gameState.players[meIdx] : null
 	const canBuildThisTurn =
 		isMyActiveTurn && gameState?.phase.kind === 'main' && !!myHand
+	// During a special-build slot the same road/settlement/city/dev/bank actions
+	// are open to the acting builder, subject to the `moreThanSeven` gate.
+	const sbBuildAllowed =
+		isMySpecialBuild &&
+		!!myHand &&
+		!!myPlayer &&
+		(!gameState!.config.extraBuild.moreThanSeven || handSize(myPlayer) > 7)
+	const canBuildBasic = canBuildThisTurn || sbBuildAllowed
+	// Scout's peek-buy can't run inside a special-build slot (server rejects it).
+	const scoutBlockedInSB = isMySpecialBuild && myPlayer?.bonus === 'scout'
 	const buildEnabled = {
 		road:
-			canBuildThisTurn &&
+			canBuildBasic &&
 			!!myPlayer &&
 			canAffordPurchase(myPlayer, 'road') &&
 			validBuildRoadEdges(gameState!, meIdx).length > 0,
 		settlement:
-			canBuildThisTurn &&
+			canBuildBasic &&
 			!!myPlayer &&
 			canAffordPurchase(myPlayer, 'settlement') &&
 			validBuildSettlementVertices(gameState!, meIdx).length > 0,
 		city:
-			canBuildThisTurn &&
+			canBuildBasic &&
 			!!myPlayer &&
 			canAffordPurchase(myPlayer, 'city') &&
 			validBuildCityVertices(gameState!, meIdx).length > 0,
 		dev_card:
 			!!gameState &&
+			!scoutBlockedInSB &&
 			canBuyDevCard(gameState, meIdx, game?.current_turn ?? -1),
 	}
 	const buildCurseHints: BuildCurseHints = (() => {
@@ -1058,8 +1093,10 @@ function GameBody() {
 
 	const hasLiveTrade = !!liveOffer
 	const liveTradeIsMine = !!liveOffer && liveOffer.from === meIdx
+	// The Trade button also opens in a special-build slot, but bank-only (player
+	// trades stay main-only — see the TradePanel `bankOnly` prop below).
 	const tradeButtonEnabled =
-		canBuildThisTurn && !hasLiveTrade && !tradePanelOpen
+		canBuildBasic && !hasLiveTrade && !tradePanelOpen
 	const tradeButtonActive = tradePanelOpen || liveTradeIsMine
 
 	// Set-2 build-bar enablement.
@@ -1209,6 +1246,16 @@ function GameBody() {
 								onSubmit={onDiscard}
 							/>
 						)}
+					{gameState.phase.kind === 'special_build' && (
+						<SpecialBuildBar
+							game={game}
+							gameState={gameState}
+							meIdx={meIdx}
+							profilesById={profilesById}
+							submitting={submitting}
+							onDone={onEndSpecialBuild}
+						/>
+					)}
 				</>
 			)}
 
@@ -1522,7 +1569,9 @@ function GameBody() {
 								: undefined
 						}
 						build={
-							buildTool && isMyActiveTurn && !tradePanelOpen
+							buildTool &&
+							(isMyActiveTurn || isMySpecialBuild) &&
+							!tradePanelOpen
 								? {
 										meIdx,
 										tool: buildTool,
@@ -1675,6 +1724,7 @@ function GameBody() {
 						playerOrder={game.player_order}
 						profilesById={profilesById}
 						submitting={submitting}
+						bankOnly={isMySpecialBuild}
 						onSend={onProposeTrade}
 						onSendBank={onBankTrade}
 						onCancel={() => setTradePanelOpen(false)}
@@ -2074,6 +2124,46 @@ function RoadBuildingStatus({
 		<View style={styles.actionBar}>
 			<View style={styles.mainLoopRow}>
 				<Text style={styles.mainLoopStatus}>{status}</Text>
+			</View>
+		</View>
+	)
+}
+
+function SpecialBuildBar({
+	game,
+	gameState,
+	meIdx,
+	profilesById,
+	submitting,
+	onDone,
+}: {
+	game: NonNullable<ReturnType<typeof useGame>['game']>
+	gameState: NonNullable<ReturnType<typeof useGame>['gameState']>
+	meIdx: number
+	profilesById: Record<string, Profile>
+	submitting: boolean
+	onDone: () => void
+}) {
+	const phase = gameState.phase
+	if (phase.kind !== 'special_build') return null
+	const actorIdx = phase.queue[0]
+	const isMe = actorIdx === meIdx
+	const actorName = isMe
+		? 'You'
+		: (profilesById[game.player_order[actorIdx]]?.username ?? 'Player')
+	return (
+		<View style={styles.actionBar}>
+			<View style={styles.mainLoopRow}>
+				<Text style={styles.mainLoopStatus} numberOfLines={2}>
+					{isMe
+						? 'Special build — build, buy, or bank trade'
+						: `Special build — ${actorName} is building`}
+				</Text>
+				{isMe && (
+					<Button onPress={onDone} loading={submitting}>
+						Done building
+					</Button>
+				)}
 			</View>
 		</View>
 	)

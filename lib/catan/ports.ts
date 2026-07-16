@@ -135,3 +135,27 @@ export function applyBankTradeToPlayer(
 		return { ...p, resources: next }
 	})
 }
+
+// Can the player execute at least one bank/port trade right now — i.e. do they
+// hold enough of some resource to meet an available ratio's give side? Used by
+// the special build phase to decide whether a queued player has any action
+// (a bank trade down is how an over-7 player dodges a 7 under `moreThanSeven`).
+export function canBankTrade(state: GameState, playerIdx: number): boolean {
+	const p = state.players[playerIdx]
+	if (!p) return false
+	const specialty =
+		p.bonus === 'specialist' ? (p.specialistResource ?? null) : null
+	for (const kind of availableBankOptions(state, playerIdx)) {
+		const base = ratioOf(kind)
+		const locked = lockedGiveResource(kind)
+		if (locked) {
+			if (p.resources[locked] >= base) return true
+		} else {
+			for (const r of RESOURCES) {
+				const need = specialty === r ? Math.max(2, base - 1) : base
+				if (p.resources[r] >= need) return true
+			}
+		}
+	}
+	return false
+}

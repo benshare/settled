@@ -9,7 +9,7 @@ import {
 	populistBonusVPFor,
 	winVPThresholdFor,
 } from './bonus'
-import { canAffordPurchase, validBuildRoadEdges } from './build'
+import { canAffordPurchase, handSize, validBuildRoadEdges } from './build'
 import {
 	curseOf,
 	effectiveKnightsPlayed,
@@ -49,9 +49,21 @@ export function canBuyDevCard(
 	currentTurn: number
 ): boolean {
 	if (!state.config.devCards) return false
-	if (state.phase.kind !== 'main') return false
-	if (currentTurn !== meIdx) return false
 	if (state.devDeck.length === 0) return false
+	// Buyable on your own main turn, or in your special-build slot (subject to
+	// the `moreThanSeven` gate). Every other phase blocks the buy.
+	if (state.phase.kind === 'main') {
+		if (currentTurn !== meIdx) return false
+	} else if (state.phase.kind === 'special_build') {
+		if (state.phase.queue[0] !== meIdx) return false
+		if (
+			state.config.extraBuild.moreThanSeven &&
+			handSize(state.players[meIdx]) <= 7
+		)
+			return false
+	} else {
+		return false
+	}
 	return canAffordPurchase(state.players[meIdx], 'dev_card')
 }
 

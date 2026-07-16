@@ -8,6 +8,7 @@ import {
 	vertexStateOf,
 	type DiceRoll,
 	type DieFace,
+	type ExtraBuildConfig,
 	type GameState,
 	type ResourceHand,
 } from './types'
@@ -85,6 +86,29 @@ export function distributeResources(
 // Straight rotation in the main phase.
 export function nextMainTurn(currentTurn: number, playerCount: number): number {
 	return (currentTurn + 1) % playerCount
+}
+
+// Seat "across the table" from `idx` in an n-seat circle. Even n → the exact
+// opposite (n/2 ahead); odd n → ⌊n/2⌋ ahead (the slot just past directly
+// across), so the mapping stays a clean per-round permutation for both.
+export function acrossSeat(idx: number, n: number): number {
+	return (idx + Math.floor(n / 2)) % n
+}
+
+// The special-build order after the player at `enderIdx` finishes their turn,
+// front (acts first) to back. Empty when the SBP doesn't apply (2-4 players or
+// disabled). See lib/catan/CLAUDE.md and GameConfig.extraBuild. Auto-skip of
+// players who cannot act is applied by the caller, not here.
+export function specialBuildQueue(
+	eb: ExtraBuildConfig,
+	enderIdx: number,
+	n: number
+): number[] {
+	if (n <= 4 || !eb.enabled) return []
+	if (eb.buildPhases === 'across') return [acrossSeat(enderIdx, n)]
+	// 'every': all other players, clockwise from the next seat (the next roller
+	// is included — they special-build, then take their normal turn).
+	return Array.from({ length: n - 1 }, (_, k) => (enderIdx + 1 + k) % n)
 }
 
 // Per-hex per-player gain from a roll. Same rules as `distributeResources`
