@@ -2,6 +2,7 @@
 // `npx tsx dev/check-catan-bonuses.ts`. Exits 0 on success; throws on the
 // first failure. One `test*` function per bonus.
 
+import { boardFor, type Vertex } from '../lib/catan/board'
 import type { BonusId } from '../lib/catan/bonuses'
 import {
 	BRICKLAYER_COST,
@@ -38,6 +39,20 @@ import {
 	tappedKnightsOf,
 	underdogMultiplierFor,
 	winVPThresholdFor,
+	// Set 3
+	canInvest,
+	fenceRoadCost,
+	investorPayout,
+	investorTokenCount,
+	isFenceReservedAgainst,
+	isValidMagicTarget,
+	isValidMerchantAddon,
+	isValidSmithSwap,
+	magicDiscardCount,
+	plutocratGain,
+	resolveHauntGhosts,
+	smithCostOf,
+	smithPortResourceOk,
 } from '../lib/catan/bonus'
 import {
 	canAffordPurchase,
@@ -779,6 +794,229 @@ function testDealNoDuplicates() {
 	}
 }
 
+// --- Set 3 -----------------------------------------------------------------
+
+function hand(p: Partial<ResourceHand>): ResourceHand {
+	return { ...emptyHand(), ...p }
+}
+
+// --- plutocrat --------------------------------------------------------------
+
+function testPlutocrat() {
+	equal(plutocratGain(hand({ wheat: 2 })).wheat, 3, '2 → 3')
+	equal(plutocratGain(hand({ wheat: 3 })).wheat, 4, '3 → 4')
+	equal(plutocratGain(hand({ ore: 4 })).ore, 6, '4 → 6')
+	equal(plutocratGain(hand({ ore: 5 })).ore, 7, '5 → 7')
+	equal(plutocratGain(hand({ wood: 1 })).wood, 1, '1 → 1 (no bump)')
+	// Per-resource, independent.
+	const g = plutocratGain(hand({ wheat: 4, wood: 1, ore: 2 }))
+	equal(g.wheat, 6, 'wheat 4 → 6')
+	equal(g.wood, 1, 'wood 1 unchanged')
+	equal(g.ore, 3, 'ore 2 → 3')
+}
+
+// --- smith ------------------------------------------------------------------
+
+function testSmith() {
+	// Road (1 brick) swap 1 → 1 ore.
+	const road = smithCostOf('smith', hand({ brick: 1, wood: 1 }), 1)
+	equal(road.brick, 0, 'brick moved off')
+	equal(road.ore, 1, 'brick paid as ore')
+	equal(road.wood, 1, 'wood unchanged')
+	// City (3 ore) swap 2 → 1 ore + 2 brick.
+	const city = smithCostOf('smith', hand({ wheat: 2, ore: 3 }), 2)
+	equal(city.ore, 1, 'ore reduced by 2')
+	equal(city.brick, 2, '2 ore paid as brick')
+	equal(city.wheat, 2, 'wheat unchanged')
+	// Non-smith unaffected.
+	equal(
+		smithCostOf('bricklayer', hand({ brick: 1, wood: 1 }), 1).brick,
+		1,
+		'non-smith standard cost'
+	)
+	assert(isValidSmithSwap(hand({ ore: 3, wheat: 2 }), 3), 'swap 3 ≤ 3 ore ok')
+	assert(!isValidSmithSwap(hand({ ore: 3, wheat: 2 }), 4), 'swap 4 > 3 bad')
+	assert(!isValidSmithSwap(hand({ brick: 1, wood: 1 }), -1), 'negative bad')
+	// Port lock relaxation.
+	assert(
+		smithPortResourceOk('brick', 'ore', true),
+		'smith: ore at brick port'
+	)
+	assert(!smithPortResourceOk('brick', 'ore', false), 'non-smith: locked')
+	assert(smithPortResourceOk(null, 'sheep', false), 'no lock ok')
+	assert(!smithPortResourceOk('brick', 'sheep', true), 'sheep not brick/ore')
+}
+
+// --- merchant ---------------------------------------------------------------
+
+function testMerchant() {
+	// Valid: single give of wheat, resource matches, take sums to count.
+	assert(
+		isValidMerchantAddon(hand({ wheat: 3 }), {
+			resource: 'wheat',
+			count: 2,
+			take: hand({ ore: 1, sheep: 1 }),
+		}),
+		'valid single-give merchant add-on'
+	)
+	// Bad: give mixes two resources → no single input.
+	assert(
+		!isValidMerchantAddon(hand({ wheat: 3, wood: 3 }), {
+			resource: 'wheat',
+			count: 1,
+			take: hand({ ore: 1 }),
+		}),
+		'multi-resource give rejected'
+	)
+	// Bad: resource doesn't match the give.
+	assert(
+		!isValidMerchantAddon(hand({ wheat: 3 }), {
+			resource: 'ore',
+			count: 1,
+			take: hand({ sheep: 1 }),
+		}),
+		'resource mismatch rejected'
+	)
+	// Bad: take sum != count.
+	assert(
+		!isValidMerchantAddon(hand({ wheat: 3 }), {
+			resource: 'wheat',
+			count: 2,
+			take: hand({ ore: 1 }),
+		}),
+		'take/count mismatch rejected'
+	)
+}
+
+// --- fencer -----------------------------------------------------------------
+
+function testFencer() {
+	equal(fenceRoadCost('wood').wood, 1, 'wood cost 1 wood')
+	equal(fenceRoadCost('wood').brick, 0, 'wood cost 0 brick')
+	equal(fenceRoadCost('brick').brick, 1, 'brick cost 1 brick')
+	const s = baseState()
+	const edge = boardFor(s.variant).edges[0]
+	const withToken: GameState = { ...s, fenceTokens: { [edge]: 1 } }
+	assert(
+		isFenceReservedAgainst(withToken, edge, 0),
+		'reserved against non-owner'
+	)
+	assert(!isFenceReservedAgainst(withToken, edge, 1), 'owner may build there')
+	assert(
+		!isFenceReservedAgainst(withToken, boardFor(s.variant).edges[1], 0),
+		'unfenced edge is free'
+	)
+}
+
+// --- investor ---------------------------------------------------------------
+
+function testInvestor() {
+	const base: PlayerState = {
+		...baseState().players[0],
+		bonus: 'investor',
+		resources: hand({ wheat: 3, ore: 2 }),
+	}
+	assert(!canInvest(base, 'wheat', 2), 'VP < 3 blocks invest')
+	assert(canInvest(base, 'wheat', 3), 'VP ≥ 3 + 3 wheat ok')
+	assert(!canInvest(base, 'ore', 3), '2 ore insufficient')
+	const nonInvestor: PlayerState = { ...base, bonus: 'smith' }
+	assert(!canInvest(nonInvestor, 'wheat', 5), 'non-investor cannot')
+	// Token count + payout + cap.
+	const withTokens: PlayerState = {
+		...base,
+		investments: { wheat: 2, ore: 1 },
+	}
+	equal(investorTokenCount(withTokens), 3, '3 tokens')
+	const payout = investorPayout(withTokens)
+	equal(payout.wheat, 2, 'wheat payout = tokens')
+	equal(payout.ore, 1, 'ore payout = tokens')
+	equal(payout.wood, 0, 'no wood tokens')
+	const capped: PlayerState = {
+		...base,
+		resources: hand({ wheat: 9 }),
+		investments: { wheat: 3, ore: 3 },
+	}
+	assert(!canInvest(capped, 'wheat', 5), '6 tokens = cap reached')
+}
+
+// --- magician ---------------------------------------------------------------
+
+function testMagician() {
+	assert(isValidMagicTarget(8, 6), '6 valid vs actual 8')
+	assert(isValidMagicTarget(7, 2), 'phantom 2 valid')
+	assert(!isValidMagicTarget(8, 8), 'same as actual invalid')
+	assert(!isValidMagicTarget(8, 13), 'out of range invalid')
+	assert(!isValidMagicTarget(8, 1), 'below range invalid')
+	equal(magicDiscardCount(8, 6), 3, '|8-6|+1 = 3')
+	equal(magicDiscardCount(8, 9), 2, '|8-9|+1 = 2')
+	equal(magicDiscardCount(7, 2), 6, '|7-2|+1 = 6')
+}
+
+// --- haunt ------------------------------------------------------------------
+
+function testHaunt() {
+	const s0 = setBonus(baseState(), 0, 'haunt')
+	const board = boardFor(s0.variant)
+	// Pick a vertex with at least one neighbor.
+	const spot = board.vertices.find(
+		(v) => board.neighborVertices[v].length > 0
+	)!
+	const neighbor = board.neighborVertices[spot][0]
+	const other = board.vertices.find(
+		(v) => v !== spot && !board.neighborVertices[spot].includes(v)
+	)!
+	const s1: GameState = {
+		...s0,
+		players: s0.players.map((p, i) =>
+			i === 0 ? { ...p, hauntSpots: [spot, other] as Vertex[] } : p
+		),
+		// Player 1 occupies a NEIGHBOR of `spot` → spot becomes unbuildable.
+		vertices: {
+			[neighbor]: {
+				occupied: true,
+				player: 1,
+				building: 'settlement',
+				placedTurn: 0,
+			},
+		},
+	}
+	const res = resolveHauntGhosts(s1)
+	const spotVs = res.state.vertices[spot]
+	assert(spotVs?.occupied && spotVs.building === 'ghost', 'ghost spawned')
+	assert(
+		res.spawned.some((g) => g.vertex === spot && g.player === 0),
+		'spawn event recorded'
+	)
+	assert(
+		!res.state.players[0].hauntSpots?.includes(spot),
+		'blocked spot consumed'
+	)
+
+	// Direct build on a spot → no ghost, spot dropped.
+	const s2: GameState = {
+		...s0,
+		players: s0.players.map((p, i) =>
+			i === 0 ? { ...p, hauntSpots: [spot] as Vertex[] } : p
+		),
+		vertices: {
+			[spot]: {
+				occupied: true,
+				player: 1,
+				building: 'settlement',
+				placedTurn: 0,
+			},
+		},
+	}
+	const res2 = resolveHauntGhosts(s2)
+	equal(res2.spawned.length, 0, 'no ghost on direct build')
+	equal(res2.state.players[0].hauntSpots?.length, 0, 'spot dropped')
+	const stillTheirs = res2.state.vertices[spot]
+	assert(
+		stillTheirs?.occupied && stillTheirs.player === 1,
+		'builder keeps the vertex'
+	)
+}
+
 function main() {
 	const tests: Array<[string, () => void]> = [
 		['bonusOf sparse', testBonusOf],
@@ -803,6 +1041,13 @@ function main() {
 		['set2: forger', testForger],
 		['set2: scout', testScout],
 		['set2: accountant split check', testAccountantSplit],
+		['set3: plutocrat', testPlutocrat],
+		['set3: smith', testSmith],
+		['set3: merchant', testMerchant],
+		['set3: fencer', testFencer],
+		['set3: investor', testInvestor],
+		['set3: magician', testMagician],
+		['set3: haunt ghosts', testHaunt],
 		['deal: no duplicate offers', testDealNoDuplicates],
 	]
 	for (const [name, fn] of tests) {

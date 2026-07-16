@@ -107,8 +107,15 @@ export function totalVP(
 	let vp = 0
 	for (const v of Object.values(state.vertices)) {
 		if (v?.occupied && v.player === playerIdx) {
+			// Ghosts (haunt bonus) are worth no points.
 			vp +=
-				v.building === 'super_city' ? 3 : v.building === 'city' ? 2 : 1
+				v.building === 'ghost'
+					? 0
+					: v.building === 'super_city'
+						? 3
+						: v.building === 'city'
+							? 2
+							: 1
 		}
 	}
 	if (state.largestArmy === playerIdx) vp += 2

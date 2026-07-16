@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { Circle, G } from 'react-native-svg'
-import { edgeEndpoints, type Edge, type Vertex } from './board'
+import { boardFor, edgeEndpoints, type Edge, type Vertex } from './board'
+import { fenceOwner } from './bonus'
 import {
 	validBuildCityVertices,
 	validBuildRoadEdges,
@@ -9,9 +10,10 @@ import {
 	type BuildKind,
 } from './build'
 import { EdgePiece } from './EdgePiece'
+import { validSettlementVertices } from './placement'
 import { playerColors } from './palette'
 import { PulsingDot } from './PulsingDot'
-import type { GameState } from './types'
+import { edgeStateOf, type GameState } from './types'
 import { VertexPiece } from './VertexPiece'
 
 // `super_city` is the metropolitan upgrade (cities → super_city). It uses
@@ -19,7 +21,12 @@ import { VertexPiece } from './VertexPiece'
 // on the metropolitan bonus. `explorer_road` is the post_placement free-road
 // pulse for the explorer bonus — same edge validity as a paid road, just
 // gated on a different phase.
-export type BoardTool = BuildKind | 'super_city' | 'explorer_road'
+export type BoardTool =
+	| BuildKind
+	| 'super_city'
+	| 'explorer_road'
+	| 'fence_token'
+	| 'haunt_spot'
 
 export type BuildSelection =
 	| { kind: 'road'; edge: Edge }
@@ -27,6 +34,16 @@ export type BuildSelection =
 	| { kind: 'city'; vertex: Vertex }
 	| { kind: 'super_city'; vertex: Vertex }
 	| { kind: 'explorer_road'; edge: Edge }
+	| { kind: 'fence_token'; edge: Edge }
+	| { kind: 'haunt_spot'; vertex: Vertex }
+
+// Empty, unfenced edges — where a fencer may drop a reserve token during
+// post_placement (any edge, no connectivity required).
+function fenceableEdges(state: GameState): Edge[] {
+	return boardFor(state.variant).edges.filter(
+		(e) => !edgeStateOf(state, e).occupied && fenceOwner(state, e) === null
+	)
+}
 
 // Overlay inside BoardSvg's transformed group. When a build tool is active,
 // pulses all valid spots for the current player and surfaces invisible hit
@@ -40,6 +57,7 @@ export function BuildLayer({
 	vertexPositions,
 	onSelect,
 	pending,
+	selected,
 }: {
 	state: GameState
 	meIdx: number
@@ -51,12 +69,18 @@ export function BuildLayer({
 	// as a solid preview piece so the choice is visible while the confirm bar
 	// is up, instead of blending into the pulsing valid-spot dots.
 	pending?: BuildSelection | null
+	// Multi-select highlight (haunt_spot): vertices already tapped this pick.
+	selected?: Vertex[]
 }) {
 	if (!tool) return null
 	const inMain = state.phase.kind === 'main'
 	const inPostPlacement = state.phase.kind === 'post_placement'
 	const inRoadBuilding = state.phase.kind === 'road_building'
-	if (tool === 'explorer_road') {
+	if (
+		tool === 'explorer_road' ||
+		tool === 'fence_token' ||
+		tool === 'haunt_spot'
+	) {
 		if (!inPostPlacement) return null
 	} else if (tool === 'road') {
 		// Road Building dev card places free roads outside the main phase.
@@ -65,6 +89,82 @@ export function BuildLayer({
 		if (!inMain) return null
 	}
 	const color = playerColors[meIdx] ?? playerColors[0]
+
+	if (tool === 'fence_token') {
+		const valids = fenceableEdges(state)
+		return (
+			<G>
+				{valids.map((e) => {
+					const [va, vb] = edgeEndpoints(e)
+					const pa = vertexPositions[va]
+					const pb = vertexPositions[vb]
+					const mx = (pa.x + pb.x) / 2
+					const my = (pa.y + pb.y) / 2
+					return (
+						<Fragment key={e}>
+							<PulsingDot
+								cx={mx}
+								cy={my}
+								r={layoutS * 0.16}
+								color={color}
+							/>
+							<Circle
+								cx={mx}
+								cy={my}
+								r={layoutS * 0.42}
+								fill="transparent"
+								onPress={() =>
+									onSelect({ kind: 'fence_token', edge: e })
+								}
+							/>
+						</Fragment>
+					)
+				})}
+			</G>
+		)
+	}
+
+	if (tool === 'haunt_spot') {
+		const valids = validSettlementVertices(state)
+		const picked = new Set(selected ?? [])
+		return (
+			<G>
+				{valids.map((v) => {
+					const p = vertexPositions[v]
+					const isPicked = picked.has(v)
+					return (
+						<Fragment key={v}>
+							{isPicked ? (
+								<VertexPiece
+									cx={p.x}
+									cy={p.y}
+									size={layoutS}
+									building="ghost"
+									player={meIdx}
+								/>
+							) : (
+								<PulsingDot
+									cx={p.x}
+									cy={p.y}
+									r={layoutS * 0.22}
+									color={color}
+								/>
+							)}
+							<Circle
+								cx={p.x}
+								cy={p.y}
+								r={layoutS * 0.45}
+								fill="transparent"
+								onPress={() =>
+									onSelect({ kind: 'haunt_spot', vertex: v })
+								}
+							/>
+						</Fragment>
+					)
+				})}
+			</G>
+		)
+	}
 
 	if (tool === 'road' || tool === 'explorer_road') {
 		const valids = validBuildRoadEdges(state, meIdx)

@@ -13,6 +13,7 @@
 //   the current holder; falling below 5 releases the bonus.
 
 import { boardFor, edgeEndpoints, type Edge, type Vertex } from './board'
+import { isGhost } from './bonus'
 import { effectiveLongestRoadLength } from './curses'
 import { edgeStateOf, vertexStateOf, type GameState } from './types'
 
@@ -53,7 +54,8 @@ function walk(
 	// still valid up to here — `used.size` is the length of the trail that
 	// arrived at `head`).
 	const vs = vertexStateOf(state, head)
-	if (vs.occupied && vs.player !== playerIdx) return used.size
+	// A ghost (haunt bonus) is transparent — it never blocks pass-through.
+	if (vs.occupied && vs.player !== playerIdx && !isGhost(vs)) return used.size
 
 	let best = used.size
 	for (const e of boardFor(state.variant).adjacentEdges[head]) {

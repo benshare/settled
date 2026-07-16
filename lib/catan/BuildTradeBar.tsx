@@ -34,12 +34,14 @@ export function BuildTradeBar({
 	superCityEnabled,
 	superCityActive,
 	accountantEnabled,
+	investorEnabled,
 	onSelect,
 	onTradePress,
 	onBuyDevCard,
 	onBuyCarpenterVP,
 	onSelectSuperCity,
 	onAccountant,
+	onInvest,
 }: {
 	active: BuildKind | 'super_city' | null
 	enabled: BuildEnablement
@@ -63,12 +65,16 @@ export function BuildTradeBar({
 	// Accountant-bonus-only button. Undefined = not accountant and hidden.
 	// Boolean = liquidation modal can be opened.
 	accountantEnabled?: boolean
+	// Investor-bonus-only button. Undefined = not investor and hidden.
+	// Boolean = eligible to set aside a trio (≥3 VP, ≥3 of a resource, cap).
+	investorEnabled?: boolean
 	onSelect: (tool: BuildKind) => void
 	onTradePress: () => void
 	onBuyDevCard: () => void
 	onBuyCarpenterVP?: () => void
 	onSelectSuperCity?: () => void
 	onAccountant?: () => void
+	onInvest?: () => void
 }) {
 	const color = playerColors[meIdx] ?? playerColors[0]
 	const tradeInteractive = tradeEnabled || tradeActive
@@ -117,6 +123,12 @@ export function BuildTradeBar({
 						<AccountantButton
 							enabled={accountantEnabled}
 							onPress={() => onAccountant?.()}
+						/>
+					)}
+					{investorEnabled !== undefined && (
+						<InvestorButton
+							enabled={investorEnabled}
+							onPress={() => onInvest?.()}
 						/>
 					)}
 				</View>
@@ -341,6 +353,42 @@ function AccountantButton({
 	)
 }
 
+function InvestorButton({
+	enabled,
+	onPress,
+}: {
+	enabled: boolean
+	onPress: () => void
+}) {
+	return (
+		<Pressable
+			disabled={!enabled}
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.iconBtn,
+				styles.investorBtn,
+				!enabled && styles.iconBtnDisabled,
+				pressed && enabled && styles.pressed,
+			]}
+			accessibilityLabel="Investor: set aside 3 of a resource for a token"
+		>
+			<Ionicons
+				name="trending-up-outline"
+				size={20}
+				color={enabled ? colors.white : colors.textMuted}
+			/>
+			<Text
+				style={[
+					styles.carpenterCostLabel,
+					!enabled && { color: colors.textMuted },
+				]}
+			>
+				Invest
+			</Text>
+		</Pressable>
+	)
+}
+
 const styles = StyleSheet.create({
 	row: {
 		flexDirection: 'row',
@@ -414,6 +462,12 @@ const styles = StyleSheet.create({
 	accountantBtn: {
 		backgroundColor: '#5A3F8F',
 		borderColor: '#322357',
+		flexDirection: 'column',
+		gap: 2,
+	},
+	investorBtn: {
+		backgroundColor: '#1F7A5A',
+		borderColor: '#0F3E2D',
 		flexDirection: 'column',
 		gap: 2,
 	},

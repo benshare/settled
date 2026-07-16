@@ -27,6 +27,7 @@ import {
 	type PlayerState,
 	type ResourceHand,
 	type Variant,
+	type VertexState,
 } from './types'
 
 export function bonusOf(
@@ -569,3 +570,279 @@ export function roadRemovalSplitsBuildings(
 }
 
 export const ACCOUNTANT_DEV_CARD_REFUND = DEV_CARD_REFUND
+
+// === Set 3 ==================================================================
+
+// --- Plutocrat --------------------------------------------------------------
+//
+// Every time the player gains ≥ 2 of a single resource from a roll, they gain
+// 50% more of that resource (floor). Applied per-resource to the player's
+// SUMMED roll gain (so 2→3, 3→4, 4→6, 5→7). Only the real roll distribution
+// feeds this — the per-hex breakdown used by the forger stays on base gains.
+export function plutocratGain(hand: ResourceHand): ResourceHand {
+	const out = { ...hand }
+	for (const r of RESOURCES) {
+		if (out[r] >= 2) out[r] += Math.floor(out[r] / 2)
+	}
+	return out
+}
+
+// --- Merchant ---------------------------------------------------------------
+//
+// Any bank/port trade may carry a 1:1 side-conversion: pay `count` extra of
+// the trade's single input resource to receive `count` resources of choice.
+// The base trade must give exactly one resource type so "the input resource"
+// is unambiguous.
+export type MerchantAddon = {
+	resource: Resource
+	count: number
+	take: ResourceHand
+}
+
+// The single resource on the give side, or null if the give is empty or mixes
+// resource types.
+export function singleGiveResource(give: ResourceHand): Resource | null {
+	let found: Resource | null = null
+	for (const r of RESOURCES) {
+		if (give[r] > 0) {
+			if (found) return null
+			found = r
+		}
+	}
+	return found
+}
+
+export function isValidMerchantAddon(
+	give: ResourceHand,
+	addon: MerchantAddon
+): boolean {
+	if (!Number.isInteger(addon.count) || addon.count < 1) return false
+	const giveRes = singleGiveResource(give)
+	if (giveRes === null || addon.resource !== giveRes) return false
+	let takeTotal = 0
+	for (const r of RESOURCES) {
+		if (addon.take[r] < 0) return false
+		takeTotal += addon.take[r]
+	}
+	return takeTotal === addon.count
+}
+
+// --- Fencer -----------------------------------------------------------------
+//
+// Reserve two edges at post_placement. No other player may build a road on a
+// reserved edge; the fencer builds there for 1 card (Wood or Brick). The
+// build-side validity (own token + connectivity) lives in build.ts to avoid a
+// bonus ↔ build import cycle.
+export const FENCE_TOKEN_COUNT = 2
+
+export function fenceOwner(state: GameState, edge: Edge): number | null {
+	const owner = state.fenceTokens?.[edge]
+	return owner === undefined ? null : owner
+}
+
+// Is `edge` off-limits to `playerIdx` because someone ELSE has fenced it?
+export function isFenceReservedAgainst(
+	state: GameState,
+	edge: Edge,
+	playerIdx: number
+): boolean {
+	const owner = fenceOwner(state, edge)
+	return owner !== null && owner !== playerIdx
+}
+
+export function fenceRoadCost(pay: 'wood' | 'brick'): ResourceHand {
+	return {
+		brick: pay === 'brick' ? 1 : 0,
+		wood: pay === 'wood' ? 1 : 0,
+		sheep: 0,
+		wheat: 0,
+		ore: 0,
+	}
+}
+
+// --- Smith ------------------------------------------------------------------
+//
+// Brick ↔ Ore are interchangeable for builds, dev cards, and ports. Every
+// standard build/dev cost has at most one of {brick, ore} non-zero, so a
+// smith "swap" just shifts N units of that component onto the other resource.
+type SmithResource = 'brick' | 'ore'
+
+function smithComponent(cost: ResourceHand): SmithResource | null {
+	if (cost.brick > 0) return 'brick'
+	if (cost.ore > 0) return 'ore'
+	return null
+}
+
+export function isValidSmithSwap(
+	standardCost: ResourceHand,
+	swap: number
+): boolean {
+	if (!Number.isInteger(swap) || swap < 0) return false
+	const comp = smithComponent(standardCost)
+	if (comp === null) return swap === 0
+	return swap <= standardCost[comp]
+}
+
+// Effective cost after a smith moves `swap` units of the cost's brick/ore
+// component onto the other resource. Non-smith or out-of-range → standard.
+export function smithCostOf(
+	bonus: BonusId | undefined,
+	standardCost: ResourceHand,
+	swap: number
+): ResourceHand {
+	if (bonus !== 'smith') return standardCost
+	const comp = smithComponent(standardCost)
+	if (comp === null) return standardCost
+	const k = Math.max(0, Math.min(swap ?? 0, standardCost[comp]))
+	const other: SmithResource = comp === 'brick' ? 'ore' : 'brick'
+	const out = { ...standardCost }
+	out[comp] = standardCost[comp] - k
+	out[other] = standardCost[other] + k
+	return out
+}
+
+// For a 2:1 specific port, a smith may satisfy a brick lock with ore (and
+// vice versa). Generic 3:1/4:1 ports have no lock, so this is a no-op there.
+export function smithPortResourceOk(
+	locked: Resource | null,
+	giveResource: Resource,
+	isSmith: boolean
+): boolean {
+	if (locked === null || giveResource === locked) return true
+	if (!isSmith) return false
+	if (locked === 'brick' && giveResource === 'ore') return true
+	if (locked === 'ore' && giveResource === 'brick') return true
+	return false
+}
+
+// --- Investor ---------------------------------------------------------------
+//
+// Once total VP ≥ 3, set aside 3 of a resource for an investment token (max 6
+// tokens / 18 cards). Each token pays 1 of its resource at the start of the
+// investor's turn. Set-aside cards live in `player.investments`, immune to
+// steal and excluded from the 7-discard hand size.
+export const INVESTOR_ACTIVATE_VP = 3
+export const INVESTOR_MAX_TOKENS = 6
+export const INVEST_TRIO = 3
+
+export function investorTokenCount(p: PlayerState): number {
+	const inv = p.investments
+	if (!inv) return 0
+	let n = 0
+	for (const r of RESOURCES) n += inv[r] ?? 0
+	return n
+}
+
+// `totalVP` is passed in (not imported) to avoid a bonus ↔ dev import cycle.
+export function canInvest(
+	p: PlayerState,
+	resource: Resource,
+	totalVP: number
+): boolean {
+	if (p.bonus !== 'investor') return false
+	if (totalVP < INVESTOR_ACTIVATE_VP) return false
+	if (p.resources[resource] < INVEST_TRIO) return false
+	return investorTokenCount(p) < INVESTOR_MAX_TOKENS
+}
+
+// Resources granted at the start of the investor's turn: 1 per token.
+export function investorPayout(p: PlayerState): ResourceHand {
+	const out: ResourceHand = { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 }
+	const inv = p.investments
+	if (!inv) return out
+	for (const r of RESOURCES) out[r] = inv[r] ?? 0
+	return out
+}
+
+// --- Magician ---------------------------------------------------------------
+//
+// After the magician's own roll resolves, discard N+1 cards to additionally
+// receive production as if a number N away from the actual result had rolled.
+// Direction is the magician's choice; the phantom number must land in 2..12.
+export function magicianCanCast(p: PlayerState): boolean {
+	return p.bonus === 'magician'
+}
+
+export function isValidMagicTarget(
+	actualTotal: number,
+	target: number
+): boolean {
+	if (!Number.isInteger(target)) return false
+	if (target < 2 || target > 12) return false
+	return target !== actualTotal
+}
+
+export function magicDiscardCount(actualTotal: number, target: number): number {
+	return Math.abs(target - actualTotal) + 1
+}
+
+// --- Haunt ------------------------------------------------------------------
+//
+// Secretly pick two buildable vertices at post_placement. When a spot becomes
+// unbuildable because a NEIGHBOR is built (the spot itself still empty), a
+// 0-VP, non-interfering ghost settlement spawns there. A direct build on the
+// spot yields no ghost.
+export const HAUNT_SPOT_COUNT = 2
+
+export function isGhost(vs: VertexState): boolean {
+	return vs.occupied && vs.building === 'ghost'
+}
+
+// Spawn ghosts for every haunt player whose secret spots have become blocked,
+// to a fixed point (a spawned ghost can block another spot). Pure: returns the
+// updated state plus the list of spawns for event logging. Callers run this
+// after any settlement build.
+export function resolveHauntGhosts(state: GameState): {
+	state: GameState
+	spawned: { player: number; vertex: Vertex }[]
+} {
+	const board = boardFor(state.variant)
+	let vertices = state.vertices
+	let players = state.players
+	const spawned: { player: number; vertex: Vertex }[] = []
+
+	let changed = true
+	while (changed) {
+		changed = false
+		for (let idx = 0; idx < players.length; idx++) {
+			const p = players[idx]
+			if (p.bonus !== 'haunt') continue
+			const spots = p.hauntSpots
+			if (!spots || spots.length === 0) continue
+			const remaining: Vertex[] = []
+			for (const spot of spots) {
+				const vs = vertices[spot]
+				if (vs?.occupied) continue // built on directly → drop, no ghost
+				const blocked = board.neighborVertices[spot].some(
+					(n) => !!vertices[n]?.occupied
+				)
+				if (!blocked) {
+					remaining.push(spot)
+					continue
+				}
+				vertices = {
+					...vertices,
+					[spot]: {
+						occupied: true,
+						player: idx,
+						building: 'ghost',
+						placedTurn: state.round,
+					},
+				}
+				spawned.push({ player: idx, vertex: spot })
+				changed = true
+			}
+			if (remaining.length !== spots.length) {
+				players = players.map((pp, i) =>
+					i === idx ? { ...pp, hauntSpots: remaining } : pp
+				)
+				changed = true
+			}
+		}
+	}
+
+	if (vertices === state.vertices && players === state.players) {
+		return { state, spawned }
+	}
+	return { state: { ...state, vertices, players }, spawned }
+}

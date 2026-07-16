@@ -39,7 +39,54 @@ export function VertexPiece({
 			/>
 		)
 	}
+	if (building === 'ghost') {
+		return (
+			<Ghost cx={cx} cy={cy} size={size} color={color} stroke={stroke} />
+		)
+	}
 	return <City cx={cx} cy={cy} size={size} color={color} stroke={stroke} />
+}
+
+// A ghost (haunt bonus) reads as a spectral settlement: same silhouette as a
+// settlement, drawn translucent with a dashed outline so it's clearly a
+// non-scoring, non-solid piece.
+function Ghost({
+	cx,
+	cy,
+	size,
+	color,
+	stroke,
+}: {
+	cx: number
+	cy: number
+	size: number
+	color: string
+	stroke: number
+}) {
+	const h = size * 0.42
+	const w = size * 0.36
+	const roof = h * 0.4
+	const top = cy - h / 2
+	const bot = cy + h / 2
+	const eave = top + roof
+	const points = [
+		[cx, top],
+		[cx + w / 2, eave],
+		[cx + w / 2, bot],
+		[cx - w / 2, bot],
+		[cx - w / 2, eave],
+	]
+	return (
+		<Polygon
+			points={points.map((p) => p.join(',')).join(' ')}
+			fill={color}
+			fillOpacity={0.35}
+			stroke={pieceStroke}
+			strokeWidth={stroke}
+			strokeDasharray={`${size * 0.06},${size * 0.05}`}
+			strokeLinejoin="round"
+		/>
+	)
 }
 
 function Settlement({

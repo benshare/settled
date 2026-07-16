@@ -250,21 +250,31 @@ type GamesStore = {
 
 	// `useBricklayer`: pay 4 Brick instead of the standard cost. Ignored by
 	// the edge if the caller doesn't have the bricklayer bonus.
+	// `smithSwap`: units of the cost's brick/ore component to pay in the other
+	// resource (smith bonus). `fencePay`: when building on the fencer's own
+	// reserved edge, pay 1 of this resource instead of 1 wood + 1 brick.
 	buildRoad: (
 		gameId: string,
 		edge: string,
-		useBricklayer?: boolean
+		opts?: {
+			useBricklayer?: boolean
+			smithSwap?: number
+			fencePay?: 'wood' | 'brick'
+		}
 	) => Promise<ActionResult>
 	buildSettlement: (
 		gameId: string,
 		vertex: string,
-		useBricklayer?: boolean
+		opts?: { useBricklayer?: boolean; smithSwap?: number }
 	) => Promise<ActionResult>
 	buildCity: (
 		gameId: string,
 		vertex: string,
-		useBricklayer?: boolean,
-		swapDelta?: number
+		opts?: {
+			useBricklayer?: boolean
+			swapDelta?: number
+			smithSwap?: number
+		}
 	) => Promise<ActionResult>
 
 	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
@@ -280,16 +290,21 @@ type GamesStore = {
 	acceptTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 	cancelTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 	rejectTrade: (gameId: string, offerId: string) => Promise<ActionResult>
+	// `merchant`: pay `count` extra of the single give resource for `count`
+	// resources of choice (merchant bonus). Ignored by the edge for non-
+	// merchant players.
 	bankTrade: (
 		gameId: string,
 		give: ResourceHand,
-		receive: ResourceHand
+		receive: ResourceHand,
+		merchant?: { resource: Resource; count: number; take: ResourceHand }
 	) => Promise<ActionResult & { ratio?: 2 | 3 | 4 }>
 
 	buyDevCard: (
 		gameId: string,
 		useBricklayer?: boolean,
-		scoutSwap?: { from: Resource; to: Resource }
+		scoutSwap?: { from: Resource; to: Resource },
+		smithSwap?: number
 	) => Promise<ActionResult>
 	playDevCard: (
 		gameId: string,
@@ -351,6 +366,29 @@ type GamesStore = {
 
 	// Scout: confirm which of the 3 peeked dev cards to keep.
 	confirmScoutCard: (gameId: string, index: number) => Promise<ActionResult>
+
+	// --- Set-3 bonus actions -------------------------------------------------
+
+	// Fencer: place one of the 2 post-placement reserved-edge tokens.
+	placeFenceToken: (gameId: string, edge: string) => Promise<ActionResult>
+
+	// Haunt: secretly commit the two ghost-spawn locations at post-placement.
+	setHauntSpots: (
+		gameId: string,
+		spots: [string, string]
+	) => Promise<ActionResult>
+
+	// Investor: set aside 3 of a resource for an investment token.
+	invest: (gameId: string, resource: Resource) => Promise<ActionResult>
+
+	// Magician: after your own roll, discard N+1 cards to also produce as if
+	// `target` had rolled; or skip the window.
+	castMagic: (
+		gameId: string,
+		target: number,
+		discard: ResourceHand
+	) => Promise<ActionResult>
+	skipMagic: (gameId: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -607,38 +645,42 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async buildRoad(gameId, edge, useBricklayer) {
+	async buildRoad(gameId, edge, opts) {
 		return callGameService(
 			{
 				action: 'build_road',
 				game_id: gameId,
 				edge,
-				use_bricklayer: !!useBricklayer,
+				use_bricklayer: !!opts?.useBricklayer,
+				smith_swap: opts?.smithSwap ?? 0,
+				fence_pay: opts?.fencePay ?? null,
 			},
 			"Couldn't build road"
 		)
 	},
 
-	async buildSettlement(gameId, vertex, useBricklayer) {
+	async buildSettlement(gameId, vertex, opts) {
 		return callGameService(
 			{
 				action: 'build_settlement',
 				game_id: gameId,
 				vertex,
-				use_bricklayer: !!useBricklayer,
+				use_bricklayer: !!opts?.useBricklayer,
+				smith_swap: opts?.smithSwap ?? 0,
 			},
 			"Couldn't build settlement"
 		)
 	},
 
-	async buildCity(gameId, vertex, useBricklayer, swapDelta) {
+	async buildCity(gameId, vertex, opts) {
 		return callGameService(
 			{
 				action: 'build_city',
 				game_id: gameId,
 				vertex,
-				use_bricklayer: !!useBricklayer,
-				swap_wheat_to_ore: swapDelta ?? 0,
+				use_bricklayer: !!opts?.useBricklayer,
+				swap_wheat_to_ore: opts?.swapDelta ?? 0,
+				smith_swap: opts?.smithSwap ?? 0,
 			},
 			"Couldn't build city"
 		)
@@ -701,22 +743,29 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async bankTrade(gameId, give, receive) {
+	async bankTrade(gameId, give, receive, merchant) {
 		const { error, data } = await callGameService(
-			{ action: 'bank_trade', game_id: gameId, give, receive },
+			{
+				action: 'bank_trade',
+				game_id: gameId,
+				give,
+				receive,
+				merchant: merchant ?? null,
+			},
 			"Couldn't trade with bank"
 		)
 		if (error) return { error }
 		return { error: null, ratio: data.ratio as 2 | 3 | 4 | undefined }
 	},
 
-	async buyDevCard(gameId, useBricklayer, scoutSwap) {
+	async buyDevCard(gameId, useBricklayer, scoutSwap, smithSwap) {
 		return callGameService(
 			{
 				action: 'buy_dev_card',
 				game_id: gameId,
 				use_bricklayer: !!useBricklayer,
 				scout_swap: scoutSwap ?? null,
+				smith_swap: smithSwap ?? 0,
 			},
 			"Couldn't buy dev card"
 		)
@@ -799,6 +848,41 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'confirm_scout_card', game_id: gameId, index },
 			"Couldn't confirm scout card"
+		)
+	},
+
+	async placeFenceToken(gameId, edge) {
+		return callGameService(
+			{ action: 'place_fence_token', game_id: gameId, edge },
+			"Couldn't place fence token"
+		)
+	},
+
+	async setHauntSpots(gameId, spots) {
+		return callGameService(
+			{ action: 'set_haunt_spots', game_id: gameId, spots },
+			"Couldn't set haunt spots"
+		)
+	},
+
+	async invest(gameId, resource) {
+		return callGameService(
+			{ action: 'invest', game_id: gameId, resource },
+			"Couldn't invest"
+		)
+	},
+
+	async castMagic(gameId, target, discard) {
+		return callGameService(
+			{ action: 'cast_magic', game_id: gameId, target, discard },
+			"Couldn't cast magic"
+		)
+	},
+
+	async skipMagic(gameId) {
+		return callGameService(
+			{ action: 'skip_magic', game_id: gameId },
+			"Couldn't skip magic"
 		)
 	},
 }))

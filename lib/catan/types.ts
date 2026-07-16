@@ -207,6 +207,17 @@ export type PlayerState = {
 	// `forger`: set to true once the player has used their per-turn token
 	// move. Reset on end_turn.
 	forgerMovedThisTurn?: boolean
+	// `investor`: set-aside investment tokens keyed by resource. Each token
+	// cost 3 of that resource and pays 1 back at the start of the player's
+	// turn. Capped at 6 tokens total (18 cards). Set-aside cards live here,
+	// NOT in `resources`, so they're immune to steal and don't count toward
+	// the 7-discard hand limit. Sparse — only written for investor players.
+	investments?: Partial<Record<Resource, number>>
+	// `haunt`: two vertices the player secretly picked at post_placement.
+	// Soft-hidden — stored in shared state but never rendered for other
+	// players (same model as opponents' hidden VP dev cards). Entries are
+	// consumed as they resolve (a ghost spawns, or the spot is built on).
+	hauntSpots?: Vertex[]
 }
 
 // Per-player card hand during the select_bonus phase. `offered` is the two
@@ -279,6 +290,12 @@ export type Phase =
 			pending: {
 				specialist: number[]
 				explorer?: Partial<Record<number, number>>
+				// `fencer` maps fencer player indices to the number of edge
+				// tokens they still owe (2 → 0). `haunt` lists haunt player
+				// indices owing their two-spot pick. Both drain in parallel
+				// with specialist/explorer.
+				fencer?: Partial<Record<number, number>>
+				haunt?: number[]
 			}
 	  }
 	// `roll` is the default pre-roll state. For gambler players, after the
@@ -347,6 +364,18 @@ export type Phase =
 			resume: Phase
 			queue: ForgerPickEntry[]
 	  }
+	// Magician post-roll window. Opens after the roller's own roll fully
+	// resolves (distribution + any 7-chain) when the roller is a magician.
+	// Fires before any curio/forger reactions (the magician is the active
+	// player and its phantom production doesn't affect their inputs). The
+	// magician either `cast_magic` (discard N+1 to also produce as if a
+	// number N away from `roll` was rolled) or `skip_magic`, then `resume`.
+	| {
+			kind: 'magician_pick'
+			resume: Phase
+			roller: number
+			roll: DiceRoll
+	  }
 	| { kind: 'game_over' }
 
 export type ForgerPickEntry = {
@@ -372,6 +401,11 @@ export type GameState = {
 	// Optional so games created before ports existed still parse. New games
 	// always seed 9 ports; readers should default a missing array to empty.
 	ports?: Port[]
+	// `fencer` bonus: edges reserved by a fence token, keyed by edge → owning
+	// player index. No other player may build a road on a reserved edge; the
+	// owner builds there for 1 card (Wood or Brick). The token is deleted when
+	// the owner finally builds the road. Sparse — absent when no fencer plays.
+	fenceTokens?: Partial<Record<Edge, number>>
 	config: GameConfig
 	// Top = index 0. Edge function splices from the front on buy. `[]` when
 	// config.devCards is off.

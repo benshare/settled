@@ -127,6 +127,84 @@ export function ExplorerStatusBanner({
 	)
 }
 
+// Fencer's "reserve 2 edges" affordance. Inline banner + counter; edge picks
+// happen on the board (BuildLayer tool='fence_token').
+export function FenceStatusBanner({
+	remaining,
+	waitingOn,
+}: {
+	remaining: number
+	waitingOn: string[]
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	if (remaining <= 0 && waitingOn.length === 0) return null
+	return (
+		<View style={styles.banner}>
+			{remaining > 0 ? (
+				<Text style={styles.bannerText}>
+					Fencer: tap {remaining} more edge
+					{remaining === 1 ? '' : 's'} to reserve for your roads.
+				</Text>
+			) : (
+				<Text style={styles.bannerText}>
+					Waiting on {waitingOn.join(', ')} to place fence tokens.
+				</Text>
+			)}
+		</View>
+	)
+}
+
+// Haunt's "pick 2 secret spots" affordance. The player taps two buildable
+// vertices on the board (BuildLayer tool='haunt_spot'); this banner tracks the
+// count and commits both with Confirm. Spots stay private to the player.
+export function HauntStatusBanner({
+	picked,
+	waitingOn,
+	submitting,
+	onConfirm,
+}: {
+	picked: number
+	waitingOn: string[]
+	submitting: boolean
+	onConfirm: () => void
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View style={styles.banner}>
+			{picked < 2 ? (
+				<Text style={styles.bannerText}>
+					Haunt: secretly tap {2 - picked} more spot
+					{picked === 1 ? '' : 's'} — ghosts appear if they're
+					blocked.
+				</Text>
+			) : (
+				<View style={styles.bannerRow}>
+					<Text style={styles.bannerText}>
+						Haunt: 2 spots chosen.
+					</Text>
+					<Pressable
+						onPress={onConfirm}
+						disabled={submitting}
+						style={({ pressed }) => [
+							styles.confirmBtn,
+							pressed && styles.pressed,
+						]}
+					>
+						<Text style={styles.confirmText}>Confirm</Text>
+					</Pressable>
+				</View>
+			)}
+			{waitingOn.length > 0 && (
+				<Text style={styles.bannerSub}>
+					Waiting on {waitingOn.join(', ')}.
+				</Text>
+			)}
+		</View>
+	)
+}
+
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
 		backdrop: {
@@ -197,6 +275,29 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.sm,
 			fontWeight: '600',
 			color: colors.text,
+		},
+		bannerRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: spacing.sm,
+		},
+		bannerSub: {
+			fontSize: font.xs,
+			color: colors.textSecondary,
+			fontStyle: 'italic',
+			marginTop: spacing.xs,
+		},
+		confirmBtn: {
+			paddingVertical: spacing.xs,
+			paddingHorizontal: spacing.md,
+			borderRadius: radius.sm,
+			backgroundColor: colors.brand,
+		},
+		confirmText: {
+			fontSize: font.sm,
+			fontWeight: '700',
+			color: colors.white,
 		},
 		pressed: {
 			opacity: 0.8,

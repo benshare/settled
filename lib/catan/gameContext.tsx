@@ -255,6 +255,8 @@ function rowToState(row: Record<string, unknown>): GameState {
 		phase: row.phase as GameState['phase'],
 		robber: row.robber as GameState['robber'],
 		ports: (row.ports as GameState['ports']) ?? [],
+		fenceTokens:
+			(row.fence_tokens as GameState['fenceTokens']) ?? undefined,
 		config: row.config as GameState['config'],
 		devDeck: (row.dev_deck as GameState['devDeck']) ?? [],
 		largestArmy: (row.largest_army as GameState['largestArmy']) ?? null,

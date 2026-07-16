@@ -1,5 +1,10 @@
 import { useAuth } from '@/lib/auth'
-import { RESOURCES, type Hex, type Resource } from '@/lib/catan/board'
+import {
+	RESOURCES,
+	type Hex,
+	type Resource,
+	type Vertex,
+} from '@/lib/catan/board'
 import { BoardLegend } from '@/lib/catan/BoardLegend'
 import { ActionLog } from '@/lib/catan/ActionLog'
 import { BoardView } from '@/lib/catan/BoardView'
@@ -7,8 +12,11 @@ import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
 import {
 	canBuildMoreSuperCities,
+	canInvest,
 	canShepherdSwap,
+	fenceOwner,
 	forgerActive,
+	investorTokenCount,
 	ritualCardCost,
 } from '@/lib/catan/bonus'
 import {
@@ -21,9 +29,16 @@ import {
 } from '@/lib/catan/CurioPickOverlay'
 import { ForgerMovePicker } from '@/lib/catan/ForgerMovePicker'
 import { ForgerPickOverlay } from '@/lib/catan/ForgerPickOverlay'
+import { InvestPicker } from '@/lib/catan/InvestPicker'
+import {
+	MagicianPickOverlay,
+	MagicianWaitOverlay,
+} from '@/lib/catan/MagicianPickOverlay'
 import { MetropolitanCostPicker } from '@/lib/catan/MetropolitanCostPicker'
 import {
 	ExplorerStatusBanner,
+	FenceStatusBanner,
+	HauntStatusBanner,
 	SpecialistDeclareOverlay,
 	SpecialistWaitOverlay,
 } from '@/lib/catan/PostPlacementOverlay'
@@ -37,13 +52,15 @@ import {
 	canAffordPurchase,
 	canAffordMetropolitanCost,
 	shouldUseBricklayer,
+	smithSwapFor,
 	validBuildCityVertices,
 	validBuildRoadEdges,
 	validBuildSettlementVertices,
 	validBuildSuperCityVertices,
 	type BuildKind,
+	type PurchaseKind,
 } from '@/lib/catan/build'
-import type { BuildSelection } from '@/lib/catan/BuildLayer'
+import type { BoardTool, BuildSelection } from '@/lib/catan/BuildLayer'
 import { BuildTradeBar, type BuildCurseHints } from '@/lib/catan/BuildTradeBar'
 import { curseBuildReason } from '@/lib/catan/curses'
 import { canBuyDevCard } from '@/lib/catan/dev'
@@ -188,6 +205,11 @@ function GameBody() {
 	const moveForgerToken = useGamesStore((s) => s.moveForgerToken)
 	const pickForgerTarget = useGamesStore((s) => s.pickForgerTarget)
 	const confirmScoutCard = useGamesStore((s) => s.confirmScoutCard)
+	const placeFenceToken = useGamesStore((s) => s.placeFenceToken)
+	const setHauntSpots = useGamesStore((s) => s.setHauntSpots)
+	const invest = useGamesStore((s) => s.invest)
+	const castMagic = useGamesStore((s) => s.castMagic)
+	const skipMagic = useGamesStore((s) => s.skipMagic)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
@@ -215,6 +237,11 @@ function GameBody() {
 		preview?: BuildSelection
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
+	// Haunt: the vertices the local haunt player has tapped (needs 2) during
+	// post_placement, before committing. Investor: whether the invest picker
+	// modal is open.
+	const [hauntPicks, setHauntPicks] = useState<string[]>([])
+	const [investOpen, setInvestOpen] = useState(false)
 	const [bonusPaneCollapsed, setBonusPaneCollapsed] = useState(false)
 	// Game-over overlay starts open when the game is complete; user can
 	// dismiss to inspect the final board and reopen via FinalScoreButton.
@@ -517,6 +544,21 @@ function GameBody() {
 		gameState?.phase.kind === 'initial_placement'
 	const inPostPlacement =
 		game.status === 'active' && gameState?.phase.kind === 'post_placement'
+	// The active board tool for the local player during post_placement. Every
+	// start-of-game bonus resolves after specialists declare (their overlay
+	// blocks the board first). One bonus per player, so at most one applies.
+	const postPlacementTool: BoardTool | null =
+		inPostPlacement && gameState?.phase.kind === 'post_placement'
+			? gameState.phase.pending.specialist.length > 0
+				? null
+				: (gameState.phase.pending.explorer?.[meIdx] ?? 0) > 0
+					? 'explorer_road'
+					: (gameState.phase.pending.fencer?.[meIdx] ?? 0) > 0
+						? 'fence_token'
+						: (gameState.phase.pending.haunt ?? []).includes(meIdx)
+							? 'haunt_spot'
+							: null
+			: null
 	const inMainLoop =
 		game.status === 'active' &&
 		(gameState?.phase.kind === 'roll' || gameState?.phase.kind === 'main')
@@ -636,6 +678,48 @@ function GameBody() {
 		if (res.error) notify('Placement failed', res.error)
 	}
 
+	async function onPlaceFenceToken(edge: string) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await placeFenceToken(game.id, edge)
+		setSubmitting(false)
+		if (res.error) notify('Placement failed', res.error)
+	}
+
+	async function onSetHauntSpots(spots: [string, string]) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await setHauntSpots(game.id, spots)
+		setSubmitting(false)
+		if (res.error) notify('Haunt failed', res.error)
+		else setHauntPicks([])
+	}
+
+	async function onInvest(resource: Resource) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await invest(game.id, resource)
+		setSubmitting(false)
+		if (res.error) notify('Invest failed', res.error)
+		else setInvestOpen(false)
+	}
+
+	async function onCastMagic(target: number, discard: ResourceHandType) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await castMagic(game.id, target, discard)
+		setSubmitting(false)
+		if (res.error) notify('Magic failed', res.error)
+	}
+
+	async function onSkipMagic() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await skipMagic(game.id)
+		setSubmitting(false)
+		if (res.error) notify('Skip failed', res.error)
+	}
+
 	async function onBuildSuperCity(vertex: string, swapDelta: number) {
 		if (!game) return
 		setSubmitting(true)
@@ -699,8 +783,14 @@ function GameBody() {
 	async function onBuyDevCard() {
 		if (!game) return
 		setSubmitting(true)
-		const use = myPlayer ? shouldUseBricklayer(myPlayer, 'dev_card') : false
-		const res = await buyDevCard(game.id, use)
+		const smith = myPlayer?.bonus === 'smith'
+		const use =
+			!smith && myPlayer
+				? shouldUseBricklayer(myPlayer, 'dev_card')
+				: false
+		const smithSwap =
+			smith && myPlayer ? smithSwapFor(myPlayer, 'dev_card') : 0
+		const res = await buyDevCard(game.id, use, undefined, smithSwap)
 		setSubmitting(false)
 		if (res.error) notify('Buy failed', res.error)
 	}
@@ -736,6 +826,23 @@ function GameBody() {
 			onPlaceExplorerRoad(sel.edge)
 			return
 		}
+		// Fencer: tapping an empty edge drops a reserve token immediately.
+		if (sel.kind === 'fence_token') {
+			onPlaceFenceToken(sel.edge)
+			return
+		}
+		// Haunt: toggle the tapped vertex in the local 2-spot selection; the
+		// banner's Confirm button commits both at once.
+		if (sel.kind === 'haunt_spot') {
+			setHauntPicks((prev) =>
+				prev.includes(sel.vertex)
+					? prev.filter((v) => v !== sel.vertex)
+					: prev.length >= 2
+						? prev
+						: [...prev, sel.vertex]
+			)
+			return
+		}
 		// Metropolitan: route city / super_city through the wheat→ore picker
 		// so the player can choose how to pay.
 		if (
@@ -759,18 +866,47 @@ function GameBody() {
 	async function commitBuild(
 		sel: Exclude<
 			BuildSelection,
-			{ kind: 'explorer_road' } | { kind: 'super_city' }
+			| { kind: 'explorer_road' }
+			| { kind: 'super_city' }
+			| { kind: 'fence_token' }
+			| { kind: 'haunt_spot' }
 		>
 	) {
-		if (!game) return
+		if (!game || !gameState) return
 		setSubmitting(true)
-		const use = myPlayer ? shouldUseBricklayer(myPlayer, sel.kind) : false
-		const res =
-			sel.kind === 'road'
-				? await buildRoad(game.id, sel.edge, use)
-				: sel.kind === 'settlement'
-					? await buildSettlement(game.id, sel.vertex, use)
-					: await buildCity(game.id, sel.vertex, use)
+		// Smith pays with a brick↔ore swap; everyone else may fall back to the
+		// bricklayer alt cost. One bonus per player, so these never combine.
+		const buildOpts = (
+			kind: PurchaseKind
+		): { useBricklayer?: boolean; smithSwap?: number } =>
+			myPlayer?.bonus === 'smith'
+				? { smithSwap: smithSwapFor(myPlayer, kind) }
+				: {
+						useBricklayer: myPlayer
+							? shouldUseBricklayer(myPlayer, kind)
+							: false,
+					}
+		let res
+		if (sel.kind === 'road') {
+			// Fencer building on their own reserved edge → 1-card discount.
+			const onOwnFence =
+				myPlayer?.bonus === 'fencer' &&
+				fenceOwner(gameState, sel.edge) === meIdx
+			res = onOwnFence
+				? await buildRoad(game.id, sel.edge, {
+						fencePay:
+							myPlayer!.resources.wood > 0 ? 'wood' : 'brick',
+					})
+				: await buildRoad(game.id, sel.edge, buildOpts('road'))
+		} else if (sel.kind === 'settlement') {
+			res = await buildSettlement(
+				game.id,
+				sel.vertex,
+				buildOpts('settlement')
+			)
+		} else {
+			res = await buildCity(game.id, sel.vertex, buildOpts('city'))
+		}
 		setSubmitting(false)
 		if (res.error) {
 			notify('Build failed', res.error)
@@ -863,11 +999,16 @@ function GameBody() {
 
 	async function onBankTrade(
 		give: ResourceHandType,
-		receive: ResourceHandType
+		receive: ResourceHandType,
+		merchant?: {
+			resource: Resource
+			count: number
+			take: ResourceHandType
+		}
 	) {
 		if (!game) return
 		setSubmitting(true)
-		const res = await bankTrade(game.id, give, receive)
+		const res = await bankTrade(game.id, give, receive, merchant)
 		setSubmitting(false)
 		if (res.error) notify('Bank trade failed', res.error)
 		else setTradePanelOpen(false)
@@ -1015,6 +1156,18 @@ function GameBody() {
 									? accountantEnabled
 									: undefined
 							}
+							investorEnabled={
+								myPlayer?.bonus === 'investor'
+									? canBuildThisTurn &&
+										RESOURCES.some((r) =>
+											canInvest(
+												myPlayer,
+												r,
+												selfVP[meIdx]
+											)
+										)
+									: undefined
+							}
 							onSelect={onBuildToolSelect}
 							onTradePress={onTradePress}
 							onBuyDevCard={onBuyDevCard}
@@ -1023,6 +1176,7 @@ function GameBody() {
 								onBuildToolSelect('super_city')
 							}
 							onAccountant={() => setAccountantOpen(true)}
+							onInvest={() => setInvestOpen(true)}
 						/>
 					)}
 					{inRoadBuilding && (
@@ -1107,21 +1261,69 @@ function GameBody() {
 					// Specialist done — explorer placements happen inline on
 					// the board; surface a status banner so the player sees
 					// the count.
-					const myRemaining = explorer[meIdx] ?? 0
-					const otherWaiting = Object.entries(explorer)
-						.filter(
-							([idx, n]) => Number(idx) !== meIdx && (n ?? 0) > 0
-						)
-						.map(
-							([idx]) =>
-								profilesById[game.player_order[Number(idx)]]
-									?.username ?? 'Player'
-						)
-					if (myRemaining > 0 || otherWaiting.length > 0) {
+					const fencer = phase.pending.fencer ?? {}
+					const haunt = phase.pending.haunt ?? []
+					const nameOf = (i: number) =>
+						profilesById[game.player_order[i]]?.username ?? 'Player'
+					const explorerRemaining = explorer[meIdx] ?? 0
+					const fencerRemaining = fencer[meIdx] ?? 0
+					const amHauntPending = haunt.includes(meIdx)
+					const othersWaiting = Array.from(
+						new Set<number>([
+							...Object.entries(explorer)
+								.filter(
+									([i, n]) =>
+										Number(i) !== meIdx && (n ?? 0) > 0
+								)
+								.map(([i]) => Number(i)),
+							...Object.entries(fencer)
+								.filter(
+									([i, n]) =>
+										Number(i) !== meIdx && (n ?? 0) > 0
+								)
+								.map(([i]) => Number(i)),
+							...haunt.filter((i) => i !== meIdx),
+						])
+					).map(nameOf)
+
+					if (explorerRemaining > 0) {
 						return (
 							<ExplorerStatusBanner
-								remaining={myRemaining}
-								waitingOn={otherWaiting}
+								remaining={explorerRemaining}
+								waitingOn={othersWaiting}
+							/>
+						)
+					}
+					if (fencerRemaining > 0) {
+						return (
+							<FenceStatusBanner
+								remaining={fencerRemaining}
+								waitingOn={othersWaiting}
+							/>
+						)
+					}
+					if (amHauntPending) {
+						return (
+							<HauntStatusBanner
+								picked={hauntPicks.length}
+								waitingOn={othersWaiting}
+								submitting={submitting}
+								onConfirm={() => {
+									if (hauntPicks.length === 2) {
+										onSetHauntSpots([
+											hauntPicks[0],
+											hauntPicks[1],
+										])
+									}
+								}}
+							/>
+						)
+					}
+					if (othersWaiting.length > 0) {
+						return (
+							<ExplorerStatusBanner
+								remaining={0}
+								waitingOn={othersWaiting}
 							/>
 						)
 					}
@@ -1190,6 +1392,40 @@ function GameBody() {
 					/>
 				)}
 
+			{gameState && gameState.phase.kind === 'magician_pick' && (
+				<>
+					{gameState.phase.roller === meIdx && myPlayer ? (
+						<MagicianPickOverlay
+							hand={myPlayer.resources}
+							actualTotal={
+								gameState.phase.roll.a + gameState.phase.roll.b
+							}
+							submitting={submitting}
+							onSkip={onSkipMagic}
+							onCast={onCastMagic}
+						/>
+					) : (
+						<MagicianWaitOverlay
+							rollerName={
+								profilesById[
+									game.player_order[gameState.phase.roller]
+								]?.username ?? 'Player'
+							}
+						/>
+					)}
+				</>
+			)}
+
+			{investOpen && myPlayer && (
+				<InvestPicker
+					hand={myPlayer.resources}
+					tokenCount={investorTokenCount(myPlayer)}
+					submitting={submitting}
+					onCancel={() => setInvestOpen(false)}
+					onConfirm={onInvest}
+				/>
+			)}
+
 			{ritualOpen && myPlayer && gameState && (
 				<RitualistPicker
 					hand={myPlayer.resources}
@@ -1244,8 +1480,7 @@ function GameBody() {
 								const res = await buildCity(
 									game.id,
 									metroPending.vertex,
-									false,
-									swapDelta
+									{ swapDelta }
 								)
 								setSubmitting(false)
 								if (res.error) {
@@ -1301,18 +1536,16 @@ function GameBody() {
 											onSelect: onBuildSpotSelect,
 											pending: pendingConfirm?.preview,
 										}
-									: inPostPlacement &&
-										  gameState.phase.kind ===
-												'post_placement' &&
-										  (gameState.phase.pending.explorer?.[
-												meIdx
-										  ] ?? 0) > 0 &&
-										  gameState.phase.pending.specialist
-												.length === 0
+									: postPlacementTool
 										? {
 												meIdx,
-												tool: 'explorer_road' as const,
+												tool: postPlacementTool,
 												onSelect: onBuildSpotSelect,
+												selected:
+													postPlacementTool ===
+													'haunt_spot'
+														? (hauntPicks as Vertex[])
+														: undefined,
 											}
 										: undefined
 						}

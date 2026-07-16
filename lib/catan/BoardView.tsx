@@ -20,6 +20,7 @@ import {
 } from './board'
 import { BuildLayer, type BoardTool, type BuildSelection } from './BuildLayer'
 import { EdgePiece } from './EdgePiece'
+import { FenceTokenPiece } from './FenceTokenPiece'
 import { ForgerTokenPiece } from './ForgerTokenPiece'
 import { HexTile } from './HexTile'
 import {
@@ -32,7 +33,7 @@ import { PlacementLayer, type PlacementSelection } from './PlacementLayer'
 import { PortBadge } from './PortBadge'
 import { RobberLayer } from './RobberLayer'
 import { RobberPiece } from './RobberPiece'
-import type { GameState } from './types'
+import { edgeStateOf, type GameState } from './types'
 import { VertexPiece } from './VertexPiece'
 
 // Interaction bundles everything the placement overlay needs. Omit to render
@@ -49,6 +50,8 @@ export type BuildInteraction = {
 	onSelect: (selection: BuildSelection) => void
 	// The spot awaiting confirmation, previewed as a solid piece on the board.
 	pending?: BuildSelection | null
+	// Multi-select highlight for the haunt_spot tool (vertices tapped so far).
+	selected?: Vertex[]
 }
 
 export type RobberInteraction = {
@@ -226,6 +229,27 @@ function BoardSvg({
 						/>
 					)
 				})}
+				{Object.entries(state.fenceTokens ?? {}).map(
+					([eid, player]) => {
+						if (player === undefined) return null
+						if (edgeStateOf(state, eid as Edge).occupied)
+							return null
+						const [va, vb] = edgeEndpoints(eid as Edge)
+						const pa = vertexPositions[va]
+						const pb = vertexPositions[vb]
+						return (
+							<FenceTokenPiece
+								key={`fence-${eid}`}
+								x1={pa.x}
+								y1={pa.y}
+								x2={pb.x}
+								y2={pb.y}
+								size={layout.s}
+								player={player}
+							/>
+						)
+					}
+				)}
 				{Object.entries(state.vertices).map(([vid, vs]) => {
 					if (!vs || !vs.occupied) return null
 					const pos = vertexPositions[vid as Vertex]
@@ -286,6 +310,7 @@ function BoardSvg({
 						tool={build.tool}
 						onSelect={build.onSelect}
 						pending={build.pending}
+						selected={build.selected}
 					/>
 				)}
 				{robber && (

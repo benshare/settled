@@ -87,12 +87,17 @@ type BuildRoadBody = {
 	game_id: string
 	edge: string
 	use_bricklayer?: boolean
+	// Smith: units of the cost's brick/ore component paid in the other.
+	smith_swap?: number
+	// Fencer: pay 1 of this resource on the fencer's own reserved edge.
+	fence_pay?: 'wood' | 'brick' | null
 }
 type BuildSettlementBody = {
 	action: 'build_settlement'
 	game_id: string
 	vertex: string
 	use_bricklayer?: boolean
+	smith_swap?: number
 }
 type BuildCityBody = {
 	action: 'build_city'
@@ -103,6 +108,7 @@ type BuildCityBody = {
 	// 0..2). Mutually exclusive with use_bricklayer (both bonuses can't be
 	// held simultaneously).
 	swap_wheat_to_ore?: number
+	smith_swap?: number
 }
 type DiscardBody = {
 	action: 'discard'
@@ -138,12 +144,20 @@ type BankTradeBody = {
 	game_id: string
 	give: unknown
 	receive: unknown
+	// Merchant: pay `count` extra of the single give resource for `count`
+	// resources of choice.
+	merchant?: {
+		resource: unknown
+		count: unknown
+		take: unknown
+	} | null
 }
 type BuyDevCardBody = {
 	action: 'buy_dev_card'
 	game_id: string
 	use_bricklayer?: boolean
 	scout_swap?: { from: unknown; to: unknown } | null
+	smith_swap?: number
 }
 type PlayDevCardBody = {
 	action: 'play_dev_card'
@@ -213,6 +227,31 @@ type ConfirmScoutCardBody = {
 	game_id: string
 	index: unknown
 }
+type PlaceFenceTokenBody = {
+	action: 'place_fence_token'
+	game_id: string
+	edge: string
+}
+type SetHauntSpotsBody = {
+	action: 'set_haunt_spots'
+	game_id: string
+	spots: unknown
+}
+type InvestBody = {
+	action: 'invest'
+	game_id: string
+	resource: unknown
+}
+type CastMagicBody = {
+	action: 'cast_magic'
+	game_id: string
+	target: unknown
+	discard: unknown
+}
+type SkipMagicBody = {
+	action: 'skip_magic'
+	game_id: string
+}
 type Body =
 	| ProposeGameBody
 	| RespondBody
@@ -248,6 +287,11 @@ type Body =
 	| MoveForgerTokenBody
 	| PickForgerTargetBody
 	| ConfirmScoutCardBody
+	| PlaceFenceTokenBody
+	| SetHauntSpotsBody
+	| InvestBody
+	| CastMagicBody
+	| SkipMagicBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -569,7 +613,7 @@ const adjacentEdges = deriveAdjacentEdges(VERTICES, EDGES)
 
 // --- Game state shapes (duplicated from lib/catan/types) -------------------
 
-type VertexBuilding = 'settlement' | 'city' | 'super_city'
+type VertexBuilding = 'settlement' | 'city' | 'super_city' | 'ghost'
 
 type VertexState =
 	| { occupied: false }
@@ -617,6 +661,9 @@ type PlayerState = {
 	shepherdUsedThisTurn?: boolean
 	forgerToken?: Hex
 	forgerMovedThisTurn?: boolean
+	// Set 3.
+	investments?: Partial<Record<Resource, number>>
+	hauntSpots?: Vertex[]
 }
 
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
@@ -969,8 +1016,8 @@ const EXPANDED_NUMBERS = [
 // Tuned so reds never land adjacent (see lib/catan/board comment).
 // deno-fmt-ignore
 const EXPANDED_SPIRAL_SEQUENCE = [
-	6, 11, 8, 9, 6, 5, 3, 6, 11, 2, 10, 5, 12, 4, 10, 9, 11, 5, 3, 4, 2, 3, 9, 8,
-	12, 8, 4, 10,
+	6, 11, 8, 9, 6, 5, 3, 6, 11, 2, 10, 5, 12, 4, 10, 9, 11, 5, 3, 4, 2, 3, 9,
+	8, 12, 8, 4, 10,
 ] as const
 
 const EXPANDED_PORT_KINDS: readonly PortKind[] = [
@@ -1263,6 +1310,8 @@ type Phase =
 			pending: {
 				specialist: number[]
 				explorer?: Partial<Record<number, number>>
+				fencer?: Partial<Record<number, number>>
+				haunt?: number[]
 			}
 	  }
 	| { kind: 'roll'; pending?: { dice: DiceRoll } }
@@ -1297,6 +1346,14 @@ type Phase =
 	// since the next thing might itself be another sub-phase.
 	| { kind: 'curio_pick'; resume: Phase; pending: number[] }
 	| { kind: 'forger_pick'; resume: Phase; queue: ForgerPickEntry[] }
+	// Set 3: magician post-roll window (own roll only). Fires before any
+	// curio/forger reactions.
+	| {
+			kind: 'magician_pick'
+			resume: Phase
+			roller: number
+			roll: DiceRoll
+	  }
 	| { kind: 'game_over' }
 
 type GameState = {
@@ -1308,6 +1365,8 @@ type GameState = {
 	phase: Phase
 	robber: Hex
 	ports?: Port[]
+	// Set 3 fencer: edge → owning fencer player index (reserved road spots).
+	fenceTokens?: Partial<Record<Edge, number>>
 	config: GameConfig
 	devDeck: DevCardId[]
 	largestArmy: number | null
@@ -1406,12 +1465,19 @@ function applyNomadProduce(state: GameState): {
 function resolvePurchaseCost(
 	p: PlayerState,
 	standardCost: ResourceHand,
-	useBricklayer: boolean
+	useBricklayer: boolean,
+	smithSwap: number = 0
 ): ResourceHand | null {
 	if (useBricklayer) {
 		if (p.bonus !== 'bricklayer') return null
 		if (p.resources.brick < BRICKLAYER_COST.brick) return null
 		return BRICKLAYER_COST
+	}
+	if (p.bonus === 'smith') {
+		if (!isValidSmithSwap(standardCost, smithSwap)) return null
+		const cost = smithCostOf(p.bonus, standardCost, smithSwap)
+		if (!canAfford(p.resources, cost)) return null
+		return cost
 	}
 	if (!canAfford(p.resources, standardCost)) return null
 	return standardCost
@@ -1616,7 +1682,8 @@ function isValidSettlementVertex(
 ): boolean {
 	if (vertexStateOf(state, v).occupied) return false
 	for (const n of boardFor(state.variant).neighborVertices[v]) {
-		if (vertexStateOf(state, n).occupied) return false
+		const nvs = vertexStateOf(state, n)
+		if (nvs.occupied && !isGhost(nvs)) return false
 	}
 	if (playerIdx !== undefined) {
 		if (!canPlaceUnderPower(state, playerIdx, v)) return false
@@ -1712,7 +1779,7 @@ function underdogMultiplierFor(
 // function now uses `distributeResourcesByHex` everywhere; this helper is
 // referenced indirectly through the parity check and may return for use
 // when adding non-forger features that don't need per-hex breakdowns.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 function distributeResources(
 	state: GameState,
 	total: number
@@ -1748,6 +1815,12 @@ function distributeResources(
 					ore: 0,
 				})
 			hand[hd.resource] += gain
+		}
+	}
+	for (const idxStr of Object.keys(result)) {
+		const idx = Number(idxStr)
+		if (state.players[idx]?.bonus === 'plutocrat') {
+			result[idx] = plutocratGain(result[idx])
 		}
 	}
 	return result
@@ -1849,7 +1922,8 @@ function roadConnectsVia(
 	vertex: Vertex
 ): boolean {
 	const vs = vertexStateOf(state, vertex)
-	if (vs.occupied) return vs.player === playerIdx
+	// A ghost (haunt bonus) is transparent — never blocks road chaining.
+	if (vs.occupied && !isGhost(vs)) return vs.player === playerIdx
 	for (const e of boardFor(state.variant).adjacentEdges[vertex]) {
 		if (e === edge) continue
 		const es = edgeStateOf(state, e)
@@ -1864,6 +1938,8 @@ function isValidBuildRoadEdge(
 	edge: Edge
 ): boolean {
 	if (edgeStateOf(state, edge).occupied) return false
+	// A fence token (fencer bonus) reserves the edge for its owner.
+	if (isFenceReservedAgainst(state, edge, playerIdx)) return false
 	if (!canBuildMoreRoads(state, playerIdx)) return false
 	const [a, b] = edgeEndpoints(edge)
 	return (
@@ -1880,7 +1956,8 @@ function isValidBuildSettlementVertex(
 	if (!canBuildMoreSettlements(state, playerIdx)) return false
 	if (vertexStateOf(state, vertex).occupied) return false
 	for (const n of boardFor(state.variant).neighborVertices[vertex]) {
-		if (vertexStateOf(state, n).occupied) return false
+		const nvs = vertexStateOf(state, n)
+		if (nvs.occupied && !isGhost(nvs)) return false
 	}
 	if (!canPlaceUnderPower(state, playerIdx, vertex)) return false
 	if (!settlementKeepsYouthOK(state, playerIdx, vertex)) return false
@@ -2025,7 +2102,7 @@ function validBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
 			}
 		)
 		if (!ownsVertex && !hasAdjOwnRoad) continue
-		if (vs.occupied && vs.player !== meIdx) continue
+		if (vs.occupied && vs.player !== meIdx && !isGhost(vs)) continue
 		for (const e of boardFor(state.variant).adjacentEdges[v]) {
 			if (seen.has(e)) continue
 			seen.add(e)
@@ -2073,7 +2150,8 @@ function longestRoadWalk(
 	used: Set<Edge>
 ): number {
 	const vs = vertexStateOf(state, head)
-	if (vs.occupied && vs.player !== playerIdx) return used.size
+	// A ghost (haunt bonus) is transparent — never blocks pass-through.
+	if (vs.occupied && vs.player !== playerIdx && !isGhost(vs)) return used.size
 	let best = used.size
 	for (const e of boardFor(state.variant).adjacentEdges[head]) {
 		if (used.has(e)) continue
@@ -2129,7 +2207,13 @@ function totalVP(state: GameState, playerIdx: number): number {
 	for (const v of Object.values(state.vertices)) {
 		if (v?.occupied && v.player === playerIdx) {
 			vp +=
-				v.building === 'super_city' ? 3 : v.building === 'city' ? 2 : 1
+				v.building === 'ghost'
+					? 0
+					: v.building === 'super_city'
+						? 3
+						: v.building === 'city'
+							? 2
+							: 1
 		}
 	}
 	if (state.largestArmy === playerIdx) vp += 2
@@ -2393,6 +2477,216 @@ function roadRemovalSplitsBuildings(
 		}
 	}
 	return myBuildings.some((b) => !visited.has(b))
+}
+
+// --- Set 3 bonus helpers (must match lib/catan/bonus) ----------------------
+
+// Plutocrat: bump every resource gained ≥ 2 of by 50% (floor).
+function plutocratGain(hand: ResourceHand): ResourceHand {
+	const out = { ...hand }
+	for (const r of RESOURCES) {
+		if (out[r] >= 2) out[r] += Math.floor(out[r] / 2)
+	}
+	return out
+}
+
+// Merchant: 1:1 side-conversion attached to a bank trade.
+type MerchantAddon = { resource: Resource; count: number; take: ResourceHand }
+
+function singleGiveResource(give: ResourceHand): Resource | null {
+	let found: Resource | null = null
+	for (const r of RESOURCES) {
+		if (give[r] > 0) {
+			if (found) return null
+			found = r
+		}
+	}
+	return found
+}
+
+function isValidMerchantAddon(
+	give: ResourceHand,
+	addon: MerchantAddon
+): boolean {
+	if (!Number.isInteger(addon.count) || addon.count < 1) return false
+	const giveRes = singleGiveResource(give)
+	if (giveRes === null || addon.resource !== giveRes) return false
+	let takeTotal = 0
+	for (const r of RESOURCES) {
+		if (addon.take[r] < 0) return false
+		takeTotal += addon.take[r]
+	}
+	return takeTotal === addon.count
+}
+
+// Fencer.
+const FENCE_TOKEN_COUNT = 2
+
+function fenceOwner(state: GameState, edge: Edge): number | null {
+	const owner = state.fenceTokens?.[edge]
+	return owner === undefined ? null : owner
+}
+
+function isFenceReservedAgainst(
+	state: GameState,
+	edge: Edge,
+	playerIdx: number
+): boolean {
+	const owner = fenceOwner(state, edge)
+	return owner !== null && owner !== playerIdx
+}
+
+function fenceRoadCost(pay: 'wood' | 'brick'): ResourceHand {
+	return {
+		brick: pay === 'brick' ? 1 : 0,
+		wood: pay === 'wood' ? 1 : 0,
+		sheep: 0,
+		wheat: 0,
+		ore: 0,
+	}
+}
+
+// Smith: brick ↔ ore fungible for builds, dev cards, ports.
+function smithComponent(cost: ResourceHand): 'brick' | 'ore' | null {
+	if (cost.brick > 0) return 'brick'
+	if (cost.ore > 0) return 'ore'
+	return null
+}
+
+function isValidSmithSwap(standardCost: ResourceHand, swap: number): boolean {
+	if (!Number.isInteger(swap) || swap < 0) return false
+	const comp = smithComponent(standardCost)
+	if (comp === null) return swap === 0
+	return swap <= standardCost[comp]
+}
+
+function smithCostOf(
+	bonus: BonusId | undefined,
+	standardCost: ResourceHand,
+	swap: number
+): ResourceHand {
+	if (bonus !== 'smith') return standardCost
+	const comp = smithComponent(standardCost)
+	if (comp === null) return standardCost
+	const k = Math.max(0, Math.min(swap ?? 0, standardCost[comp]))
+	const other: 'brick' | 'ore' = comp === 'brick' ? 'ore' : 'brick'
+	const out = { ...standardCost }
+	out[comp] = standardCost[comp] - k
+	out[other] = standardCost[other] + k
+	return out
+}
+
+function smithPortResourceOk(
+	locked: Resource | null,
+	giveResource: Resource,
+	isSmith: boolean
+): boolean {
+	if (locked === null || giveResource === locked) return true
+	if (!isSmith) return false
+	if (locked === 'brick' && giveResource === 'ore') return true
+	if (locked === 'ore' && giveResource === 'brick') return true
+	return false
+}
+
+// Investor.
+const INVESTOR_ACTIVATE_VP = 3
+const INVESTOR_MAX_TOKENS = 6
+const INVEST_TRIO = 3
+
+function investorTokenCount(p: PlayerState): number {
+	const inv = p.investments
+	if (!inv) return 0
+	let n = 0
+	for (const r of RESOURCES) n += inv[r] ?? 0
+	return n
+}
+
+function canInvest(p: PlayerState, resource: Resource, vp: number): boolean {
+	if (p.bonus !== 'investor') return false
+	if (vp < INVESTOR_ACTIVATE_VP) return false
+	if (p.resources[resource] < INVEST_TRIO) return false
+	return investorTokenCount(p) < INVESTOR_MAX_TOKENS
+}
+
+function investorPayout(p: PlayerState): ResourceHand {
+	const out: ResourceHand = { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 }
+	const inv = p.investments
+	if (!inv) return out
+	for (const r of RESOURCES) out[r] = inv[r] ?? 0
+	return out
+}
+
+// Magician.
+function isValidMagicTarget(actualTotal: number, target: number): boolean {
+	if (!Number.isInteger(target)) return false
+	if (target < 2 || target > 12) return false
+	return target !== actualTotal
+}
+
+function magicDiscardCount(actualTotal: number, target: number): number {
+	return Math.abs(target - actualTotal) + 1
+}
+
+// Haunt.
+const HAUNT_SPOT_COUNT = 2
+
+function isGhost(vs: VertexState): boolean {
+	return vs.occupied && vs.building === 'ghost'
+}
+
+function resolveHauntGhosts(state: GameState): {
+	state: GameState
+	spawned: { player: number; vertex: Vertex }[]
+} {
+	const board = boardFor(state.variant)
+	let vertices = state.vertices
+	let players = state.players
+	const spawned: { player: number; vertex: Vertex }[] = []
+
+	let changed = true
+	while (changed) {
+		changed = false
+		for (let idx = 0; idx < players.length; idx++) {
+			const p = players[idx]
+			if (p.bonus !== 'haunt') continue
+			const spots = p.hauntSpots
+			if (!spots || spots.length === 0) continue
+			const remaining: Vertex[] = []
+			for (const spot of spots) {
+				const vs = vertices[spot]
+				if (vs?.occupied) continue
+				const blocked = board.neighborVertices[spot].some(
+					(n) => !!vertices[n]?.occupied
+				)
+				if (!blocked) {
+					remaining.push(spot)
+					continue
+				}
+				vertices = {
+					...vertices,
+					[spot]: {
+						occupied: true,
+						player: idx,
+						building: 'ghost',
+						placedTurn: state.round,
+					},
+				}
+				spawned.push({ player: idx, vertex: spot })
+				changed = true
+			}
+			if (remaining.length !== spots.length) {
+				players = players.map((pp, i) =>
+					i === idx ? { ...pp, hauntSpots: remaining } : pp
+				)
+				changed = true
+			}
+		}
+	}
+
+	if (vertices === state.vertices && players === state.players) {
+		return { state, spawned }
+	}
+	return { state: { ...state, vertices, players }, spawned }
 }
 
 function vpCardCountsByPlayer(state: GameState): Record<number, number> {
@@ -2681,7 +2975,8 @@ function isValidBankTradeShape(
 	give: ResourceHand,
 	receive: ResourceHand,
 	kind: BankKind,
-	specialistResource: Resource | null = null
+	specialistResource: Resource | null = null,
+	isSmith: boolean = false
 ): boolean {
 	const ratio = effectiveBankRatioFor(kind, give, specialistResource)
 	const locked: Resource | null = kind.startsWith('2:1-')
@@ -2693,7 +2988,8 @@ function isValidBankTradeShape(
 		if (give[r] < 0 || receive[r] < 0) return false
 		if (give[r] > 0 && receive[r] > 0) return false
 		if (give[r] % ratio !== 0) return false
-		if (locked && give[r] > 0 && r !== locked) return false
+		if (give[r] > 0 && !smithPortResourceOk(locked, r, isSmith))
+			return false
 		giveTotal += give[r]
 		receiveTotal += receive[r]
 	}
@@ -2940,6 +3236,9 @@ async function loadGame(
 		phase,
 		robber: stateRow.robber,
 		ports: stateRow.ports ?? [],
+		fenceTokens:
+			(stateRow.fence_tokens as Partial<Record<Edge, number>> | null) ??
+			undefined,
 		config: stateRow.config as GameConfig,
 		devDeck: (stateRow.dev_deck as DevCardId[] | null) ?? [],
 		largestArmy: (stateRow.largest_army as number | null) ?? null,
@@ -3337,18 +3636,26 @@ async function handlePlaceRoad(
 		// so they can resolve their decision. Otherwise go straight to `roll`.
 		const specialistIdxs: number[] = []
 		const explorerOwed: Partial<Record<number, number>> = {}
+		const fencerOwed: Partial<Record<number, number>> = {}
+		const hauntIdxs: number[] = []
 		state.players.forEach((p, i) => {
 			if (p.bonus === 'specialist') specialistIdxs.push(i)
 			if (p.bonus === 'explorer') explorerOwed[i] = 3
+			if (p.bonus === 'fencer') fencerOwed[i] = FENCE_TOKEN_COUNT
+			if (p.bonus === 'haunt') hauntIdxs.push(i)
 		})
 		const explorerHas = Object.keys(explorerOwed).length > 0
+		const fencerHas = Object.keys(fencerOwed).length > 0
+		const hauntHas = hauntIdxs.length > 0
 		const postPlacementPhase: Phase =
-			specialistIdxs.length > 0 || explorerHas
+			specialistIdxs.length > 0 || explorerHas || fencerHas || hauntHas
 				? {
 						kind: 'post_placement',
 						pending: {
 							specialist: specialistIdxs,
 							...(explorerHas ? { explorer: explorerOwed } : {}),
+							...(fencerHas ? { fencer: fencerOwed } : {}),
+							...(hauntHas ? { haunt: hauntIdxs } : {}),
 						},
 					}
 				: { kind: 'roll' }
@@ -3423,6 +3730,20 @@ async function handlePlaceRoad(
 // `confirm_roll` gambler handler and `handleRoll` (non-gambler) can share
 // the tail logic. The caller is responsible for having already appended a
 // `rolled` event for this dice value.
+// Wrap a resolved `main` phase in the magician post-roll window when the
+// roller holds the magician bonus (used where a 7-chain resolves to main).
+// No-op otherwise. The non-7 path wraps inline (outside curio/forger).
+function wrapMagicianWindow(
+	phase: Phase,
+	players: PlayerState[],
+	rollerIdx: number,
+	roll: DiceRoll
+): Phase {
+	if (phase.kind !== 'main') return phase
+	if (players[rollerIdx]?.bonus !== 'magician') return phase
+	return { kind: 'magician_pick', resume: phase, roller: rollerIdx, roll }
+}
+
 async function applyRollOutcome(
 	admin: SupabaseClient,
 	game: {
@@ -3605,6 +3926,16 @@ async function applyRollOutcome(
 						queue: forgerQueue,
 					}
 				: afterForger
+		// Magician: if the roller is a magician, open the post-roll window
+		// first (outermost), before any curio/forger reactions from others.
+		if (stateAfter.players[activeIdx]?.bonus === 'magician') {
+			nextPhase = {
+				kind: 'magician_pick',
+				resume: nextPhase,
+				roller: activeIdx,
+				roll: dice,
+			}
+		}
 	}
 
 	stateAfter = { ...stateAfter, players: nextPlayers, phase: nextPhase }
@@ -3860,26 +4191,48 @@ async function handleEndTurn(
 	})
 	const nextRound = state.round + 1
 
+	// Investor: the incoming player collects 1 resource per investment token
+	// at the start of their turn (once their total VP ≥ 3).
+	const events: unknown[] = [
+		{ kind: 'turn_ended', player: meIdx, at: new Date().toISOString() },
+	]
+	let playersFinal = nextPlayers
+	const incoming = nextPlayers[nextTurn]
+	if (
+		incoming?.bonus === 'investor' &&
+		investorTokenCount(incoming) > 0 &&
+		totalVP(state, nextTurn) >= INVESTOR_ACTIVATE_VP
+	) {
+		const payout = investorPayout(incoming)
+		playersFinal = nextPlayers.map((p, i) => {
+			if (i !== nextTurn) return p
+			const next = { ...p.resources }
+			for (const r of RESOURCES) next[r] += payout[r]
+			return { ...p, resources: next }
+		})
+		events.push({
+			kind: 'investor_payout',
+			player: nextTurn,
+			gain: payout,
+			at: new Date().toISOString(),
+		})
+	}
+
 	const { error: stateErr } = await admin
 		.from('game_states')
 		.update({
 			phase: { kind: 'roll' } satisfies Phase,
-			players: nextPlayers,
+			players: playersFinal,
 			round: nextRound,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
-	const endEvent = {
-		kind: 'turn_ended',
-		player: meIdx,
-		at: new Date().toISOString(),
-	}
 	const { error: gameErr } = await admin
 		.from('games')
 		.update({
 			current_turn: nextTurn,
-			events: [...(game.events ?? []), endEvent],
+			events: [...(game.events ?? []), ...events],
 		})
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
@@ -4003,14 +4356,26 @@ async function handleBuildRoad(
 			}
 		}
 	} else {
-		const useBricklayer = !!body.use_bricklayer
-		const cost = resolvePurchaseCost(
-			state.players[meIdx],
-			BUILD_COSTS.road,
-			useBricklayer
-		)
+		const meP = state.players[meIdx]
+		// Fencer building on their own reserved edge → pay 1 Wood or Brick.
+		const onOwnFence =
+			meP.bonus === 'fencer' && fenceOwner(state, edge) === meIdx
+		let cost: ResourceHand | null
+		if (onOwnFence) {
+			const pay = body.fence_pay === 'brick' ? 'brick' : 'wood'
+			cost = fenceRoadCost(pay)
+			if (!canAfford(meP.resources, cost))
+				return err(400, 'insufficient resources')
+		} else {
+			cost = resolvePurchaseCost(
+				meP,
+				BUILD_COSTS.road,
+				!!body.use_bricklayer,
+				body.smith_swap ?? 0
+			)
+		}
 		if (!cost) return err(400, 'insufficient resources')
-		if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
+		if (!canSpendUnderAge(meP, costSize(cost)))
 			return err(400, 'age limit reached this turn')
 		nextPlayers = applyCost(state.players, meIdx, cost)
 	}
@@ -4024,10 +4389,20 @@ async function handleBuildRoad(
 		},
 	}
 
+	// Consume the fence token once the fencer builds a road on the reserved
+	// edge (whether paid or a free Road Building placement).
+	let nextFenceTokens = state.fenceTokens
+	if (state.fenceTokens?.[edge] === meIdx) {
+		nextFenceTokens = { ...state.fenceTokens }
+		delete nextFenceTokens[edge]
+	}
+
 	const update: Record<string, unknown> = {
 		edges: nextEdges,
 		players: nextPlayers,
 	}
+	if (nextFenceTokens !== state.fenceTokens)
+		update.fence_tokens = nextFenceTokens
 	if (nextPhase) update.phase = nextPhase
 
 	const nextState: GameState = {
@@ -4078,11 +4453,11 @@ async function handleBuildSettlement(
 
 	if (!isValidBuildSettlementVertex(state, meIdx, vertex))
 		return err(400, 'invalid settlement')
-	const useBricklayer = !!body.use_bricklayer
 	const cost = resolvePurchaseCost(
 		state.players[meIdx],
 		BUILD_COSTS.settlement,
-		useBricklayer
+		!!body.use_bricklayer,
+		body.smith_swap ?? 0
 	)
 	if (!cost) return err(400, 'insufficient resources')
 	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
@@ -4099,15 +4474,6 @@ async function handleBuildSettlement(
 	}
 	const nextPlayers = applyCost(state.players, meIdx, cost)
 
-	const update: Record<string, unknown> = {
-		vertices: nextVertices,
-		players: nextPlayers,
-	}
-	const nextState: GameState = {
-		...state,
-		vertices: nextVertices,
-		players: nextPlayers,
-	}
 	const events: unknown[] = [
 		{
 			kind: 'settlement_built',
@@ -4116,6 +4482,28 @@ async function handleBuildSettlement(
 			at: new Date().toISOString(),
 		},
 	]
+	// A new settlement (or its neighbors) may make a haunt player's secret
+	// spot unbuildable → spawn a ghost there.
+	let nextState: GameState = {
+		...state,
+		vertices: nextVertices,
+		players: nextPlayers,
+	}
+	const haunt = resolveHauntGhosts(nextState)
+	nextState = haunt.state
+	for (const s of haunt.spawned) {
+		events.push({
+			kind: 'ghost_spawned',
+			player: s.player,
+			vertex: s.vertex,
+			at: new Date().toISOString(),
+		})
+	}
+
+	const update: Record<string, unknown> = {
+		vertices: nextState.vertices,
+		players: nextState.players,
+	}
 	// An opponent's settlement can split a chain, so Longest Road gets
 	// recomputed here too (not just on road builds).
 	const winner = applyEndOfActionChecks(nextState, update, events, {
@@ -4165,7 +4553,12 @@ async function handleBuildCity(
 		const altCost = metropolitanCityCost(meP.bonus, swapDelta)
 		cost = canAfford(meP.resources, altCost) ? altCost : null
 	} else {
-		cost = resolvePurchaseCost(meP, BUILD_COSTS.city, false)
+		cost = resolvePurchaseCost(
+			meP,
+			BUILD_COSTS.city,
+			false,
+			body.smith_swap ?? 0
+		)
 	}
 	if (!cost) return err(400, 'insufficient resources')
 	if (!canSpendUnderAge(meP, costSize(cost)))
@@ -4425,6 +4818,19 @@ async function handleMoveRobber(
 		finalState = ft.state
 	}
 
+	// Magician: a 7-roll resolving to main opens the magician's window.
+	if (state.phase.from7 && finalState.phase.kind === 'main') {
+		finalState = {
+			...finalState,
+			phase: wrapMagicianWindow(
+				finalState.phase,
+				finalState.players,
+				game.current_turn ?? 0,
+				finalState.phase.roll
+			),
+		}
+	}
+
 	const { error: stateErr } = await admin
 		.from('game_states')
 		.update({
@@ -4534,6 +4940,16 @@ async function handleSteal(
 		)
 		finalPlayers = ft.state.players
 		finalPhase = ft.state.phase
+	}
+
+	// Magician: a 7-roll resolving to main opens the magician's window.
+	if (state.phase.from7 && finalPhase.kind === 'main') {
+		finalPhase = wrapMagicianWindow(
+			finalPhase,
+			finalPlayers,
+			game.current_turn ?? 0,
+			finalPhase.roll
+		)
 	}
 
 	const { error: stateErr } = await admin
@@ -4843,20 +5259,51 @@ async function handleBankTrade(
 	const receive = normalizeHand(body.receive)
 	if (!give || !receive) return err(400, 'invalid resource hand')
 
+	const meP = state.players[meIdx]
+	const isSmith = meP.bonus === 'smith'
 	const kind = inferBankKind(state, meIdx, give)
 	if (!kind) return err(400, 'no valid bank ratio for this give hand')
-	const specialistResource = state.players[meIdx]?.specialistResource ?? null
-	if (!isValidBankTradeShape(give, receive, kind, specialistResource))
+	const specialistResource = meP.specialistResource ?? null
+	if (
+		!isValidBankTradeShape(give, receive, kind, specialistResource, isSmith)
+	)
 		return err(400, 'invalid bank trade shape')
-	if (!canAfford(state.players[meIdx].resources, give))
+
+	// Merchant: optional 1:1 side-conversion of extra input resource.
+	let merchantAddon: MerchantAddon | null = null
+	if (body.merchant && meP.bonus === 'merchant') {
+		const resource = parseResource(body.merchant.resource)
+		const take = normalizeHand(body.merchant.take)
+		const count = Number(body.merchant.count)
+		if (!resource || !take) return err(400, 'invalid merchant add-on')
+		const addon: MerchantAddon = { resource, count, take }
+		if (!isValidMerchantAddon(give, addon))
+			return err(400, 'invalid merchant add-on')
+		merchantAddon = addon
+	}
+
+	// Afford the base give plus any merchant extra of the input resource.
+	const totalGive: ResourceHand = { ...give }
+	if (merchantAddon) totalGive[merchantAddon.resource] += merchantAddon.count
+	if (!canAfford(meP.resources, totalGive))
 		return err(400, 'insufficient resources')
 
-	const nextPlayers = applyBankTradeToPlayer(
+	let nextPlayers = applyBankTradeToPlayer(
 		state.players,
 		meIdx,
 		give,
 		receive
 	)
+	if (merchantAddon) {
+		const addon = merchantAddon
+		nextPlayers = nextPlayers.map((p, i) => {
+			if (i !== meIdx) return p
+			const next = { ...p.resources }
+			next[addon.resource] -= addon.count
+			for (const r of RESOURCES) next[r] += addon.take[r]
+			return { ...p, resources: next }
+		})
+	}
 	const { error: stateErr } = await admin
 		.from('game_states')
 		.update({ players: nextPlayers })
@@ -4870,6 +5317,7 @@ async function handleBankTrade(
 		give,
 		receive,
 		ratio,
+		merchant: merchantAddon,
 		at: new Date().toISOString(),
 	}
 	const { error: gameErr } = await admin
@@ -4925,7 +5373,8 @@ async function handleBuyDevCard(
 		cost = resolvePurchaseCost(
 			state.players[meIdx],
 			DEV_CARD_COST,
-			useBricklayer
+			useBricklayer,
+			body.smith_swap ?? 0
 		)
 	}
 	if (!cost) return err(400, 'insufficient resources')
@@ -5389,6 +5838,37 @@ async function handleLiquidate(
 	return json({ ok: true })
 }
 
+type PostPlacementPending = {
+	specialist: number[]
+	explorer?: Partial<Record<number, number>>
+	fencer?: Partial<Record<number, number>>
+	haunt?: number[]
+}
+
+function postPlacementDrained(pending: PostPlacementPending): boolean {
+	if (pending.specialist.length > 0) return false
+	if (pending.explorer && Object.keys(pending.explorer).length > 0)
+		return false
+	if (pending.fencer && Object.keys(pending.fencer).length > 0) return false
+	if (pending.haunt && pending.haunt.length > 0) return false
+	return true
+}
+
+// The next phase after a post_placement mutation: `roll` once every pending
+// entry drains, otherwise a post_placement carrying only the non-empty
+// entries. Preserves every bonus's pending so one draining doesn't wipe
+// another's.
+function postPlacementPhaseFrom(pending: PostPlacementPending): Phase {
+	if (postPlacementDrained(pending)) return { kind: 'roll' }
+	const out: PostPlacementPending = { specialist: pending.specialist }
+	if (pending.explorer && Object.keys(pending.explorer).length > 0)
+		out.explorer = pending.explorer
+	if (pending.fencer && Object.keys(pending.fencer).length > 0)
+		out.fencer = pending.fencer
+	if (pending.haunt && pending.haunt.length > 0) out.haunt = pending.haunt
+	return { kind: 'post_placement', pending: out }
+}
+
 async function handlePlaceExplorerRoad(
 	admin: SupabaseClient,
 	me: string,
@@ -5426,18 +5906,10 @@ async function handlePlaceExplorerRoad(
 	if (newRemaining <= 0) delete newExplorer[meIdx]
 	else newExplorer[meIdx] = newRemaining
 
-	const explorerEmpty = Object.keys(newExplorer).length === 0
-	const specialistEmpty = state.phase.pending.specialist.length === 0
-	const nextPhase: Phase =
-		explorerEmpty && specialistEmpty
-			? { kind: 'roll' }
-			: {
-					kind: 'post_placement',
-					pending: {
-						specialist: state.phase.pending.specialist,
-						...(explorerEmpty ? {} : { explorer: newExplorer }),
-					},
-				}
+	const nextPhase = postPlacementPhaseFrom({
+		...state.phase.pending,
+		explorer: newExplorer,
+	})
 
 	const stateAfter: GameState = {
 		...state,
@@ -5982,13 +6454,10 @@ async function handleSetSpecialistResource(
 		return { ...p, specialistResource: resource }
 	})
 	const nextSpecialistPending = specialistPending.filter((i) => i !== meIdx)
-	const allResolved = nextSpecialistPending.length === 0
-	const nextPhase: Phase = allResolved
-		? { kind: 'roll' }
-		: {
-				kind: 'post_placement',
-				pending: { specialist: nextSpecialistPending },
-			}
+	const nextPhase = postPlacementPhaseFrom({
+		...state.phase.pending,
+		specialist: nextSpecialistPending,
+	})
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -6008,6 +6477,267 @@ async function handleSetSpecialistResource(
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
+	return json({ ok: true })
+}
+
+// --- Set 3 handlers --------------------------------------------------------
+
+async function handlePlaceFenceToken(
+	admin: SupabaseClient,
+	me: string,
+	body: PlaceFenceTokenBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (state.phase.kind !== 'post_placement')
+		return err(400, 'expected post_placement phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (state.players[meIdx]?.bonus !== 'fencer')
+		return err(400, 'not a fencer')
+	const remaining = state.phase.pending.fencer?.[meIdx] ?? 0
+	if (remaining <= 0) return err(400, 'no fence tokens remaining')
+	if (
+		!(boardFor(state.variant).edges as readonly string[]).includes(
+			body.edge
+		)
+	)
+		return err(400, 'unknown edge')
+	const edge = body.edge as Edge
+	if (edgeStateOf(state, edge).occupied) return err(400, 'edge occupied')
+	if (state.fenceTokens?.[edge] !== undefined)
+		return err(400, 'edge already fenced')
+
+	const nextFenceTokens = { ...(state.fenceTokens ?? {}), [edge]: meIdx }
+	const newRemaining = remaining - 1
+	const newFencer = { ...(state.phase.pending.fencer ?? {}) }
+	if (newRemaining <= 0) delete newFencer[meIdx]
+	else newFencer[meIdx] = newRemaining
+	const nextPhase = postPlacementPhaseFrom({
+		...state.phase.pending,
+		fencer: newFencer,
+	})
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ fence_tokens: nextFenceTokens, phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const event = {
+		kind: 'fence_token',
+		player: meIdx,
+		edge,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+async function handleSetHauntSpots(
+	admin: SupabaseClient,
+	me: string,
+	body: SetHauntSpotsBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (state.phase.kind !== 'post_placement')
+		return err(400, 'expected post_placement phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (state.players[meIdx]?.bonus !== 'haunt')
+		return err(400, 'not a haunt player')
+	const hauntPending = state.phase.pending.haunt ?? []
+	if (!hauntPending.includes(meIdx))
+		return err(400, 'not in haunt pending list')
+
+	if (!Array.isArray(body.spots) || body.spots.length !== HAUNT_SPOT_COUNT)
+		return err(400, 'need exactly two spots')
+	const verts = boardFor(state.variant).vertices as readonly string[]
+	const spots: Vertex[] = []
+	for (const s of body.spots) {
+		if (typeof s !== 'string' || !verts.includes(s))
+			return err(400, 'unknown vertex')
+		spots.push(s as Vertex)
+	}
+	if (spots[0] === spots[1]) return err(400, 'spots must be distinct')
+	for (const spot of spots) {
+		if (!isValidSettlementVertex(state, spot))
+			return err(400, 'spot is not currently buildable')
+	}
+
+	const nextPlayers = state.players.map((p, i) =>
+		i === meIdx ? { ...p, hauntSpots: spots } : p
+	)
+	const nextHaunt = hauntPending.filter((i) => i !== meIdx)
+	const nextPhase = postPlacementPhaseFrom({
+		...state.phase.pending,
+		haunt: nextHaunt,
+	})
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers, phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	// Coordinates stay private — the log only records that they chose.
+	const event = {
+		kind: 'haunt_spots_set',
+		player: meIdx,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+async function handleInvest(
+	admin: SupabaseClient,
+	me: string,
+	body: InvestBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'investor') return err(400, 'not an investor')
+	const resource = parseResource(body.resource)
+	if (!resource) return err(400, 'unknown resource')
+	if (!canInvest(meP, resource, totalVP(state, meIdx)))
+		return err(400, 'cannot invest')
+
+	const nextResources = {
+		...meP.resources,
+		[resource]: meP.resources[resource] - INVEST_TRIO,
+	}
+	const nextInvestments = { ...(meP.investments ?? {}) }
+	nextInvestments[resource] = (nextInvestments[resource] ?? 0) + 1
+	const nextPlayers = state.players.map((p, i) =>
+		i === meIdx
+			? { ...p, resources: nextResources, investments: nextInvestments }
+			: p
+	)
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const event = {
+		kind: 'invest',
+		player: meIdx,
+		resource,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+async function handleCastMagic(
+	admin: SupabaseClient,
+	me: string,
+	body: CastMagicBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (state.phase.kind !== 'magician_pick')
+		return err(400, 'expected magician_pick phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (state.phase.roller !== meIdx)
+		return err(403, 'not your magician window')
+
+	const actualTotal = state.phase.roll.a + state.phase.roll.b
+	const target = Number(body.target)
+	if (!isValidMagicTarget(actualTotal, target))
+		return err(400, 'invalid target')
+	const discard = normalizeHand(body.discard)
+	if (!discard) return err(400, 'invalid discard hand')
+	if (handSize(discard) !== magicDiscardCount(actualTotal, target))
+		return err(400, 'wrong discard count')
+	const meP = state.players[meIdx]
+	if (!canAfford(meP.resources, discard))
+		return err(400, 'insufficient cards to discard')
+
+	// Phantom production: gains for the magician only, from the target number.
+	const gain = distributeResources(state, target)[meIdx] ?? emptyHand()
+	const nextResources = { ...meP.resources }
+	for (const r of RESOURCES)
+		nextResources[r] = nextResources[r] - discard[r] + gain[r]
+	const nextPlayers = state.players.map((p, i) =>
+		i === meIdx ? { ...p, resources: nextResources } : p
+	)
+	const resume = state.phase.resume
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers, phase: resume })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const event = {
+		kind: 'magic_cast',
+		player: meIdx,
+		target,
+		discard,
+		gain,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+	return json({ ok: true })
+}
+
+async function handleSkipMagic(
+	admin: SupabaseClient,
+	me: string,
+	body: SkipMagicBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (state.phase.kind !== 'magician_pick')
+		return err(400, 'expected magician_pick phase')
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (state.phase.roller !== meIdx)
+		return err(403, 'not your magician window')
+
+	const resume = state.phase.resume
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ phase: resume })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+	const event = {
+		kind: 'magic_skipped',
+		player: meIdx,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
 	return json({ ok: true })
 }
 
@@ -6293,6 +7023,16 @@ serve(async (req) => {
 			return handlePickForgerTarget(admin, me, body)
 		case 'confirm_scout_card':
 			return handleConfirmScoutCard(admin, me, body)
+		case 'place_fence_token':
+			return handlePlaceFenceToken(admin, me, body)
+		case 'set_haunt_spots':
+			return handleSetHauntSpots(admin, me, body)
+		case 'invest':
+			return handleInvest(admin, me, body)
+		case 'cast_magic':
+			return handleCastMagic(admin, me, body)
+		case 'skip_magic':
+			return handleSkipMagic(admin, me, body)
 		default:
 			return err(400, 'unknown action')
 	}

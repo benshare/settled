@@ -2,6 +2,7 @@
 // The edge function re-implements the same rules inline.
 
 import { edgeEndpoints, RESOURCES, type Resource } from './board'
+import { smithPortResourceOk } from './bonus'
 import type {
 	BankKind,
 	GameState,
@@ -78,11 +79,14 @@ export function lockedGiveResource(kind: BankKind): Resource | null {
 // declared specialty) AND the give is a single-resource stack of that same
 // resource, the effective ratio is `max(2, baseRatio - 1)`. Otherwise the
 // base ratio applies.
+// `isSmith` relaxes a 2:1 specific port's locked resource: a smith may satisfy
+// a brick lock with ore and vice versa (brick↔ore substitution for ports).
 export function isValidBankTradeShape(
 	give: ResourceHand,
 	receive: ResourceHand,
 	kind: BankKind,
-	specialistResource: Resource | null = null
+	specialistResource: Resource | null = null,
+	isSmith: boolean = false
 ): boolean {
 	const ratio = effectiveBankRatioFor(kind, give, specialistResource)
 	const locked = lockedGiveResource(kind)
@@ -92,7 +96,8 @@ export function isValidBankTradeShape(
 		if (give[r] < 0 || receive[r] < 0) return false
 		if (give[r] > 0 && receive[r] > 0) return false
 		if (give[r] % ratio !== 0) return false
-		if (locked && give[r] > 0 && r !== locked) return false
+		if (give[r] > 0 && !smithPortResourceOk(locked, r, isSmith))
+			return false
 		giveTotal += give[r]
 		receiveTotal += receive[r]
 	}

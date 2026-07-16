@@ -14,7 +14,10 @@ import {
 import {
 	BRICKLAYER_COST,
 	canBuildMoreSuperCities,
+	isFenceReservedAgainst,
+	isGhost,
 	metropolitanCityCost,
+	smithCostOf,
 } from './bonus'
 import type { BonusId } from './bonuses'
 import {
@@ -112,9 +115,49 @@ export function effectiveCostFor(
 	return null
 }
 
+// Smith: brick and ore are fungible for buildings, dev cards, and ports.
+// Can the player cover this purchase treating brick+ore as one pool?
+export function canAffordWithSmith(
+	p: PlayerState,
+	kind: PurchaseKind
+): boolean {
+	if (p.bonus !== 'smith') return false
+	const cost = standardCostOf(kind)
+	for (const r of RESOURCES) {
+		if (r === 'brick' || r === 'ore') continue
+		if (p.resources[r] < cost[r]) return false
+	}
+	return p.resources.brick + p.resources.ore >= cost.brick + cost.ore
+}
+
+// The smith swap amount the client should submit for this purchase: the
+// minimal number of brick/ore units to shift onto the other resource so the
+// cost becomes affordable. Returns 0 when the standard cost already works (or
+// the player isn't a smith). Assumes the purchase is affordable via smith.
+export function smithSwapFor(p: PlayerState, kind: PurchaseKind): number {
+	if (p.bonus !== 'smith') return 0
+	const cost = standardCostOf(kind)
+	const comp = cost.brick > 0 ? 'brick' : cost.ore > 0 ? 'ore' : null
+	if (comp === null) return 0
+	const needed = Math.max(0, cost[comp] - p.resources[comp])
+	return Math.min(needed, cost[comp])
+}
+
 // Can the player afford the purchase by any legal payment route?
 export function canAffordPurchase(p: PlayerState, kind: PurchaseKind): boolean {
-	return effectiveCostFor(p, kind) !== null
+	if (effectiveCostFor(p, kind) !== null) return true
+	return canAffordWithSmith(p, kind)
+}
+
+// Concrete cost a smith pays for a purchase after shifting `smithSwap` units
+// of the cost's brick/ore component onto the other resource. Non-smith
+// players get the standard cost unchanged.
+export function purchaseCostWithSmith(
+	p: PlayerState,
+	kind: PurchaseKind,
+	smithSwap: number
+): ResourceHand {
+	return smithCostOf(p.bonus, standardCostOf(kind), smithSwap)
 }
 
 // Should the client request the bricklayer alt cost when submitting a
@@ -143,7 +186,9 @@ function roadConnectsVia(
 	vertex: Vertex
 ): boolean {
 	const vs = vertexStateOf(state, vertex)
-	if (vs.occupied) return vs.player === playerIdx
+	// A ghost (haunt bonus) is non-interfering: it never blocks road chaining,
+	// so it's transparent here (fall through to the adjacent-own-road check).
+	if (vs.occupied && !isGhost(vs)) return vs.player === playerIdx
 	for (const e of boardFor(state.variant).adjacentEdges[vertex]) {
 		if (e === edge) continue
 		const es = edgeStateOf(state, e)
@@ -158,6 +203,9 @@ export function isValidBuildRoadEdge(
 	edge: Edge
 ): boolean {
 	if (edgeStateOf(state, edge).occupied) return false
+	// A fence token (fencer bonus) reserves the edge for its owner — no other
+	// player may ever build there.
+	if (isFenceReservedAgainst(state, edge, playerIdx)) return false
 	if (!canBuildMoreRoads(state, playerIdx)) return false
 	const [a, b] = edgeEndpoints(edge)
 	return (
@@ -213,8 +261,9 @@ export function validBuildRoadEdges(
 			return es.occupied && es.player === playerIdx
 		})
 		if (!ownsVertex && !hasAdjOwnRoad) continue
-		// If the vertex is an opponent's building, it blocks chaining through it.
-		if (vs.occupied && vs.player !== playerIdx) continue
+		// An opponent's building blocks chaining through it — except a ghost,
+		// which is transparent to road networks.
+		if (vs.occupied && vs.player !== playerIdx && !isGhost(vs)) continue
 		for (const e of board.adjacentEdges[v]) {
 			if (seen.has(e)) continue
 			seen.add(e)
@@ -235,7 +284,9 @@ export function isValidBuildSettlementVertex(
 	if (vertexStateOf(state, vertex).occupied) return false
 	const board = boardFor(state.variant)
 	for (const n of board.neighborVertices[vertex]) {
-		if (vertexStateOf(state, n).occupied) return false
+		const nvs = vertexStateOf(state, n)
+		// Ghosts don't enforce the distance rule for others.
+		if (nvs.occupied && !isGhost(nvs)) return false
 	}
 	if (!canPlaceUnderPower(state, playerIdx, vertex)) return false
 	if (!settlementKeepsYouthOK(state, playerIdx, vertex)) return false

@@ -3,7 +3,7 @@
 // its duplicated adjacency constants.
 
 import { boardFor, type Hex } from './board'
-import { underdogMultiplierFor } from './bonus'
+import { plutocratGain, underdogMultiplierFor } from './bonus'
 import {
 	vertexStateOf,
 	type DiceRoll,
@@ -68,6 +68,15 @@ export function distributeResources(
 					ore: 0,
 				})
 			hand[hd.resource] += gain
+		}
+	}
+	// Plutocrat: for each plutocrat player, bump every resource they gained
+	// ≥ 2 of by 50% (floor). Applied to the summed per-roll gain, so it stacks
+	// after all their buildings are tallied.
+	for (const idxStr of Object.keys(result)) {
+		const idx = Number(idxStr)
+		if (state.players[idx]?.bonus === 'plutocrat') {
+			result[idx] = plutocratGain(result[idx])
 		}
 	}
 	return result

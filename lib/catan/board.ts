@@ -245,7 +245,15 @@ export const EXPANDED_SPIRAL_SEQUENCE: readonly HexNumber[] = [
 // Vertex buildings only. An occupied edge is implicitly a road.
 // `super_city` is the metropolitan-bonus upgrade above `city` — worth 3 VP
 // and yielding 3 resources per producing adjacent hex.
-export const VERTEX_BUILDINGS = ['settlement', 'city', 'super_city'] as const
+// `ghost` is the haunt-bonus spawn — produces like a settlement but is worth
+// 0 VP and is fully non-interfering (doesn't enforce the distance rule for
+// others, doesn't block opponent road networks).
+export const VERTEX_BUILDINGS = [
+	'settlement',
+	'city',
+	'super_city',
+	'ghost',
+] as const
 export type VertexBuilding = (typeof VERTEX_BUILDINGS)[number]
 
 // --- Ports (harbors) -------------------------------------------------------

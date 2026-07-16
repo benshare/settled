@@ -12,6 +12,11 @@ import type { Profile } from '../stores/useProfileStore'
 import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
+import {
+	isValidMerchantAddon,
+	singleGiveResource,
+	type MerchantAddon,
+} from './bonus'
 import { playerColors, resourceColor } from './palette'
 import {
 	availableBankOptions,
@@ -73,7 +78,11 @@ export function TradePanel({
 	profilesById: Record<string, Profile>
 	submitting: boolean
 	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
-	onSendBank: (give: ResourceHand, receive: ResourceHand) => void
+	onSendBank: (
+		give: ResourceHand,
+		receive: ResourceHand,
+		merchant?: MerchantAddon
+	) => void
 	onCancel: () => void
 }) {
 	const [mode, setMode] = useState<Mode>({ kind: 'player' })
@@ -122,6 +131,7 @@ export function TradePanel({
 			specialistResource={
 				state.players[meIdx]?.specialistResource ?? null
 			}
+			isMerchant={state.players[meIdx]?.bonus === 'merchant'}
 			submitting={submitting}
 			onBack={() =>
 				setMode(
@@ -385,6 +395,7 @@ function BankCompose({
 	choice,
 	myHand,
 	specialistResource,
+	isMerchant,
 	submitting,
 	onBack,
 	onCancel,
@@ -393,14 +404,28 @@ function BankCompose({
 	choice: BankKind
 	myHand: ResourceHand
 	specialistResource: Resource | null
+	isMerchant: boolean
 	submitting: boolean
 	onBack: () => void
 	onCancel: () => void
-	onSend: (give: ResourceHand, receive: ResourceHand) => void
+	onSend: (
+		give: ResourceHand,
+		receive: ResourceHand,
+		merchant?: MerchantAddon
+	) => void
 }) {
 	const { height } = useWindowDimensions()
 	const [give, setGive] = useState<ResourceHand>(emptyHand)
 	const [receive, setReceive] = useState<ResourceHand>(emptyHand)
+	// Merchant add-on: extra receives paid 1:1 with extra of the single give
+	// resource. Only meaningful when the give is a single resource stack.
+	const [merchantTake, setMerchantTake] = useState<ResourceHand>(emptyHand)
+	const giveRes = singleGiveResource(give)
+	const merchantCount = RESOURCES.reduce((a, r) => a + merchantTake[r], 0)
+	const merchantAvailable =
+		isMerchant && giveRes !== null
+			? myHand[giveRes] - give[giveRes] - merchantCount
+			: 0
 
 	const baseRatio = ratioOf(choice)
 	const locked = lockedGiveResource(choice)
@@ -436,12 +461,16 @@ function BankCompose({
 			if (receive[r] > 0) return prev
 			return { ...prev, [r]: prev[r] + effective }
 		})
+		setMerchantTake(emptyHand())
 	}
 	// Tapping a give card takes that whole pile back out. Clearing (vs.
 	// removing one group) keeps `give[r] % ratio === 0` valid regardless of
 	// how the specialist discount shifted while it was being built up.
+	// Changing the give also resets the merchant add-on (its input resource
+	// and available count both depend on the give).
 	function clearGive(r: Resource) {
 		setGive((prev) => (prev[r] === 0 ? prev : { ...prev, [r]: 0 }))
+		setMerchantTake(emptyHand())
 	}
 	function addReceive(r: Resource) {
 		setReceive((prev) => {
@@ -456,14 +485,33 @@ function BankCompose({
 			return { ...prev, [r]: prev[r] - 1 }
 		})
 	}
+	function addMerchantTake(r: Resource) {
+		if (merchantAvailable <= 0) return
+		setMerchantTake((prev) => ({ ...prev, [r]: prev[r] + 1 }))
+	}
+	function clearMerchant() {
+		setMerchantTake(emptyHand())
+	}
 	function reset() {
 		setGive(emptyHand())
 		setReceive(emptyHand())
+		setMerchantTake(emptyHand())
 	}
+
+	const merchantAddon: MerchantAddon | null =
+		isMerchant && giveRes !== null && merchantCount > 0
+			? { resource: giveRes, count: merchantCount, take: merchantTake }
+			: null
+	const merchantValid =
+		merchantAddon === null ||
+		(isValidMerchantAddon(give, merchantAddon) &&
+			myHand[merchantAddon.resource] >=
+				give[merchantAddon.resource] + merchantAddon.count)
 
 	const valid =
 		isValidBankTradeShape(give, receive, choice, specialistResource) &&
-		canAfford(myHand, give)
+		canAfford(myHand, give) &&
+		merchantValid
 
 	function giveTappable(r: Resource): boolean {
 		if (locked && r !== locked) return false
@@ -553,6 +601,53 @@ function BankCompose({
 				</View>
 			</ScrollView>
 
+			{isMerchant && giveRes !== null && (
+				<View style={styles.merchantBox}>
+					<Text style={styles.merchantTitle}>
+						Merchant: pay extra {RESOURCE_LABELS[giveRes]} 1:1 (
+						{merchantCount} paid, {Math.max(0, merchantAvailable)}{' '}
+						left)
+					</Text>
+					<View style={styles.merchantRow}>
+						{RESOURCES.map((r) => (
+							<Pressable
+								key={r}
+								disabled={merchantAvailable <= 0}
+								onPress={() => addMerchantTake(r)}
+								style={({ pressed }) => [
+									styles.merchantChip,
+									{ backgroundColor: resourceColor[r] },
+									merchantAvailable <= 0 &&
+										styles.merchantChipDisabled,
+									pressed &&
+										merchantAvailable > 0 &&
+										styles.pressed,
+								]}
+							>
+								<Text style={styles.merchantChipText}>
+									+{merchantTake[r]}
+								</Text>
+							</Pressable>
+						))}
+						{merchantCount > 0 && (
+							<Pressable
+								onPress={clearMerchant}
+								style={({ pressed }) => [
+									styles.linkBtn,
+									pressed && styles.pressed,
+								]}
+							>
+								<Ionicons
+									name="close"
+									size={14}
+									color={colors.text}
+								/>
+							</Pressable>
+						)}
+					</View>
+				</View>
+			)}
+
 			<View style={styles.bankFooterRow}>
 				<Text style={styles.bankSummary}>
 					{giveTotal === 0
@@ -584,7 +679,9 @@ function BankCompose({
 					Cancel
 				</Button>
 				<Button
-					onPress={() => onSend(give, receive)}
+					onPress={() =>
+						onSend(give, receive, merchantAddon ?? undefined)
+					}
 					disabled={!valid}
 					loading={submitting}
 					style={[styles.sendBtn, styles.smallBtn]}
@@ -829,6 +926,41 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		marginTop: spacing.xs,
+	},
+	merchantBox: {
+		marginTop: spacing.xs,
+		padding: spacing.sm,
+		borderRadius: radius.sm,
+		borderWidth: 1,
+		borderColor: colors.border,
+		gap: spacing.xs,
+	},
+	merchantTitle: {
+		fontSize: font.xs,
+		fontWeight: '700',
+		color: colors.textSecondary,
+	},
+	merchantRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.xs,
+	},
+	merchantChip: {
+		minWidth: 34,
+		paddingVertical: 4,
+		paddingHorizontal: 8,
+		borderRadius: radius.sm,
+		borderWidth: 1,
+		borderColor: '#2B2B2B',
+		alignItems: 'center',
+	},
+	merchantChipDisabled: {
+		opacity: 0.4,
+	},
+	merchantChipText: {
+		fontSize: font.sm,
+		fontWeight: '800',
+		color: '#1A1A1A',
 	},
 	bankSummary: {
 		fontSize: font.sm,
