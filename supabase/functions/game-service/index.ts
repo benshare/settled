@@ -82,6 +82,7 @@ type RollBody = { action: 'roll'; game_id: string }
 type ConfirmRollBody = { action: 'confirm_roll'; game_id: string }
 type RerollDiceBody = { action: 'reroll_dice'; game_id: string }
 type EndTurnBody = { action: 'end_turn'; game_id: string }
+type EndSpecialBuildBody = { action: 'end_special_build'; game_id: string }
 type BuildRoadBody = {
 	action: 'build_road'
 	game_id: string
@@ -262,6 +263,7 @@ type Body =
 	| ConfirmRollBody
 	| RerollDiceBody
 	| EndTurnBody
+	| EndSpecialBuildBody
 	| BuildRoadBody
 	| BuildSettlementBody
 	| BuildCityBody
@@ -1285,11 +1287,24 @@ function dealer<T>(pool: readonly T[]): (exclude?: T) => T {
 
 type NumberLayout = 'spiral' | 'random'
 
+type BuildPhaseFrequency = 'every' | 'across'
+
+// Special build phase config (5-6 player games only). Mirror of the client
+// `ExtraBuildConfig` in lib/catan/types.ts. `enabled` = top-level on/off;
+// `buildPhases` = cadence; `moreThanSeven` = only players holding >7 cards may
+// build during the phase.
+type ExtraBuildConfig = {
+	enabled: boolean
+	buildPhases: BuildPhaseFrequency
+	moreThanSeven: boolean
+}
+
 type GameConfig = {
 	bonuses: boolean
 	bonusSets: string[]
 	devCards: boolean
 	numberLayout: NumberLayout
+	extraBuild: ExtraBuildConfig
 }
 
 type ResumePhase =
@@ -1354,6 +1369,9 @@ type Phase =
 			roller: number
 			roll: DiceRoll
 	  }
+	// Special build phase (5-6 player games). queue[0] acts; end_special_build
+	// pops the head; empty → roll for the already-advanced current_turn.
+	| { kind: 'special_build'; queue: number[] }
 	| { kind: 'game_over' }
 
 type GameState = {
@@ -1892,6 +1910,115 @@ function handTotal(h: ResourceHand): number {
 
 function nextMainTurn(currentTurn: number, playerCount: number): number {
 	return (currentTurn + 1) % playerCount
+}
+
+// --- Special build phase (must match lib/catan/roll + build + ports) --------
+
+function acrossSeat(idx: number, n: number): number {
+	return (idx + Math.floor(n / 2)) % n
+}
+
+// Special-build order after `enderIdx`, front (acts first) to back. Empty when
+// the SBP doesn't apply. Auto-skip of players who can't act is applied by the
+// caller (drainSpecialBuildQueue), not here.
+function specialBuildQueue(
+	eb: ExtraBuildConfig,
+	enderIdx: number,
+	n: number
+): number[] {
+	if (n <= 4 || !eb.enabled) return []
+	if (eb.buildPhases === 'across') return [acrossSeat(enderIdx, n)]
+	return Array.from({ length: n - 1 }, (_, k) => (enderIdx + 1 + k) % n)
+}
+
+function canAffordAnyCost(p: PlayerState, standardCost: ResourceHand): boolean {
+	return (
+		resolvePurchaseCost(p, standardCost, false) !== null ||
+		resolvePurchaseCost(p, standardCost, true) !== null
+	)
+}
+
+// Can the player execute at least one bank/port trade right now?
+function canBankTradeSrv(state: GameState, playerIdx: number): boolean {
+	const p = state.players[playerIdx]
+	if (!p) return false
+	const specialty =
+		p.bonus === 'specialist' ? (p.specialistResource ?? null) : null
+	if (curseOf(state, playerIdx) === 'provinciality') {
+		for (const r of RESOURCES) {
+			const need = specialty === r ? Math.max(2, 5 - 1) : 5
+			if (p.resources[r] >= need) return true
+		}
+		return false
+	}
+	const kinds = playerPortKinds(state, playerIdx)
+	for (const r of RESOURCES) {
+		if (kinds.has(r) && p.resources[r] >= 2) return true
+	}
+	const generic = kinds.has('3:1') ? 3 : 4
+	for (const r of RESOURCES) {
+		const need = specialty === r ? Math.max(2, generic - 1) : generic
+		if (p.resources[r] >= need) return true
+	}
+	return false
+}
+
+// Can player `idx` take ANY special-build action right now (build/buy/bank)?
+// Honors the `moreThanSeven` house rule. Mirror of build.canTakeSpecialBuildAction.
+function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
+	const p = state.players[idx]
+	if (!p) return false
+	if (state.config.extraBuild?.moreThanSeven && handSize(p.resources) <= 7)
+		return false
+	if (
+		canAffordAnyCost(p, BUILD_COSTS.road) &&
+		hasLegalRoadPlacement(state, idx)
+	)
+		return true
+	if (
+		canAffordAnyCost(p, BUILD_COSTS.settlement) &&
+		boardFor(state.variant).vertices.some((v) =>
+			isValidBuildSettlementVertex(state, idx, v)
+		)
+	)
+		return true
+	if (
+		canAffordAnyCost(p, BUILD_COSTS.city) &&
+		boardFor(state.variant).vertices.some((v) =>
+			isValidBuildCityVertex(state, idx, v)
+		)
+	)
+		return true
+	if (
+		state.config.devCards &&
+		state.devDeck.length > 0 &&
+		canAffordAnyCost(p, DEV_CARD_COST)
+	)
+		return true
+	return canBankTradeSrv(state, idx)
+}
+
+// Drop leading queue members who cannot act, so the queue only ever stops on a
+// player with a real option.
+function drainSpecialBuildQueue(state: GameState, queue: number[]): number[] {
+	let q = queue
+	while (q.length > 0 && !canTakeSpecialBuildActionSrv(state, q[0])) {
+		q = q.slice(1)
+	}
+	return q
+}
+
+// Gate for build/buy/bank handlers: is `meIdx` the acting special-build player
+// and (under moreThanSeven) still over the discard threshold?
+function isSpecialBuildActor(state: GameState, meIdx: number): boolean {
+	if (state.phase.kind !== 'special_build') return false
+	if (state.phase.queue[0] !== meIdx) return false
+	if (
+		state.config.extraBuild?.moreThanSeven &&
+		handSize(state.players[meIdx].resources) <= 7
+	)
+		return false
+	return true
 }
 
 // --- Build rules (must match lib/catan/build) ------------------------------
@@ -4192,7 +4319,9 @@ async function handleEndTurn(
 	const nextRound = state.round + 1
 
 	// Investor: the incoming player collects 1 resource per investment token
-	// at the start of their turn (once their total VP ≥ 3).
+	// at the start of their turn (once their total VP ≥ 3). Applied before the
+	// special-build queue is drained so the payout is reflected in the incoming
+	// player's hand for the `moreThanSeven` gate.
 	const events: unknown[] = [
 		{ kind: 'turn_ended', player: meIdx, at: new Date().toISOString() },
 	]
@@ -4218,10 +4347,34 @@ async function handleEndTurn(
 		})
 	}
 
+	// A 5-6 player game may insert a special build phase between this turn and
+	// the next player's roll (config.extraBuild). Build the queue from the seat
+	// that just finished, then drop leading players who can't act.
+	const sbState: GameState = {
+		...state,
+		players: playersFinal,
+		round: nextRound,
+	}
+	// Games created before this feature have no `extraBuild` in their stored
+	// config — default to disabled so an in-flight game is never disrupted.
+	const eb: ExtraBuildConfig = state.config.extraBuild ?? {
+		enabled: false,
+		buildPhases: 'every',
+		moreThanSeven: false,
+	}
+	const sbQueue = drainSpecialBuildQueue(
+		sbState,
+		specialBuildQueue(eb, meIdx, game.player_order.length)
+	)
+	const nextPhase: Phase =
+		sbQueue.length > 0
+			? { kind: 'special_build', queue: sbQueue }
+			: { kind: 'roll' }
+
 	const { error: stateErr } = await admin
 		.from('game_states')
 		.update({
-			phase: { kind: 'roll' } satisfies Phase,
+			phase: nextPhase,
 			players: playersFinal,
 			round: nextRound,
 		})
@@ -4237,7 +4390,71 @@ async function handleEndTurn(
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
 
-	const nextUserId = game.player_order[nextTurn]
+	// Notify whoever acts next: the first special-builder, else the next roller.
+	const notifyIdx = sbQueue.length > 0 ? sbQueue[0] : nextTurn
+	const nextUserId = game.player_order[notifyIdx]
+	if (nextUserId) {
+		EdgeRuntime.waitUntil(
+			sendNotifications(admin, [
+				{
+					userId: nextUserId,
+					kind: 'your_turn',
+					gate: 'yourTurn',
+					gameId: game.id,
+				},
+			])
+		)
+	}
+
+	return json({ ok: true })
+}
+
+async function handleEndSpecialBuild(
+	admin: SupabaseClient,
+	me: string,
+	body: EndSpecialBuildBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'special_build')
+		return err(400, 'expected special build phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (state.phase.queue[0] !== meIdx) return err(403, 'not your build')
+
+	// The finishing builder's slot is a self-contained spend window: clear their
+	// age-curse per-turn counter so SBP spend never leaks into their own turn.
+	const nextPlayers =
+		state.players[meIdx]?.curse === 'age'
+			? state.players.map((p, i) =>
+					i === meIdx ? { ...p, cardsSpentThisTurn: 0 } : p
+				)
+			: state.players
+
+	// Pop the head, then skip any following players who cannot act.
+	const remaining = drainSpecialBuildQueue(
+		{ ...state, players: nextPlayers },
+		state.phase.queue.slice(1)
+	)
+	const nextPhase: Phase =
+		remaining.length > 0
+			? { kind: 'special_build', queue: remaining }
+			: { kind: 'roll' }
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ phase: nextPhase, players: nextPlayers })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	// Notify the next actor: the next builder, else the roller (current_turn).
+	const notifyIdx =
+		remaining.length > 0 ? remaining[0] : (game.current_turn ?? 0)
+	const nextUserId = game.player_order[notifyIdx]
 	if (nextUserId) {
 		EdgeRuntime.waitUntil(
 			sendNotifications(admin, [
@@ -4257,7 +4474,11 @@ async function handleEndTurn(
 async function preflightBuild(
 	admin: SupabaseClient,
 	me: string,
-	gameId: string
+	gameId: string,
+	// When true, the acting player of a `special_build` phase (not the
+	// turn-holder) is also allowed. Only road/settlement/city/dev/bank permit
+	// this — super-city and liquidate stay main-only (pass false / omit).
+	allowSpecialBuild = false
 ): Promise<
 	| { ok: true; game: GameRow; state: GameState; meIdx: number }
 	| { ok: false; response: Response }
@@ -4267,13 +4488,16 @@ async function preflightBuild(
 	const { game, state } = loaded
 	if (game.status !== 'active')
 		return { ok: false, response: err(400, 'not active') }
-	if (state.phase.kind !== 'main')
-		return { ok: false, response: err(400, 'expected main phase') }
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null)
 		return { ok: false, response: err(403, 'not a participant') }
-	if (game.current_turn !== meIdx)
+	const inMain = state.phase.kind === 'main' && game.current_turn === meIdx
+	const inSpecial = allowSpecialBuild && isSpecialBuildActor(state, meIdx)
+	if (!inMain && !inSpecial) {
+		if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
+			return { ok: false, response: err(400, 'expected main phase') }
 		return { ok: false, response: err(403, 'not your turn') }
+	}
 	return { ok: true, game, state, meIdx }
 }
 
@@ -4310,12 +4534,16 @@ async function handleBuildRoad(
 	if (game.status !== 'active') return err(400, 'not active')
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
 
 	const phase = state.phase
 	const isRoadBuilding = phase.kind === 'road_building'
-	if (phase.kind !== 'main' && !isRoadBuilding)
-		return err(400, 'expected main or road_building phase')
+	// A special-build actor may pay for a road out of turn; main/road_building
+	// still require it be your turn.
+	const isSpecial = isSpecialBuildActor(state, meIdx)
+	if (phase.kind !== 'main' && !isRoadBuilding && !isSpecial)
+		return err(400, 'expected main, road_building, or special_build phase')
+	if (!isSpecial && game.current_turn !== meIdx)
+		return err(403, 'not your turn')
 
 	if (
 		!(boardFor(state.variant).edges as readonly string[]).includes(
@@ -4439,7 +4667,7 @@ async function handleBuildSettlement(
 	me: string,
 	body: BuildSettlementBody
 ): Promise<Response> {
-	const pre = await preflightBuild(admin, me, body.game_id)
+	const pre = await preflightBuild(admin, me, body.game_id, true)
 	if (!pre.ok) return pre.response
 	const { game, state, meIdx } = pre
 
@@ -4526,7 +4754,7 @@ async function handleBuildCity(
 	me: string,
 	body: BuildCityBody
 ): Promise<Response> {
-	const pre = await preflightBuild(admin, me, body.game_id)
+	const pre = await preflightBuild(admin, me, body.game_id, true)
 	if (!pre.ok) return pre.response
 	const { game, state, meIdx } = pre
 
@@ -5249,11 +5477,16 @@ async function handleBankTrade(
 	const { game, state } = loaded
 
 	if (game.status !== 'active') return err(400, 'not active')
-	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
 
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	// Bank trades are allowed on your own main turn or in your special-build slot.
+	const inMain = state.phase.kind === 'main' && game.current_turn === meIdx
+	if (!inMain && !isSpecialBuildActor(state, meIdx)) {
+		if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
+			return err(400, 'expected main phase')
+		return err(403, 'not your turn')
+	}
 
 	const give = normalizeHand(body.give)
 	const receive = normalizeHand(body.receive)
@@ -5339,14 +5572,23 @@ async function handleBuyDevCard(
 	const { game, state } = loaded
 
 	if (game.status !== 'active') return err(400, 'not active')
-	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
 	if (!state.config.devCards) return err(400, 'dev cards disabled')
 
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	// Buyable on your own main turn or in your special-build slot.
+	const inMain = state.phase.kind === 'main' && game.current_turn === meIdx
+	if (!inMain && !isSpecialBuildActor(state, meIdx)) {
+		if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
+			return err(400, 'expected main phase')
+		return err(403, 'not your turn')
+	}
 
 	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
+	// Scout's peek buy opens a scout_pick sub-phase whose resume can't hold the
+	// special-build queue, so scouts buy dev cards on their own turn only.
+	if (state.phase.kind === 'special_build' && bonusOf(state, meIdx) === 'scout')
+		return err(400, 'scout dev-card buys only allowed on your turn')
 	const useBricklayer = !!body.use_bricklayer
 
 	// Scout: optionally swap one of the standard cost resources for a
@@ -6973,6 +7215,8 @@ serve(async (req) => {
 			return handleRerollDice(admin, me, body)
 		case 'end_turn':
 			return handleEndTurn(admin, me, body)
+		case 'end_special_build':
+			return handleEndSpecialBuild(admin, me, body)
 		case 'build_road':
 			return handleBuildRoad(admin, me, body)
 		case 'build_settlement':

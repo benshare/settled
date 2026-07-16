@@ -1,5 +1,9 @@
 import { create } from 'zustand'
-import type { NumberLayout } from '../catan/types'
+import {
+	parseExtraBuild,
+	type ExtraBuildConfig,
+	type NumberLayout,
+} from '../catan/types'
 import type { Database } from '../database-types'
 import type { NotificationPrefs } from '../notifications'
 import { supabase } from '../supabase'
@@ -10,7 +14,11 @@ export type Profile = Database['public']['Tables']['profiles']['Row']
 // Per-user defaults for the create-game screen. Mirrors the form's visual
 // grouping so both sides can compare values directly.
 export type GameDefaults = {
-	settings: { devCards: boolean; numberLayout: NumberLayout }
+	settings: {
+		devCards: boolean
+		numberLayout: NumberLayout
+		extraBuild: ExtraBuildConfig
+	}
 	extras: { bonuses: boolean; bonusSets: string[] }
 }
 
@@ -19,7 +27,11 @@ export type GameDefaults = {
 // resilient). Dev cards on, bonuses off, spiral numbers — matches the SQL
 // default.
 export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
-	settings: { devCards: true, numberLayout: 'spiral' },
+	settings: {
+		devCards: true,
+		numberLayout: 'spiral',
+		extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
+	},
 	extras: { bonuses: false, bonusSets: ['1'] },
 }
 
@@ -40,6 +52,10 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				settings?.numberLayout === 'random'
 					? settings.numberLayout
 					: DEFAULT_GAME_DEFAULTS.settings.numberLayout,
+			extraBuild: parseExtraBuild(
+				settings?.extraBuild,
+				DEFAULT_GAME_DEFAULTS.settings.extraBuild
+			),
 		},
 		extras: {
 			bonuses:

@@ -247,6 +247,9 @@ type GamesStore = {
 	confirmRoll: (gameId: string) => Promise<RollResult>
 	rerollDice: (gameId: string) => Promise<RollResult>
 	endTurn: (gameId: string) => Promise<ActionResult>
+	// Finish your slot in a special build phase (5-6 player games). Pops you
+	// off the build queue; advances to the next builder or the next roll.
+	endSpecialBuild: (gameId: string) => Promise<ActionResult>
 
 	// `useBricklayer`: pay 4 Brick instead of the standard cost. Ignored by
 	// the edge if the caller doesn't have the bricklayer bonus.
@@ -642,6 +645,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'end_turn', game_id: gameId },
 			"Couldn't end turn"
+		)
+	},
+
+	async endSpecialBuild(gameId) {
+		return callGameService(
+			{ action: 'end_special_build', game_id: gameId },
+			"Couldn't finish building"
 		)
 	},
 

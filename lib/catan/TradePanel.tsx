@@ -67,6 +67,7 @@ export function TradePanel({
 	playerOrder,
 	profilesById,
 	submitting,
+	bankOnly = false,
 	onSend,
 	onSendBank,
 	onCancel,
@@ -77,6 +78,9 @@ export function TradePanel({
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	submitting: boolean
+	// Bank/port trades only — hides the player-to-player composer. Used by the
+	// special build phase, where trading with other players isn't allowed.
+	bankOnly?: boolean
 	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
 	onSendBank: (
 		give: ResourceHand,
@@ -85,11 +89,17 @@ export function TradePanel({
 	) => void
 	onCancel: () => void
 }) {
-	const [mode, setMode] = useState<Mode>({ kind: 'player' })
-
 	const bankOptions = useMemo(
 		() => availableBankOptions(state, meIdx),
 		[state, meIdx]
+	)
+
+	const [mode, setMode] = useState<Mode>(() =>
+		bankOnly
+			? bankOptions.length === 1
+				? { kind: 'bank_compose', choice: bankOptions[0] }
+				: { kind: 'bank_select' }
+			: { kind: 'player' }
 	)
 
 	function startBank() {
@@ -120,7 +130,7 @@ export function TradePanel({
 			<BankSelect
 				options={bankOptions}
 				onPick={(choice) => setMode({ kind: 'bank_compose', choice })}
-				onBack={() => setMode({ kind: 'player' })}
+				onBack={bankOnly ? onCancel : () => setMode({ kind: 'player' })}
 			/>
 		)
 	}
@@ -133,13 +143,18 @@ export function TradePanel({
 			}
 			isMerchant={state.players[meIdx]?.bonus === 'merchant'}
 			submitting={submitting}
-			onBack={() =>
-				setMode(
-					bankOptions.length === 1
-						? { kind: 'player' }
-						: { kind: 'bank_select' }
-				)
-			}
+			onBack={() => {
+				// With multiple ratios, step back to the selector; with only
+				// 4:1 there's no selector, so back exits (to player mode in the
+				// normal flow, or fully out when bank-only).
+				if (bankOptions.length > 1) {
+					setMode({ kind: 'bank_select' })
+				} else if (bankOnly) {
+					onCancel()
+				} else {
+					setMode({ kind: 'player' })
+				}
+			}}
 			onCancel={onCancel}
 			onSend={onSendBank}
 		/>

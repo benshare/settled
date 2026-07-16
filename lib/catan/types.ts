@@ -34,6 +34,27 @@ export const MAX_PLAYERS = 6
 export const NUMBER_LAYOUTS = ['spiral', 'random'] as const
 export type NumberLayout = (typeof NUMBER_LAYOUTS)[number]
 
+// Special build phase for 5-6 player games (standard Catan expansion rule):
+// between one player's turn and the next, other players get a chance to
+// build/buy (no rolling, no trading). Configured by `GameConfig.extraBuild`.
+// Only meaningful for games with >4 players — ignored on 2-4 player games.
+//
+// `buildPhases` = when the phase fires: 'every' turn (the expansion default),
+// or only 'across' — after the turn of the player seated across from you
+// (fewer, faster phases).
+export const BUILD_PHASE_FREQUENCIES = ['every', 'across'] as const
+export type BuildPhaseFrequency = (typeof BUILD_PHASE_FREQUENCIES)[number]
+
+// `enabled` is the top-level on/off. When enabled, `buildPhases` sets the
+// cadence and `moreThanSeven` gates who may build: false = anyone in the phase
+// may build; true = only players holding more than 7 cards (the discard
+// threshold) — a "spend down before a 7" house rule.
+export type ExtraBuildConfig = {
+	enabled: boolean
+	buildPhases: BuildPhaseFrequency
+	moreThanSeven: boolean
+}
+
 // Top-level game config. Serialized to JSONB on game_requests and
 // game_states. New options get added here (and wired through the
 // propose_game RPC + handleRespond in the edge function).
@@ -44,6 +65,9 @@ export type GameConfig = {
 	bonusSets: string[]
 	devCards: boolean
 	numberLayout: NumberLayout
+	// See ExtraBuildConfig. Only affects games with >4 players; ignored
+	// otherwise.
+	extraBuild: ExtraBuildConfig
 }
 
 // System-shipped defaults for a standard game. Used as the reference when
@@ -55,6 +79,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	bonusSets: ['1'],
 	devCards: true,
 	numberLayout: 'spiral',
+	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
 }
 
 // Defensive JSON reader. `raw` comes off `game_requests.config` /
@@ -81,6 +106,30 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			src.numberLayout === 'spiral' || src.numberLayout === 'random'
 				? src.numberLayout
 				: DEFAULT_CONFIG.numberLayout,
+		extraBuild: parseExtraBuild(src.extraBuild, DEFAULT_CONFIG.extraBuild),
+	}
+}
+
+// Defensive reader for the nested extraBuild block. Missing/invalid fields fall
+// back to `fallback` (the caller's default), so a partial row still parses.
+export function parseExtraBuild(
+	raw: unknown,
+	fallback: ExtraBuildConfig
+): ExtraBuildConfig {
+	if (!raw || typeof raw !== 'object') return fallback
+	const src = raw as Record<string, unknown>
+	return {
+		enabled:
+			typeof src.enabled === 'boolean' ? src.enabled : fallback.enabled,
+		buildPhases: BUILD_PHASE_FREQUENCIES.includes(
+			src.buildPhases as BuildPhaseFrequency
+		)
+			? (src.buildPhases as BuildPhaseFrequency)
+			: fallback.buildPhases,
+		moreThanSeven:
+			typeof src.moreThanSeven === 'boolean'
+				? src.moreThanSeven
+				: fallback.moreThanSeven,
 	}
 }
 
@@ -118,6 +167,21 @@ export function summarizeGameConfig(
 				? 'Random numbers'
 				: 'Spiral numbers'
 		)
+	}
+	// Extra build phases only apply to >4 player games, so only surface a
+	// non-default value there.
+	if (playerCount > 4) {
+		const eb = config.extraBuild
+		const def = DEFAULT_CONFIG.extraBuild
+		if (!eb.enabled && def.enabled) {
+			parts.push('Extra build phases off')
+		} else if (eb.enabled) {
+			const quals: string[] = []
+			if (eb.buildPhases !== def.buildPhases && eb.buildPhases === 'across')
+				quals.push('across')
+			if (eb.moreThanSeven) quals.push('over 7 cards')
+			if (quals.length) parts.push(`Extra build (${quals.join(', ')})`)
+		}
 	}
 	return parts.join('. ')
 }
@@ -376,6 +440,13 @@ export type Phase =
 			roller: number
 			roll: DiceRoll
 	  }
+	// Special build phase (5-6 player games, `config.extraBuild`). Sits between
+	// a player's `end_turn` and the next player's `roll`. `queue[0]` is the
+	// acting builder (may build/buy/bank-trade only — no roll/robber/trade/dev
+	// play); the rest are pending, in acting order. `end_special_build` pops the
+	// head; when the queue empties the phase advances to `roll` for the
+	// already-advanced `current_turn`. See lib/catan/CLAUDE.md.
+	| { kind: 'special_build'; queue: number[] }
 	| { kind: 'game_over' }
 
 export type ForgerPickEntry = {

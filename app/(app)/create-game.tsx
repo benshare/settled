@@ -2,6 +2,7 @@ import { useAuth } from '@/lib/auth'
 import {
 	MAX_PLAYERS,
 	sameStringSet,
+	type BuildPhaseFrequency,
 	type NumberLayout,
 } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
@@ -58,6 +59,15 @@ export default function CreateGameScreen() {
 	const [numberLayout, setNumberLayout] = useState<NumberLayout>(
 		savedDefaults.settings.numberLayout
 	)
+	const [extraBuildEnabled, setExtraBuildEnabled] = useState(
+		savedDefaults.settings.extraBuild.enabled
+	)
+	const [buildPhases, setBuildPhases] = useState<BuildPhaseFrequency>(
+		savedDefaults.settings.extraBuild.buildPhases
+	)
+	const [moreThanSeven, setMoreThanSeven] = useState(
+		savedDefaults.settings.extraBuild.moreThanSeven
+	)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [extrasOpen, setExtrasOpen] = useState(false)
 	const [busy, setBusy] = useState(false)
@@ -72,28 +82,47 @@ export default function CreateGameScreen() {
 	const savedBonusSets = savedDefaults.extras.bonusSets
 	const savedDevCards = savedDefaults.settings.devCards
 	const savedNumberLayout = savedDefaults.settings.numberLayout
+	const savedExtraBuild = savedDefaults.settings.extraBuild
 	useEffect(() => {
 		if (touched) return
 		setBonuses(savedBonuses)
 		setBonusSets(savedBonusSets)
 		setDevCards(savedDevCards)
 		setNumberLayout(savedNumberLayout)
+		setExtraBuildEnabled(savedExtraBuild.enabled)
+		setBuildPhases(savedExtraBuild.buildPhases)
+		setMoreThanSeven(savedExtraBuild.moreThanSeven)
 	}, [
 		savedBonuses,
 		savedBonusSets,
 		savedDevCards,
 		savedNumberLayout,
+		savedExtraBuild,
 		touched,
 	])
 
 	const currentDefaults: GameDefaults = {
-		settings: { devCards, numberLayout },
+		settings: {
+			devCards,
+			numberLayout,
+			extraBuild: {
+				enabled: extraBuildEnabled,
+				buildPhases,
+				moreThanSeven,
+			},
+		},
 		extras: { bonuses, bonusSets },
 	}
 	const dirty =
 		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
 		currentDefaults.settings.numberLayout !==
 			savedDefaults.settings.numberLayout ||
+		currentDefaults.settings.extraBuild.enabled !==
+			savedExtraBuild.enabled ||
+		currentDefaults.settings.extraBuild.buildPhases !==
+			savedExtraBuild.buildPhases ||
+		currentDefaults.settings.extraBuild.moreThanSeven !==
+			savedExtraBuild.moreThanSeven ||
 		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses ||
 		!sameStringSet(
 			currentDefaults.extras.bonusSets,
@@ -112,6 +141,10 @@ export default function CreateGameScreen() {
 	// expanded board automatically.
 	const maxInvites = MAX_PLAYERS - 1
 	const atInviteCap = selected.size >= maxInvites
+	// Proposer + invitees. Extra build phases only apply to >4 player games, so
+	// the control only appears once the table would seat 5+.
+	const playerCount = selected.size + 1
+	const showExtraBuild = playerCount > 4
 
 	function toggle(id: string) {
 		setSelected((prev) => {
@@ -131,6 +164,11 @@ export default function CreateGameScreen() {
 			bonusSets,
 			devCards,
 			numberLayout,
+			extraBuild: {
+				enabled: extraBuildEnabled,
+				buildPhases,
+				moreThanSeven,
+			},
 		})
 		setBusy(false)
 		if (error) {
@@ -281,6 +319,56 @@ export default function CreateGameScreen() {
 											setTouched(true)
 										}}
 									/>
+									{showExtraBuild && (
+										<>
+											<CompactToggleRow
+												icon="construct"
+												title="Extra build phases"
+												description="Let players build between turns (5–6 player games)."
+												value={extraBuildEnabled}
+												onToggle={() => {
+													setExtraBuildEnabled(
+														(v) => !v
+													)
+													setTouched(true)
+												}}
+											/>
+											{extraBuildEnabled && (
+												<View style={styles.subOptions}>
+													<SegmentedRow
+														label="Build phases"
+														options={
+															BUILD_PHASE_OPTIONS
+														}
+														value={buildPhases}
+														onSelect={(v) => {
+															setBuildPhases(
+																v as BuildPhaseFrequency
+															)
+															setTouched(true)
+														}}
+													/>
+													<SegmentedRow
+														label="Allow building"
+														options={
+															ALLOW_BUILD_OPTIONS
+														}
+														value={
+															moreThanSeven
+																? 'over'
+																: 'always'
+														}
+														onSelect={(v) => {
+															setMoreThanSeven(
+																v === 'over'
+															)
+															setTouched(true)
+														}}
+													/>
+												</View>
+											)}
+										</>
+									)}
 								</CollapsibleSection>
 
 								<CollapsibleSection
@@ -499,6 +587,62 @@ function CompactToggleRow({
 	)
 }
 
+const BUILD_PHASE_OPTIONS = [
+	{ key: 'every', label: 'Every roll' },
+	{ key: 'across', label: 'Across' },
+]
+const ALLOW_BUILD_OPTIONS = [
+	{ key: 'always', label: 'Always' },
+	{ key: 'over', label: 'Over 7 cards' },
+]
+
+// A labelled two/three-option segmented control. Used for the extra-build
+// sub-options (build cadence + who may build). `value` is the active key.
+function SegmentedRow({
+	label,
+	options,
+	value,
+	onSelect,
+}: {
+	label: string
+	options: { key: string; label: string }[]
+	value: string
+	onSelect: (value: string) => void
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View style={styles.segmentedRow}>
+			<Text style={styles.segmentedLabel}>{label}</Text>
+			<View style={styles.segmentControl}>
+				{options.map((opt) => {
+					const active = value === opt.key
+					return (
+						<Pressable
+							key={opt.key}
+							onPress={() => onSelect(opt.key)}
+							style={({ pressed }) => [
+								styles.segmentPill,
+								active && styles.segmentPillActive,
+								pressed && !active && styles.pressed,
+							]}
+						>
+							<Text
+								style={[
+									styles.segmentLabel,
+									active && styles.segmentLabelActive,
+								]}
+							>
+								{opt.label}
+							</Text>
+						</Pressable>
+					)
+				})}
+			</View>
+		</View>
+	)
+}
+
 function FriendToggleRow({
 	friend,
 	selected,
@@ -656,6 +800,41 @@ function makeStyles(colors: ColorScheme) {
 			alignItems: 'center',
 			gap: spacing.sm,
 			paddingVertical: spacing.xs,
+		},
+		segmentedRow: {
+			paddingVertical: spacing.xs,
+		},
+		segmentedLabel: {
+			fontSize: font.xs,
+			fontWeight: '600',
+			color: colors.textSecondary,
+		},
+		segmentControl: {
+			flexDirection: 'row',
+			marginTop: spacing.xs,
+			borderRadius: radius.full,
+			padding: 3,
+			gap: 2,
+			backgroundColor: colors.cardAlt,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		segmentPill: {
+			flex: 1,
+			paddingVertical: 6,
+			borderRadius: radius.full,
+			alignItems: 'center',
+		},
+		segmentPillActive: {
+			backgroundColor: colors.brand,
+		},
+		segmentLabel: {
+			fontSize: font.xs,
+			fontWeight: '600',
+			color: colors.textSecondary,
+		},
+		segmentLabelActive: {
+			color: colors.white,
 		},
 		compactTextWrap: {
 			flex: 1,
