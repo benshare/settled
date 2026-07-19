@@ -420,7 +420,8 @@ export type Phase =
 			pending: number[]
 	  }
 	// Forger token-hex production. Each forger whose token's hex produced
-	// AND for whom another player gained from that hex is queued here.
+	// AND for whom two or more other players gained from that hex is queued
+	// here — a single eligible player is copied automatically, no prompt.
 	// Each entry resolves serially (head of queue acts first). The acting
 	// forger picks one candidate, gains a copy of that candidate's hex
 	// gain, queue pops, and `resume` fires once empty.

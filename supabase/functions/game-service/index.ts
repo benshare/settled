@@ -3998,8 +3998,8 @@ async function applyRollOutcome(
 	}
 
 	// Forger: queue picks for any forger whose token's hex produced AND
-	// for whom another player gained from that hex this roll. Skipped on
-	// bonus rolls.
+	// for whom two or more other players gained from that hex this roll (a
+	// lone candidate is copied outright). Skipped on bonus rolls.
 	const forgerQueue: ForgerPickEntry[] = []
 	if (options.distributeOnlyTo === undefined) {
 		stateAfter.players.forEach((p, idx) => {
@@ -4014,7 +4014,34 @@ async function applyRollOutcome(
 				if (handTotal(perPlayer[cid]) <= 0) continue
 				candidates[cid] = perPlayer[cid]
 			}
-			if (Object.keys(candidates).length > 0) {
+			const candidateIds = Object.keys(candidates).map(Number)
+			if (candidateIds.length === 1) {
+				// Only one player to copy from — there's nothing to choose, so
+				// resolve it immediately instead of prompting.
+				const target = candidateIds[0]
+				const gain = candidates[target]
+				nextPlayers = nextPlayers.map((p, i) => {
+					if (i !== idx) return p
+					const r = p.resources
+					return {
+						...p,
+						resources: {
+							brick: r.brick + gain.brick,
+							wood: r.wood + gain.wood,
+							sheep: r.sheep + gain.sheep,
+							wheat: r.wheat + gain.wheat,
+							ore: r.ore + gain.ore,
+						},
+					}
+				})
+				events.push({
+					kind: 'forger_copy',
+					player: idx,
+					target,
+					gain,
+					at: new Date().toISOString(),
+				})
+			} else if (candidateIds.length > 1) {
 				forgerQueue.push({ idx, hex, gainsByCandidate: candidates })
 			}
 		})
@@ -4277,7 +4304,12 @@ async function handleRerollDice(
 
 const HONK_IDLE_MS = 60 * 1000
 
-type LoggedEvent = { kind?: string; at?: string; from?: number }
+type LoggedEvent = {
+	kind?: string
+	at?: string
+	from?: number
+	player?: number
+}
 
 // Newest non-honk event timestamp. Honks are excluded on purpose: a honk isn't
 // activity, and counting it would let the first honker's ping restart the idle
@@ -4294,10 +4326,12 @@ function lastActivityAt(events: unknown[]): number | null {
 	return newest
 }
 
-// Seats that already honked this turn. The window is everything after the most
-// recent `turn_ended`, so the allowance resets on turn advance with no stored
-// state. Before the first `turn_ended` the whole log is the window.
-function honkersThisTurn(events: unknown[]): Set<number> {
+// Seats that already honked `target` this turn. The window is everything after
+// the most recent `turn_ended`, so the allowance resets on turn advance with no
+// stored state. Before the first `turn_ended` the whole log is the window. The
+// allowance is per-target because one turn window can hold several stalled
+// players: every special builder in the queue, then the roller.
+function honkersThisTurn(events: unknown[], target: number): Set<number> {
 	let start = 0
 	for (let i = events.length - 1; i >= 0; i--) {
 		if ((events[i] as LoggedEvent)?.kind === 'turn_ended') {
@@ -4308,10 +4342,23 @@ function honkersThisTurn(events: unknown[]): Set<number> {
 	const honkers = new Set<number>()
 	for (let i = start; i < events.length; i++) {
 		const e = events[i] as LoggedEvent
-		if (e?.kind === 'honked' && typeof e.from === 'number')
+		if (
+			e?.kind === 'honked' &&
+			typeof e.from === 'number' &&
+			e.player === target
+		)
 			honkers.add(e.from)
 	}
 	return honkers
+}
+
+// The seat a honk would target right now, or null when nobody is honkable.
+// During the special build phase the stalled player is the head of the build
+// queue, NOT `current_turn` (which has already advanced to the next roller).
+function honkTargetFor(phase: Phase, currentTurn: number): number | null {
+	if (phase.kind === 'roll' || phase.kind === 'main') return currentTurn
+	if (phase.kind === 'special_build') return phase.queue[0] ?? null
+	return null
 }
 
 async function handleHonk(
@@ -4324,21 +4371,24 @@ async function handleHonk(
 	const { game, state } = loaded
 
 	if (game.status !== 'active') return err(400, 'not active')
-	// Both halves of a normal turn are honkable — see lib/catan/honk.ts.
-	if (state.phase.kind !== 'roll' && state.phase.kind !== 'main')
-		return err(400, 'expected roll or main phase')
 
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')
 
 	const currentTurn = game.current_turn
 	if (currentTurn === null) return err(400, 'no current turn')
-	if (currentTurn === meIdx) return err(400, 'cannot honk yourself')
+
+	// Both halves of a normal turn are honkable, plus the special build phase —
+	// where the stalled player is the build-queue head, not `current_turn`. See
+	// lib/catan/honk.ts.
+	const target = honkTargetFor(state.phase, currentTurn)
+	if (target === null) return err(400, 'not a honkable phase')
+	if (target === meIdx) return err(400, 'cannot honk yourself')
 
 	// The client gates the button on the same rules, but its clock is untrusted
 	// — a stale tick or a hand-rolled call must fail here too.
 	const events = game.events ?? []
-	if (honkersThisTurn(events).has(meIdx))
+	if (honkersThisTurn(events, target).has(meIdx))
 		return err(400, 'already honked this turn')
 	const last = lastActivityAt(events)
 	if (last === null || Date.now() - last < HONK_IDLE_MS)
@@ -4346,7 +4396,7 @@ async function handleHonk(
 
 	const event = {
 		kind: 'honked',
-		player: currentTurn,
+		player: target,
 		from: meIdx,
 		at: new Date().toISOString(),
 	}
@@ -4360,7 +4410,7 @@ async function handleHonk(
 	EdgeRuntime.waitUntil(
 		sendNotifications(admin, [
 			{
-				userId: game.player_order[currentTurn],
+				userId: game.player_order[target],
 				kind: 'honk',
 				gameId: game.id,
 				senderProfileId: me,

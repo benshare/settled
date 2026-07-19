@@ -59,9 +59,40 @@ function testHonkablePhases() {
 	const idle = [turnEnded(3, HONK_IDLE_MS * 2)]
 	assert(can(idle, 1, MAIN), 'main phase is honkable')
 	assert(
-		!can(idle, 1, { kind: 'special_build', queue: [1] }),
-		'special_build is not honkable'
+		!can(idle, 1, {
+			kind: 'discard',
+			pending: {},
+			resume: { kind: 'main', roll: { a: 3, b: 4 }, trade: null },
+		}),
+		'discard is a blocking prompt, not honkable'
 	)
+}
+
+// During the special build phase the stalled player is the queue head, not
+// `current_turn` (which has already advanced to the next roller).
+function testSpecialBuildTargetsTheQueueHead() {
+	const idle = [turnEnded(3, HONK_IDLE_MS * 2)]
+	const sb: Phase = { kind: 'special_build', queue: [2, 3] }
+	assert(can(idle, 1, sb), 'a waiting seat can honk the special builder')
+	assert(!can(idle, 2, sb), 'the special builder cannot honk themselves')
+	assert(can(idle, 0, sb), 'the seat at current_turn is not the target here')
+	assert(
+		!can(idle, 1, { kind: 'special_build', queue: [] }),
+		'an empty queue has nobody to honk'
+	)
+}
+
+// One turn window can hold several stalled players — each special builder in
+// turn, then the roller — so the allowance is per-target, not per-window.
+function testAllowanceIsPerTarget() {
+	const events = [turnEnded(3, HONK_IDLE_MS * 2), honked(1, 2, 1000)]
+	const sb = (head: number): Phase => ({
+		kind: 'special_build',
+		queue: [head],
+	})
+	assert(!can(events, 1, sb(2)), 'seat 1 already honked seat 2')
+	assert(can(events, 1, sb(3)), 'seat 1 still has a honk for seat 3')
+	assert(can(events, 1, ROLL), 'seat 1 still has a honk for the roller')
 }
 
 function testCannotHonkSelf() {
@@ -94,7 +125,7 @@ function testAllowanceResetsOnTurnEnd() {
 		// New turn starts here — seat 1's spent honk is now out of the window.
 		turnEnded(0, HONK_IDLE_MS * 2),
 	]
-	assert(honkersThisTurn(events).size === 0, 'window resets at turn_ended')
+	assert(honkersThisTurn(events, 0).size === 0, 'window resets at turn_ended')
 	assert(can(events, 1), 'seat 1 may honk again on the next turn')
 }
 
@@ -105,7 +136,10 @@ function testFirstTurnWindow() {
 		{ kind: 'placement_complete', at: at(HONK_IDLE_MS * 2) },
 		honked(1, 0, 1000),
 	]
-	assert(honkersThisTurn(events).has(1), 'seat 1 counted with no turn_ended')
+	assert(
+		honkersThisTurn(events, 0).has(1),
+		'seat 1 counted with no turn_ended'
+	)
 	assert(!can(events, 1), 'seat 1 already honked the opening turn')
 	assert(can(events, 2), 'seat 2 may still honk the opening turn')
 }
@@ -120,6 +154,11 @@ const tests: [string, () => void][] = [
 	['idle threshold boundary', testIdleThreshold],
 	['no events is not honkable', testNoEventsIsNotHonkable],
 	['honkable phases', testHonkablePhases],
+	[
+		'special build targets the queue head',
+		testSpecialBuildTargetsTheQueueHead,
+	],
+	['allowance is per target', testAllowanceIsPerTarget],
 	['cannot honk self', testCannotHonkSelf],
 	['spectator cannot honk', testSpectatorCannotHonk],
 	['honk does not reset the clock', testHonkDoesNotResetTheClock],

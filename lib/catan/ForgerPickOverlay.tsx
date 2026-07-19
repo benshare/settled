@@ -1,5 +1,6 @@
-// Modal shown to a forger after their token's hex produced and at least one
-// other player gained from it. The forger picks one candidate to copy from.
+// Modal shown to a forger after their token's hex produced and two or more
+// other players gained from it. The forger picks one candidate to copy from.
+// A single eligible player is copied server-side without a prompt.
 
 import { useMemo, useState } from 'react'
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'

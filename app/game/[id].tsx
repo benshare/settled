@@ -1301,6 +1301,7 @@ function GameBody() {
 							profilesById={profilesById}
 							submitting={submitting}
 							onDone={onEndSpecialBuild}
+							onHonk={onHonk}
 						/>
 					)}
 				</>
@@ -2077,10 +2078,11 @@ function MainLoopBar({
 	)
 }
 
-// Nudge for a player who's stalled past the idle threshold, either on the roll
-// prompt or mid-turn in main. Its own component rather than inline in
-// MainLoopBar because it needs a ticking clock to notice the idle mark, and
-// MainLoopBar early-returns on `phase.kind` before any hook could run.
+// Nudge for a player who's stalled past the idle threshold — on the roll
+// prompt, mid-turn in main, or holding up the special build queue. Its own
+// component rather than inline in the bars because it needs a ticking clock to
+// notice the idle mark, and those bars early-return on `phase.kind` before any
+// hook could run.
 // Mounting only while someone is waiting also keeps the interval off for the
 // rest of the game.
 function HonkButton({
@@ -2234,6 +2236,7 @@ function SpecialBuildBar({
 	profilesById,
 	submitting,
 	onDone,
+	onHonk,
 }: {
 	game: NonNullable<ReturnType<typeof useGame>['game']>
 	gameState: NonNullable<ReturnType<typeof useGame>['gameState']>
@@ -2241,6 +2244,7 @@ function SpecialBuildBar({
 	profilesById: Record<string, Profile>
 	submitting: boolean
 	onDone: () => void
+	onHonk: () => void
 }) {
 	const phase = gameState.phase
 	if (phase.kind !== 'special_build') return null
@@ -2257,10 +2261,19 @@ function SpecialBuildBar({
 						? 'Special build — build, buy, or bank trade'
 						: `Special build — ${actorName} is building`}
 				</Text>
-				{isMe && (
+				{isMe ? (
 					<Button onPress={onDone} loading={submitting}>
 						Done building
 					</Button>
+				) : (
+					<HonkButton
+						events={(game.events ?? []) as GameEvent[]}
+						phase={phase}
+						meIdx={meIdx}
+						currentTurn={game.current_turn ?? 0}
+						submitting={submitting}
+						onHonk={onHonk}
+					/>
 				)}
 			</View>
 		</View>
