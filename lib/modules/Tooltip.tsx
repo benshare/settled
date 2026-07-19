@@ -15,6 +15,8 @@ import {
 	Text,
 	View,
 	type PressableProps,
+	type StyleProp,
+	type ViewStyle,
 } from 'react-native'
 import { useTheme } from '../ThemeContext'
 import { font, radius, spacing, type ColorScheme } from '../theme'
@@ -28,6 +30,11 @@ type TooltipProps = {
 	// accessibilityLabel etc). The tooltip activates on hover (web) or long
 	// press (mobile) regardless of onPress behaviour.
 	pressableProps?: PressableProps
+	// Applied to BOTH wrapper layers (the relative-positioned View and the
+	// trigger Pressable) so the tooltip is layout-transparent: a child that
+	// sized itself against the original parent (e.g. `flex: 1` in a row) keeps
+	// doing so once wrapped. Pass the layout style the child expects.
+	style?: StyleProp<ViewStyle>
 }
 
 export function Tooltip({
@@ -35,6 +42,7 @@ export function Tooltip({
 	children,
 	placement = 'top',
 	pressableProps,
+	style,
 }: TooltipProps) {
 	const { colors } = useTheme()
 	const [visible, setVisible] = useState(false)
@@ -55,8 +63,8 @@ export function Tooltip({
 				}
 
 	return (
-		<View style={styles.wrap}>
-			<Pressable {...pressableProps} {...hoverHandlers}>
+		<View style={[styles.wrap, style]}>
+			<Pressable style={style} {...pressableProps} {...hoverHandlers}>
 				{children}
 			</Pressable>
 			{visible && (

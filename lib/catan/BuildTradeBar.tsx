@@ -1,7 +1,8 @@
-import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { Tooltip } from '../modules/Tooltip'
 import { colors, font, radius, spacing } from '../theme'
+
+import { Ionicons } from '@expo/vector-icons'
+import { Tooltip } from '../modules/Tooltip'
 import type { BuildKind } from './build'
 import type { CurseHint } from './curses'
 import { playerColors } from './palette'
@@ -225,7 +226,11 @@ function BuildIconButton({
 		</Pressable>
 	)
 	if (curseHint) {
-		return <Tooltip label={curseHint.reason}>{button}</Tooltip>
+		return (
+			<Tooltip label={curseHint.reason} style={styles.iconSlot}>
+				{button}
+			</Tooltip>
+		)
 	}
 	return button
 }
@@ -434,6 +439,13 @@ const styles = StyleSheet.create({
 	iconRow: {
 		flexDirection: 'row',
 		gap: spacing.xs,
+	},
+	// Layout carrier for a tooltip-wrapped button: takes the row share the
+	// button itself would claim, and stays row-direction so the button's
+	// `flex: 1` keeps resolving horizontally.
+	iconSlot: {
+		flex: 1,
+		flexDirection: 'row',
 	},
 	iconBtn: {
 		flex: 1,
