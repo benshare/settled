@@ -6,13 +6,13 @@ import type { GameEvent } from '../stores/useGamesStore'
 import type { Phase } from './types'
 
 // How long the table must sit idle before the stalled player can be honked.
-export const HONK_IDLE_MS = 5 * 60 * 1000
+export const HONK_IDLE_MS = 60 * 1000
 
 /**
  * Timestamp of the newest real game activity, or null when nothing has
  * happened yet. Honks are excluded on purpose: a honk isn't activity, and
  * counting it would let the first honker's ping restart the idle window and
- * lock every other player out for another 5 minutes.
+ * lock every other player out for another full idle window.
  */
 export function lastActivityAt(events: GameEvent[]): number | null {
 	let newest: number | null = null
@@ -61,7 +61,10 @@ export function canHonk(args: {
 	now: number
 }): boolean {
 	const { events, phase, meIdx, currentTurn, now } = args
-	if (phase.kind !== 'roll') return false
+	// Both halves of a normal turn are honkable: sitting on the roll prompt, and
+	// stalling mid-turn over builds/trades. Sub-phases (discard, robber, the
+	// bonus picks) are excluded — those are already blocking prompts.
+	if (phase.kind !== 'roll' && phase.kind !== 'main') return false
 	if (meIdx < 0 || meIdx === currentTurn) return false
 	if (honkersThisTurn(events).has(meIdx)) return false
 	const last = lastActivityAt(events)

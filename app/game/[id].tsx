@@ -2010,7 +2010,7 @@ function MainLoopBar({
 						End turn
 					</Button>
 				)}
-				{!isMyTurn && phase.kind === 'roll' && (
+				{!isMyTurn && (
 					<HonkButton
 						events={(game.events ?? []) as GameEvent[]}
 						phase={phase}
@@ -2056,11 +2056,12 @@ function MainLoopBar({
 	)
 }
 
-// Nudge for a player who's sat on the roll prompt for 5+ minutes. Its own
-// component rather than inline in MainLoopBar because it needs a ticking clock
-// to notice the 5-minute mark, and MainLoopBar early-returns on `phase.kind`
-// before any hook could run. Mounting only while someone is waiting also keeps
-// the interval off for the rest of the game.
+// Nudge for a player who's stalled past the idle threshold, either on the roll
+// prompt or mid-turn in main. Its own component rather than inline in
+// MainLoopBar because it needs a ticking clock to notice the idle mark, and
+// MainLoopBar early-returns on `phase.kind` before any hook could run.
+// Mounting only while someone is waiting also keeps the interval off for the
+// rest of the game.
 function HonkButton({
 	events,
 	phase,
@@ -2078,7 +2079,7 @@ function HonkButton({
 }) {
 	const [now, setNow] = useState(() => Date.now())
 
-	// 10s is ample resolution for a 5-minute threshold.
+	// 10s is ample resolution for a minutes-scale threshold.
 	useEffect(() => {
 		const id = setInterval(() => setNow(Date.now()), 10_000)
 		return () => clearInterval(id)

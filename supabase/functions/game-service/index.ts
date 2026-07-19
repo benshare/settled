@@ -629,17 +629,12 @@ type VertexState =
 	  }
 
 type EdgeState =
-	| { occupied: false }
-	| { occupied: true; player: number; placedTurn: number }
+	{ occupied: false } | { occupied: true; player: number; placedTurn: number }
 
 type ResourceHand = Record<Resource, number>
 
 type DevCardId =
-	| 'knight'
-	| 'victory_point'
-	| 'road_building'
-	| 'year_of_plenty'
-	| 'monopoly'
+	'knight' | 'victory_point' | 'road_building' | 'year_of_plenty' | 'monopoly'
 
 type DevCardEntry = { id: DevCardId; purchasedTurn: number }
 
@@ -4286,13 +4281,13 @@ async function handleRerollDice(
 
 // --- Honk (mirror of lib/catan/honk.ts) ---------------------------------
 
-const HONK_IDLE_MS = 5 * 60 * 1000
+const HONK_IDLE_MS = 60 * 1000
 
 type LoggedEvent = { kind?: string; at?: string; from?: number }
 
 // Newest non-honk event timestamp. Honks are excluded on purpose: a honk isn't
 // activity, and counting it would let the first honker's ping restart the idle
-// window and lock every other player out for another 5 minutes.
+// window and lock every other player out for another full idle window.
 function lastActivityAt(events: unknown[]): number | null {
 	let newest: number | null = null
 	for (const raw of events) {
@@ -4335,7 +4330,9 @@ async function handleHonk(
 	const { game, state } = loaded
 
 	if (game.status !== 'active') return err(400, 'not active')
-	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+	// Both halves of a normal turn are honkable — see lib/catan/honk.ts.
+	if (state.phase.kind !== 'roll' && state.phase.kind !== 'main')
+		return err(400, 'expected roll or main phase')
 
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')

@@ -55,9 +55,9 @@ function testNoEventsIsNotHonkable() {
 	assert(!can([]), 'an empty log has no idle clock to read')
 }
 
-function testRollPhaseOnly() {
+function testHonkablePhases() {
 	const idle = [turnEnded(3, HONK_IDLE_MS * 2)]
-	assert(!can(idle, 1, MAIN), 'main phase is not honkable')
+	assert(can(idle, 1, MAIN), 'main phase is honkable')
 	assert(
 		!can(idle, 1, { kind: 'special_build', queue: [1] }),
 		'special_build is not honkable'
@@ -75,7 +75,7 @@ function testSpectatorCannotHonk() {
 }
 
 // The core of the "one per sender" rule: a honk must not restart the idle
-// clock, or the first honker would lock everyone else out for 5 more minutes.
+// clock, or the first honker would lock everyone else out for another full idle window.
 function testHonkDoesNotResetTheClock() {
 	const events = [turnEnded(3, HONK_IDLE_MS * 2), honked(2, 0, 1000)]
 	assert(can(events), 'seat 1 can still honk right after seat 2 honked')
@@ -119,7 +119,7 @@ function testUsesNewestActivity() {
 const tests: [string, () => void][] = [
 	['idle threshold boundary', testIdleThreshold],
 	['no events is not honkable', testNoEventsIsNotHonkable],
-	['roll phase only', testRollPhaseOnly],
+	['honkable phases', testHonkablePhases],
 	['cannot honk self', testCannotHonkSelf],
 	['spectator cannot honk', testSpectatorCannotHonk],
 	['honk does not reset the clock', testHonkDoesNotResetTheClock],
