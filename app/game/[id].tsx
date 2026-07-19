@@ -114,17 +114,28 @@ const BOARD_RESIZE = LinearTransition.duration(220)
 const PANEL_IN = FadeIn.duration(160)
 const PANEL_OUT = FadeOut.duration(120)
 
+// How long a `stolen` event waits for the victim's players[] row to arrive
+// before we give up on recovering the resource and skip the animation.
+const STEAL_DIFF_GRACE_MS = 5000
+
 // Recover the stolen resource by diffing the victim's hand pre/post a
-// `stolen` event. Returns null if no resource decreased by exactly 1 — which
-// happens when the realtime players[] update lags behind the events log.
+// `stolen` event. Returns null unless the diff looks like a steal and nothing
+// else: exactly one resource down by exactly one card. Any gain, any bigger
+// drop, or a second dropped resource means an unrelated hand change (a build,
+// a bank trade, a discard) is layered on top and the steal is unrecoverable —
+// answering anyway would attribute a random resource to the steal.
 function diffStolenResource(
 	before: ResourceHandType,
 	after: ResourceHandType
 ): Resource | null {
+	let stolen: Resource | null = null
 	for (const r of RESOURCES) {
-		if ((before[r] ?? 0) - (after[r] ?? 0) === 1) return r
+		const delta = (before[r] ?? 0) - (after[r] ?? 0)
+		if (delta === 0) continue
+		if (delta !== 1 || stolen !== null) return null
+		stolen = r
 	}
-	return null
+	return stolen
 }
 
 // Best-effort error notice. Alert.alert is a no-op on react-native-web;
@@ -381,17 +392,25 @@ function GameBody() {
 	} | null>(null)
 	const prevPlayersRef = useRef<PlayerState[] | undefined>(undefined)
 	const lastSeenEventCountRef = useRef<number | null>(null)
+	// A `stolen` event whose resource we couldn't recover yet. `games` and
+	// `game_states` are separate realtime rows, so the players[] update can
+	// land either side of the event. If it lands *first*, our snapshot is
+	// already post-steal and the diff is unrecoverable — hence the deadline:
+	// without one the pending steal sits forever and eventually matches an
+	// unrelated hand change, firing the animation minutes late.
+	const pendingStealRef = useRef<{
+		event: Extract<GameEvent, { kind: 'stolen' }>
+		preHand: ResourceHandType
+		firstSeenAt: number
+	} | null>(null)
 	useEffect(() => {
 		if (!game || !gameState) return
 		const events = (game.events ?? []) as GameEvent[]
+		const players = gameState.players
 
 		if (lastSeenEventCountRef.current === null) {
 			lastSeenEventCountRef.current = events.length
-			prevPlayersRef.current = gameState.players
-			return
-		}
-		if (events.length === lastSeenEventCountRef.current) {
-			prevPlayersRef.current = gameState.players
+			prevPlayersRef.current = players
 			return
 		}
 
@@ -401,54 +420,53 @@ function GameBody() {
 				e?.kind === 'stolen' &&
 				(e.thief === meIdx || e.victim === meIdx)
 		)
+		lastSeenEventCountRef.current = events.length
 
-		if (!stealEvent) {
-			lastSeenEventCountRef.current = events.length
-			prevPlayersRef.current = gameState.players
-			return
-		}
-
+		// Snapshot taken before this render's players[] is adopted, so it's
+		// the pre-steal hand whenever the event arrived first.
 		const prev = prevPlayersRef.current
-		if (!prev) {
-			lastSeenEventCountRef.current = events.length
-			prevPlayersRef.current = gameState.players
+		prevPlayersRef.current = players
+
+		if (stealEvent) {
+			const preHand = prev?.[stealEvent.victim]?.resources
+			pendingStealRef.current = preHand
+				? { event: stealEvent, preHand, firstSeenAt: Date.now() }
+				: null
+		}
+
+		const pending = pendingStealRef.current
+		if (!pending) return
+		if (Date.now() - pending.firstSeenAt > STEAL_DIFF_GRACE_MS) {
+			pendingStealRef.current = null
 			return
 		}
 
-		const before = prev[stealEvent.victim]?.resources
-		const after = gameState.players[stealEvent.victim]?.resources
-		const stolen =
-			before && after ? diffStolenResource(before, after) : null
+		const after = players[pending.event.victim]?.resources
+		const stolen = after ? diffStolenResource(pending.preHand, after) : null
+		if (!stolen) return // players[] hasn't caught up — retry next render
 
-		if (!stolen) {
-			// Players state hasn't caught up yet (events table updated first).
-			// Don't advance refs — the next render with the new players will
-			// resolve correctly.
-			return
-		}
+		pendingStealRef.current = null
 
 		const thiefName =
-			profilesById[game.player_order[stealEvent.thief]]?.username ??
+			profilesById[game.player_order[pending.event.thief]]?.username ??
 			'Player'
 		const victimName =
-			profilesById[game.player_order[stealEvent.victim]]?.username ??
+			profilesById[game.player_order[pending.event.victim]]?.username ??
 			'Player'
 
 		setStealAnim({
 			key:
-				stealEvent.at +
+				pending.event.at +
 				':' +
-				stealEvent.thief +
+				pending.event.thief +
 				':' +
-				stealEvent.victim,
-			preHand: before,
+				pending.event.victim,
+			preHand: pending.preHand,
 			stolen,
 			thiefName,
 			victimName,
-			meIsThief: stealEvent.thief === meIdx,
+			meIsThief: pending.event.thief === meIdx,
 		})
-		lastSeenEventCountRef.current = events.length
-		prevPlayersRef.current = gameState.players
 	}, [game, gameState, meIdx, profilesById])
 
 	// --- Nomad animation ---------------------------------------------------
