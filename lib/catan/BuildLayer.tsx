@@ -76,6 +76,9 @@ export function BuildLayer({
 	const inMain = state.phase.kind === 'main'
 	const inPostPlacement = state.phase.kind === 'post_placement'
 	const inRoadBuilding = state.phase.kind === 'road_building'
+	// Special build phase: the queue head — not current_turn — is the builder.
+	const inSpecialBuild =
+		state.phase.kind === 'special_build' && state.phase.queue[0] === meIdx
 	if (
 		tool === 'explorer_road' ||
 		tool === 'fence_token' ||
@@ -84,9 +87,12 @@ export function BuildLayer({
 		if (!inPostPlacement) return null
 	} else if (tool === 'road') {
 		// Road Building dev card places free roads outside the main phase.
-		if (!inMain && !inRoadBuilding) return null
-	} else {
+		if (!inMain && !inRoadBuilding && !inSpecialBuild) return null
+	} else if (tool === 'super_city') {
+		// Super city (metropolitan) stays main-phase only.
 		if (!inMain) return null
+	} else {
+		if (!inMain && !inSpecialBuild) return null
 	}
 	const color = playerColors[meIdx] ?? playerColors[0]
 
