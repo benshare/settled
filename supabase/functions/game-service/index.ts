@@ -1414,7 +1414,9 @@ const BRICKLAYER_COST: ResourceHand = {
 // Nomad: every 7-roll picks a random resource via a d5. The desert behaves
 // like a regular hex for nomad players — they collect that resource per
 // adjacent building (settlement = 1, city = 2, super_city = 3). No buildings
-// on desert means no production (and no event).
+// on desert means no production (and no event). Boards with more than one
+// desert (5-6 players) roll the d5 separately per desert, so a nomad
+// building on both can collect two different resources.
 const NOMAD_RESOURCES: readonly Resource[] = [
 	'brick',
 	'wood',
@@ -1451,24 +1453,23 @@ function applyNomadProduce(state: GameState): {
 	)
 	const nextPlayers = state.players.map((p, i) => {
 		if (p.bonus !== 'nomad') return p
-		let count = 0
-		for (const h of desertHexes) count += nomadProductionAt(state, i, h)
-		if (count <= 0) return p
-		const resource = nomadDie()
-		events.push({
-			kind: 'nomad_produce',
-			player: i,
-			resource,
-			count,
-			at: new Date().toISOString(),
-		})
-		return {
-			...p,
-			resources: {
-				...p.resources,
-				[resource]: p.resources[resource] + count,
-			},
+		const resources = { ...p.resources }
+		let gained = false
+		for (const h of desertHexes) {
+			const count = nomadProductionAt(state, i, h)
+			if (count <= 0) continue
+			const resource = nomadDie()
+			resources[resource] += count
+			gained = true
+			events.push({
+				kind: 'nomad_produce',
+				player: i,
+				resource,
+				count,
+				at: new Date().toISOString(),
+			})
 		}
+		return gained ? { ...p, resources } : p
 	})
 	return { players: nextPlayers, events }
 }
@@ -3886,26 +3887,23 @@ async function applyRollOutcome(
 	const activeIdx = game.current_turn ?? 0
 
 	if (total === 7) {
-		// Nomad: each nomad player produces from the desert (settlement=1,
-		// city=2, super_city=3 of a randomly chosen resource) BEFORE
-		// discards are computed. A nomad who was at 7 pre-roll can be
-		// forced into discard range by their own nomad gain.
-		const nomadResult = applyNomadProduce(state)
-		const playersAfterNomad = nomadResult.players
-		const stateAfterNomad: GameState = {
-			...state,
-			players: playersAfterNomad,
-		}
-		const pending = requiredDiscards(playersAfterNomad)
+		// Discards are computed from the pre-nomad hands, so a nomad's own
+		// desert production can never push them into discard range. Nomad
+		// production is applied once every owed discard has been submitted
+		// (see handleDiscard), or immediately when nobody owes one.
+		const pending = requiredDiscards(state.players)
 		const resume: ResumePhase = { kind: 'main', roll: dice, trade: null }
-		const nextPhase: Phase =
-			Object.keys(pending).length > 0
-				? { kind: 'discard', resume, pending, from7: true }
-				: { kind: 'move_robber', resume, from7: true }
+		const hasDiscards = Object.keys(pending).length > 0
+		const nomadResult = hasDiscards
+			? { players: state.players, events: [] as unknown[] }
+			: applyNomadProduce(state)
+		const nextPhase: Phase = hasDiscards
+			? { kind: 'discard', resume, pending, from7: true }
+			: { kind: 'move_robber', resume, from7: true }
 
 		const stateUpdate: Record<string, unknown> = { phase: nextPhase }
 		if (nomadResult.events.length > 0) {
-			stateUpdate.players = playersAfterNomad
+			stateUpdate.players = nomadResult.players
 		}
 		const { error: stateErr } = await admin
 			.from('game_states')
@@ -3920,10 +3918,6 @@ async function applyRollOutcome(
 			})
 			.eq('id', game.id)
 		if (gameErr) return err(500, 'could not log event')
-
-		// Keep stateAfterNomad referenced so future tooling can read the
-		// post-grant state easily; not needed here beyond the update.
-		void stateAfterNomad
 
 		if (nextPhase.kind === 'discard') {
 			const targets = Object.keys(pending)
@@ -4977,23 +4971,30 @@ async function handleDiscard(
 	}
 	delete nextPending[meIdx]
 
-	const nextPhase: Phase =
-		Object.keys(nextPending).length > 0
-			? {
-					kind: 'discard',
-					resume: state.phase.resume,
-					pending: nextPending,
-					from7: state.phase.from7,
-				}
-			: {
-					kind: 'move_robber',
-					resume: state.phase.resume,
-					from7: state.phase.from7,
-				}
+	const discardsRemain = Object.keys(nextPending).length > 0
+	const nextPhase: Phase = discardsRemain
+		? {
+				kind: 'discard',
+				resume: state.phase.resume,
+				pending: nextPending,
+				from7: state.phase.from7,
+			}
+		: {
+				kind: 'move_robber',
+				resume: state.phase.resume,
+				from7: state.phase.from7,
+			}
+
+	// Nomad production is deferred until every owed discard is in, so the
+	// desert gain can't be discarded away (or force a bigger discard).
+	const nomadResult =
+		!discardsRemain && state.phase.from7
+			? applyNomadProduce({ ...state, players: nextPlayers })
+			: { players: nextPlayers, events: [] as unknown[] }
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ players: nextPlayers, phase: nextPhase })
+		.update({ players: nomadResult.players, phase: nextPhase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -5011,7 +5012,9 @@ async function handleDiscard(
 	}
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
+		.update({
+			events: [...(game.events ?? []), event, ...nomadResult.events],
+		})
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 

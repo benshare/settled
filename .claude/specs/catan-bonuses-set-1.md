@@ -167,13 +167,16 @@ hand > 7`.
 ### nomad
 
 - Unrelated to the robber. Every 7 rolled, every nomad player receives 1
-  resource chosen by a server-side d5 roll. Applied inline inside
-  `handleRoll`'s 7-branch, BEFORE computing required discards (so the
-  gained card counts toward hand-size discard checks — this matches
-  "activated by 7" semantically).
-- `pending[playerIdx]` for discards is recomputed against the post-grant
-  hand.
-- Logged as a `nomad_produce` event per grant.
+  resource chosen by a server-side d5 roll. Applied AFTER discards: the
+  7-branch computes `pending` from the pre-nomad hands, and the grant fires
+  either inline (when nobody owes a discard) or in `handleDiscard` once the
+  last pending discard is submitted. This keeps the nomad's gain from being
+  discarded away or from enlarging their own discard.
+- The d5 is rolled **per desert hex**, not per player. On the expanded
+  (5-6 player) board's two deserts, a nomad with buildings on both rolls
+  twice and can collect two different resources.
+- Logged as a `nomad_produce` event per grant (so one player can emit two
+  events on a single 7).
 
 ### carpenter
 

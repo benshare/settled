@@ -473,14 +473,17 @@ function GameBody() {
 			return
 		}
 		if (events.length === lastSeenNomadIndexRef.current) return
-		const newEvents = events.slice(lastSeenNomadIndexRef.current)
+		const firstNew = lastSeenNomadIndexRef.current
+		const newEvents = events.slice(firstNew)
 		const queued: typeof nomadAnimQueue = []
-		for (const e of newEvents) {
+		for (const [i, e] of newEvents.entries()) {
 			if (e?.kind !== 'nomad_produce') continue
 			const playerName =
 				profilesById[game.player_order[e.player]]?.username ?? 'Player'
 			queued.push({
-				key: e.at + ':' + e.player,
+				// Event index, not timestamp — a nomad on two deserts produces
+				// two events that can share a millisecond.
+				key: firstNew + i + ':' + e.player,
 				produced: e.resource,
 				count: e.count,
 				playerName,
