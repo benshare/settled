@@ -100,6 +100,7 @@ function Body({
 	const curse = player?.curse ? curseById(player.curse) : undefined
 	const showBonuses = gameState.config.bonuses
 	const showDevCards = gameState.config.devCards
+	const devCount = player?.devCards?.length ?? 0
 	const knights = player ? knightsPlayed(player) : 0
 	const hasLargestArmy = gameState.largestArmy === playerIdx
 	const longestRoadLen = longestRoadFor(gameState, playerIdx)
@@ -147,6 +148,13 @@ function Body({
 					}
 				/>
 				<StatChip icon="albums-outline" label="Cards" value={cards} />
+				{showDevCards && (
+					<StatChip
+						icon="shield-outline"
+						label="Dev"
+						value={devCount}
+					/>
+				)}
 			</View>
 
 			<View style={styles.statsRow}>
