@@ -185,9 +185,10 @@ function BuildIconButton({
 	// curse, so the button must be non-interactive regardless of other
 	// enablement signals.
 	const interactive = (enabled || active) && !curseHint
-	// Curse-disabled buttons stay visually present (no dimming) so the curse
-	// badge reads as the cause; resource/turn-disabled buttons dim normally.
-	const dim = !interactive && !curseHint
+	// Any disabled button — curse or resource/turn — keeps its full-size shape
+	// and dims, with the curse badge (when present) sitting on top as the
+	// reason. Never replace the button with a bare icon; that shifts the row.
+	const dim = !interactive
 	const button = (
 		<Pressable
 			disabled={!interactive}
