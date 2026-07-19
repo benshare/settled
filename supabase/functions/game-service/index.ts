@@ -82,6 +82,7 @@ type RollBody = { action: 'roll'; game_id: string }
 type ConfirmRollBody = { action: 'confirm_roll'; game_id: string }
 type RerollDiceBody = { action: 'reroll_dice'; game_id: string }
 type EndTurnBody = { action: 'end_turn'; game_id: string }
+type HonkBody = { action: 'honk'; game_id: string }
 type EndSpecialBuildBody = { action: 'end_special_build'; game_id: string }
 type BuildRoadBody = {
 	action: 'build_road'
@@ -254,6 +255,7 @@ type SkipMagicBody = {
 	game_id: string
 }
 type Body =
+	| HonkBody
 	| ProposeGameBody
 	| RespondBody
 	| PickBonusBody
@@ -4282,6 +4284,102 @@ async function handleRerollDice(
 	])
 }
 
+// --- Honk (mirror of lib/catan/honk.ts) ---------------------------------
+
+const HONK_IDLE_MS = 5 * 60 * 1000
+
+type LoggedEvent = { kind?: string; at?: string; from?: number }
+
+// Newest non-honk event timestamp. Honks are excluded on purpose: a honk isn't
+// activity, and counting it would let the first honker's ping restart the idle
+// window and lock every other player out for another 5 minutes.
+function lastActivityAt(events: unknown[]): number | null {
+	let newest: number | null = null
+	for (const raw of events) {
+		const e = raw as LoggedEvent
+		if (!e || e.kind === 'honked' || typeof e.at !== 'string') continue
+		const t = Date.parse(e.at)
+		if (Number.isNaN(t)) continue
+		if (newest === null || t > newest) newest = t
+	}
+	return newest
+}
+
+// Seats that already honked this turn. The window is everything after the most
+// recent `turn_ended`, so the allowance resets on turn advance with no stored
+// state. Before the first `turn_ended` the whole log is the window.
+function honkersThisTurn(events: unknown[]): Set<number> {
+	let start = 0
+	for (let i = events.length - 1; i >= 0; i--) {
+		if ((events[i] as LoggedEvent)?.kind === 'turn_ended') {
+			start = i + 1
+			break
+		}
+	}
+	const honkers = new Set<number>()
+	for (let i = start; i < events.length; i++) {
+		const e = events[i] as LoggedEvent
+		if (e?.kind === 'honked' && typeof e.from === 'number')
+			honkers.add(e.from)
+	}
+	return honkers
+}
+
+async function handleHonk(
+	admin: SupabaseClient,
+	me: string,
+	body: HonkBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+
+	const currentTurn = game.current_turn
+	if (currentTurn === null) return err(400, 'no current turn')
+	if (currentTurn === meIdx) return err(400, 'cannot honk yourself')
+
+	// The client gates the button on the same rules, but its clock is untrusted
+	// — a stale tick or a hand-rolled call must fail here too.
+	const events = game.events ?? []
+	if (honkersThisTurn(events).has(meIdx))
+		return err(400, 'already honked this turn')
+	const last = lastActivityAt(events)
+	if (last === null || Date.now() - last < HONK_IDLE_MS)
+		return err(400, 'not idle long enough')
+
+	const event = {
+		kind: 'honked',
+		player: currentTurn,
+		from: meIdx,
+		at: new Date().toISOString(),
+	}
+	const { error } = await admin
+		.from('games')
+		.update({ events: [...events, event] })
+		.eq('id', game.id)
+	if (error) return err(500, error.message)
+
+	// Ungated by design — a honk always gets through.
+	EdgeRuntime.waitUntil(
+		sendNotifications(admin, [
+			{
+				userId: game.player_order[currentTurn],
+				kind: 'honk',
+				gameId: game.id,
+				senderProfileId: me,
+			},
+		])
+	)
+
+	return json({ ok: true })
+}
+
 async function handleEndTurn(
 	admin: SupabaseClient,
 	me: string,
@@ -5587,7 +5685,10 @@ async function handleBuyDevCard(
 	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
 	// Scout's peek buy opens a scout_pick sub-phase whose resume can't hold the
 	// special-build queue, so scouts buy dev cards on their own turn only.
-	if (state.phase.kind === 'special_build' && bonusOf(state, meIdx) === 'scout')
+	if (
+		state.phase.kind === 'special_build' &&
+		bonusOf(state, meIdx) === 'scout'
+	)
 		return err(400, 'scout dev-card buys only allowed on your turn')
 	const useBricklayer = !!body.use_bricklayer
 
@@ -7215,6 +7316,8 @@ serve(async (req) => {
 			return handleRerollDice(admin, me, body)
 		case 'end_turn':
 			return handleEndTurn(admin, me, body)
+		case 'honk':
+			return handleHonk(admin, me, body)
 		case 'end_special_build':
 			return handleEndSpecialBuild(admin, me, body)
 		case 'build_road':

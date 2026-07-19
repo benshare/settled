@@ -216,6 +216,16 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				player: e.player,
 			}
 		}
+		// Spelled out for self because `nameFor` returns 'You', and
+		// "You has been Honked" is broken grammar.
+		case 'honked':
+			return {
+				text:
+					e.player === ctx.meIdx
+						? 'You have been Honked'
+						: `${who(e.player)} has been Honked`,
+				player: e.player,
+			}
 		case 'game_complete': {
 			// Two historical shapes carry the winner under different keys.
 			const winner = 'winner' in e ? e.winner : e.winner_index
