@@ -82,23 +82,38 @@ export function GameProvider({
 		currentId.current = gameId
 	}, [gameId])
 
+	// Several refetches can be in flight at once — a burst of partial realtime
+	// payloads (see below) issues one apiece, and nothing makes the responses
+	// come back in order. Without a sequence guard the *oldest* snapshot can
+	// land last and overwrite newer state: propose → accept → propose within
+	// one turn would strand a bystander on the first, already-closed offer,
+	// whose Accept button then 404s forever. Drop any response that isn't the
+	// newest one issued.
+	const gameSeq = useRef(0)
+	const stateSeq = useRef(0)
+
 	const fetchGame = useCallback(async () => {
+		gameSeq.current += 1
+		const seq = gameSeq.current
 		const { data } = await supabase
 			.from('games')
 			.select('*')
 			.eq('id', gameId)
 			.maybeSingle()
-		if (currentId.current !== gameId || !data) return
+		if (currentId.current !== gameId || seq !== gameSeq.current || !data)
+			return
 		setLiveGame(data as Game)
 	}, [gameId])
 
 	const fetchState = useCallback(async () => {
+		stateSeq.current += 1
+		const seq = stateSeq.current
 		const { data } = await supabase
 			.from('game_states')
 			.select('*')
 			.eq('game_id', gameId)
 			.maybeSingle()
-		if (currentId.current !== gameId) return
+		if (currentId.current !== gameId || seq !== stateSeq.current) return
 		setGameState(data ? rowToState(data) : undefined)
 		setStateLoaded(true)
 	}, [gameId])
@@ -126,7 +141,10 @@ export function GameProvider({
 					table: 'games',
 					filter: `id=eq.${gameId}`,
 				},
-				(payload) => setLiveGame(payload.new as Game)
+				(payload) => {
+					gameSeq.current += 1
+					setLiveGame(payload.new as Game)
+				}
 			)
 			// Fetching and joining race each other, and an event landing between
 			// the fetch's snapshot and the join is delivered to nobody. Reading
@@ -161,6 +179,9 @@ export function GameProvider({
 					filter: `game_id=eq.${gameId}`,
 				},
 				(payload) => {
+					// A payload is newer than anything already in flight, so
+					// retire those responses before applying it.
+					stateSeq.current += 1
 					if (payload.eventType === 'DELETE') {
 						setGameState(undefined)
 						return
