@@ -82,9 +82,11 @@ import { TradeBanner, visibleOfferFor } from '@/lib/catan/TradeBanner'
 import { TradePanel } from '@/lib/catan/TradePanel'
 import { isOfferRejectedByAll } from '@/lib/catan/trade'
 import type {
+	Phase,
 	PlayerState,
 	ResourceHand as ResourceHandType,
 } from '@/lib/catan/types'
+import { canHonk } from '@/lib/catan/honk'
 import { Button } from '@/lib/modules/Button'
 import { useGamesStore, type GameEvent } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
@@ -181,6 +183,7 @@ function GameBody() {
 	const confirmRoll = useGamesStore((s) => s.confirmRoll)
 	const rerollDice = useGamesStore((s) => s.rerollDice)
 	const endTurn = useGamesStore((s) => s.endTurn)
+	const honk = useGamesStore((s) => s.honk)
 	const endSpecialBuild = useGamesStore((s) => s.endSpecialBuild)
 	const buildRoad = useGamesStore((s) => s.buildRoad)
 	const buildSettlement = useGamesStore((s) => s.buildSettlement)
@@ -792,6 +795,14 @@ function GameBody() {
 		if (!game) return
 		setSubmitting(true)
 		const res = await endTurn(game.id)
+		setSubmitting(false)
+		if (res.error) notify(res.error)
+	}
+
+	async function onHonk() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await honk(game.id)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
 	}
@@ -1698,6 +1709,7 @@ function GameBody() {
 						onConfirmRoll={onConfirmRoll}
 						onRerollDice={onRerollDice}
 						onEndTurn={onEndTurn}
+						onHonk={onHonk}
 						onRitualPress={
 							isMyActiveTurn &&
 							gameState.phase.kind === 'roll' &&
@@ -1897,6 +1909,7 @@ function MainLoopBar({
 	onConfirmRoll,
 	onRerollDice,
 	onEndTurn,
+	onHonk,
 	onRitualPress,
 	onShepherdPress,
 	onForgerMovePress,
@@ -1911,6 +1924,7 @@ function MainLoopBar({
 	onConfirmRoll: () => void
 	onRerollDice: () => void
 	onEndTurn: () => void
+	onHonk: () => void
 	// Set-2 pre-roll affordances. Each is `undefined` when the bar should
 	// not show the corresponding button (wrong player / wrong phase / cap
 	// reached).
@@ -1996,6 +2010,16 @@ function MainLoopBar({
 						End turn
 					</Button>
 				)}
+				{!isMyTurn && phase.kind === 'roll' && (
+					<HonkButton
+						events={(game.events ?? []) as GameEvent[]}
+						phase={phase}
+						meIdx={meIdx}
+						currentTurn={currentIdx}
+						submitting={submitting}
+						onHonk={onHonk}
+					/>
+				)}
 			</View>
 			{showBonusRow && (
 				<View style={styles.bonusRow}>
@@ -2029,6 +2053,43 @@ function MainLoopBar({
 				</View>
 			)}
 		</View>
+	)
+}
+
+// Nudge for a player who's sat on the roll prompt for 5+ minutes. Its own
+// component rather than inline in MainLoopBar because it needs a ticking clock
+// to notice the 5-minute mark, and MainLoopBar early-returns on `phase.kind`
+// before any hook could run. Mounting only while someone is waiting also keeps
+// the interval off for the rest of the game.
+function HonkButton({
+	events,
+	phase,
+	meIdx,
+	currentTurn,
+	submitting,
+	onHonk,
+}: {
+	events: GameEvent[]
+	phase: Phase
+	meIdx: number
+	currentTurn: number
+	submitting: boolean
+	onHonk: () => void
+}) {
+	const [now, setNow] = useState(() => Date.now())
+
+	// 10s is ample resolution for a 5-minute threshold.
+	useEffect(() => {
+		const id = setInterval(() => setNow(Date.now()), 10_000)
+		return () => clearInterval(id)
+	}, [])
+
+	if (!canHonk({ events, phase, meIdx, currentTurn, now })) return null
+
+	return (
+		<Button variant="secondary" onPress={onHonk} loading={submitting}>
+			Honk
+		</Button>
 	)
 }
 

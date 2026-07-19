@@ -56,6 +56,9 @@ export type GameEvent =
 			at: string
 	  }
 	| { kind: 'turn_ended'; player: number; at: string }
+	// `player` is the honked (stalled) seat, `from` the sender's. `from` backs
+	// the one-honk-per-sender-per-turn rule; the log line only renders `player`.
+	| { kind: 'honked'; player: number; from: number; at: string }
 	| { kind: 'road_built'; player: number; edge: string; at: string }
 	| { kind: 'settlement_built'; player: number; vertex: string; at: string }
 	| { kind: 'city_built'; player: number; vertex: string; at: string }
@@ -247,6 +250,7 @@ type GamesStore = {
 	confirmRoll: (gameId: string) => Promise<RollResult>
 	rerollDice: (gameId: string) => Promise<RollResult>
 	endTurn: (gameId: string) => Promise<ActionResult>
+	honk: (gameId: string) => Promise<ActionResult>
 	// Finish your slot in a special build phase (5-6 player games). Pops you
 	// off the build queue; advances to the next builder or the next roll.
 	endSpecialBuild: (gameId: string) => Promise<ActionResult>
@@ -645,6 +649,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'end_turn', game_id: gameId },
 			"Couldn't end turn"
+		)
+	},
+
+	async honk(gameId) {
+		return callGameService(
+			{ action: 'honk', game_id: gameId },
+			"Couldn't honk"
 		)
 	},
 

@@ -22,11 +22,14 @@ export type NotificationKind =
 	| 'trade_accepted'
 	| 'trade_rejected_all'
 	| 'friend_request'
+	| 'honk'
 
 export type NotifyTarget = {
 	userId: string
 	kind: NotificationKind
-	gate: NotificationPrefKey
+	// Omit to send ungated — the honk is deliberately un-mutable, so it has no
+	// corresponding pref key rather than borrowing an unrelated one.
+	gate?: NotificationPrefKey
 	senderProfileId?: string // fills in <sender>/<proposer> body copy
 	gameId?: string // included in the deep-link payload
 	firstPlayer?: boolean // game_started copy variant for player_order[0]
@@ -106,8 +109,9 @@ export async function sendNotifications(
 	const messages: ExpoMessage[] = []
 	for (const t of targets) {
 		const prefs = prefsById.get(t.userId) ?? {}
-		// Default-on: only skip if the user explicitly turned it off.
-		if (prefs[t.gate] === false) continue
+		// Default-on: only skip if the user explicitly turned it off. A target
+		// with no gate is ungated and always sends.
+		if (t.gate && prefs[t.gate] === false) continue
 		const tokens = tokensByUser.get(t.userId)
 		if (!tokens || tokens.length === 0) continue
 		const senderName = t.senderProfileId
@@ -165,5 +169,7 @@ function renderBody(t: NotifyTarget, sender: string | undefined): string {
 			return 'Your trade was turned down.'
 		case 'friend_request':
 			return `${sender ?? 'Someone'} sent you a friend request.`
+		case 'honk':
+			return `HONK. It's your turn. (Sent by ${sender ?? 'someone'})`
 	}
 }
