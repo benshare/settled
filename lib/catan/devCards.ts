@@ -10,11 +10,7 @@ import type React from 'react'
 type IoniconName = React.ComponentProps<typeof Ionicons>['name']
 
 export type DevCardId =
-	| 'knight'
-	| 'victory_point'
-	| 'road_building'
-	| 'year_of_plenty'
-	| 'monopoly'
+	'knight' | 'victory_point' | 'road_building' | 'year_of_plenty' | 'monopoly'
 
 export type DevCard = {
 	id: DevCardId

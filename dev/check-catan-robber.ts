@@ -113,7 +113,11 @@ function testValidRobberHexes() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const valids = validRobberHexes(s)
 	equal(valids.length, 18, 'exactly 18 valid hexes (all except current)')
@@ -126,7 +130,11 @@ function testStealCandidatesOpponentWithCards() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -148,7 +156,11 @@ function testStealCandidatesEmptyHand() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -164,7 +176,11 @@ function testStealCandidatesExcludesSelf() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const hex = firstResourceHex(s0)
 	const v = adjacentVertices[hex][0] as Vertex
@@ -185,7 +201,11 @@ function testDistributeSkipsRobberHex() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const hex = firstResourceHex(s0)
 	const hd = s0.hexes[hex]

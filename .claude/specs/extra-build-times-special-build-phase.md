@@ -87,9 +87,9 @@ while holding **> 7 resource cards** (sum of `resources`, matching the discard t
 Enforced in two places, both consulting the current hand:
 
 - **Auto-skip / `canTakeSpecialBuildAction`** returns false if `eb.moreThanSeven && handSize ≤
-  7`, so an under-threshold player is skipped rather than prompted.
+7`, so an under-threshold player is skipped rather than prompted.
 - **Per-action gate** in the four build/buy/bank handlers: reject an SBP action when
-  `eb.moreThanSeven && handSize ≤ 7`. Checked against the hand *before* the action, so a player
+  `eb.moreThanSeven && handSize ≤ 7`. Checked against the hand _before_ the action, so a player
   may keep building only while still over the line (a build that drops them to ≤7 is their last
   in that slot). Bank trades are hand-size-neutral, so an over-threshold player keeps access.
 
@@ -119,9 +119,11 @@ fully derived from the phase queue, not `current_turn`; and in `every-turn` the 
 ## Server changes — `supabase/functions/game-service/index.ts`
 
 ### `Phase` mirror
+
 Add the `special_build` variant (declared alongside the others near line 1264).
 
 ### `handleEndTurn` (lines 3833–3908)
+
 After computing `nextTurn`, the flag resets, and `nextRound` (all unchanged):
 
 1. Read `eb = state.config.extraBuild` (default via `parseGameConfig` upstream).
@@ -134,15 +136,16 @@ After computing `nextTurn`, the flag resets, and `nextRound` (all unchanged):
 5. If `queue.length === 0`: unchanged — phase `roll`, notify `nextTurn`.
 
 ### New `handleEndSpecialBuild` + action `end_special_build`
+
 - Add body type `{ action: 'end_special_build'; game_id: string }`, switch case, and handler.
 - Gating: `game.status === 'active'`, `state.phase.kind === 'special_build'`, `meIdx =
-  currentPlayerIndex(game, me)` non-null, and **`state.phase.queue[0] === meIdx`** (403
+currentPlayerIndex(game, me)` non-null, and **`state.phase.queue[0] === meIdx`** (403
   otherwise). This is the `forger_pick` head-of-queue precedent (`head.idx !== meIdx`).
 - Pop the head. Auto-skip the new leading builders. Then:
-  - remaining non-empty → `phase: { kind: 'special_build', queue: remaining }`; notify
-    `player_order[remaining[0]]`.
-  - remaining empty → `phase: { kind: 'roll' }`; notify `player_order[current_turn]`
-    (the roller).
+    - remaining non-empty → `phase: { kind: 'special_build', queue: remaining }`; notify
+      `player_order[remaining[0]]`.
+    - remaining empty → `phase: { kind: 'roll' }`; notify `player_order[current_turn]`
+      (the roller).
 - **Age curse:** on pop, reset the finishing builder's `cardsSpentThisTurn` to 0 iff
   `curse === 'age'` — the SBP slot is a self-contained spend window, mirroring `end_turn`'s
   reset for the outgoing player, so SBP spend never leaks into that player's own turn budget.
@@ -150,6 +153,7 @@ After computing `nextTurn`, the flag resets, and `nextRound` (all unchanged):
   ritual, shepherd, forger move, dev play — are all disallowed in the SBP.)
 
 ### Auto-skip helper
+
 A queued builder is **skipped** (removed without a slot) iff they have **no possible SBP
 action**: cannot afford+place a road, settlement, or city, and cannot buy a dev card — **or**
 `eb.moreThanSeven` is set and their hand is ≤ 7. Compute server-side from existing pure rules
@@ -159,7 +163,10 @@ canAffordPurchase(p,'dev_card')`). Shared helper (client + edge), e.g. in `build
 `state.config.extraBuild.moreThanSeven` + the player's hand size):
 
 ```ts
-export function canTakeSpecialBuildAction(state: GameState, idx: number): boolean
+export function canTakeSpecialBuildAction(
+	state: GameState,
+	idx: number
+): boolean
 ```
 
 Auto-skip runs (a) when building the queue in `end_turn`, and (b) after each pop in
@@ -167,6 +174,7 @@ Auto-skip runs (a) when building the queue in `end_turn`, and (b) after each pop
 open question Q2 (whether to include auto-skip at all).
 
 ### Relax build/buy/bank gating for the SBP actor
+
 Four spots currently enforce `phase.kind !== 'main'` **and** `current_turn !== meIdx`. Each
 must additionally accept: `phase.kind === 'special_build' && phase.queue[0] === meIdx`
 **and** (`!eb.moreThanSeven || handSize(player) > 7`). The `meIdx` used for cost/validation is
@@ -190,6 +198,7 @@ carpenter, tap_knight, ritual, shepherd, forger, liquidate) keep the strict `mai
 `current_turn` gate → automatically blocked during SBP.
 
 ### Notifications
+
 Reuse the existing `your_turn` / gate `yourTurn` kind for SBP slots (no `_notify` change — the
 `NotificationKind` union is closed and `your_turn` reads as "it's your turn to act"). The
 acting builder is notified on slot entry and on each queue advance; the roller is notified when
@@ -198,35 +207,43 @@ the queue drains.
 ## Client changes
 
 ### Types + pure rules
+
 - `lib/catan/types.ts` — add the `special_build` Phase variant; export `ExtraBuildTimes` is
   already present. (`roll.ts` will import it for `specialBuildQueue`.)
 - `lib/catan/roll.ts` — add `acrossSeat` + `specialBuildQueue`.
 - `lib/catan/build.ts` — add `canTakeSpecialBuildAction`.
 - `lib/catan/dev.ts` — widen `canBuyDevCard(state, meIdx, currentTurn)` so the acting player
   is `state.phase.kind === 'main' ? currentTurn : state.phase.kind === 'special_build' ?
-  state.phase.queue[0] : -1`, and accept both phases. (Edge inlines its own gate — mirror the
+state.phase.queue[0] : -1`, and accept both phases. (Edge inlines its own gate — mirror the
   branch there.)
 
 ### `app/game/[id].tsx` (`GameBody`)
+
 Derive:
+
 ```ts
-const sbActor = gameState?.phase.kind === 'special_build' ? gameState.phase.queue[0] : null
+const sbActor =
+	gameState?.phase.kind === 'special_build' ? gameState.phase.queue[0] : null
 const isMySpecialBuild = sbActor !== null && sbActor === meIdx
 ```
+
 Enablement (widen **per-action**, not the shared `canBuildThisTurn`, so trade/super-city/
 carpenter stay main-only):
+
 - road / settlement / city buttons: `(canBuildThisTurn || isMySpecialBuild) && affordable &&
-  validSpots`.
+validSpots`.
 - `dev_card`: use the widened `canBuyDevCard`.
 - **board interactivity** (line 1290): `buildTool && (isMyActiveTurn || isMySpecialBuild) &&
-  !tradePanelOpen`.
+!tradePanelOpen`.
 - **bank trade**: enable the Trade button when `isMySpecialBuild`, but open `TradePanel` in a
   new **bank-only** mode (hide the player-trade composer). Player-trade stays main-only.
 - super-city / carpenter / accountant / player-trade / play-dev buttons: **unchanged**
   (`canBuildThisTurn` = main + current_turn) → disabled during SBP.
 
 ### New `SpecialBuildBar` (mutually-exclusive status bar, like `DiscardBar` / `RobberStatus`)
+
 Rendered when `phase.kind === 'special_build'`:
+
 - **actor view** (`isMySpecialBuild`): "Special build — build, buy, or bank trade" + a
   **"Done building"** button → `onEndSpecialBuild` → `endSpecialBuild(gameId)` store action →
   edge `end_special_build`.
@@ -237,15 +254,18 @@ Rendered when `phase.kind === 'special_build'`:
 during SBP — the SBP bar owns the "done" affordance.
 
 ### `TradePanel` (`lib/catan/TradePanel.tsx`)
+
 Add a `bankOnly?: boolean` prop; when set, render only the bank/port composer (hide the
 player-to-player composer + send-offer button). Passed true when opened from an SBP slot.
 
 ### Turn indicator (`PlayerStrip`)
+
 Optional polish: when `phase.kind === 'special_build'`, additionally highlight `sbActor` (pass
 it down) so the highlighted box matches who's acting. Low priority; the SBP bar already names
 the actor.
 
 ### Store — `lib/stores/useGamesStore.ts`
+
 Add `endSpecialBuild(gameId)` → `callGameService({ action: 'end_special_build', game_id }, …)`
 (thin wrapper like `endTurn`).
 

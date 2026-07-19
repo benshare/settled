@@ -83,14 +83,10 @@ export type PortKind = (typeof PORT_KINDS)[number]
 // 18 coastal edges, walking the outer ring clockwise starting from the
 // top edge of hex 1A. Exported as readonly tuple so tests can snapshot
 // the ordering. To be filled in after verifying adjacency.
-export const COASTAL_EDGES: readonly Edge[] = [
-	/* 18 entries */
-]
+export const COASTAL_EDGES: readonly Edge[] = [/* 18 entries */]
 
 // 9 canonical port slots — every other edge from COASTAL_EDGES (offset 0).
-export const PORT_SLOTS: readonly Edge[] = [
-	/* 9 entries */
-]
+export const PORT_SLOTS: readonly Edge[] = [/* 9 entries */]
 
 // Standard kind distribution: 4 × '3:1' + 1 each of 5 resources.
 export const STANDARD_PORT_KINDS: readonly PortKind[] = [

@@ -90,8 +90,8 @@ existing shuffled `numbers` bag.
 4. `angle(h)` = `atan2(cy − centerY, cx − centerX)` from unit-scale pixel centers.
 5. **Spiral order** = sort by `ring` **descending** (outer ring first, like Catan), tie-
    break by `angle`. Randomize per game:
-   - starting corner → add a random angular offset `θ₀` before sorting by angle;
-   - direction → sort angle ascending (CW) or descending (CCW).
+    - starting corner → add a random angular offset `θ₀` before sorting by angle;
+    - direction → sort angle ascending (CW) or descending (CCW).
 
 ### 3. Assign tokens
 
@@ -109,6 +109,7 @@ Everything the existing config flags (`bonuses`, `devCards`) touch, plus the two
 `generateHexes` copies:
 
 ### Types / config
+
 - `lib/catan/types.ts` — add `numberLayout` to `GameConfig`; extend `DEFAULT_CONFIG`,
   `parseGameConfig` (default `'spiral'` on missing/invalid), and `summarizeGameConfig`
   (call out when non-default, e.g. "Random numbers"). Add `NUMBER_LAYOUTS`/`NumberLayout`.
@@ -116,10 +117,12 @@ Everything the existing config flags (`bonuses`, `devCards`) touch, plus the two
   extend `DEFAULT_GAME_DEFAULTS` and `parseGameDefaults`.
 
 ### Board data
+
 - `lib/catan/board.ts` — add `spiralNumberSequence` to the `Board` type + both bundles;
   define `STANDARD_SPIRAL_SEQUENCE` / `EXPANDED_SPIRAL_SEQUENCE`.
 
 ### Generation (BOTH copies)
+
 - `lib/catan/generate.ts` — `generateHexes(variant, layout: NumberLayout)`; implement the
   spiral path helper + assignment. `random` keeps the current shuffle. Thread `layout`
   from `initialGameState` (read `config.numberLayout`).
@@ -129,6 +132,7 @@ Everything the existing config flags (`bonuses`, `devCards`) touch, plus the two
   **Requires `npm run edge` on merge** — real games are generated here.
 
 ### UI
+
 - `app/(app)/create-game.tsx` — add a control under **Game settings** (next to Dev
   cards). Since it's a 2-way choice (not boolean), use a small segmented control
   ("Spiral" / "Random") rather than a toggle, OR a `CompactToggleRow`-style row labeled
@@ -137,6 +141,7 @@ Everything the existing config flags (`bonuses`, `devCards`) touch, plus the two
   machinery and the `createRequest` config payload.
 
 ### Validation
+
 - `dev/check-catan-board.ts` — assert each variant's `spiralNumberSequence` multiset
   equals its `numbers` bag; assert the spiral order is a permutation of all hexes; sample
   N spiral generations and assert every non-desert hex gets exactly one token and the

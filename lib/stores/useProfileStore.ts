@@ -30,7 +30,11 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 	settings: {
 		devCards: true,
 		numberLayout: 'spiral',
-		extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: true,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	},
 	extras: { bonuses: false, bonusSets: ['1'] },
 }

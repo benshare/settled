@@ -88,7 +88,11 @@ function baseState(): GameState {
 		bonusSets: ['1'],
 		devCards: true,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 }
 

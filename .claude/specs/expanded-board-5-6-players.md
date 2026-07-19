@@ -84,7 +84,7 @@ and client share identical static data. A **check script** validates both varian
 ## Type & data-model strategy (recommended — flag for review)
 
 Today `Hex`/`Vertex`/`Edge` are **string-literal unions**, and `hexes: Record<Hex,
-HexData>` is a *total* record. Two boards with overlapping IDs (both have a hex `1A`) but
+HexData>` is a _total_ record. Two boards with overlapping IDs (both have a hex `1A`) but
 different totalities break the total-record shape if we simply union the literals.
 
 **Recommendation:** introduce a per-variant board bundle and relax the ID types to opaque
@@ -96,19 +96,19 @@ export type Vertex = string
 export type Edge = string
 
 export type Board = {
-  hexes: readonly Hex[]
-  vertices: readonly Vertex[]
-  edges: readonly Edge[]
-  adjacentVertices: Record<Hex, readonly Vertex[]>
-  adjacentHexes: Record<Vertex, readonly Hex[]>
-  neighborVertices: Record<Vertex, readonly Vertex[]>
-  adjacentEdges: Record<Vertex, readonly Edge[]>
-  coastalEdges: readonly Edge[]
-  portSlots: readonly Edge[]
-  resourceCounts: Record<Resource, number>
-  numbers: readonly HexNumber[]
-  portComposition: readonly PortKind[]
-  layoutRows: readonly (readonly Hex[])[]
+	hexes: readonly Hex[]
+	vertices: readonly Vertex[]
+	edges: readonly Edge[]
+	adjacentVertices: Record<Hex, readonly Vertex[]>
+	adjacentHexes: Record<Vertex, readonly Hex[]>
+	neighborVertices: Record<Vertex, readonly Vertex[]>
+	adjacentEdges: Record<Vertex, readonly Edge[]>
+	coastalEdges: readonly Edge[]
+	portSlots: readonly Edge[]
+	resourceCounts: Record<Resource, number>
+	numbers: readonly HexNumber[]
+	portComposition: readonly PortKind[]
+	layoutRows: readonly (readonly Hex[])[]
 }
 
 export const BOARDS: Record<Variant, Board>

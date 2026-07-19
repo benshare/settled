@@ -74,7 +74,11 @@ function testFreshGameAllValid() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const valid = validSettlementVertices(s)
 	equal(valid.length, VERTICES.length, 'fresh game: all 54 vertices valid')
@@ -86,7 +90,11 @@ function testDistanceRule() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const s = placeSettlement(s0, '3F', 0)
 	assert(
@@ -119,7 +127,11 @@ function testTargetSettlementRound1() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const s = placeSettlement(s0, '3F', 0)
 	equal(targetSettlement(s, 0), '3F', 'round-1 target = only settlement')
@@ -132,7 +144,11 @@ function testTargetSettlementRound2() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	// Round 1: player 0 places settlement 3F + a road on one of its edges.
 	s = placeSettlement(s, '3F', 0)
@@ -160,7 +176,11 @@ function testValidRoadEdges() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	s = placeSettlement(s, '3F', 0)
 	const edges = validRoadEdges(s, 0)
@@ -186,7 +206,11 @@ function testStartingResourcesInterior() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	// Find an interior vertex (touches 3 hexes).
 	const interior = VERTICES.find((v) => adjacentHexes[v].length === 3)
@@ -235,7 +259,11 @@ function testValidSettlementExcludesAllNeighbors() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
-		extraBuild: { enabled: false, buildPhases: 'every', moreThanSeven: false },
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
 	})
 	const s = placeSettlement(s0, '3F', 0)
 	const valid = new Set(validSettlementVertices(s))

@@ -177,7 +177,10 @@ export function summarizeGameConfig(
 			parts.push('Extra build phases off')
 		} else if (eb.enabled) {
 			const quals: string[] = []
-			if (eb.buildPhases !== def.buildPhases && eb.buildPhases === 'across')
+			if (
+				eb.buildPhases !== def.buildPhases &&
+				eb.buildPhases === 'across'
+			)
 				quals.push('across')
 			if (eb.moreThanSeven) quals.push('over 7 cards')
 			if (quals.length) parts.push(`Extra build (${quals.join(', ')})`)
@@ -197,8 +200,7 @@ export function sameStringSet(
 }
 
 export type HexData =
-	| { resource: null }
-	| { resource: Resource; number: HexNumber }
+	{ resource: null } | { resource: Resource; number: HexNumber }
 
 export type VertexState =
 	| { occupied: false }
@@ -210,8 +212,7 @@ export type VertexState =
 	  }
 
 export type EdgeState =
-	| { occupied: false }
-	| { occupied: true; player: number; placedTurn: number }
+	{ occupied: false } | { occupied: true; player: number; placedTurn: number }
 
 export type ResourceHand = Record<Resource, number>
 

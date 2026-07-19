@@ -8,10 +8,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
 
 export type NotificationPrefKey =
-	| 'gameInvite'
-	| 'yourTurn'
-	| 'trade'
-	| 'friendRequest'
+	'gameInvite' | 'yourTurn' | 'trade' | 'friendRequest'
 
 export type NotificationKind =
 	| 'game_invite'

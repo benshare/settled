@@ -9,8 +9,7 @@ import type { GameState } from './types'
 import { VertexPiece } from './VertexPiece'
 
 export type PlacementSelection =
-	| { kind: 'settlement'; vertex: Vertex }
-	| { kind: 'road'; edge: Edge }
+	{ kind: 'settlement'; vertex: Vertex } | { kind: 'road'; edge: Edge }
 
 // Overlay inside BoardSvg's transformed group. Shows valid-spot dots + hit
 // targets during the current user's initial-placement turn, plus a ghost

@@ -22,11 +22,7 @@ import { VertexPiece } from './VertexPiece'
 // pulse for the explorer bonus — same edge validity as a paid road, just
 // gated on a different phase.
 export type BoardTool =
-	| BuildKind
-	| 'super_city'
-	| 'explorer_road'
-	| 'fence_token'
-	| 'haunt_spot'
+	BuildKind | 'super_city' | 'explorer_road' | 'fence_token' | 'haunt_spot'
 
 export type BuildSelection =
 	| { kind: 'road'; edge: Edge }
