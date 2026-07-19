@@ -255,7 +255,12 @@ export type CurseHint = {
 export function curseBuildReason(
 	state: GameState,
 	playerIdx: number,
-	kind: BuildKind | 'dev_card'
+	kind: BuildKind | 'dev_card',
+	// Whether any legal target for `kind` remains on the board. Per-location
+	// curses (power, youth) only produce a hint when nothing is left — a hint
+	// disables the build button, so a board-wide guess would kill builds that
+	// are still legal somewhere.
+	hasLegalTarget = true
 ): CurseHint | null {
 	const curse = curseOf(state, playerIdx)
 	if (!curse) return null
@@ -300,15 +305,15 @@ export function curseBuildReason(
 			}
 		}
 	}
-	// Power + youth apply per-location, so the build-bar hint fires only when
-	// the player is already at the board-wide "nothing new will work" state:
-	// power has saturated its two max-power hexes, or youth has buildings on
-	// all 4 remaining resource types (any settlement would touch the 5th and
-	// fail). These are conservative signals — location-specific blocks still
-	// surface via the disabled highlight dots on the board.
+	// Power + youth apply per-location: the curse rules out some vertices but
+	// rarely all of them. They only explain a blocked build when the caller
+	// has confirmed no legal target remains; otherwise the player can still
+	// build elsewhere and the location-specific blocks surface via the
+	// disabled highlight dots on the board.
 	if (
 		curse === 'power' &&
 		(kind === 'settlement' || kind === 'city') &&
+		!hasLegalTarget &&
 		countHexesAtMaxPower(state, playerIdx) >= POWER_MAX_HEXES
 	) {
 		return {
@@ -319,6 +324,7 @@ export function curseBuildReason(
 	if (
 		curse === 'youth' &&
 		kind === 'settlement' &&
+		!hasLegalTarget &&
 		touchedResources(state, playerIdx).size >= 4
 	) {
 		return {

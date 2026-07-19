@@ -1055,22 +1055,33 @@ function GameBody() {
 	const canBuildBasic = canBuildThisTurn || sbBuildAllowed
 	// Scout's peek-buy can't run inside a special-build slot (server rejects it).
 	const scoutBlockedInSB = isMySpecialBuild && myPlayer?.bonus === 'scout'
+	// Legal targets are computed once: they gate the build buttons and also
+	// tell curseBuildReason whether a per-location curse is what's blocking.
+	const hasLegalTarget = {
+		road: !!gameState && validBuildRoadEdges(gameState, meIdx).length > 0,
+		settlement:
+			!!gameState &&
+			validBuildSettlementVertices(gameState, meIdx).length > 0,
+		city:
+			!!gameState && validBuildCityVertices(gameState, meIdx).length > 0,
+		dev_card: true,
+	}
 	const buildEnabled = {
 		road:
 			canBuildBasic &&
 			!!myPlayer &&
 			canAffordPurchase(myPlayer, 'road') &&
-			validBuildRoadEdges(gameState!, meIdx).length > 0,
+			hasLegalTarget.road,
 		settlement:
 			canBuildBasic &&
 			!!myPlayer &&
 			canAffordPurchase(myPlayer, 'settlement') &&
-			validBuildSettlementVertices(gameState!, meIdx).length > 0,
+			hasLegalTarget.settlement,
 		city:
 			canBuildBasic &&
 			!!myPlayer &&
 			canAffordPurchase(myPlayer, 'city') &&
-			validBuildCityVertices(gameState!, meIdx).length > 0,
+			hasLegalTarget.city,
 		dev_card:
 			!!gameState &&
 			!scoutBlockedInSB &&
@@ -1085,7 +1096,12 @@ function GameBody() {
 			'city',
 			'dev_card',
 		] as const) {
-			const hint = curseBuildReason(gameState, meIdx, kind)
+			const hint = curseBuildReason(
+				gameState,
+				meIdx,
+				kind,
+				hasLegalTarget[kind]
+			)
 			if (hint) out[kind] = hint
 		}
 		return out
@@ -1095,8 +1111,7 @@ function GameBody() {
 	const liveTradeIsMine = !!liveOffer && liveOffer.from === meIdx
 	// The Trade button also opens in a special-build slot, but bank-only (player
 	// trades stay main-only — see the TradePanel `bankOnly` prop below).
-	const tradeButtonEnabled =
-		canBuildBasic && !hasLiveTrade && !tradePanelOpen
+	const tradeButtonEnabled = canBuildBasic && !hasLiveTrade && !tradePanelOpen
 	const tradeButtonActive = tradePanelOpen || liveTradeIsMine
 
 	// Set-2 build-bar enablement.
