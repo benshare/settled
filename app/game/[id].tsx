@@ -42,7 +42,6 @@ import {
 	FenceStatusBanner,
 	HauntStatusBanner,
 	SpecialistDeclareOverlay,
-	SpecialistWaitOverlay,
 } from '@/lib/catan/PostPlacementOverlay'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
 import {
@@ -1249,6 +1248,31 @@ function GameBody() {
 				/>
 			)}
 
+			{inPostPlacement &&
+				gameState?.phase.kind === 'post_placement' &&
+				(() => {
+					const specialistPending = gameState.phase.pending.specialist
+					// My own pick is a modal; only surface a top-line status
+					// while I'm waiting on other players to declare theirs.
+					if (specialistPending.includes(meIdx)) return null
+					const waiting = specialistPending
+						.filter((i) => i !== meIdx)
+						.map(
+							(i) =>
+								profilesById[game.player_order[i]]?.username ??
+								'Player'
+						)
+					if (waiting.length === 0) return null
+					return (
+						<View style={styles.statusWrap}>
+							<Text style={styles.statusLine}>
+								Waiting for {waiting.join(', ')} to declare
+								their specialty…
+							</Text>
+						</View>
+					)
+				})()}
+
 			{!inPlacement && !inGameOver && !inBonusSelection && gameState && (
 				<>
 					{!inRoadBuilding && (
@@ -1381,16 +1405,10 @@ function GameBody() {
 							/>
 						)
 					}
-					// Specialist still pending for someone else: block the
-					// player with a wait overlay so the board doesn't become
-					// interactive mid-resolution.
-					if (waitingSpecialist.length > 0) {
-						return (
-							<SpecialistWaitOverlay
-								waitingOn={waitingSpecialist}
-							/>
-						)
-					}
+					// Specialist still pending for someone else: the top status
+					// line handles the "waiting" message; don't fall through to
+					// the explorer/fencer/haunt banners until it resolves.
+					if (waitingSpecialist.length > 0) return null
 					// Specialist done — explorer placements happen inline on
 					// the board; surface a status banner so the player sees
 					// the count.
