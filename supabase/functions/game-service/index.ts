@@ -618,11 +618,6 @@ function deriveAdjacentEdges(
 	return out
 }
 
-// Standard-board derived adjacency. Variant-aware code uses boardFor(variant).
-const adjacentHexes = deriveAdjacentHexes(HEXES, VERTICES, adjacentVertices)
-const neighborVertices = deriveNeighborVertices(VERTICES, EDGES)
-const adjacentEdges = deriveAdjacentEdges(VERTICES, EDGES)
-
 // --- Game state shapes (duplicated from lib/catan/types) -------------------
 
 type VertexBuilding = 'settlement' | 'city' | 'super_city' | 'ghost'
@@ -1117,8 +1112,6 @@ function boardFor(variant: Variant): Board {
 function variantForPlayerCount(playerCount: number): Variant {
 	return playerCount >= 5 ? 'expanded' : 'standard'
 }
-
-const MAX_PLAYERS = 6
 
 // --- Bonuses (must match lib/catan/bonuses) --------------------------------
 
