@@ -17,6 +17,7 @@ import { generatePorts, initialGameState } from '../lib/catan/generate'
 import {
 	applyBankTradeToPlayer,
 	availableBankOptions,
+	effectiveBankRatioFor,
 	isValidBankTradeShape,
 	lockedGiveResource,
 	playerPortKinds,
@@ -104,6 +105,7 @@ function checkGenerate() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -119,6 +121,7 @@ function stateWithSettlement(vertex: string, portKind: string): GameState {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -176,6 +179,7 @@ function checkAvailableOptions() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -244,6 +248,60 @@ function checkValidShape() {
 	)
 }
 
+function checkSpecialist() {
+	// Discount only when the give is a single stack of the declared resource.
+	assert(
+		effectiveBankRatioFor('4:1', hand({ wheat: 3 }), 'wheat') === 3,
+		'4:1 → 3 for specialty'
+	)
+	assert(
+		effectiveBankRatioFor('3:1', hand({ wheat: 2 }), 'wheat') === 2,
+		'3:1 → 2 for specialty'
+	)
+	// The reported bug: a 2:1 specialty port pays one fewer → 1:1 (floor is 1).
+	assert(
+		effectiveBankRatioFor('2:1-wheat', hand({ wheat: 1 }), 'wheat') === 1,
+		'2:1 specialty port → 1:1'
+	)
+	// Non-matching give keeps the base ratio.
+	assert(
+		effectiveBankRatioFor('2:1-ore', hand({ ore: 2 }), 'wheat') === 2,
+		'2:1-ore keeps 2 when specialty is wheat'
+	)
+	assert(
+		effectiveBankRatioFor('4:1', hand({ wheat: 4, ore: 4 }), 'wheat') === 4,
+		'multi-resource give ignores specialty'
+	)
+	// 1:1 shape validates: give 1 specialty → receive 1.
+	assert(
+		isValidBankTradeShape(
+			hand({ wheat: 1 }),
+			hand({ ore: 1 }),
+			'2:1-wheat',
+			'wheat'
+		),
+		'1 wheat → 1 ore at specialist 2:1-wheat'
+	)
+	assert(
+		isValidBankTradeShape(
+			hand({ wheat: 2 }),
+			hand({ ore: 2 }),
+			'2:1-wheat',
+			'wheat'
+		),
+		'2 wheat → 2 ore at specialist 2:1-wheat'
+	)
+	// A non-specialist (or non-matching specialty) still needs 2 per unit.
+	assert(
+		!isValidBankTradeShape(
+			hand({ wheat: 1 }),
+			hand({ ore: 1 }),
+			'2:1-wheat'
+		),
+		'1 wheat → 1 ore invalid without specialist'
+	)
+}
+
 function checkApply() {
 	const emptyP = {
 		devCards: [],
@@ -272,6 +330,7 @@ function main() {
 	checkAvailableOptions()
 	checkRatioOf()
 	checkValidShape()
+	checkSpecialist()
 	checkApply()
 	console.log('check-catan-ports: ok')
 }

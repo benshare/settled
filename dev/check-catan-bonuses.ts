@@ -88,6 +88,7 @@ function baseState(): GameState {
 		bonusSets: ['1'],
 		devCards: true,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -278,8 +279,8 @@ function testSpecialistPortDiscount() {
 	)
 	equal(
 		effectiveBankRatio('2:1-wood', 'wood', 'wood'),
-		2,
-		'2:1 specific never drops below 2'
+		1,
+		'2:1 specialty port pays one fewer → 1:1'
 	)
 	equal(
 		effectiveBankRatio('4:1', 'wood', 'wheat'),

@@ -38,7 +38,7 @@ const honked = (from: number, player: number, ago: number): GameEvent => ({
 
 // Seat 1 waiting on seat 0, who last acted `idleFor` ms ago.
 const can = (events: GameEvent[], meIdx = 1, phase: Phase = ROLL) =>
-	canHonk({ events, phase, meIdx, currentTurn: 0, now: NOW })
+	canHonk({ events, phase, meIdx, currentTurn: 0, now: NOW, enabled: true })
 
 function testIdleThreshold() {
 	const justUnder = [turnEnded(3, HONK_IDLE_MS - 1000)]
@@ -150,6 +150,22 @@ function testUsesNewestActivity() {
 	assert(!can(events), 'a recent turn_ended keeps the table active')
 }
 
+// A game with honking disabled is never honkable, however idle the table is.
+function testDisabledGameIsNeverHonkable() {
+	const idle = [turnEnded(3, HONK_IDLE_MS * 2)]
+	assert(
+		!canHonk({
+			events: idle,
+			phase: ROLL,
+			meIdx: 1,
+			currentTurn: 0,
+			now: NOW,
+			enabled: false,
+		}),
+		'honking disabled overrides an idle table'
+	)
+}
+
 const tests: [string, () => void][] = [
 	['idle threshold boundary', testIdleThreshold],
 	['no events is not honkable', testNoEventsIsNotHonkable],
@@ -166,6 +182,7 @@ const tests: [string, () => void][] = [
 	['allowance resets on turn end', testAllowanceResetsOnTurnEnd],
 	['first turn window', testFirstTurnWindow],
 	['uses newest activity', testUsesNewestActivity],
+	['disabled game is never honkable', testDisabledGameIsNeverHonkable],
 ]
 
 for (const [name, fn] of tests) {

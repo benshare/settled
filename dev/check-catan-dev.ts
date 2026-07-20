@@ -83,6 +83,7 @@ function testCanBuyDevCard() {
 		bonusSets: ['1'],
 		devCards: true,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -120,6 +121,7 @@ function testCanBuyDevCard() {
 			bonusSets: ['1'],
 			devCards: false,
 			numberLayout: 'random',
+			honk: true,
 			extraBuild: {
 				enabled: false,
 				buildPhases: 'every',
@@ -163,6 +165,7 @@ function testLargestArmyStrictOvertake() {
 			bonusSets: ['1'],
 			devCards: true,
 			numberLayout: 'random',
+			honk: true,
 			extraBuild: {
 				enabled: false,
 				buildPhases: 'every',
@@ -200,6 +203,7 @@ function testTotalVP() {
 		bonusSets: ['1'],
 		devCards: true,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -271,6 +275,7 @@ function testInitialGameStateSeedsDevState() {
 		bonusSets: ['1'],
 		devCards: true,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -290,6 +295,7 @@ function testInitialGameStateSeedsDevState() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

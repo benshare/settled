@@ -17,6 +17,7 @@ export type GameDefaults = {
 	settings: {
 		devCards: boolean
 		numberLayout: NumberLayout
+		honk: boolean
 		extraBuild: ExtraBuildConfig
 	}
 	extras: { bonuses: boolean; bonusSets: string[] }
@@ -30,6 +31,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 	settings: {
 		devCards: true,
 		numberLayout: 'spiral',
+		honk: true,
 		extraBuild: {
 			enabled: true,
 			buildPhases: 'every',
@@ -56,6 +58,10 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				settings?.numberLayout === 'random'
 					? settings.numberLayout
 					: DEFAULT_GAME_DEFAULTS.settings.numberLayout,
+			honk:
+				typeof settings?.honk === 'boolean'
+					? settings.honk
+					: DEFAULT_GAME_DEFAULTS.settings.honk,
 			extraBuild: parseExtraBuild(
 				settings?.extraBuild,
 				DEFAULT_GAME_DEFAULTS.settings.extraBuild

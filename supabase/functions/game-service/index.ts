@@ -1302,6 +1302,7 @@ type GameConfig = {
 	bonusSets: string[]
 	devCards: boolean
 	numberLayout: NumberLayout
+	honk: boolean
 	extraBuild: ExtraBuildConfig
 }
 
@@ -1952,11 +1953,14 @@ function canBankTradeSrv(state: GameState, playerIdx: number): boolean {
 	}
 	const kinds = playerPortKinds(state, playerIdx)
 	for (const r of RESOURCES) {
-		if (kinds.has(r) && p.resources[r] >= 2) return true
+		// Specialist pays one fewer on a 2:1 specialty port → 1:1, so a single
+		// specialty card is enough to trade there.
+		const need = specialty === r ? Math.max(1, 2 - 1) : 2
+		if (kinds.has(r) && p.resources[r] >= need) return true
 	}
 	const generic = kinds.has('3:1') ? 3 : 4
 	for (const r of RESOURCES) {
-		const need = specialty === r ? Math.max(2, generic - 1) : generic
+		const need = specialty === r ? Math.max(1, generic - 1) : generic
 		if (p.resources[r] >= need) return true
 	}
 	return false
@@ -3094,7 +3098,7 @@ function effectiveBankRatioFor(
 	const givers = RESOURCES.filter((r) => give[r] > 0)
 	if (givers.length !== 1) return base
 	if (givers[0] !== specialistResource) return base
-	return Math.max(2, base - 1)
+	return Math.max(1, base - 1)
 }
 
 function isValidBankTradeShape(
@@ -4398,6 +4402,10 @@ async function handleHonk(
 	const { game, state } = loaded
 
 	if (game.status !== 'active') return err(400, 'not active')
+
+	// Honking is opt-out per game. Legacy games predate the flag — treat a
+	// missing value as enabled. Mirrors `gameState.config.honk !== false`.
+	if (state.config.honk === false) return err(400, 'honking disabled')
 
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')

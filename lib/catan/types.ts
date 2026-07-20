@@ -65,6 +65,9 @@ export type GameConfig = {
 	bonusSets: string[]
 	devCards: boolean
 	numberLayout: NumberLayout
+	// Whether the Honk nudge (ping a stalled player after the idle threshold)
+	// is available in this game. See lib/catan/honk.ts.
+	honk: boolean
 	// See ExtraBuildConfig. Only affects games with >4 players; ignored
 	// otherwise.
 	extraBuild: ExtraBuildConfig
@@ -79,6 +82,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	bonusSets: ['1'],
 	devCards: true,
 	numberLayout: 'spiral',
+	honk: true,
 	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
 }
 
@@ -102,6 +106,7 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			typeof src.devCards === 'boolean'
 				? src.devCards
 				: DEFAULT_CONFIG.devCards,
+		honk: typeof src.honk === 'boolean' ? src.honk : DEFAULT_CONFIG.honk,
 		numberLayout:
 			src.numberLayout === 'spiral' || src.numberLayout === 'random'
 				? src.numberLayout
@@ -167,6 +172,9 @@ export function summarizeGameConfig(
 				? 'Random numbers'
 				: 'Spiral numbers'
 		)
+	}
+	if (config.honk !== DEFAULT_CONFIG.honk) {
+		parts.push(config.honk ? 'Honking enabled' : 'Honking disabled')
 	}
 	// Extra build phases only apply to >4 player games, so only surface a
 	// non-default value there.

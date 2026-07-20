@@ -54,6 +54,7 @@ function baseState(): GameState {
 		bonusSets: ['1'],
 		devCards: true,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

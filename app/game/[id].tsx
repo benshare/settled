@@ -2071,6 +2071,7 @@ function MainLoopBar({
 						phase={phase}
 						meIdx={meIdx}
 						currentTurn={currentIdx}
+						enabled={gameState.config.honk !== false}
 						submitting={submitting}
 						onHonk={onHonk}
 					/>
@@ -2123,6 +2124,7 @@ function HonkButton({
 	phase,
 	meIdx,
 	currentTurn,
+	enabled,
 	submitting,
 	onHonk,
 }: {
@@ -2130,6 +2132,7 @@ function HonkButton({
 	phase: Phase
 	meIdx: number
 	currentTurn: number
+	enabled: boolean
 	submitting: boolean
 	onHonk: () => void
 }) {
@@ -2141,7 +2144,8 @@ function HonkButton({
 		return () => clearInterval(id)
 	}, [])
 
-	if (!canHonk({ events, phase, meIdx, currentTurn, now })) return null
+	if (!canHonk({ events, phase, meIdx, currentTurn, now, enabled }))
+		return null
 
 	return (
 		<Button variant="secondary" onPress={onHonk} loading={submitting}>
@@ -2304,6 +2308,7 @@ function SpecialBuildBar({
 						phase={phase}
 						meIdx={meIdx}
 						currentTurn={game.current_turn ?? 0}
+						enabled={gameState.config.honk !== false}
 						submitting={submitting}
 						onHonk={onHonk}
 					/>

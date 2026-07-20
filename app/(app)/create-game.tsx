@@ -59,6 +59,7 @@ export default function CreateGameScreen() {
 	const [numberLayout, setNumberLayout] = useState<NumberLayout>(
 		savedDefaults.settings.numberLayout
 	)
+	const [honk, setHonk] = useState(savedDefaults.settings.honk)
 	const [extraBuildEnabled, setExtraBuildEnabled] = useState(
 		savedDefaults.settings.extraBuild.enabled
 	)
@@ -82,6 +83,7 @@ export default function CreateGameScreen() {
 	const savedBonusSets = savedDefaults.extras.bonusSets
 	const savedDevCards = savedDefaults.settings.devCards
 	const savedNumberLayout = savedDefaults.settings.numberLayout
+	const savedHonk = savedDefaults.settings.honk
 	const savedExtraBuild = savedDefaults.settings.extraBuild
 	useEffect(() => {
 		if (touched) return
@@ -89,6 +91,7 @@ export default function CreateGameScreen() {
 		setBonusSets(savedBonusSets)
 		setDevCards(savedDevCards)
 		setNumberLayout(savedNumberLayout)
+		setHonk(savedHonk)
 		setExtraBuildEnabled(savedExtraBuild.enabled)
 		setBuildPhases(savedExtraBuild.buildPhases)
 		setMoreThanSeven(savedExtraBuild.moreThanSeven)
@@ -97,6 +100,7 @@ export default function CreateGameScreen() {
 		savedBonusSets,
 		savedDevCards,
 		savedNumberLayout,
+		savedHonk,
 		savedExtraBuild,
 		touched,
 	])
@@ -105,6 +109,7 @@ export default function CreateGameScreen() {
 		settings: {
 			devCards,
 			numberLayout,
+			honk,
 			extraBuild: {
 				enabled: extraBuildEnabled,
 				buildPhases,
@@ -117,6 +122,7 @@ export default function CreateGameScreen() {
 		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
 		currentDefaults.settings.numberLayout !==
 			savedDefaults.settings.numberLayout ||
+		currentDefaults.settings.honk !== savedDefaults.settings.honk ||
 		currentDefaults.settings.extraBuild.enabled !==
 			savedExtraBuild.enabled ||
 		currentDefaults.settings.extraBuild.buildPhases !==
@@ -164,6 +170,7 @@ export default function CreateGameScreen() {
 			bonusSets,
 			devCards,
 			numberLayout,
+			honk,
 			extraBuild: {
 				enabled: extraBuildEnabled,
 				buildPhases,
@@ -316,6 +323,16 @@ export default function CreateGameScreen() {
 													? 'spiral'
 													: 'random'
 											)
+											setTouched(true)
+										}}
+									/>
+									<CompactToggleRow
+										icon="megaphone"
+										title="Honking"
+										description="Let players nudge whoever's holding up the game."
+										value={honk}
+										onToggle={() => {
+											setHonk((v) => !v)
 											setTouched(true)
 										}}
 									/>

@@ -60,6 +60,7 @@ function testRolledSevenYieldsNothing() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -76,6 +77,7 @@ function testSettlementGetsOne() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -98,6 +100,7 @@ function testCityGetsTwo() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -119,6 +122,7 @@ function testMismatchedRollPaysNothing() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

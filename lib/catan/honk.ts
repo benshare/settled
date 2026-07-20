@@ -82,8 +82,12 @@ export function canHonk(args: {
 	meIdx: number
 	currentTurn: number
 	now: number
+	// Whether the game has honking enabled (config.honk). Legacy games with no
+	// stored value are treated as enabled — pass `true` for those.
+	enabled: boolean
 }): boolean {
-	const { events, phase, meIdx, currentTurn, now } = args
+	const { events, phase, meIdx, currentTurn, now, enabled } = args
+	if (!enabled) return false
 	const target = honkTargetFor(phase, currentTurn)
 	if (target === null) return false
 	if (meIdx < 0 || meIdx === target) return false

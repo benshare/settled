@@ -113,6 +113,7 @@ function testValidRobberHexes() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -130,6 +131,7 @@ function testStealCandidatesOpponentWithCards() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -156,6 +158,7 @@ function testStealCandidatesEmptyHand() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -176,6 +179,7 @@ function testStealCandidatesExcludesSelf() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -201,6 +205,7 @@ function testDistributeSkipsRobberHex() {
 		bonusSets: ['1'],
 		devCards: false,
 		numberLayout: 'random',
+		honk: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
