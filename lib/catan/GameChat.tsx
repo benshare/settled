@@ -341,8 +341,6 @@ function MessageRow({
 	const seat = playerOrder.indexOf(message.sender)
 	const name = profilesById[message.sender]?.username ?? 'Player'
 
-	// The list is inverted, which flips each cell vertically — so margin*Bottom*
-	// is what renders as space *above* the row.
 	const gap = startsRun && styles.rowGroupStart
 
 	if (mine) {
@@ -495,7 +493,9 @@ const styles = StyleSheet.create({
 		alignItems: 'flex-end',
 	},
 	rowGroupStart: {
-		marginBottom: spacing.sm,
+		// The run's first (oldest) message is the visual top of the run, so its
+		// separation from the run above is a marginTop.
+		marginTop: spacing.sm,
 	},
 	sender: {
 		fontSize: font.xs,
