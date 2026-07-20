@@ -106,6 +106,7 @@ function RootNav() {
 					<Stack.Screen name="(auth)" />
 					<Stack.Screen name="(app)" />
 					<Stack.Screen name="send-request" />
+					<Stack.Screen name="privacy" />
 				</Stack>
 			</View>
 		</View>
