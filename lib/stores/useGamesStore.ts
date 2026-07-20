@@ -252,6 +252,7 @@ type GamesStore = {
 	rerollDice: (gameId: string) => Promise<RollResult>
 	endTurn: (gameId: string) => Promise<ActionResult>
 	honk: (gameId: string) => Promise<ActionResult>
+	sendMessage: (gameId: string, body: string) => Promise<ActionResult>
 	// Finish your slot in a special build phase (5-6 player games). Pops you
 	// off the build queue; advances to the next builder or the next roll.
 	endSpecialBuild: (gameId: string) => Promise<ActionResult>
@@ -667,6 +668,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'honk', game_id: gameId },
 			"Couldn't honk"
+		)
+	},
+
+	async sendMessage(gameId, body) {
+		return callGameService(
+			{ action: 'send_message', game_id: gameId, body },
+			"Couldn't send message"
 		)
 	},
 

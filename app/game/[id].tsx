@@ -7,6 +7,8 @@ import {
 } from '@/lib/catan/board'
 import { BoardLegend } from '@/lib/catan/BoardLegend'
 import { ActionLog } from '@/lib/catan/ActionLog'
+import { ChatProvider } from '@/lib/catan/chatContext'
+import { ChatButton, ChatPanel } from '@/lib/catan/GameChat'
 import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
@@ -152,8 +154,9 @@ function notify(title: string, message?: string) {
 }
 
 export default function GameDetailScreen() {
-	const { id } = useLocalSearchParams<{ id: string }>()
+	const { id, chat } = useLocalSearchParams<{ id: string; chat?: string }>()
 	const router = useRouter()
+	const { user } = useAuth()
 
 	return (
 		<SafeAreaView style={styles.safe}>
@@ -177,7 +180,15 @@ export default function GameDetailScreen() {
 			</View>
 
 			<GameProvider gameId={id}>
-				<GameBody />
+				{/* `chat=1` arrives from a chat notification tap, so the
+				    conversation is open on landing. */}
+				<ChatProvider
+					gameId={id}
+					meId={user?.id}
+					initiallyOpen={chat === '1'}
+				>
+					<GameBody />
+				</ChatProvider>
 			</GameProvider>
 		</SafeAreaView>
 	)
@@ -253,6 +264,9 @@ function GameBody() {
 		preview?: BuildSelection
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
+	// Board container's y within bodyRoot, so the chat panel can anchor to the
+	// same line as the floating buttons. See the boardContainer onLayout.
+	const [boardTop, setBoardTop] = useState(0)
 	// Haunt: the vertices the local haunt player has tapped (needs 2) during
 	// post_placement, before committing. Investor: whether the invest picker
 	// modal is open.
@@ -1590,7 +1604,15 @@ function GameBody() {
 				/>
 			)}
 
-			<Animated.View style={styles.boardContainer} layout={BOARD_RESIZE}>
+			<Animated.View
+				style={styles.boardContainer}
+				layout={BOARD_RESIZE}
+				// The chat panel is mounted at bodyRoot (so it can cover the
+				// action bars) but has to line up with the floating buttons
+				// inside this container. Its offset from bodyRoot shifts with
+				// the PlayerStrip and placement header, so it's measured.
+				onLayout={(e) => setBoardTop(e.nativeEvent.layout.y)}
+			>
 				{liveOffer && (
 					<TradeBanner
 						offer={liveOffer}
@@ -1678,6 +1700,7 @@ function GameBody() {
 						meIdx={meIdx}
 					/>
 				)}
+				{gameState && !inBonusSelection && <ChatButton />}
 				{pendingConfirm && (
 					<ConfirmBar
 						title={pendingConfirm.title}
@@ -1872,6 +1895,15 @@ function GameBody() {
 					onDismiss={() => setFtAnimQueue((q) => q.slice(1))}
 				/>
 			)}
+
+			{/* Mounted here rather than in the board container so it covers the
+			    action bars too, while leaving the screen header clear. */}
+			<ChatPanel
+				topOffset={boardTop}
+				playerOrder={game.player_order}
+				profilesById={profilesById}
+				meId={user?.id}
+			/>
 		</View>
 	)
 }

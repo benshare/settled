@@ -8,7 +8,11 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
 
 export type NotificationPrefKey =
-	'gameInvite' | 'yourTurn' | 'trade' | 'friendRequest'
+	| 'gameInvite'
+	| 'yourTurn'
+	| 'trade'
+	| 'friendRequest'
+	| 'chatMessage'
 
 export type NotificationKind =
 	| 'game_invite'
@@ -20,6 +24,12 @@ export type NotificationKind =
 	| 'trade_rejected_all'
 	| 'friend_request'
 	| 'honk'
+	| 'chat_message'
+
+// A chat message body is arbitrary user text and can run to the column's 500
+// chars. Ship a bounded preview rather than letting the OS clip at an arbitrary
+// point.
+const MAX_BODY_CHARS = 150
 
 export type NotifyTarget = {
 	userId: string
@@ -30,6 +40,13 @@ export type NotifyTarget = {
 	senderProfileId?: string // fills in <sender>/<proposer> body copy
 	gameId?: string // included in the deep-link payload
 	firstPlayer?: boolean // game_started copy variant for player_order[0]
+	// Chat puts the sender's name in the title and their message in the body,
+	// where every other kind is titled 'Settled' with generated copy. Opting in
+	// by flag rather than passing a title string keeps the username lookup here
+	// — callers would otherwise have to re-resolve a name this module already
+	// has.
+	titleFrom?: 'app' | 'sender'
+	bodyOverride?: string
 }
 
 type ExpoMessage = {
@@ -114,13 +131,17 @@ export async function sendNotifications(
 		const senderName = t.senderProfileId
 			? (usernameById.get(t.senderProfileId) ?? 'Someone')
 			: undefined
-		const body = renderBody(t, senderName)
+		// A deleted or unreadable profile must not produce a notification
+		// titled `undefined`.
+		const title =
+			t.titleFrom === 'sender' ? (senderName ?? 'Settled') : 'Settled'
+		const body = truncate(t.bodyOverride ?? renderBody(t, senderName))
 		const data: Record<string, unknown> = { kind: t.kind }
 		if (t.gameId) data.game_id = t.gameId
 		for (const token of tokens) {
 			messages.push({
 				to: token,
-				title: 'Settled',
+				title,
 				body,
 				data,
 				priority: 'high',
@@ -168,5 +189,14 @@ function renderBody(t: NotifyTarget, sender: string | undefined): string {
 			return `${sender ?? 'Someone'} sent you a friend request.`
 		case 'honk':
 			return `HONK. It's your turn. (Sent by ${sender ?? 'someone'})`
+		// Unreachable in practice — chat always passes bodyOverride — but the
+		// switch is exhaustive over NotificationKind.
+		case 'chat_message':
+			return 'Sent you a message.'
 	}
+}
+
+function truncate(body: string): string {
+	if (body.length <= MAX_BODY_CHARS) return body
+	return `${body.slice(0, MAX_BODY_CHARS - 1).trimEnd()}…`
 }
