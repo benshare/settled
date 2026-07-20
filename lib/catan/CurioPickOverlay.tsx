@@ -3,7 +3,8 @@
 // to add to your hand.
 
 import { useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Resource } from './board'
@@ -43,74 +44,74 @@ export function CurioPickOverlay({
 	}
 
 	return (
-		<Modal transparent animationType="fade" visible>
-			<View style={styles.backdrop}>
-				<View style={styles.sheet}>
-					<Text style={styles.title}>Curio Collector: pick 3</Text>
-					<Text style={styles.subtitle}>
-						You gained cards on a 2 or 12 — pick 3 additional
-						resources of your choice.
-					</Text>
-					<View style={styles.grid}>
-						{RESOURCES.map((r) => {
-							const count = picks.filter((p) => p === r).length
-							return (
-								<Pressable
-									key={r}
-									style={({ pressed }) => [
-										styles.card,
-										{ backgroundColor: resourceColor[r] },
-										pressed && styles.pressed,
-									]}
-									onPress={() => onTap(r)}
-									disabled={picks.length >= PICK_COUNT}
-								>
-									<Text style={styles.cardLabel}>
-										{RESOURCE_LABELS[r]}
-									</Text>
-									{count > 0 && (
-										<View style={styles.countBadge}>
-											<Text style={styles.countText}>
-												+{count}
-											</Text>
-										</View>
-									)}
-								</Pressable>
-							)
-						})}
-					</View>
-					<Text style={styles.progress}>
-						{picks.length} / {PICK_COUNT} selected
-					</Text>
-					<View style={styles.actions}>
+		<Modal
+			visible
+			dismissOnBackdropPress={false}
+			contentStyle={styles.sheet}
+		>
+			<Text style={styles.title}>Curio Collector: pick 3</Text>
+			<Text style={styles.subtitle}>
+				You gained cards on a 2 or 12 — pick 3 additional resources of
+				your choice.
+			</Text>
+			<View style={styles.grid}>
+				{RESOURCES.map((r) => {
+					const count = picks.filter((p) => p === r).length
+					return (
 						<Pressable
+							key={r}
 							style={({ pressed }) => [
-								styles.secondaryBtn,
+								styles.card,
+								{ backgroundColor: resourceColor[r] },
 								pressed && styles.pressed,
 							]}
-							onPress={onClear}
-							disabled={picks.length === 0}
+							onPress={() => onTap(r)}
+							disabled={picks.length >= PICK_COUNT}
 						>
-							<Text style={styles.secondaryText}>Clear</Text>
-						</Pressable>
-						<Pressable
-							style={({ pressed }) => [
-								styles.primaryBtn,
-								(picks.length !== PICK_COUNT || submitting) &&
-									styles.primaryBtnDisabled,
-								pressed &&
-									picks.length === PICK_COUNT &&
-									styles.pressed,
-							]}
-							onPress={onSubmit}
-							disabled={picks.length !== PICK_COUNT || submitting}
-						>
-							<Text style={styles.primaryText}>
-								{submitting ? '…' : 'Take'}
+							<Text style={styles.cardLabel}>
+								{RESOURCE_LABELS[r]}
 							</Text>
+							{count > 0 && (
+								<View style={styles.countBadge}>
+									<Text style={styles.countText}>
+										+{count}
+									</Text>
+								</View>
+							)}
 						</Pressable>
-					</View>
-				</View>
+					)
+				})}
+			</View>
+			<Text style={styles.progress}>
+				{picks.length} / {PICK_COUNT} selected
+			</Text>
+			<View style={styles.actions}>
+				<Pressable
+					style={({ pressed }) => [
+						styles.secondaryBtn,
+						pressed && styles.pressed,
+					]}
+					onPress={onClear}
+					disabled={picks.length === 0}
+				>
+					<Text style={styles.secondaryText}>Clear</Text>
+				</Pressable>
+				<Pressable
+					style={({ pressed }) => [
+						styles.primaryBtn,
+						(picks.length !== PICK_COUNT || submitting) &&
+							styles.primaryBtnDisabled,
+						pressed &&
+							picks.length === PICK_COUNT &&
+							styles.pressed,
+					]}
+					onPress={onSubmit}
+					disabled={picks.length !== PICK_COUNT || submitting}
+				>
+					<Text style={styles.primaryText}>
+						{submitting ? '…' : 'Take'}
+					</Text>
+				</Pressable>
 			</View>
 		</Modal>
 	)
@@ -121,28 +122,21 @@ export function CurioWaitOverlay({ waitingOn }: { waitingOn: string[] }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
-		<Modal transparent animationType="fade" visible>
-			<View style={styles.backdrop}>
-				<View style={styles.sheet}>
-					<Text style={styles.title}>Curio Collector pick</Text>
-					<Text style={styles.subtitle}>
-						Waiting on {waitingOn.join(', ')} to claim 3 resources.
-					</Text>
-				</View>
-			</View>
+		<Modal
+			visible
+			dismissOnBackdropPress={false}
+			contentStyle={styles.sheet}
+		>
+			<Text style={styles.title}>Curio Collector pick</Text>
+			<Text style={styles.subtitle}>
+				Waiting on {waitingOn.join(', ')} to claim 3 resources.
+			</Text>
 		</Modal>
 	)
 }
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 420,

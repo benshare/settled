@@ -4,7 +4,8 @@
 // they can afford that differs from the default).
 
 import { useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
 import { metropolitanCityCost } from './bonus'
 import { ColorScheme, font, radius, spacing } from '../theme'
@@ -45,78 +46,60 @@ export function MetropolitanCostPicker({
 	const label = titleKind === 'super_city' ? 'Super City' : 'City'
 
 	return (
-		<Modal
-			transparent
-			animationType="fade"
-			visible
-			onRequestClose={onCancel}
-		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>Metropolitan: {label} cost</Text>
-					<Text style={styles.subtitle}>
-						Replace any number of Wheat in the cost with the same
-						number of Ore.
-					</Text>
-					<View style={styles.list}>
-						{options.map((o) => (
-							<Pressable
-								key={o.delta}
-								onPress={() => o.affordable && setPick(o.delta)}
-								disabled={!o.affordable}
-								style={({ pressed }) => [
-									styles.row,
-									pick === o.delta && styles.rowPicked,
-									!o.affordable && styles.rowDisabled,
-									pressed && o.affordable && styles.pressed,
-								]}
-							>
-								<Text style={styles.rowText}>
-									{o.cost.wheat} Wheat + {o.cost.ore} Ore
-								</Text>
-								{!o.affordable && (
-									<Text style={styles.rowSub}>
-										insufficient
-									</Text>
-								)}
-							</Pressable>
-						))}
-					</View>
-					<View style={styles.actions}>
-						<Pressable
-							style={({ pressed }) => [
-								styles.cancelBtn,
-								pressed && styles.pressed,
-							]}
-							onPress={onCancel}
-						>
-							<Text style={styles.cancelText}>Cancel</Text>
-						</Pressable>
-						<View style={{ flex: 1 }}>
-							<Button
-								onPress={() => onConfirm(pick)}
-								disabled={!options[pick]?.affordable}
-								loading={submitting}
-							>
-								Build {label}
-							</Button>
-						</View>
-					</View>
+		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
+			<Text style={styles.title}>Metropolitan: {label} cost</Text>
+			<Text style={styles.subtitle}>
+				Replace any number of Wheat in the cost with the same number of
+				Ore.
+			</Text>
+			<View style={styles.list}>
+				{options.map((o) => (
+					<Pressable
+						key={o.delta}
+						onPress={() => o.affordable && setPick(o.delta)}
+						disabled={!o.affordable}
+						style={({ pressed }) => [
+							styles.row,
+							pick === o.delta && styles.rowPicked,
+							!o.affordable && styles.rowDisabled,
+							pressed && o.affordable && styles.pressed,
+						]}
+					>
+						<Text style={styles.rowText}>
+							{o.cost.wheat} Wheat + {o.cost.ore} Ore
+						</Text>
+						{!o.affordable && (
+							<Text style={styles.rowSub}>insufficient</Text>
+						)}
+					</Pressable>
+				))}
+			</View>
+			<View style={styles.actions}>
+				<Pressable
+					style={({ pressed }) => [
+						styles.cancelBtn,
+						pressed && styles.pressed,
+					]}
+					onPress={onCancel}
+				>
+					<Text style={styles.cancelText}>Cancel</Text>
 				</Pressable>
-			</Pressable>
+				<View style={{ flex: 1 }}>
+					<Button
+						onPress={() => onConfirm(pick)}
+						disabled={!options[pick]?.affordable}
+						loading={submitting}
+					>
+						Build {label}
+					</Button>
+				</View>
+			</View>
 		</Modal>
 	)
 }
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 420,

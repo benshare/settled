@@ -3,7 +3,8 @@
 // the start of the investor's turn.
 
 import { useMemo } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Resource } from './board'
@@ -35,57 +36,44 @@ export function InvestPicker({
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
-		<Modal
-			transparent
-			animationType="fade"
-			visible
-			onRequestClose={onCancel}
-		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>Invest</Text>
-					<Text style={styles.subtitle}>
-						Set aside {INVEST_TRIO} of a resource. Each token pays 1
-						back at the start of your turn — {tokenCount}/
-						{INVESTOR_MAX_TOKENS} tokens used. Set-aside cards can't
-						be stolen.
-					</Text>
-					<View style={styles.grid}>
-						{RESOURCES.map((r) => {
-							const canPick =
-								hand[r] >= INVEST_TRIO && !submitting
-							return (
-								<Pressable
-									key={r}
-									disabled={!canPick}
-									onPress={() => onConfirm(r)}
-									style={({ pressed }) => [
-										styles.card,
-										{ backgroundColor: resourceColor[r] },
-										!canPick && styles.cardDisabled,
-										pressed && canPick && styles.pressed,
-									]}
-								>
-									<Text style={styles.cardCount}>
-										{hand[r]}
-									</Text>
-									<Text style={styles.cardLabel}>
-										{RESOURCE_LABELS[r]}
-									</Text>
-								</Pressable>
-							)
-						})}
-					</View>
-					<Pressable
-						onPress={onCancel}
-						style={({ pressed }) => [
-							styles.cancelBtn,
-							pressed && styles.pressed,
-						]}
-					>
-						<Text style={styles.cancelText}>Cancel</Text>
-					</Pressable>
-				</Pressable>
+		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
+			<Text style={styles.title}>Invest</Text>
+			<Text style={styles.subtitle}>
+				Set aside {INVEST_TRIO} of a resource. Each token pays 1 back at
+				the start of your turn — {tokenCount}/{INVESTOR_MAX_TOKENS}{' '}
+				tokens used. Set-aside cards can't be stolen.
+			</Text>
+			<View style={styles.grid}>
+				{RESOURCES.map((r) => {
+					const canPick = hand[r] >= INVEST_TRIO && !submitting
+					return (
+						<Pressable
+							key={r}
+							disabled={!canPick}
+							onPress={() => onConfirm(r)}
+							style={({ pressed }) => [
+								styles.card,
+								{ backgroundColor: resourceColor[r] },
+								!canPick && styles.cardDisabled,
+								pressed && canPick && styles.pressed,
+							]}
+						>
+							<Text style={styles.cardCount}>{hand[r]}</Text>
+							<Text style={styles.cardLabel}>
+								{RESOURCE_LABELS[r]}
+							</Text>
+						</Pressable>
+					)
+				})}
+			</View>
+			<Pressable
+				onPress={onCancel}
+				style={({ pressed }) => [
+					styles.cancelBtn,
+					pressed && styles.pressed,
+				]}
+			>
+				<Text style={styles.cancelText}>Cancel</Text>
 			</Pressable>
 		</Modal>
 	)
@@ -93,13 +81,6 @@ export function InvestPicker({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 420,

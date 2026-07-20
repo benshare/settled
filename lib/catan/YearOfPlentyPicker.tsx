@@ -4,7 +4,8 @@
 // view.
 
 import { useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor } from './palette'
@@ -41,96 +42,78 @@ export function YearOfPlentyPicker({
 	}
 
 	return (
-		<Modal
-			transparent
-			animationType="fade"
-			visible
-			onRequestClose={onCancel}
-		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>Pick 2 resources</Text>
-					<Text style={styles.subtitle}>
-						Take any 2 resource cards from the bank. Duplicates are
-						fine — tap a resource twice to take 2 of it.
-					</Text>
-					<View style={styles.grid}>
-						{RESOURCES.map((r) => {
-							const count = picks.filter((p) => p === r).length
-							return (
-								<Pressable
-									key={r}
-									style={({ pressed }) => [
-										styles.card,
-										{ backgroundColor: resourceColor[r] },
-										pressed && styles.pressed,
-									]}
-									onPress={() => onTap(r)}
-									disabled={picks.length >= 2}
-								>
-									<Text style={styles.cardLabel}>
-										{RESOURCE_LABELS[r]}
-									</Text>
-									{count > 0 && (
-										<View style={styles.countBadge}>
-											<Text style={styles.countText}>
-												+{count}
-											</Text>
-										</View>
-									)}
-								</Pressable>
-							)
-						})}
-					</View>
-					<Text style={styles.progress}>
-						{picks.length} / 2 selected
-					</Text>
-					<View style={styles.actions}>
+		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
+			<Text style={styles.title}>Pick 2 resources</Text>
+			<Text style={styles.subtitle}>
+				Take any 2 resource cards from the bank. Duplicates are fine —
+				tap a resource twice to take 2 of it.
+			</Text>
+			<View style={styles.grid}>
+				{RESOURCES.map((r) => {
+					const count = picks.filter((p) => p === r).length
+					return (
 						<Pressable
+							key={r}
 							style={({ pressed }) => [
-								styles.secondaryBtn,
+								styles.card,
+								{ backgroundColor: resourceColor[r] },
 								pressed && styles.pressed,
 							]}
-							onPress={onClear}
-							disabled={picks.length === 0}
+							onPress={() => onTap(r)}
+							disabled={picks.length >= 2}
 						>
-							<Text style={styles.secondaryText}>Clear</Text>
+							<Text style={styles.cardLabel}>
+								{RESOURCE_LABELS[r]}
+							</Text>
+							{count > 0 && (
+								<View style={styles.countBadge}>
+									<Text style={styles.countText}>
+										+{count}
+									</Text>
+								</View>
+							)}
 						</Pressable>
-						<Pressable
-							style={({ pressed }) => [
-								styles.primaryBtn,
-								picks.length !== 2 && styles.primaryBtnDisabled,
-								pressed && picks.length === 2 && styles.pressed,
-							]}
-							onPress={onSubmit}
-							disabled={picks.length !== 2}
-						>
-							<Text style={styles.primaryText}>Confirm</Text>
-						</Pressable>
-					</View>
-					<Pressable
-						style={({ pressed }) => [
-							styles.cancelBtn,
-							pressed && styles.pressed,
-						]}
-						onPress={onCancel}
-					>
-						<Text style={styles.cancelText}>Cancel</Text>
-					</Pressable>
+					)
+				})}
+			</View>
+			<Text style={styles.progress}>{picks.length} / 2 selected</Text>
+			<View style={styles.actions}>
+				<Pressable
+					style={({ pressed }) => [
+						styles.secondaryBtn,
+						pressed && styles.pressed,
+					]}
+					onPress={onClear}
+					disabled={picks.length === 0}
+				>
+					<Text style={styles.secondaryText}>Clear</Text>
 				</Pressable>
+				<Pressable
+					style={({ pressed }) => [
+						styles.primaryBtn,
+						picks.length !== 2 && styles.primaryBtnDisabled,
+						pressed && picks.length === 2 && styles.pressed,
+					]}
+					onPress={onSubmit}
+					disabled={picks.length !== 2}
+				>
+					<Text style={styles.primaryText}>Confirm</Text>
+				</Pressable>
+			</View>
+			<Pressable
+				style={({ pressed }) => [
+					styles.cancelBtn,
+					pressed && styles.pressed,
+				]}
+				onPress={onCancel}
+			>
+				<Text style={styles.cancelText}>Cancel</Text>
 			</Pressable>
 		</Modal>
 	)
 }
 
 const styles = StyleSheet.create({
-	backdrop: {
-		flex: 1,
-		backgroundColor: 'rgba(0,0,0,0.45)',
-		alignItems: 'center',
-		justifyContent: 'center',
-		padding: spacing.lg,
-	},
 	sheet: {
 		width: '100%',
 		maxWidth: 420,

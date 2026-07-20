@@ -3,7 +3,8 @@
 // cities/super_cities, else 3.
 
 import { useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
@@ -42,80 +43,67 @@ export function RitualistPicker({
 	}
 
 	return (
-		<Modal
-			transparent
-			animationType="fade"
-			visible
-			onRequestClose={onCancel}
-		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>Ritual roll</Text>
-					<Text style={styles.subtitle}>
-						Discard {cardCost} cards and choose your dice value. No
-						other player receives resources from this roll.
-					</Text>
-					<Text style={styles.section}>1 · Pick a total</Text>
-					<View style={styles.totalGrid}>
-						{TOTALS.map((t) => (
-							<Pressable
-								key={t}
-								onPress={() => setTotal(t)}
-								style={({ pressed }) => [
-									styles.totalChip,
-									total === t && styles.totalChipPicked,
-									pressed && styles.pressed,
-								]}
-							>
-								<Text style={styles.totalChipText}>{t}</Text>
-							</Pressable>
-						))}
-					</View>
-					<Text style={styles.section}>
-						2 · Discard {cardCost} cards ({discardSize} / {cardCost}
-						)
-					</Text>
-					<View style={styles.row}>
-						{RESOURCES.filter((r) => hand[r] > 0).map((r) => (
-							<ResourceStepper
-								key={r}
-								resource={r}
-								available={hand[r]}
-								value={discard[r]}
-								canInc={
-									discardSize < cardCost &&
-									discard[r] < hand[r]
-								}
-								onDec={() => setRes(r, -1)}
-								onInc={() => setRes(r, +1)}
-								styles={styles}
-							/>
-						))}
-					</View>
-					<View style={styles.actions}>
-						<Pressable
-							style={({ pressed }) => [
-								styles.cancelBtn,
-								pressed && styles.pressed,
-							]}
-							onPress={onCancel}
-						>
-							<Text style={styles.cancelText}>Cancel</Text>
-						</Pressable>
-						<View style={{ flex: 1 }}>
-							<Button
-								onPress={() =>
-									total !== null && onConfirm(discard, total)
-								}
-								disabled={!ready}
-								loading={submitting}
-							>
-								Roll {total ?? ''}
-							</Button>
-						</View>
-					</View>
+		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
+			<Text style={styles.title}>Ritual roll</Text>
+			<Text style={styles.subtitle}>
+				Discard {cardCost} cards and choose your dice value. No other
+				player receives resources from this roll.
+			</Text>
+			<Text style={styles.section}>1 · Pick a total</Text>
+			<View style={styles.totalGrid}>
+				{TOTALS.map((t) => (
+					<Pressable
+						key={t}
+						onPress={() => setTotal(t)}
+						style={({ pressed }) => [
+							styles.totalChip,
+							total === t && styles.totalChipPicked,
+							pressed && styles.pressed,
+						]}
+					>
+						<Text style={styles.totalChipText}>{t}</Text>
+					</Pressable>
+				))}
+			</View>
+			<Text style={styles.section}>
+				2 · Discard {cardCost} cards ({discardSize} / {cardCost})
+			</Text>
+			<View style={styles.row}>
+				{RESOURCES.filter((r) => hand[r] > 0).map((r) => (
+					<ResourceStepper
+						key={r}
+						resource={r}
+						available={hand[r]}
+						value={discard[r]}
+						canInc={discardSize < cardCost && discard[r] < hand[r]}
+						onDec={() => setRes(r, -1)}
+						onInc={() => setRes(r, +1)}
+						styles={styles}
+					/>
+				))}
+			</View>
+			<View style={styles.actions}>
+				<Pressable
+					style={({ pressed }) => [
+						styles.cancelBtn,
+						pressed && styles.pressed,
+					]}
+					onPress={onCancel}
+				>
+					<Text style={styles.cancelText}>Cancel</Text>
 				</Pressable>
-			</Pressable>
+				<View style={{ flex: 1 }}>
+					<Button
+						onPress={() =>
+							total !== null && onConfirm(discard, total)
+						}
+						disabled={!ready}
+						loading={submitting}
+					>
+						Roll {total ?? ''}
+					</Button>
+				</View>
+			</View>
 		</Modal>
 	)
 }
@@ -198,13 +186,6 @@ function StepButton({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 460,

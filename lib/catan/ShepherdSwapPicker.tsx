@@ -2,7 +2,8 @@
 // swap. Picker UX mirrors Year of Plenty.
 
 import { useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Resource } from './board'
@@ -42,88 +43,75 @@ export function ShepherdSwapPicker({
 	}
 
 	return (
-		<Modal
-			transparent
-			animationType="fade"
-			visible
-			onRequestClose={onCancel}
-		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>
-						Shepherd: 2 sheep → 2 resources
-					</Text>
-					<Text style={styles.subtitle}>
-						Pick 2 resources to take. Duplicates are fine — tap
-						twice to take 2 of the same.
-					</Text>
-					<View style={styles.grid}>
-						{RESOURCES.map((r) => {
-							const count = picks.filter((p) => p === r).length
-							return (
-								<Pressable
-									key={r}
-									style={({ pressed }) => [
-										styles.card,
-										{ backgroundColor: resourceColor[r] },
-										pressed && styles.pressed,
-									]}
-									onPress={() => onTap(r)}
-									disabled={picks.length >= 2}
-								>
-									<Text style={styles.cardLabel}>
-										{RESOURCE_LABELS[r]}
-									</Text>
-									{count > 0 && (
-										<View style={styles.countBadge}>
-											<Text style={styles.countText}>
-												+{count}
-											</Text>
-										</View>
-									)}
-								</Pressable>
-							)
-						})}
-					</View>
-					<Text style={styles.progress}>
-						{picks.length} / 2 selected
-					</Text>
-					<View style={styles.actions}>
+		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
+			<Text style={styles.title}>Shepherd: 2 sheep → 2 resources</Text>
+			<Text style={styles.subtitle}>
+				Pick 2 resources to take. Duplicates are fine — tap twice to
+				take 2 of the same.
+			</Text>
+			<View style={styles.grid}>
+				{RESOURCES.map((r) => {
+					const count = picks.filter((p) => p === r).length
+					return (
 						<Pressable
+							key={r}
 							style={({ pressed }) => [
-								styles.secondaryBtn,
+								styles.card,
+								{ backgroundColor: resourceColor[r] },
 								pressed && styles.pressed,
 							]}
-							onPress={onClear}
-							disabled={picks.length === 0}
+							onPress={() => onTap(r)}
+							disabled={picks.length >= 2}
 						>
-							<Text style={styles.secondaryText}>Clear</Text>
-						</Pressable>
-						<Pressable
-							style={({ pressed }) => [
-								styles.primaryBtn,
-								(picks.length !== 2 || submitting) &&
-									styles.primaryBtnDisabled,
-								pressed && picks.length === 2 && styles.pressed,
-							]}
-							onPress={onSubmit}
-							disabled={picks.length !== 2 || submitting}
-						>
-							<Text style={styles.primaryText}>
-								{submitting ? '…' : 'Confirm'}
+							<Text style={styles.cardLabel}>
+								{RESOURCE_LABELS[r]}
 							</Text>
+							{count > 0 && (
+								<View style={styles.countBadge}>
+									<Text style={styles.countText}>
+										+{count}
+									</Text>
+								</View>
+							)}
 						</Pressable>
-					</View>
-					<Pressable
-						style={({ pressed }) => [
-							styles.cancelBtn,
-							pressed && styles.pressed,
-						]}
-						onPress={onCancel}
-					>
-						<Text style={styles.cancelText}>Cancel</Text>
-					</Pressable>
+					)
+				})}
+			</View>
+			<Text style={styles.progress}>{picks.length} / 2 selected</Text>
+			<View style={styles.actions}>
+				<Pressable
+					style={({ pressed }) => [
+						styles.secondaryBtn,
+						pressed && styles.pressed,
+					]}
+					onPress={onClear}
+					disabled={picks.length === 0}
+				>
+					<Text style={styles.secondaryText}>Clear</Text>
 				</Pressable>
+				<Pressable
+					style={({ pressed }) => [
+						styles.primaryBtn,
+						(picks.length !== 2 || submitting) &&
+							styles.primaryBtnDisabled,
+						pressed && picks.length === 2 && styles.pressed,
+					]}
+					onPress={onSubmit}
+					disabled={picks.length !== 2 || submitting}
+				>
+					<Text style={styles.primaryText}>
+						{submitting ? '…' : 'Confirm'}
+					</Text>
+				</Pressable>
+			</View>
+			<Pressable
+				style={({ pressed }) => [
+					styles.cancelBtn,
+					pressed && styles.pressed,
+				]}
+				onPress={onCancel}
+			>
+				<Text style={styles.cancelText}>Cancel</Text>
 			</Pressable>
 		</Modal>
 	)
@@ -131,13 +119,6 @@ export function ShepherdSwapPicker({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.45)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 420,

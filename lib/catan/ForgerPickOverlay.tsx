@@ -3,7 +3,8 @@
 // A single eligible player is copied server-side without a prompt.
 
 import { useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
@@ -30,36 +31,36 @@ export function ForgerPickOverlay({
 	const candidates = Object.keys(gainsByCandidate).map(Number)
 
 	return (
-		<Modal transparent animationType="fade" visible>
-			<View style={styles.backdrop}>
-				<View style={styles.sheet}>
-					<Text style={styles.title}>Forger: copy from a player</Text>
-					<Text style={styles.subtitle}>
-						Your token at hex {hex} produced. Pick one player to
-						copy what THEY gained from that hex on this roll.
-					</Text>
-					<View style={styles.list}>
-						{candidates.map((idx) => (
-							<CandidateRow
-								key={idx}
-								name={playerNames[idx] ?? `Player ${idx + 1}`}
-								idx={idx}
-								gain={gainsByCandidate[idx]}
-								picked={pick === idx}
-								onPress={() => setPick(idx)}
-								styles={styles}
-							/>
-						))}
-					</View>
-					<Button
-						onPress={() => pick !== null && onConfirm(pick)}
-						disabled={pick === null}
-						loading={submitting}
-					>
-						Copy
-					</Button>
-				</View>
+		<Modal
+			visible
+			dismissOnBackdropPress={false}
+			contentStyle={styles.sheet}
+		>
+			<Text style={styles.title}>Forger: copy from a player</Text>
+			<Text style={styles.subtitle}>
+				Your token at hex {hex} produced. Pick one player to copy what
+				THEY gained from that hex on this roll.
+			</Text>
+			<View style={styles.list}>
+				{candidates.map((idx) => (
+					<CandidateRow
+						key={idx}
+						name={playerNames[idx] ?? `Player ${idx + 1}`}
+						idx={idx}
+						gain={gainsByCandidate[idx]}
+						picked={pick === idx}
+						onPress={() => setPick(idx)}
+						styles={styles}
+					/>
+				))}
 			</View>
+			<Button
+				onPress={() => pick !== null && onConfirm(pick)}
+				disabled={pick === null}
+				loading={submitting}
+			>
+				Copy
+			</Button>
 		</Modal>
 	)
 }
@@ -110,13 +111,6 @@ function CandidateRow({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 460,

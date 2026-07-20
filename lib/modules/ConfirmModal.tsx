@@ -2,10 +2,11 @@
 // action that needs an "are you sure" before it fires.
 
 import { useMemo } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useTheme } from '../ThemeContext'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { Button } from './Button'
+import { Modal } from './Modal'
 
 export function ConfirmModal({
 	visible,
@@ -35,52 +36,40 @@ export function ConfirmModal({
 
 	return (
 		<Modal
-			transparent
-			animationType="fade"
 			visible={visible}
-			onRequestClose={onCancel}
+			onDismiss={onCancel}
+			contentStyle={styles.sheet}
 		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>{title}</Text>
-					{message && <Text style={styles.message}>{message}</Text>}
-					{error && <Text style={styles.errorText}>{error}</Text>}
-					<View style={styles.actions}>
-						<Pressable
-							style={({ pressed }) => [
-								styles.cancelBtn,
-								pressed && styles.pressed,
-							]}
-							onPress={onCancel}
-							disabled={submitting}
-						>
-							<Text style={styles.cancelText}>{cancelLabel}</Text>
-						</Pressable>
-						<View style={styles.confirmSlot}>
-							<Button
-								onPress={onConfirm}
-								loading={submitting}
-								style={destructive && styles.destructive}
-							>
-								{confirmLabel}
-							</Button>
-						</View>
-					</View>
+			<Text style={styles.title}>{title}</Text>
+			{message && <Text style={styles.message}>{message}</Text>}
+			{error && <Text style={styles.errorText}>{error}</Text>}
+			<View style={styles.actions}>
+				<Pressable
+					style={({ pressed }) => [
+						styles.cancelBtn,
+						pressed && styles.pressed,
+					]}
+					onPress={onCancel}
+					disabled={submitting}
+				>
+					<Text style={styles.cancelText}>{cancelLabel}</Text>
 				</Pressable>
-			</Pressable>
+				<View style={styles.confirmSlot}>
+					<Button
+						onPress={onConfirm}
+						loading={submitting}
+						style={destructive && styles.destructive}
+					>
+						{confirmLabel}
+					</Button>
+				</View>
+			</View>
 		</Modal>
 	)
 }
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 420,

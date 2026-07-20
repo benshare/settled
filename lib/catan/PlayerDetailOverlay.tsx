@@ -4,7 +4,8 @@
 
 import { Avatar } from '@/lib/modules/Avatar'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { bonusById, curseById } from './bonuses'
@@ -41,32 +42,23 @@ export function PlayerDetailOverlay({
 }: PlayerDetailOverlayProps) {
 	const open = playerIdx !== null
 	return (
-		<Modal
-			visible={open}
-			transparent
-			animationType="fade"
-			onRequestClose={onClose}
-		>
-			<Pressable style={styles.backdrop} onPress={onClose}>
-				<Pressable style={styles.sheet} onPress={() => {}}>
-					{playerIdx !== null && (
-						<Body
-							playerIdx={playerIdx}
-							playerOrder={playerOrder}
-							meIdx={meIdx}
-							profilesById={profilesById}
-							gameState={gameState}
-							points={pointsByPlayer[playerIdx] ?? 0}
-							publicPoints={
-								publicByPlayer[playerIdx] ??
-								pointsByPlayer[playerIdx] ??
-								0
-							}
-							onClose={onClose}
-						/>
-					)}
-				</Pressable>
-			</Pressable>
+		<Modal visible={open} onDismiss={onClose} contentStyle={styles.sheet}>
+			{playerIdx !== null && (
+				<Body
+					playerIdx={playerIdx}
+					playerOrder={playerOrder}
+					meIdx={meIdx}
+					profilesById={profilesById}
+					gameState={gameState}
+					points={pointsByPlayer[playerIdx] ?? 0}
+					publicPoints={
+						publicByPlayer[playerIdx] ??
+						pointsByPlayer[playerIdx] ??
+						0
+					}
+					onClose={onClose}
+				/>
+			)}
 		</Modal>
 	)
 }
@@ -329,13 +321,6 @@ function sumResources(
 }
 
 const styles = StyleSheet.create({
-	backdrop: {
-		flex: 1,
-		backgroundColor: 'rgba(0,0,0,0.35)',
-		justifyContent: 'center',
-		alignItems: 'center',
-		paddingHorizontal: spacing.lg,
-	},
 	sheet: {
 		width: '100%',
 		maxWidth: 460,

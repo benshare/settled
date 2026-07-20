@@ -1,7 +1,8 @@
 // Resource picker for the Monopoly dev card. Pick one resource → Confirm
 // fires onConfirm(resource). Rendered as a modal over the game view.
 
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor } from './palette'
@@ -22,59 +23,42 @@ export function MonopolyPicker({
 	onConfirm: (resource: Resource) => void
 }) {
 	return (
-		<Modal
-			transparent
-			animationType="fade"
-			visible
-			onRequestClose={onCancel}
-		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>Name a resource</Text>
-					<Text style={styles.subtitle}>
-						Every opponent will give you all of their cards of that
-						type.
-					</Text>
-					<View style={styles.grid}>
-						{RESOURCES.map((r) => (
-							<Pressable
-								key={r}
-								style={({ pressed }) => [
-									styles.card,
-									{ backgroundColor: resourceColor[r] },
-									pressed && styles.pressed,
-								]}
-								onPress={() => onConfirm(r)}
-							>
-								<Text style={styles.cardLabel}>
-									{RESOURCE_LABELS[r]}
-								</Text>
-							</Pressable>
-						))}
-					</View>
+		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
+			<Text style={styles.title}>Name a resource</Text>
+			<Text style={styles.subtitle}>
+				Every opponent will give you all of their cards of that type.
+			</Text>
+			<View style={styles.grid}>
+				{RESOURCES.map((r) => (
 					<Pressable
+						key={r}
 						style={({ pressed }) => [
-							styles.cancelBtn,
+							styles.card,
+							{ backgroundColor: resourceColor[r] },
 							pressed && styles.pressed,
 						]}
-						onPress={onCancel}
+						onPress={() => onConfirm(r)}
 					>
-						<Text style={styles.cancelText}>Cancel</Text>
+						<Text style={styles.cardLabel}>
+							{RESOURCE_LABELS[r]}
+						</Text>
 					</Pressable>
-				</Pressable>
+				))}
+			</View>
+			<Pressable
+				style={({ pressed }) => [
+					styles.cancelBtn,
+					pressed && styles.pressed,
+				]}
+				onPress={onCancel}
+			>
+				<Text style={styles.cancelText}>Cancel</Text>
 			</Pressable>
 		</Modal>
 	)
 }
 
 const styles = StyleSheet.create({
-	backdrop: {
-		flex: 1,
-		backgroundColor: 'rgba(0,0,0,0.45)',
-		alignItems: 'center',
-		justifyContent: 'center',
-		padding: spacing.lg,
-	},
 	sheet: {
 		width: '100%',
 		maxWidth: 420,

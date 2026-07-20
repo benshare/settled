@@ -3,7 +3,8 @@
 // number so the player can choose without scanning the board.
 
 import { useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
@@ -42,102 +43,82 @@ export function ForgerMovePicker({
 	)
 
 	return (
-		<Modal
-			transparent
-			animationType="fade"
-			visible
-			onRequestClose={onCancel}
-		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>Move forger token</Text>
-					<Text style={styles.subtitle}>
-						Currently at {currentHex}. Pick an adjacent hex.
-					</Text>
-					<View style={styles.list}>
-						{candidates.map((h) => {
-							const hd = state.hexes[h]
-							const desert = hd.resource === null
-							return (
-								<Pressable
-									key={h}
-									onPress={() => setPick(h)}
-									style={({ pressed }) => [
-										styles.row,
-										pick === h && styles.rowPicked,
-										pressed && styles.pressed,
-									]}
-								>
-									<Text style={styles.hexLabel}>{h}</Text>
-									{!desert && (
-										<View
-											style={[
-												styles.chip,
-												{
-													backgroundColor:
-														resourceColor[
-															hd.resource
-														],
-												},
-											]}
-										>
-											<Text style={styles.chipText}>
-												{RESOURCE_GLYPH[hd.resource]} ·{' '}
-												{hd.number}
-											</Text>
-										</View>
-									)}
-									{desert && (
-										<View
-											style={[
-												styles.chip,
-												{ backgroundColor: '#C8B383' },
-											]}
-										>
-											<Text style={styles.chipText}>
-												Desert
-											</Text>
-										</View>
-									)}
-								</Pressable>
-							)
-						})}
-					</View>
-					<View style={styles.actions}>
+		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
+			<Text style={styles.title}>Move forger token</Text>
+			<Text style={styles.subtitle}>
+				Currently at {currentHex}. Pick an adjacent hex.
+			</Text>
+			<View style={styles.list}>
+				{candidates.map((h) => {
+					const hd = state.hexes[h]
+					const desert = hd.resource === null
+					return (
 						<Pressable
+							key={h}
+							onPress={() => setPick(h)}
 							style={({ pressed }) => [
-								styles.cancelBtn,
+								styles.row,
+								pick === h && styles.rowPicked,
 								pressed && styles.pressed,
 							]}
-							onPress={onCancel}
 						>
-							<Text style={styles.cancelText}>Cancel</Text>
+							<Text style={styles.hexLabel}>{h}</Text>
+							{!desert && (
+								<View
+									style={[
+										styles.chip,
+										{
+											backgroundColor:
+												resourceColor[hd.resource],
+										},
+									]}
+								>
+									<Text style={styles.chipText}>
+										{RESOURCE_GLYPH[hd.resource]} ·{' '}
+										{hd.number}
+									</Text>
+								</View>
+							)}
+							{desert && (
+								<View
+									style={[
+										styles.chip,
+										{ backgroundColor: '#C8B383' },
+									]}
+								>
+									<Text style={styles.chipText}>Desert</Text>
+								</View>
+							)}
 						</Pressable>
-						<View style={{ flex: 1 }}>
-							<Button
-								onPress={() => pick && onConfirm(pick)}
-								disabled={!pick}
-								loading={submitting}
-							>
-								Move
-							</Button>
-						</View>
-					</View>
+					)
+				})}
+			</View>
+			<View style={styles.actions}>
+				<Pressable
+					style={({ pressed }) => [
+						styles.cancelBtn,
+						pressed && styles.pressed,
+					]}
+					onPress={onCancel}
+				>
+					<Text style={styles.cancelText}>Cancel</Text>
 				</Pressable>
-			</Pressable>
+				<View style={{ flex: 1 }}>
+					<Button
+						onPress={() => pick && onConfirm(pick)}
+						disabled={!pick}
+						loading={submitting}
+					>
+						Move
+					</Button>
+				</View>
+			</View>
 		</Modal>
 	)
 }
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 420,

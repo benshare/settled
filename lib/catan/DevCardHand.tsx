@@ -6,7 +6,8 @@
 
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { colors, font, radius, spacing } from '../theme'
 import { DEV_CARD_POOL, devCardById, type DevCardId } from './devCards'
 import { MonopolyPicker } from './MonopolyPicker'
@@ -140,52 +141,40 @@ export function DevCardHand({
 			})}
 
 			<Modal
-				transparent
-				animationType="fade"
 				visible={openGroup !== null && pickerFor === null}
-				onRequestClose={() => setOpenGroup(null)}
+				onDismiss={() => setOpenGroup(null)}
+				contentStyle={styles.sheet}
 			>
-				<Pressable
-					style={styles.backdrop}
-					onPress={() => setOpenGroup(null)}
-				>
-					<Pressable style={styles.sheet}>
-						{openCard && (
-							<>
-								<View style={styles.sheetHeader}>
-									<Ionicons
-										name={openCard.icon}
-										size={24}
-										color={colors.text}
-									/>
-									<Text style={styles.sheetTitle}>
-										{openCard.title}
-									</Text>
-								</View>
-								<Text style={styles.sheetDescription}>
-									{openCard.description}
-								</Text>
-								{openReason ? (
-									<Text style={styles.sheetHint}>
-										{openReason}
-									</Text>
-								) : (
-									<Pressable
-										style={({ pressed }) => [
-											styles.playBtn,
-											pressed && styles.pressed,
-										]}
-										onPress={onPlayPress}
-									>
-										<Text style={styles.playBtnText}>
-											Play
-										</Text>
-									</Pressable>
-								)}
-							</>
+				{openCard && (
+					<>
+						<View style={styles.sheetHeader}>
+							<Ionicons
+								name={openCard.icon}
+								size={24}
+								color={colors.text}
+							/>
+							<Text style={styles.sheetTitle}>
+								{openCard.title}
+							</Text>
+						</View>
+						<Text style={styles.sheetDescription}>
+							{openCard.description}
+						</Text>
+						{openReason ? (
+							<Text style={styles.sheetHint}>{openReason}</Text>
+						) : (
+							<Pressable
+								style={({ pressed }) => [
+									styles.playBtn,
+									pressed && styles.pressed,
+								]}
+								onPress={onPlayPress}
+							>
+								<Text style={styles.playBtnText}>Play</Text>
+							</Pressable>
 						)}
-					</Pressable>
-				</Pressable>
+					</>
+				)}
 			</Modal>
 
 			{pickerFor === 'monopoly' && (
@@ -253,13 +242,6 @@ const styles = StyleSheet.create({
 	},
 	pressed: {
 		opacity: 0.75,
-	},
-	backdrop: {
-		flex: 1,
-		backgroundColor: 'rgba(0,0,0,0.4)',
-		alignItems: 'center',
-		justifyContent: 'center',
-		padding: spacing.lg,
 	},
 	sheet: {
 		width: '100%',

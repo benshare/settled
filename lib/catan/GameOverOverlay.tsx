@@ -10,16 +10,10 @@
 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { type ComponentProps, useState } from 'react'
-import {
-	Modal,
-	Pressable,
-	ScrollView,
-	StyleSheet,
-	Text,
-	View,
-} from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
+import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
 import { populistBonusVPFor } from './bonus'
@@ -89,44 +83,40 @@ export function GameOverOverlay({
 	return (
 		<Modal
 			visible={visible}
-			transparent
-			animationType="fade"
-			onRequestClose={onDismiss}
+			dismissOnBackdropPress={false}
+			onDismiss={onDismiss}
+			contentStyle={styles.sheet}
 		>
-			<View style={styles.backdrop}>
-				<View style={styles.sheet}>
-					<Header
-						winnerIdx={winnerIdx}
-						playerOrder={playerOrder}
-						meIdx={meIdx}
-						profilesById={profilesById}
-					/>
-					<TabBar tab={tab} onTab={setTab} />
-					{tab === 'scores' && (
-						<Scoreboard
-							gameState={gameState}
-							playerOrder={playerOrder}
-							meIdx={meIdx}
-							profilesById={profilesById}
-							pointsByPlayer={pointsByPlayer}
-							publicByPlayer={publicByPlayer}
-						/>
-					)}
-					{tab === 'rolls' && <RollDistribution events={events} />}
-					{tab === 'highlights' && (
-						<Highlights
-							events={events}
-							playerCount={playerOrder.length}
-							nameFor={nameFor}
-						/>
-					)}
-					<View style={styles.buttons}>
-						<Button variant="secondary" onPress={onDismiss}>
-							View board
-						</Button>
-						<Button onPress={onBackToGames}>Back to games</Button>
-					</View>
-				</View>
+			<Header
+				winnerIdx={winnerIdx}
+				playerOrder={playerOrder}
+				meIdx={meIdx}
+				profilesById={profilesById}
+			/>
+			<TabBar tab={tab} onTab={setTab} />
+			{tab === 'scores' && (
+				<Scoreboard
+					gameState={gameState}
+					playerOrder={playerOrder}
+					meIdx={meIdx}
+					profilesById={profilesById}
+					pointsByPlayer={pointsByPlayer}
+					publicByPlayer={publicByPlayer}
+				/>
+			)}
+			{tab === 'rolls' && <RollDistribution events={events} />}
+			{tab === 'highlights' && (
+				<Highlights
+					events={events}
+					playerCount={playerOrder.length}
+					nameFor={nameFor}
+				/>
+			)}
+			<View style={styles.buttons}>
+				<Button variant="secondary" onPress={onDismiss}>
+					View board
+				</Button>
+				<Button onPress={onBackToGames}>Back to games</Button>
 			</View>
 		</Modal>
 	)
@@ -493,13 +483,6 @@ export function FinalScoreButton({ onPress }: { onPress: () => void }) {
 }
 
 const styles = StyleSheet.create({
-	backdrop: {
-		flex: 1,
-		backgroundColor: 'rgba(0,0,0,0.45)',
-		justifyContent: 'center',
-		alignItems: 'center',
-		paddingHorizontal: spacing.lg,
-	},
 	sheet: {
 		width: '100%',
 		maxWidth: 480,

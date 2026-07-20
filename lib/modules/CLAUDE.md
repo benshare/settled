@@ -1,0 +1,11 @@
+# Modules
+
+Shared, app-agnostic UI primitives (not Catan-specific). Style with `StyleSheet.create`, usually via a `makeStyles(colors)` factory memoized against `useTheme()`.
+
+- `Modal.tsx` — **base overlay primitive; the only way to render a modal.** Wraps React Native's `<Modal transparent animationType="fade">` and bakes in the dismissal behavior every overlay needs: a dimmed backdrop that closes on outside tap, an inner wrapper that swallows content taps (so a press inside never dismisses), and `onRequestClose` (Android hardware-back / web Escape) routed to `onDismiss`. Content-agnostic — callers pass their own sheet as `children` and style it via `contentStyle`; the component itself only contributes a default corner radius + soft shadow (both overridable). Props: `visible`, `onDismiss?`, `dismissOnBackdropPress?` (default `true`), `children`, `contentStyle?`, `backdropStyle?`, `layout?` (a reanimated layout transition for the content wrapper — e.g. `LinearTransition` so the sheet resizes smoothly as its content grows/shrinks). Set `dismissOnBackdropPress={false}` for forced-choice / terminal overlays that must not close on an outside tap (they can still omit `onDismiss` to also trap hardware-back/Escape, or pass one to allow it). Do NOT hand-roll a raw `<Modal>` + backdrop `Pressable` again — use this so dismissal stays uniform.
+- `ConfirmModal.tsx` — styled replacement for the native `confirm()` dialog (title/message/confirm/cancel, `destructive`, `submitting`, `error`). Built on `Modal`. Use for any "are you sure" before a destructive or irreversible action.
+- `Button.tsx`, `Input.tsx`, `Avatar.tsx`, `Tooltip.tsx`, `TabBarIcon.tsx` — the rest of the shared primitives.
+
+## Overlays
+
+Every modal/dialog/panel overlay renders through `Modal.tsx`. The one intentional exception is `lib/catan/GameChat.tsx`'s `ChatPanel`, which is an absolutely-positioned in-play-area view (NOT an RN `<Modal>`) so it stays inside the board rather than covering the screen — see `lib/catan/CLAUDE.md`. The three Catan animation overlays (`StealAnimation`, `NomadAnimation`, `FortuneTellerAnimation`) keep a raw RN `<Modal>` because their backdrop is an `Animated.View` driven by a custom fade timeline and they are transient + non-dismissible — not the dialog pattern `Modal` targets.

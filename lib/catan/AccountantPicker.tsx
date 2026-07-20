@@ -5,14 +5,8 @@
 // validation server-side.
 
 import { useMemo } from 'react'
-import {
-	Modal,
-	Pressable,
-	ScrollView,
-	StyleSheet,
-	Text,
-	View,
-} from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { type Edge, RESOURCES, type Vertex } from './board'
 import {
 	CITY_REFUND,
@@ -56,63 +50,44 @@ export function AccountantPicker({
 	)
 
 	return (
-		<Modal
-			transparent
-			animationType="fade"
-			visible
-			onRequestClose={onCancel}
-		>
-			<Pressable style={styles.backdrop} onPress={onCancel}>
-				<Pressable style={styles.sheet}>
-					<Text style={styles.title}>
-						Accountant: liquidate a piece
+		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
+			<Text style={styles.title}>Accountant: liquidate a piece</Text>
+			<Text style={styles.subtitle}>
+				Refunds the full original cost. Pieces placed this turn and
+				roads that would disconnect your network are not listed.
+			</Text>
+			<ScrollView style={styles.scroll}>
+				{targets.length === 0 && (
+					<Text style={styles.empty}>
+						Nothing eligible to liquidate yet.
 					</Text>
-					<Text style={styles.subtitle}>
-						Refunds the full original cost. Pieces placed this turn
-						and roads that would disconnect your network are not
-						listed.
-					</Text>
-					<ScrollView style={styles.scroll}>
-						{targets.length === 0 && (
-							<Text style={styles.empty}>
-								Nothing eligible to liquidate yet.
-							</Text>
-						)}
-						{targets.map((t, idx) => (
-							<Pressable
-								key={`${t.kind}-${idx}`}
-								onPress={() => onConfirm(t.target)}
-								disabled={submitting}
-								style={({ pressed }) => [
-									styles.row,
-									pressed && !submitting && styles.pressed,
-								]}
-							>
-								<View style={styles.rowMain}>
-									<Text style={styles.rowKind}>
-										{t.label}
-									</Text>
-									<Text style={styles.rowSub}>
-										{t.detail}
-									</Text>
-								</View>
-								<RefundChips
-									refund={t.refund}
-									styles={styles}
-								/>
-							</Pressable>
-						))}
-					</ScrollView>
+				)}
+				{targets.map((t, idx) => (
 					<Pressable
+						key={`${t.kind}-${idx}`}
+						onPress={() => onConfirm(t.target)}
+						disabled={submitting}
 						style={({ pressed }) => [
-							styles.cancelBtn,
-							pressed && styles.pressed,
+							styles.row,
+							pressed && !submitting && styles.pressed,
 						]}
-						onPress={onCancel}
 					>
-						<Text style={styles.cancelText}>Close</Text>
+						<View style={styles.rowMain}>
+							<Text style={styles.rowKind}>{t.label}</Text>
+							<Text style={styles.rowSub}>{t.detail}</Text>
+						</View>
+						<RefundChips refund={t.refund} styles={styles} />
 					</Pressable>
-				</Pressable>
+				))}
+			</ScrollView>
+			<Pressable
+				style={({ pressed }) => [
+					styles.cancelBtn,
+					pressed && styles.pressed,
+				]}
+				onPress={onCancel}
+			>
+				<Text style={styles.cancelText}>Close</Text>
 			</Pressable>
 		</Modal>
 	)
@@ -209,13 +184,6 @@ function RefundChips({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 460,

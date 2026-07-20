@@ -4,7 +4,8 @@
 
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
@@ -24,35 +25,35 @@ export function ScoutPickOverlay({
 	const [pick, setPick] = useState<number | null>(null)
 
 	return (
-		<Modal transparent animationType="fade" visible>
-			<View style={styles.backdrop}>
-				<View style={styles.sheet}>
-					<Text style={styles.title}>Scout: peek 3 dev cards</Text>
-					<Text style={styles.subtitle}>
-						Pick one to add to your hand. The other{' '}
-						{Math.max(0, cards.length - 1)} go to the bottom of the
-						deck in their drawn order.
-					</Text>
-					<View style={styles.row}>
-						{cards.map((id, idx) => (
-							<ScoutCard
-								key={`${id}-${idx}`}
-								id={id}
-								picked={pick === idx}
-								onPress={() => setPick(idx)}
-								styles={styles}
-							/>
-						))}
-					</View>
-					<Button
-						onPress={() => pick !== null && onConfirm(pick)}
-						disabled={pick === null}
-						loading={submitting}
-					>
-						Take this card
-					</Button>
-				</View>
+		<Modal
+			visible
+			dismissOnBackdropPress={false}
+			contentStyle={styles.sheet}
+		>
+			<Text style={styles.title}>Scout: peek 3 dev cards</Text>
+			<Text style={styles.subtitle}>
+				Pick one to add to your hand. The other{' '}
+				{Math.max(0, cards.length - 1)} go to the bottom of the deck in
+				their drawn order.
+			</Text>
+			<View style={styles.row}>
+				{cards.map((id, idx) => (
+					<ScoutCard
+						key={`${id}-${idx}`}
+						id={id}
+						picked={pick === idx}
+						onPress={() => setPick(idx)}
+						styles={styles}
+					/>
+				))}
 			</View>
+			<Button
+				onPress={() => pick !== null && onConfirm(pick)}
+				disabled={pick === null}
+				loading={submitting}
+			>
+				Take this card
+			</Button>
 		</Modal>
 	)
 }
@@ -62,16 +63,15 @@ export function ScoutWaitOverlay({ ownerName }: { ownerName: string }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
-		<Modal transparent animationType="fade" visible>
-			<View style={styles.backdrop}>
-				<View style={styles.sheet}>
-					<Text style={styles.title}>Scout pick</Text>
-					<Text style={styles.subtitle}>
-						Waiting on {ownerName} to choose 1 of 3 peeked dev
-						cards.
-					</Text>
-				</View>
-			</View>
+		<Modal
+			visible
+			dismissOnBackdropPress={false}
+			contentStyle={styles.sheet}
+		>
+			<Text style={styles.title}>Scout pick</Text>
+			<Text style={styles.subtitle}>
+				Waiting on {ownerName} to choose 1 of 3 peeked dev cards.
+			</Text>
 		</Modal>
 	)
 }
@@ -106,13 +106,6 @@ function ScoutCard({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'center',
-			padding: spacing.lg,
-		},
 		sheet: {
 			width: '100%',
 			maxWidth: 460,
