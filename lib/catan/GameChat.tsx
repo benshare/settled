@@ -14,14 +14,16 @@ import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
 import {
 	FlatList,
-	KeyboardAvoidingView,
-	Platform,
 	Pressable,
 	StyleSheet,
 	Text,
 	TextInput,
 	View,
 } from 'react-native'
+import Animated, {
+	useAnimatedKeyboard,
+	useAnimatedStyle,
+} from 'react-native-reanimated'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { CHAT_MAX_CHARS, useChat, type ChatMessage } from './chatContext'
@@ -32,10 +34,15 @@ import { playerColors } from './palette'
 const PANEL_BG = 'rgba(250, 243, 224, 0.9)'
 const PANEL_CHROME_BG = 'rgba(235, 219, 184, 0.94)'
 
-// The floating buttons' inset from the top of the board container. The panel
-// anchors to the same line, so this is shared by `collapsed` (slot 0's origin)
-// and the panel's top offset.
+// The floating buttons' inset from the top of the board container. Slot 0's
+// origin, and the line the panel's top margin is measured from.
 const BUTTON_INSET = spacing.sm
+
+// Breathing room between the panel and the play area's edges. The top gap is
+// larger because the panel's top edge would otherwise sit right on the
+// floating buttons' line.
+const PANEL_GAP_TOP = spacing.lg
+const PANEL_GAP = spacing.md
 
 export function ChatButton() {
 	const { open, setOpen, unreadCount } = useChat()
@@ -84,6 +91,14 @@ export function ChatPanel({
 	const [draft, setDraft] = useState('')
 	const [error, setError] = useState<string | null>(null)
 
+	// Lift the whole panel by the keyboard's height rather than shrinking it —
+	// the panel's bottom edge is pinned to the play area, which sits well above
+	// the screen bottom, so padding-style avoidance leaves the composer covered.
+	const keyboard = useAnimatedKeyboard()
+	const lift = useAnimatedStyle(() => ({
+		transform: [{ translateY: -keyboard.height.value }],
+	}))
+
 	const canSend = draft.trim().length > 0 && !sending
 
 	// An inverted list sticks to the bottom as messages arrive, which is what a
@@ -115,10 +130,7 @@ export function ChatPanel({
 			style={[styles.scrim, { top: topOffset + BUTTON_INSET }]}
 			onPress={() => setOpen(false)}
 		>
-			<KeyboardAvoidingView
-				style={styles.fill}
-				behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-			>
+			<Animated.View style={[styles.fill, lift]}>
 				{/* Swallows taps so they never reach the scrim. */}
 				<Pressable style={styles.panel} onPress={() => {}}>
 					<View style={styles.header}>
@@ -157,7 +169,7 @@ export function ChatPanel({
 						onSend={onSend}
 					/>
 				</Pressable>
-			</KeyboardAvoidingView>
+			</Animated.View>
 		</Pressable>
 	)
 }
@@ -199,9 +211,12 @@ function ChatBody({
 			style={styles.list}
 			contentContainerStyle={styles.listBody}
 			keyboardShouldPersistTaps="handled"
-			renderItem={({ item }) => (
+			renderItem={({ item, index }) => (
 				<MessageRow
 					message={item}
+					// The list is reversed, so index + 1 is the chronologically
+					// previous message: a run starts where the sender changes.
+					startsRun={inverted[index + 1]?.sender !== item.sender}
 					playerOrder={playerOrder}
 					profilesById={profilesById}
 					meId={meId}
@@ -258,11 +273,15 @@ function ChatComposer({
 
 function MessageRow({
 	message,
+	startsRun,
 	playerOrder,
 	profilesById,
 	meId,
 }: {
 	message: ChatMessage
+	// First message of a consecutive run by one sender: it carries the name
+	// header and the extra separation from the run above.
+	startsRun: boolean
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	meId: string | undefined
@@ -271,9 +290,13 @@ function MessageRow({
 	const seat = playerOrder.indexOf(message.sender)
 	const name = profilesById[message.sender]?.username ?? 'Player'
 
+	// The list is inverted, which flips each cell vertically — so margin*Bottom*
+	// is what renders as space *above* the row.
+	const gap = startsRun && styles.rowGroupStart
+
 	if (mine) {
 		return (
-			<View style={[styles.row, styles.rowMine]}>
+			<View style={[styles.row, styles.rowMine, gap]}>
 				<View style={[styles.bubble, styles.bubbleMine]}>
 					<Text style={styles.bubbleTextMine}>{message.body}</Text>
 				</View>
@@ -282,20 +305,23 @@ function MessageRow({
 	}
 
 	return (
-		<View style={styles.row}>
-			<Text
-				style={[
-					styles.sender,
-					{
-						color:
-							seat >= 0
-								? (playerColors[seat] ?? colors.textSecondary)
-								: colors.textSecondary,
-					},
-				]}
-			>
-				{name}
-			</Text>
+		<View style={[styles.row, gap]}>
+			{startsRun && (
+				<Text
+					style={[
+						styles.sender,
+						{
+							color:
+								seat >= 0
+									? (playerColors[seat] ??
+										colors.textSecondary)
+									: colors.textSecondary,
+						},
+					]}
+				>
+					{name}
+				</Text>
+			)}
 			<View style={styles.bubble}>
 				<Text style={styles.bubbleText}>{message.body}</Text>
 			</View>
@@ -351,10 +377,9 @@ const styles = StyleSheet.create({
 		right: 0,
 		bottom: 0,
 		backgroundColor: 'rgba(0, 0, 0, 0.15)',
-		// No top padding: the panel's top edge *is* the anchor line, so padding
-		// here would push it back below the buttons it's meant to line up with.
-		paddingHorizontal: spacing.md,
-		paddingBottom: spacing.md,
+		paddingTop: PANEL_GAP_TOP,
+		paddingHorizontal: PANEL_GAP,
+		paddingBottom: PANEL_GAP,
 		zIndex: 10,
 	},
 	fill: {
@@ -394,7 +419,9 @@ const styles = StyleSheet.create({
 	},
 	listBody: {
 		padding: spacing.md,
-		gap: spacing.sm,
+		// Tight baseline: messages within one sender's run read as a block.
+		// Run starts add their own separation via `rowGroupStart`.
+		gap: 2,
 	},
 	centered: {
 		flex: 1,
@@ -411,6 +438,9 @@ const styles = StyleSheet.create({
 	},
 	rowMine: {
 		alignItems: 'flex-end',
+	},
+	rowGroupStart: {
+		marginBottom: spacing.sm,
 	},
 	sender: {
 		fontSize: font.xs,
