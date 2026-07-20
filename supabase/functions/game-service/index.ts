@@ -4674,14 +4674,10 @@ async function handleEndSpecialBuild(
 	if (meIdx === null) return err(403, 'not a participant')
 	if (state.phase.queue[0] !== meIdx) return err(403, 'not your build')
 
-	// The finishing builder's slot is a self-contained spend window: clear their
-	// age-curse per-turn counter so SBP spend never leaks into their own turn.
-	const nextPlayers =
-		state.players[meIdx]?.curse === 'age'
-			? state.players.map((p, i) =>
-					i === meIdx ? { ...p, cardsSpentThisTurn: 0 } : p
-				)
-			: state.players
+	// Age-cursed SBP spend is NOT a self-contained window: it accumulates in
+	// `cardsSpentThisTurn` and counts toward the card limit of the builder's own
+	// following turn. The counter is only cleared on their `end_turn`.
+	const nextPlayers = state.players
 
 	// Pop the head, then skip any following players who cannot act.
 	const remaining = drainSpecialBuildQueue(
