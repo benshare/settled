@@ -358,7 +358,7 @@ function HighlightCard({
 	highlight: Highlight
 	nameFor: (i: number) => string
 }) {
-	const { title, subtitle, icon, winners, value, unit } = highlight
+	const { title, subtitle, icon, winners, value, unit, valueLabel } = highlight
 	const hasWinner = winners.length > 0
 	return (
 		<View style={styles.highlightRow}>
@@ -402,7 +402,7 @@ function HighlightCard({
 			</View>
 			{hasWinner && (
 				<Text style={styles.highlightValue}>
-					{value} {unit}
+					{valueLabel ?? `${value} ${unit}`}
 				</Text>
 			)}
 		</View>

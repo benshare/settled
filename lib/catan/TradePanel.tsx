@@ -129,6 +129,9 @@ export function TradePanel({
 		return (
 			<BankSelect
 				options={bankOptions}
+				specialistResource={
+					state.players[meIdx]?.specialistResource ?? null
+				}
 				onPick={(choice) => setMode({ kind: 'bank_compose', choice })}
 				onBack={bankOnly ? onCancel : () => setMode({ kind: 'player' })}
 			/>
@@ -317,10 +320,12 @@ function PlayerTrade({
 
 function BankSelect({
 	options,
+	specialistResource,
 	onPick,
 	onBack,
 }: {
 	options: BankKind[]
+	specialistResource: Resource | null
 	onPick: (choice: BankKind) => void
 	onBack: () => void
 }) {
@@ -349,6 +354,7 @@ function BankSelect({
 					<BankOptionCard
 						key={opt}
 						kind={opt}
+						specialistResource={specialistResource}
 						onPress={() => onPick(opt)}
 					/>
 				))}
@@ -359,13 +365,21 @@ function BankSelect({
 
 function BankOptionCard({
 	kind,
+	specialistResource,
 	onPress,
 }: {
 	kind: BankKind
+	specialistResource: Resource | null
 	onPress: () => void
 }) {
 	const locked = lockedGiveResource(kind)
-	const ratio = ratioOf(kind)
+	const baseRatio = ratioOf(kind)
+	// Specialist pays one fewer on a port that takes their declared resource.
+	// For a specific 2:1 port that's the locked resource itself → 1:1.
+	const specialtyMatchesLocked = !!locked && specialistResource === locked
+	const ratio = specialtyMatchesLocked
+		? Math.max(1, baseRatio - 1)
+		: baseRatio
 	const title = locked
 		? `2:1 ${RESOURCE_LABELS[locked]} port`
 		: kind === '3:1'
@@ -374,7 +388,9 @@ function BankOptionCard({
 				? '5:1 bank (Curse of Provinciality)'
 				: '4:1 bank'
 	const subtitle = locked
-		? `Trade 2 ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
+		? specialtyMatchesLocked
+			? `Specialist: trade ${ratio} ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
+			: `Trade 2 ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
 		: kind === '3:1'
 			? 'Trade 3 of any one resource for 1 of anything else.'
 			: kind === '5:1'
@@ -577,11 +593,15 @@ function BankCompose({
 			</View>
 
 			<Text style={styles.ratioHint}>
-				Tap a card to give {baseRatio} at a time
-				{specialistResource && baseRatio > 2
-					? ` (${baseRatio - 1} for ${specialistResource})`
-					: ''}
-				.
+				{locked
+					? specialistResource === locked
+						? `Tap to give ${Math.max(1, baseRatio - 1)} at a time.`
+						: `Tap a card to give ${baseRatio} at a time.`
+					: `Tap a card to give ${baseRatio} at a time${
+							specialistResource
+								? ` (${Math.max(1, baseRatio - 1)} for ${specialistResource})`
+								: ''
+						}.`}
 			</Text>
 
 			<ScrollView

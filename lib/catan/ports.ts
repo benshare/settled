@@ -77,8 +77,8 @@ export function lockedGiveResource(kind: BankKind): Resource | null {
 //
 // Specialist discount: when `specialistResource` is set (the player's
 // declared specialty) AND the give is a single-resource stack of that same
-// resource, the effective ratio is `max(2, baseRatio - 1)`. Otherwise the
-// base ratio applies.
+// resource, the effective ratio is `max(1, baseRatio - 1)` — "pay one fewer",
+// so a 2:1 specialty port becomes 1:1. Otherwise the base ratio applies.
 // `isSmith` relaxes a 2:1 specific port's locked resource: a smith may satisfy
 // a brick lock with ore and vice versa (brick↔ore substitution for ports).
 export function isValidBankTradeShape(
@@ -117,7 +117,7 @@ export function effectiveBankRatioFor(
 	const givers = RESOURCES.filter((r) => give[r] > 0)
 	if (givers.length !== 1) return base
 	if (givers[0] !== specialistResource) return base
-	return Math.max(2, base - 1)
+	return Math.max(1, base - 1)
 }
 
 export function applyBankTradeToPlayer(
@@ -149,10 +149,11 @@ export function canBankTrade(state: GameState, playerIdx: number): boolean {
 		const base = ratioOf(kind)
 		const locked = lockedGiveResource(kind)
 		if (locked) {
-			if (p.resources[locked] >= base) return true
+			const need = specialty === locked ? Math.max(1, base - 1) : base
+			if (p.resources[locked] >= need) return true
 		} else {
 			for (const r of RESOURCES) {
-				const need = specialty === r ? Math.max(2, base - 1) : base
+				const need = specialty === r ? Math.max(1, base - 1) : base
 				if (p.resources[r] >= need) return true
 			}
 		}

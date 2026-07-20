@@ -98,7 +98,8 @@ export type BuildPurchaseKind = BuildKind | 'dev_card'
 // --- Specialist -------------------------------------------------------------
 //
 // Declared resource lowers the effective bank ratio by 1 when that resource
-// is on the give side. Minimum ratio stays at 2:1.
+// is on the give side ("pay one fewer"), down to a floor of 1 — so a 2:1
+// specialty port becomes a 1:1 trade.
 export function specialistGiveResource(p: PlayerState): Resource | null {
 	if (p.bonus !== 'specialist') return null
 	return p.specialistResource ?? null
@@ -112,7 +113,7 @@ export function effectiveBankRatio(
 	const base =
 		kind === '5:1' ? 5 : kind === '4:1' ? 4 : kind === '3:1' ? 3 : 2
 	if (specialistResource && giveResource === specialistResource) {
-		return Math.max(2, base - 1)
+		return Math.max(1, base - 1)
 	}
 	return base
 }
