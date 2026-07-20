@@ -2,6 +2,7 @@ import { useAuth } from '@/lib/auth'
 import { parseGameConfig, summarizeGameConfig } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
+import { ConfirmModal } from '@/lib/modules/ConfirmModal'
 import {
 	type GameRequest,
 	type InvitedEntry,
@@ -28,8 +29,13 @@ export default function PendingGameScreen() {
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const respond = useGamesStore((s) => s.respond)
 
-	const [busy, setBusy] = useState<'accept' | 'reject' | null>(null)
+	const cancelRequest = useGamesStore((s) => s.cancelRequest)
+
+	const [busy, setBusy] = useState<'accept' | 'reject' | 'cancel' | null>(
+		null
+	)
 	const [error, setError] = useState<string | null>(null)
+	const [confirmingCancel, setConfirmingCancel] = useState(false)
 
 	// Remember the request after it disappears from the store so we can
 	// match it against a newly-created game. When the final invitee accepts,
@@ -81,6 +87,23 @@ export default function PendingGameScreen() {
 		}
 	}
 
+	async function onCancelGame() {
+		if (!user?.id || !request) return
+		setBusy('cancel')
+		setError(null)
+		const { error } = await cancelRequest(user.id, request.id)
+		setBusy(null)
+		if (error) {
+			setError(error)
+			return
+		}
+		// Deleting the request also ends the redirect effect's search for a
+		// matching game, so leave before it can flash "no longer available".
+		redirectingRef.current = true
+		setConfirmingCancel(false)
+		router.back()
+	}
+
 	return (
 		<SafeAreaView style={styles.safe}>
 			<View style={styles.header}>
@@ -117,8 +140,25 @@ export default function PendingGameScreen() {
 					error={error}
 					onAccept={() => onRespond(true)}
 					onReject={() => onRespond(false)}
+					onCancelGame={() => setConfirmingCancel(true)}
 				/>
 			)}
+
+			<ConfirmModal
+				visible={confirmingCancel}
+				title="Cancel this game?"
+				message="The invite will be withdrawn for everyone. This can't be undone."
+				confirmLabel="Cancel game"
+				cancelLabel="Keep it"
+				destructive
+				submitting={busy === 'cancel'}
+				error={error}
+				onConfirm={onCancelGame}
+				onCancel={() => {
+					setConfirmingCancel(false)
+					setError(null)
+				}}
+			/>
 		</SafeAreaView>
 	)
 }
@@ -131,6 +171,7 @@ function Body({
 	error,
 	onAccept,
 	onReject,
+	onCancelGame,
 }: {
 	request: {
 		id: string
@@ -140,10 +181,11 @@ function Body({
 	}
 	profilesById: Record<string, Profile>
 	meId: string | undefined
-	busy: 'accept' | 'reject' | null
+	busy: 'accept' | 'reject' | 'cancel' | null
 	error: string | null
 	onAccept: () => void
 	onReject: () => void
+	onCancelGame: () => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
@@ -211,6 +253,16 @@ function Body({
 				</View>
 			) : (
 				statusLine && <Text style={styles.hint}>{statusLine}</Text>
+			)}
+
+			{iAmProposer && (
+				<Button
+					variant="secondary"
+					onPress={onCancelGame}
+					disabled={busy !== null}
+				>
+					Cancel game
+				</Button>
 			)}
 		</ScrollView>
 	)

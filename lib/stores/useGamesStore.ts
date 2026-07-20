@@ -230,6 +230,7 @@ type GamesStore = {
 		requestId: string,
 		accept: boolean
 	) => Promise<RespondResult>
+	cancelRequest: (meId: string, requestId: string) => Promise<ActionResult>
 
 	pickBonus: (gameId: string, bonus: BonusId) => Promise<ActionResult>
 	setSpecialistResource: (
@@ -590,6 +591,16 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		if (error) return { error }
 		await get().loadForUser(meId)
 		return { error: null, gameId: data.game_id as string | undefined }
+	},
+
+	async cancelRequest(meId, requestId) {
+		const { error } = await callGameService(
+			{ action: 'cancel_request', request_id: requestId },
+			"Couldn't cancel game"
+		)
+		if (error) return { error }
+		await get().loadForUser(meId)
+		return { error: null }
 	},
 
 	async placeSettlement(gameId, vertex) {

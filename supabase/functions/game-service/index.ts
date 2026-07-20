@@ -63,6 +63,7 @@ type ProposeGameBody = {
 	config: unknown
 }
 type RespondBody = { action: 'respond'; request_id: string; accept: boolean }
+type CancelRequestBody = { action: 'cancel_request'; request_id: string }
 type PickBonusBody = {
 	action: 'pick_bonus'
 	game_id: string
@@ -258,6 +259,7 @@ type Body =
 	| HonkBody
 	| ProposeGameBody
 	| RespondBody
+	| CancelRequestBody
 	| PickBonusBody
 	| PlaceSettlementBody
 	| PlaceRoadBody
@@ -3550,6 +3552,32 @@ async function handleRespond(
 		.update({ invited: nextInvited })
 		.eq('id', body.request_id)
 	if (updateErr) return err(500, 'could not update request')
+
+	return json({ ok: true })
+}
+
+// The proposer withdraws their own invite. A game_requests row only exists
+// before the game does — once every invitee accepts, handleRespond deletes it
+// and inserts the game — so there is no started game to guard against here.
+async function handleCancelRequest(
+	admin: SupabaseClient,
+	me: string,
+	body: CancelRequestBody
+): Promise<Response> {
+	const { data: request, error: loadErr } = await admin
+		.from('game_requests')
+		.select('proposer')
+		.eq('id', body.request_id)
+		.maybeSingle()
+	if (loadErr) return err(500, loadErr.message || 'load failed')
+	if (!request) return err(404, 'request not found')
+	if (request.proposer !== me) return err(403, 'not the proposer')
+
+	const { error: delErr } = await admin
+		.from('game_requests')
+		.delete()
+		.eq('id', body.request_id)
+	if (delErr) return err(500, delErr.message || 'could not cancel request')
 
 	return json({ ok: true })
 }
@@ -7352,6 +7380,8 @@ serve(async (req) => {
 			return handleProposeGame(admin, me, body)
 		case 'respond':
 			return handleRespond(admin, me, body)
+		case 'cancel_request':
+			return handleCancelRequest(admin, me, body)
 		case 'pick_bonus':
 			return handlePickBonus(admin, me, body)
 		case 'place_settlement':
