@@ -68,11 +68,13 @@ export function BoardView({
 	interaction,
 	build,
 	robber,
+	robberDormant,
 }: {
 	state: GameState
 	interaction?: BoardInteraction
 	build?: BuildInteraction
 	robber?: RobberInteraction
+	robberDormant?: boolean
 }) {
 	const [box, setBox] = useState<{ w: number; h: number } | null>(null)
 
@@ -151,6 +153,7 @@ export function BoardView({
 								interaction={interaction}
 								build={build}
 								robber={robber}
+								robberDormant={robberDormant}
 							/>
 						</Animated.View>
 					</GestureDetector>
@@ -167,6 +170,7 @@ function BoardSvg({
 	interaction,
 	build,
 	robber,
+	robberDormant,
 }: {
 	state: GameState
 	boxW: number
@@ -174,6 +178,7 @@ function BoardSvg({
 	interaction?: BoardInteraction
 	build?: BuildInteraction
 	robber?: RobberInteraction
+	robberDormant?: boolean
 }) {
 	// Ports sit ~1s outside the hex grid on each edge, so the true bounding
 	// box is (naturalW + 2)s × (naturalH + 2)s rather than the bare grid.
@@ -274,6 +279,7 @@ function BoardSvg({
 							cx={robberHex.cx}
 							cy={robberHex.cy}
 							size={layout.s}
+							dormant={robberDormant}
 						/>
 					)
 				})()}

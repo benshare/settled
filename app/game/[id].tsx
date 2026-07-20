@@ -120,6 +120,21 @@ const PANEL_OUT = FadeOut.duration(120)
 // before we give up on recovering the resource and skip the animation.
 const STEAL_DIFF_GRACE_MS = 5000
 
+// While a nomad is in the game the robber sits idle on the desert — the nomad's
+// resource hex — until it first matters: the first 7 rolled or the first knight
+// played. We surface that idle period by rendering the robber faded so a robber
+// parked on the desert doesn't misread as blocking the nomad. Purely cosmetic:
+// nomad desert production ignores the robber, so the first 7 pays out either
+// way. Derived from the events log so it clears the instant a 7/knight lands.
+function robberIsDormant(players: PlayerState[], events: GameEvent[]): boolean {
+	if (!players.some((p) => p.bonus === 'nomad')) return false
+	return !events.some(
+		(e) =>
+			(e.kind === 'rolled' && e.total === 7) ||
+			(e.kind === 'dev_played' && e.id === 'knight')
+	)
+}
+
 // Recover the stolen resource by diffing the victim's hand pre/post a
 // `stolen` event. Returns null unless the diff looks like a steal and nothing
 // else: exactly one resource down by exactly one card. Any gain, any bigger
@@ -1629,6 +1644,10 @@ function GameBody() {
 				{gameState ? (
 					<BoardView
 						state={gameState}
+						robberDormant={robberIsDormant(
+							gameState.players,
+							(game.events ?? []) as GameEvent[]
+						)}
 						interaction={
 							inPlacement && isMyPlacementTurn
 								? {

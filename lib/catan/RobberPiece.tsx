@@ -9,10 +9,15 @@ export function RobberPiece({
 	cx,
 	cy,
 	size,
+	dormant = false,
 }: {
 	cx: number
 	cy: number
 	size: number
+	// While a nomad is in the game the robber sits idle on the desert until the
+	// first 7 / knight (see robberIsDormant). We render that idle period faded
+	// so the parked robber doesn't misread as menacing the nomad's desert.
+	dormant?: boolean
 }) {
 	// Tap to fade out so the number token underneath stays readable.
 	const [faded, setFaded] = useState(false)
@@ -32,7 +37,7 @@ export function RobberPiece({
 
 	return (
 		<G x={cx} y={cy}>
-			<G opacity={faded ? 0.2 : 1}>
+			<G opacity={dormant || faded ? 0.2 : 1}>
 				{/* base plate */}
 				<Ellipse
 					cx={0}
