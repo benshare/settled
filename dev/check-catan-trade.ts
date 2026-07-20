@@ -3,6 +3,7 @@
 // failure.
 
 import {
+	acceptedByOf,
 	addresseesOf,
 	applyTradeToPlayers,
 	canAfford,
@@ -172,6 +173,72 @@ function testRejectedHelpers() {
 	)
 }
 
+// --- Confirm-mode helpers (config.tradeMode === 'confirm') -----------------
+
+function testAcceptedHelpers() {
+	equal(
+		JSON.stringify(acceptedByOf(offer({ from: 0 }))),
+		JSON.stringify([]),
+		'missing acceptedBy defaults to empty'
+	)
+	equal(
+		JSON.stringify(acceptedByOf(offer({ from: 0, acceptedBy: [1, 3] }))),
+		JSON.stringify([1, 3]),
+		'present acceptedBy passes through'
+	)
+}
+
+// In confirm mode the proposer picks ANY accepter to confirm — the swap is the
+// same applyTradeToPlayers primitive, just keyed to the chosen index.
+function testConfirmChoosesAnyAccepter() {
+	const players: PlayerState[] = [
+		player({ wheat: 3 }),
+		player({ brick: 5 }),
+		player({ ore: 2 }),
+	]
+	// Proposer (0) confirms with player 2, not the lower-indexed 1.
+	const next = applyTradeToPlayers(
+		players,
+		0,
+		2,
+		hand({ wheat: 1 }),
+		hand({ ore: 1 })
+	)
+	equal(next[0].resources.wheat, 2, 'proposer wheat -1')
+	equal(next[0].resources.ore, 1, 'proposer ore +1')
+	equal(next[2].resources.ore, 1, 'accepter 2 ore -1')
+	equal(next[2].resources.wheat, 1, 'accepter 2 wheat +1')
+	equal(next[1].resources.brick, 5, 'other accepter untouched')
+}
+
+// A live acceptance keeps the offer open: it is never "rejected by all" unless
+// every addressee is actually in rejectedBy. This is what stops the auto-cancel
+// from firing while someone is waiting to be confirmed.
+function testAcceptanceKeepsOfferAlive() {
+	// Addressees 1 & 2; 1 accepted, 2 rejected → not all rejected.
+	const oneAccepted = offer({
+		from: 0,
+		to: [1, 2],
+		acceptedBy: [1],
+		rejectedBy: [2],
+	})
+	assert(
+		!isOfferRejectedByAll(oneAccepted, 3),
+		'one acceptance + one reject => still open'
+	)
+	// Both rejected, none accepted → dead.
+	const bothRejected = offer({
+		from: 0,
+		to: [1, 2],
+		acceptedBy: [],
+		rejectedBy: [1, 2],
+	})
+	assert(
+		isOfferRejectedByAll(bothRejected, 3),
+		'every addressee rejected => rejected by all'
+	)
+}
+
 // --- Run ------------------------------------------------------------------
 
 const tests: [string, () => void][] = [
@@ -183,6 +250,9 @@ const tests: [string, () => void][] = [
 	['newTradeId', testNewTradeId],
 	['addresseesOf', testAddresseesOf],
 	['rejectedByOf / isOfferRejectedByAll', testRejectedHelpers],
+	['acceptedByOf', testAcceptedHelpers],
+	['confirm chooses any accepter', testConfirmChoosesAnyAccepter],
+	['acceptance keeps offer alive', testAcceptanceKeepsOfferAlive],
 ]
 
 for (const [name, fn] of tests) {

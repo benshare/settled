@@ -99,6 +99,7 @@ function testRoadValidity() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -124,6 +125,7 @@ function testRoadBlockedByOpponentSettlement() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -163,6 +165,7 @@ function testSettlementValidity() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -194,6 +197,7 @@ function testSettlementNeedsRoad() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -217,6 +221,7 @@ function testCityValidity() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

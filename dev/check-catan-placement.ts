@@ -76,6 +76,7 @@ function testFreshGameAllValid() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -94,6 +95,7 @@ function testDistanceRule() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -133,6 +135,7 @@ function testTargetSettlementRound1() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -152,6 +155,7 @@ function testTargetSettlementRound2() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -186,6 +190,7 @@ function testValidRoadEdges() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -218,6 +223,7 @@ function testStartingResourcesInterior() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -273,6 +279,7 @@ function testValidSettlementExcludesAllNeighbors() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

@@ -79,6 +79,12 @@ export function rejectedByOf(offer: TradeOffer): number[] {
 	return offer.rejectedBy ?? []
 }
 
+// Addressed players who have accepted and await the proposer's confirmation
+// (confirm mode). Empty in automatic mode.
+export function acceptedByOf(offer: TradeOffer): number[] {
+	return offer.acceptedBy ?? []
+}
+
 // True iff every addressee has rejected.
 export function isOfferRejectedByAll(
 	offer: TradeOffer,

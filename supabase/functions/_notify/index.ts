@@ -17,6 +17,8 @@ export type NotificationKind =
 	| 'discard_required'
 	| 'trade_proposed'
 	| 'trade_accepted'
+	| 'trade_accept_offered'
+	| 'trade_confirmed'
 	| 'trade_rejected_all'
 	| 'friend_request'
 	| 'honk'
@@ -178,6 +180,12 @@ function renderBody(t: NotifyTarget, sender: string | undefined): string {
 			return `${sender ?? 'Someone'} proposed a trade.`
 		case 'trade_accepted':
 			return `${sender ?? 'Someone'} accepted your trade.`
+		// Confirm mode: an addressee accepted; the proposer must still confirm.
+		case 'trade_accept_offered':
+			return `${sender ?? 'Someone'} wants to trade — confirm it.`
+		// Confirm mode: the proposer confirmed the swap with this accepter.
+		case 'trade_confirmed':
+			return `${sender ?? 'Someone'} confirmed your trade.`
 		// Collective outcome — naming one of the N rejecters would be arbitrary.
 		case 'trade_rejected_all':
 			return 'Your trade was turned down.'

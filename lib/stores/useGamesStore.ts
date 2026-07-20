@@ -91,6 +91,16 @@ export type GameEvent =
 			by: number
 			at: string
 	  }
+	// Confirm mode: an addressee accepted, awaiting the proposer's confirm. The
+	// executed swap still logs `trade_accepted` (on confirm). Ephemeral — omitted
+	// from the action log and ignored by stats.
+	| {
+			kind: 'trade_accept_offered'
+			offer_id: string
+			from: number
+			by: number
+			at: string
+	  }
 	| {
 			kind: 'bank_trade'
 			player: number
@@ -299,6 +309,13 @@ type GamesStore = {
 	acceptTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 	cancelTrade: (gameId: string, offerId: string) => Promise<ActionResult>
 	rejectTrade: (gameId: string, offerId: string) => Promise<ActionResult>
+	// Confirm mode only: the proposer executes the swap with one accepter
+	// (`withIdx` = the accepted player's index).
+	confirmTrade: (
+		gameId: string,
+		offerId: string,
+		withIdx: number
+	) => Promise<ActionResult>
 	// `merchant`: pay `count` extra of the single give resource for `count`
 	// resources of choice (merchant bonus). Ignored by the edge for non-
 	// merchant players.
@@ -780,6 +797,18 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'reject_trade', game_id: gameId, offer_id: offerId },
 			"Couldn't reject trade"
+		)
+	},
+
+	async confirmTrade(gameId, offerId, withIdx) {
+		return callGameService(
+			{
+				action: 'confirm_trade',
+				game_id: gameId,
+				offer_id: offerId,
+				with: withIdx,
+			},
+			"Couldn't confirm trade"
 		)
 	},
 

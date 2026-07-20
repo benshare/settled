@@ -7,12 +7,13 @@ import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { playerColors, resourceColor } from './palette'
 import {
+	acceptedByOf,
 	canAfford,
 	isOfferAddressedTo,
 	isOfferRejectedByAll,
 	rejectedByOf,
 } from './trade'
-import type { ResourceHand, TradeOffer } from './types'
+import type { PlayerState, ResourceHand, TradeOffer } from './types'
 
 const BANNER_IN = FadeInUp.duration(220)
 const BANNER_OUT = FadeOutUp.duration(180)
@@ -23,24 +24,37 @@ const BANNER_OUT = FadeOutUp.duration(180)
 // upstream — they don't see the banner anymore. The proposer sees a
 // rejected-by line; once every addressee has rejected, the banner swaps to a
 // terminal "rejected by everyone" state and the screen schedules an auto-cancel.
+//
+// Confirm mode (config.tradeMode === 'confirm') rides the same banner: an
+// addressee's Accept only registers into `offer.acceptedBy` (the server does
+// not swap), so the proposer sees a row of accepter chips they tap to Confirm
+// the swap with one of them. Every confirm-mode branch keys off
+// `offer.acceptedBy` — which stays empty in automatic mode (Accept executes
+// immediately there) — so the banner needs no explicit mode flag.
 export function TradeBanner({
 	offer,
 	meIdx,
 	myHand,
+	players,
 	playerOrder,
 	profilesById,
 	submitting,
 	onAccept,
+	onConfirm,
 	onCancel,
 	onReject,
 }: {
 	offer: TradeOffer
 	meIdx: number
 	myHand: ResourceHand | null
+	// Player resources, for gating each accepter's Confirm on affordability.
+	players: PlayerState[]
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	submitting: boolean
 	onAccept: () => void
+	// Confirm mode: proposer executes the swap with `accepterIdx`.
+	onConfirm: (accepterIdx: number) => void
 	onCancel: () => void
 	onReject: () => void
 }) {
@@ -53,7 +67,10 @@ export function TradeBanner({
 	const amAddressed = meIdx !== offer.from && isOfferAddressedTo(offer, meIdx)
 	const amProposer = meIdx === offer.from
 	const rejected = rejectedByOf(offer)
+	const accepted = acceptedByOf(offer)
 	const allRejected = isOfferRejectedByAll(offer, playerCount)
+	// I've accepted and am awaiting the proposer's confirmation (confirm mode).
+	const amWaiting = amAddressed && accepted.includes(meIdx)
 
 	const canAccept =
 		amAddressed && !!myHand && canAfford(myHand, offer.receive)
@@ -67,6 +84,11 @@ export function TradeBanner({
 					)
 					.join(', ')
 			: ''
+
+	// Confirm mode: the proposer gets a tappable chip per accepter. Each is
+	// disabled if that accepter can no longer afford the receive side (hands
+	// can shift between accept and confirm — the server re-checks too).
+	const showAccepters = amProposer && !allRejected && accepted.length > 0
 
 	return (
 		<Animated.View
@@ -91,6 +113,52 @@ export function TradeBanner({
 							color={colors.textSecondary}
 						/>
 						<HandChips hand={offer.receive} />
+					</View>
+				)}
+				{showAccepters && (
+					<View style={styles.acceptersWrap}>
+						<Text style={styles.acceptersLabel} numberOfLines={1}>
+							Confirm trade with
+						</Text>
+						<View style={styles.acceptersRow}>
+							{accepted.map((idx) => {
+								const name =
+									profilesById[playerOrder[idx]]?.username ??
+									`P${idx + 1}`
+								const color =
+									playerColors[idx] ?? playerColors[0]
+								const affordable = canAfford(
+									players[idx]?.resources ?? EMPTY_RESOURCES,
+									offer.receive
+								)
+								return (
+									<Pressable
+										key={idx}
+										onPress={() => onConfirm(idx)}
+										disabled={submitting || !affordable}
+										style={({ pressed }) => [
+											styles.confirmChip,
+											{ borderColor: color },
+											(submitting || !affordable) &&
+												styles.confirmChipDisabled,
+											pressed && styles.pressed,
+										]}
+									>
+										<Ionicons
+											name="checkmark"
+											size={13}
+											color={colors.text}
+										/>
+										<Text
+											style={styles.confirmChipText}
+											numberOfLines={1}
+										>
+											{name}
+										</Text>
+									</Pressable>
+								)
+							})}
+						</View>
 					</View>
 				)}
 				{amProposer && !allRejected && rejectedNames.length > 0 && (
@@ -120,20 +188,34 @@ export function TradeBanner({
 						disabled={submitting}
 						style={styles.rejectBtn}
 					>
-						Reject
+						{amWaiting ? 'Withdraw' : 'Reject'}
 					</Button>
-					<Button
-						onPress={onAccept}
-						disabled={!canAccept}
-						loading={submitting}
-						style={styles.acceptBtn}
-					>
-						Accept
-					</Button>
+					{amWaiting ? (
+						<Text style={styles.waiting} numberOfLines={1}>
+							Waiting…
+						</Text>
+					) : (
+						<Button
+							onPress={onAccept}
+							disabled={!canAccept}
+							loading={submitting}
+							style={styles.acceptBtn}
+						>
+							Accept
+						</Button>
+					)}
 				</View>
 			)}
 		</Animated.View>
 	)
+}
+
+const EMPTY_RESOURCES: ResourceHand = {
+	brick: 0,
+	wood: 0,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
 }
 
 function HandChips({ hand }: { hand: ResourceHand }) {
@@ -229,6 +311,46 @@ const styles = StyleSheet.create({
 		fontSize: font.xs,
 		color: colors.textSecondary,
 		marginTop: 2,
+	},
+	acceptersWrap: {
+		marginTop: 4,
+		gap: 4,
+	},
+	acceptersLabel: {
+		fontSize: font.xs,
+		fontWeight: '700',
+		color: colors.textSecondary,
+		textTransform: 'uppercase',
+		letterSpacing: 0.3,
+	},
+	acceptersRow: {
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: spacing.xs,
+	},
+	confirmChip: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 3,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 4,
+		borderRadius: radius.full,
+		borderWidth: 2,
+		backgroundColor: colors.white,
+	},
+	confirmChipDisabled: {
+		opacity: 0.4,
+	},
+	confirmChipText: {
+		fontSize: font.sm,
+		fontWeight: '700',
+		color: colors.text,
+	},
+	waiting: {
+		fontSize: font.sm,
+		fontWeight: '600',
+		color: colors.textSecondary,
+		paddingHorizontal: spacing.sm,
 	},
 	terminal: {
 		fontSize: font.sm,

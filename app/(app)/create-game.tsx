@@ -4,6 +4,7 @@ import {
 	sameStringSet,
 	type BuildPhaseFrequency,
 	type NumberLayout,
+	type TradeMode,
 } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
@@ -63,6 +64,9 @@ export default function CreateGameScreen() {
 	const [friendlyRobber, setFriendlyRobber] = useState(
 		savedDefaults.settings.friendlyRobber
 	)
+	const [tradeMode, setTradeMode] = useState<TradeMode>(
+		savedDefaults.settings.tradeMode
+	)
 	const [extraBuildEnabled, setExtraBuildEnabled] = useState(
 		savedDefaults.settings.extraBuild.enabled
 	)
@@ -88,6 +92,7 @@ export default function CreateGameScreen() {
 	const savedNumberLayout = savedDefaults.settings.numberLayout
 	const savedHonk = savedDefaults.settings.honk
 	const savedFriendlyRobber = savedDefaults.settings.friendlyRobber
+	const savedTradeMode = savedDefaults.settings.tradeMode
 	const savedExtraBuild = savedDefaults.settings.extraBuild
 	useEffect(() => {
 		if (touched) return
@@ -97,6 +102,7 @@ export default function CreateGameScreen() {
 		setNumberLayout(savedNumberLayout)
 		setHonk(savedHonk)
 		setFriendlyRobber(savedFriendlyRobber)
+		setTradeMode(savedTradeMode)
 		setExtraBuildEnabled(savedExtraBuild.enabled)
 		setBuildPhases(savedExtraBuild.buildPhases)
 		setMoreThanSeven(savedExtraBuild.moreThanSeven)
@@ -107,6 +113,7 @@ export default function CreateGameScreen() {
 		savedNumberLayout,
 		savedHonk,
 		savedFriendlyRobber,
+		savedTradeMode,
 		savedExtraBuild,
 		touched,
 	])
@@ -117,6 +124,7 @@ export default function CreateGameScreen() {
 			numberLayout,
 			honk,
 			friendlyRobber,
+			tradeMode,
 			extraBuild: {
 				enabled: extraBuildEnabled,
 				buildPhases,
@@ -132,6 +140,8 @@ export default function CreateGameScreen() {
 		currentDefaults.settings.honk !== savedDefaults.settings.honk ||
 		currentDefaults.settings.friendlyRobber !==
 			savedDefaults.settings.friendlyRobber ||
+		currentDefaults.settings.tradeMode !==
+			savedDefaults.settings.tradeMode ||
 		currentDefaults.settings.extraBuild.enabled !==
 			savedExtraBuild.enabled ||
 		currentDefaults.settings.extraBuild.buildPhases !==
@@ -181,6 +191,7 @@ export default function CreateGameScreen() {
 			numberLayout,
 			honk,
 			friendlyRobber,
+			tradeMode,
 			extraBuild: {
 				enabled: extraBuildEnabled,
 				buildPhases,
@@ -353,6 +364,16 @@ export default function CreateGameScreen() {
 										value={friendlyRobber}
 										onToggle={() => {
 											setFriendlyRobber((v) => !v)
+											setTouched(true)
+										}}
+									/>
+									<SegmentedRow
+										label="Trades"
+										description="Confirm: you approve each acceptance before the swap. Automatic: the first accepter trades instantly."
+										options={TRADE_MODE_OPTIONS}
+										value={tradeMode}
+										onSelect={(v) => {
+											setTradeMode(v as TradeMode)
 											setTouched(true)
 										}}
 									/>
@@ -628,6 +649,10 @@ const BUILD_PHASE_OPTIONS = [
 	{ key: 'every', label: 'Every roll' },
 	{ key: 'across', label: 'Across' },
 ]
+const TRADE_MODE_OPTIONS = [
+	{ key: 'automatic', label: 'Automatic' },
+	{ key: 'confirm', label: 'Confirm' },
+]
 const ALLOW_BUILD_OPTIONS = [
 	{ key: 'always', label: 'Always' },
 	{ key: 'over', label: 'Over 7 cards' },
@@ -637,11 +662,15 @@ const ALLOW_BUILD_OPTIONS = [
 // sub-options (build cadence + who may build). `value` is the active key.
 function SegmentedRow({
 	label,
+	description,
 	options,
 	value,
 	onSelect,
 }: {
 	label: string
+	// Optional helper line, shown under the label (used by top-level settings
+	// rows; the extra-build sub-options omit it).
+	description?: string
 	options: { key: string; label: string }[]
 	value: string
 	onSelect: (value: string) => void
@@ -651,6 +680,9 @@ function SegmentedRow({
 	return (
 		<View style={styles.segmentedRow}>
 			<Text style={styles.segmentedLabel}>{label}</Text>
+			{description && (
+				<Text style={styles.segmentedDescription}>{description}</Text>
+			)}
 			<View style={styles.segmentControl}>
 				{options.map((opt) => {
 					const active = value === opt.key
@@ -845,6 +877,11 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.xs,
 			fontWeight: '600',
 			color: colors.textSecondary,
+		},
+		segmentedDescription: {
+			fontSize: font.xs,
+			color: colors.textMuted,
+			marginTop: 2,
 		},
 		segmentControl: {
 			flexDirection: 'row',
