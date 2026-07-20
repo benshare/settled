@@ -3,6 +3,7 @@ export type NotificationPrefs = {
 	yourTurn: boolean
 	trade: boolean
 	friendRequest: boolean
+	chatMessage: boolean
 }
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -10,6 +11,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
 	yourTurn: true,
 	trade: true,
 	friendRequest: true,
+	chatMessage: true,
 }
 
 // Narrow the JSONB blob to NotificationPrefs. Silently falls back on shape
@@ -34,5 +36,9 @@ export function parseNotificationPrefs(raw: unknown): NotificationPrefs {
 			typeof src.friendRequest === 'boolean'
 				? src.friendRequest
 				: DEFAULT_NOTIFICATION_PREFS.friendRequest,
+		chatMessage:
+			typeof src.chatMessage === 'boolean'
+				? src.chatMessage
+				: DEFAULT_NOTIFICATION_PREFS.chatMessage,
 	}
 }

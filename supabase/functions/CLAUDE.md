@@ -11,6 +11,15 @@ Deno runtime, deployed with `supabase functions deploy <name>`. These run server
 - **Error shape.** Reply with `{ ok: false, error: string }` and an appropriate HTTP status. The client store surfaces a generic user-facing message — the edge function's error strings are for logs.
 - **CORS is required for web callers.** Handle `OPTIONS` preflight with `Access-Control-Allow-Origin/Headers/Methods` and add the same `Access-Control-Allow-Origin` to every response. Native clients don't care, but the web app calls through the browser's fetch which enforces CORS.
 
+## Notification copy
+
+`_notify`'s `sendNotifications` titles every push `'Settled'` and generates the body from the kind. Two opt-in escapes exist for kinds that don't fit that mould, both used by `chat_message`:
+
+- `titleFrom: 'sender'` — title becomes the sender's username (falling back to `'Settled'` if the profile can't be read, so a title is never `undefined`). It's a flag rather than a title string because `sendNotifications` already resolves usernames; a string param would force callers into a duplicate lookup.
+- `bodyOverride` — ships arbitrary text instead of generated copy. Truncated to `MAX_BODY_CHARS` (150) so a 500-char chat message isn't clipped by the OS at an arbitrary point.
+
+A target with no `gate` is ungated and always sends (the honk).
+
 ## Env
 
 Deno reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_ANON_KEY` from the function's environment (Supabase auto-provides these at deploy time).

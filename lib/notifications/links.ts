@@ -9,6 +9,7 @@ export type NotificationKind =
 	| 'trade_accepted'
 	| 'trade_rejected_all'
 	| 'friend_request'
+	| 'chat_message'
 
 export type NotificationData = {
 	kind: NotificationKind
@@ -28,6 +29,10 @@ export function resolveNotificationLink(data: unknown): Href | null {
 		case 'trade_accepted':
 		case 'trade_rejected_all':
 			return d.game_id ? (`/game/${d.game_id}` as Href) : '/play'
+		// Land in the conversation, not merely on the board — the message is
+		// what the tap was about.
+		case 'chat_message':
+			return d.game_id ? (`/game/${d.game_id}?chat=1` as Href) : '/play'
 		case 'friend_request':
 			return '/friends'
 		default:

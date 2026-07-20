@@ -479,6 +479,14 @@ function NotificationsSettings() {
 				styles={styles}
 			/>
 			<NotifToggleRow
+				label="Chat messages"
+				value={prefs.chatMessage}
+				onToggle={() => toggle('chatMessage')}
+				disabled={!granted || savingKey === 'chatMessage'}
+				dimmed={!granted}
+				styles={styles}
+			/>
+			<NotifToggleRow
 				label="Friend requests"
 				value={prefs.friendRequest}
 				onToggle={() => toggle('friendRequest')}

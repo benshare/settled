@@ -84,6 +84,11 @@ type ConfirmRollBody = { action: 'confirm_roll'; game_id: string }
 type RerollDiceBody = { action: 'reroll_dice'; game_id: string }
 type EndTurnBody = { action: 'end_turn'; game_id: string }
 type HonkBody = { action: 'honk'; game_id: string }
+type SendMessageBody = {
+	action: 'send_message'
+	game_id: string
+	body: string
+}
 type EndSpecialBuildBody = { action: 'end_special_build'; game_id: string }
 type BuildRoadBody = {
 	action: 'build_road'
@@ -257,6 +262,7 @@ type SkipMagicBody = {
 }
 type Body =
 	| HonkBody
+	| SendMessageBody
 	| ProposeGameBody
 	| RespondBody
 	| CancelRequestBody
@@ -4449,6 +4455,88 @@ async function handleHonk(
 	return json({ ok: true })
 }
 
+// Chat has no rules layer, so unlike every other handler here it mirrors
+// nothing from lib/catan/. See .claude/specs/game-chat.md.
+
+const CHAT_MAX_CHARS = 500
+// Mirrors CHAT_PRESENCE_MS in lib/catan/chatContext.tsx. The client heartbeats
+// last_read_at every 15s while the panel is open, so a 30s window tolerates one
+// missed beat before we consider someone away.
+const CHAT_PRESENCE_MS = 30_000
+
+async function handleSendMessage(
+	admin: SupabaseClient,
+	me: string,
+	body: SendMessageBody
+): Promise<Response> {
+	if (typeof body.body !== 'string') return err(400, 'bad body')
+	const text = body.body.trim()
+	if (!text) return err(400, 'empty message')
+	if (text.length > CHAT_MAX_CHARS) return err(400, 'message too long')
+
+	// Deliberately not loadGame: chat needs no game_state, and it stays open on
+	// completed games, so there is no status precondition to check.
+	const { data: game, error: gameErr } = await admin
+		.from('games')
+		.select('id, participants')
+		.eq('id', body.game_id)
+		.maybeSingle()
+	if (gameErr) return err(500, gameErr.message)
+	if (!game) return err(404, 'game not found')
+
+	const participants = (game.participants ?? []) as string[]
+	if (!participants.includes(me)) return err(403, 'not a participant')
+
+	const { data: inserted, error } = await admin
+		.from('game_messages')
+		.insert({ game_id: game.id, sender: me, body: text })
+		.select('id')
+		.single()
+	if (error) return err(500, error.message)
+
+	EdgeRuntime.waitUntil(notifyChat(admin, game.id, participants, me, text))
+
+	return json({ ok: true, id: inserted.id })
+}
+
+// Everyone in the game except the sender and anyone whose read cursor says they
+// are looking at the thread right now.
+async function notifyChat(
+	admin: SupabaseClient,
+	gameId: string,
+	participants: string[],
+	sender: string,
+	text: string
+): Promise<void> {
+	const { data: reads } = await admin
+		.from('game_chat_reads')
+		.select('user_id, last_read_at')
+		.eq('game_id', gameId)
+
+	const cutoff = Date.now() - CHAT_PRESENCE_MS
+	const reading = new Set<string>()
+	for (const row of (reads ?? []) as {
+		user_id: string
+		last_read_at: string
+	}[]) {
+		if (Date.parse(row.last_read_at) >= cutoff) reading.add(row.user_id)
+	}
+
+	const targets = participants
+		.filter((id) => id !== sender && !reading.has(id))
+		.map((userId) => ({
+			userId,
+			kind: 'chat_message' as const,
+			gate: 'chatMessage' as const,
+			gameId,
+			senderProfileId: sender,
+			titleFrom: 'sender' as const,
+			bodyOverride: text,
+		}))
+
+	await sendNotifications(admin, targets)
+}
+
 async function handleEndTurn(
 	admin: SupabaseClient,
 	me: string,
@@ -7398,6 +7486,8 @@ serve(async (req) => {
 			return handleEndTurn(admin, me, body)
 		case 'honk':
 			return handleHonk(admin, me, body)
+		case 'send_message':
+			return handleSendMessage(admin, me, body)
 		case 'end_special_build':
 			return handleEndSpecialBuild(admin, me, body)
 		case 'build_road':
