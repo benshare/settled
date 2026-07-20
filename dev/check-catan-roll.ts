@@ -61,6 +61,7 @@ function testRolledSevenYieldsNothing() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		friendlyRobber: false,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -78,6 +79,7 @@ function testSettlementGetsOne() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		friendlyRobber: false,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -101,6 +103,7 @@ function testCityGetsTwo() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		friendlyRobber: false,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -123,6 +126,7 @@ function testMismatchedRollPaysNothing() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		friendlyRobber: false,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

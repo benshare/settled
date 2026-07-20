@@ -68,6 +68,11 @@ export type GameConfig = {
 	// Whether the Honk nudge (ping a stalled player after the idle threshold)
 	// is available in this game. See lib/catan/honk.ts.
 	honk: boolean
+	// When true, a roll of 7 during the first full go-around (every player's
+	// opening turn, `round < playerCount`) does not activate the robber — no
+	// discards, no move, no steal. The 7 is still rolled and nomads still
+	// collect their desert d5; only the robber is held back.
+	friendlyRobber: boolean
 	// See ExtraBuildConfig. Only affects games with >4 players; ignored
 	// otherwise.
 	extraBuild: ExtraBuildConfig
@@ -83,6 +88,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	devCards: true,
 	numberLayout: 'spiral',
 	honk: true,
+	friendlyRobber: false,
 	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
 }
 
@@ -107,6 +113,10 @@ export function parseGameConfig(raw: unknown): GameConfig {
 				? src.devCards
 				: DEFAULT_CONFIG.devCards,
 		honk: typeof src.honk === 'boolean' ? src.honk : DEFAULT_CONFIG.honk,
+		friendlyRobber:
+			typeof src.friendlyRobber === 'boolean'
+				? src.friendlyRobber
+				: DEFAULT_CONFIG.friendlyRobber,
 		numberLayout:
 			src.numberLayout === 'spiral' || src.numberLayout === 'random'
 				? src.numberLayout
@@ -175,6 +185,11 @@ export function summarizeGameConfig(
 	}
 	if (config.honk !== DEFAULT_CONFIG.honk) {
 		parts.push(config.honk ? 'Honking enabled' : 'Honking disabled')
+	}
+	if (config.friendlyRobber !== DEFAULT_CONFIG.friendlyRobber) {
+		parts.push(
+			config.friendlyRobber ? 'Friendly robber' : 'Standard robber'
+		)
 	}
 	// Extra build phases only apply to >4 player games, so only surface a
 	// non-default value there.

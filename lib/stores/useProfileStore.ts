@@ -18,6 +18,7 @@ export type GameDefaults = {
 		devCards: boolean
 		numberLayout: NumberLayout
 		honk: boolean
+		friendlyRobber: boolean
 		extraBuild: ExtraBuildConfig
 	}
 	extras: { bonuses: boolean; bonusSets: string[] }
@@ -32,6 +33,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 		devCards: true,
 		numberLayout: 'spiral',
 		honk: true,
+		friendlyRobber: false,
 		extraBuild: {
 			enabled: true,
 			buildPhases: 'every',
@@ -62,6 +64,10 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				typeof settings?.honk === 'boolean'
 					? settings.honk
 					: DEFAULT_GAME_DEFAULTS.settings.honk,
+			friendlyRobber:
+				typeof settings?.friendlyRobber === 'boolean'
+					? settings.friendlyRobber
+					: DEFAULT_GAME_DEFAULTS.settings.friendlyRobber,
 			extraBuild: parseExtraBuild(
 				settings?.extraBuild,
 				DEFAULT_GAME_DEFAULTS.settings.extraBuild

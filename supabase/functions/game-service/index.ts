@@ -1303,6 +1303,10 @@ type GameConfig = {
 	devCards: boolean
 	numberLayout: NumberLayout
 	honk: boolean
+	// When true, a 7 during the first full go-around (round < playerCount)
+	// skips the whole robber chain — no discards, no move, no steal. Nomad
+	// desert production still applies. Mirrors GameConfig in lib/catan/types.ts.
+	friendlyRobber: boolean
 	extraBuild: ExtraBuildConfig
 }
 
@@ -3932,6 +3936,41 @@ async function applyRollOutcome(
 	const activeIdx = game.current_turn ?? 0
 
 	if (total === 7) {
+		// Friendly robber: during the first full go-around (every seat's opening
+		// turn, `round < playerCount`) a 7 does not activate the robber — no
+		// discards, no move, no steal. Nomad desert production still applies and
+		// the roller simply continues in `main`.
+		if (
+			state.config.friendlyRobber &&
+			state.round < game.player_order.length
+		) {
+			const nomadResult = applyNomadProduce(state)
+			const mainPhase: Phase = { kind: 'main', roll: dice, trade: null }
+			const nextPhase = wrapMagicianWindow(
+				mainPhase,
+				nomadResult.players,
+				activeIdx,
+				dice
+			)
+			const stateUpdate: Record<string, unknown> = { phase: nextPhase }
+			if (nomadResult.events.length > 0) {
+				stateUpdate.players = nomadResult.players
+			}
+			const { error: stateErr } = await admin
+				.from('game_states')
+				.update(stateUpdate)
+				.eq('game_id', game.id)
+			if (stateErr) return err(500, 'could not update state')
+
+			const { error: gameErr } = await admin
+				.from('games')
+				.update({ events: [...existingEvents, ...nomadResult.events] })
+				.eq('id', game.id)
+			if (gameErr) return err(500, 'could not log event')
+
+			return json({ ok: true, dice, total })
+		}
+
 		// Discards are computed from the pre-nomad hands, so a nomad's own
 		// desert production can never push them into discard range. Nomad
 		// production is applied once every owed discard has been submitted

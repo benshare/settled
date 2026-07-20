@@ -89,6 +89,7 @@ function baseState(): GameState {
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
+		friendlyRobber: false,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

@@ -60,6 +60,9 @@ export default function CreateGameScreen() {
 		savedDefaults.settings.numberLayout
 	)
 	const [honk, setHonk] = useState(savedDefaults.settings.honk)
+	const [friendlyRobber, setFriendlyRobber] = useState(
+		savedDefaults.settings.friendlyRobber
+	)
 	const [extraBuildEnabled, setExtraBuildEnabled] = useState(
 		savedDefaults.settings.extraBuild.enabled
 	)
@@ -84,6 +87,7 @@ export default function CreateGameScreen() {
 	const savedDevCards = savedDefaults.settings.devCards
 	const savedNumberLayout = savedDefaults.settings.numberLayout
 	const savedHonk = savedDefaults.settings.honk
+	const savedFriendlyRobber = savedDefaults.settings.friendlyRobber
 	const savedExtraBuild = savedDefaults.settings.extraBuild
 	useEffect(() => {
 		if (touched) return
@@ -92,6 +96,7 @@ export default function CreateGameScreen() {
 		setDevCards(savedDevCards)
 		setNumberLayout(savedNumberLayout)
 		setHonk(savedHonk)
+		setFriendlyRobber(savedFriendlyRobber)
 		setExtraBuildEnabled(savedExtraBuild.enabled)
 		setBuildPhases(savedExtraBuild.buildPhases)
 		setMoreThanSeven(savedExtraBuild.moreThanSeven)
@@ -101,6 +106,7 @@ export default function CreateGameScreen() {
 		savedDevCards,
 		savedNumberLayout,
 		savedHonk,
+		savedFriendlyRobber,
 		savedExtraBuild,
 		touched,
 	])
@@ -110,6 +116,7 @@ export default function CreateGameScreen() {
 			devCards,
 			numberLayout,
 			honk,
+			friendlyRobber,
 			extraBuild: {
 				enabled: extraBuildEnabled,
 				buildPhases,
@@ -123,6 +130,8 @@ export default function CreateGameScreen() {
 		currentDefaults.settings.numberLayout !==
 			savedDefaults.settings.numberLayout ||
 		currentDefaults.settings.honk !== savedDefaults.settings.honk ||
+		currentDefaults.settings.friendlyRobber !==
+			savedDefaults.settings.friendlyRobber ||
 		currentDefaults.settings.extraBuild.enabled !==
 			savedExtraBuild.enabled ||
 		currentDefaults.settings.extraBuild.buildPhases !==
@@ -171,6 +180,7 @@ export default function CreateGameScreen() {
 			devCards,
 			numberLayout,
 			honk,
+			friendlyRobber,
 			extraBuild: {
 				enabled: extraBuildEnabled,
 				buildPhases,
@@ -333,6 +343,16 @@ export default function CreateGameScreen() {
 										value={honk}
 										onToggle={() => {
 											setHonk((v) => !v)
+											setTouched(true)
+										}}
+									/>
+									<CompactToggleRow
+										icon="shield-checkmark"
+										title="Friendly robber"
+										description="No robber on a 7 until everyone's had their first turn."
+										value={friendlyRobber}
+										onToggle={() => {
+											setFriendlyRobber((v) => !v)
 											setTouched(true)
 										}}
 									/>
