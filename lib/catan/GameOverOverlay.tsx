@@ -52,6 +52,10 @@ export type GameOverOverlayProps = {
 
 type TabKey = 'scores' | 'rolls' | 'highlights'
 
+// Tallest a roll-distribution column can grow to (the bar for the most-rolled
+// number); every other bar is scaled against it.
+const ROLL_CHART_HEIGHT = 160
+
 const TABS: { key: TabKey; label: string }[] = [
 	{ key: 'scores', label: 'Scores' },
 	{ key: 'rolls', label: 'Rolls' },
@@ -296,31 +300,29 @@ function RollDistribution({ events }: { events: GameEvent[] }) {
 					<Text style={styles.rollCaption}>
 						{total} roll{total === 1 ? '' : 's'} this game
 					</Text>
-					{totals.map((n) => {
-						const count = dist[n]
-						// 6 and 8 are the money numbers — tint them so the
-						// hot/cold shape reads at a glance.
-						const hot = n === 6 || n === 8
-						return (
-							<View key={n} style={styles.rollRow}>
-								<Text style={styles.rollNum}>{n}</Text>
-								<View style={styles.rollTrack}>
+					<View style={styles.rollChart}>
+						{totals.map((n) => {
+							const count = dist[n]
+							return (
+								<View key={n} style={styles.rollCol}>
+									<Text style={styles.rollCount}>
+										{count}
+									</Text>
 									<View
 										style={[
 											styles.rollBar,
-											hot && styles.rollBarHot,
 											{
-												width: `${
-													(count / max) * 100
-												}%`,
+												height:
+													(count / max) *
+													ROLL_CHART_HEIGHT,
 											},
 										]}
 									/>
+									<Text style={styles.rollNum}>{n}</Text>
 								</View>
-								<Text style={styles.rollCount}>{count}</Text>
-							</View>
-						)
-					})}
+							)
+						})}
+					</View>
 				</>
 			)}
 		</ScrollView>
@@ -358,7 +360,8 @@ function HighlightCard({
 	highlight: Highlight
 	nameFor: (i: number) => string
 }) {
-	const { title, subtitle, icon, winners, value, unit, valueLabel } = highlight
+	const { title, subtitle, icon, winners, value, unit, valueLabel } =
+		highlight
 	const hasWinner = winners.length > 0
 	return (
 		<View style={styles.highlightRow}>
@@ -572,38 +575,32 @@ const styles = StyleSheet.create({
 		color: colors.textSecondary,
 		marginBottom: spacing.xs,
 	},
-	rollRow: {
+	rollChart: {
 		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.sm,
+		alignItems: 'flex-end',
+		gap: spacing.xs,
 	},
-	rollNum: {
-		width: 22,
-		textAlign: 'right',
-		fontSize: font.sm,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	rollTrack: {
+	rollCol: {
 		flex: 1,
-		height: 14,
-		borderRadius: radius.full,
-		backgroundColor: colors.cardAlt,
-		overflow: 'hidden',
+		alignItems: 'center',
+		justifyContent: 'flex-end',
+		gap: spacing.xs,
 	},
 	rollBar: {
-		height: '100%',
-		borderRadius: radius.full,
+		alignSelf: 'stretch',
+		minHeight: 2,
+		borderRadius: radius.sm,
 		backgroundColor: colors.border,
 	},
-	rollBarHot: {
-		backgroundColor: colors.brand,
-	},
-	rollCount: {
-		width: 24,
+	rollNum: {
 		fontSize: font.sm,
 		fontWeight: '700',
 		color: colors.text,
+	},
+	rollCount: {
+		fontSize: font.xs,
+		fontWeight: '700',
+		color: colors.textSecondary,
 	},
 	highlightRow: {
 		flexDirection: 'row',
