@@ -24,6 +24,7 @@ import Animated, {
 	useAnimatedKeyboard,
 	useAnimatedStyle,
 } from 'react-native-reanimated'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { CHAT_MAX_CHARS, useChat, type ChatMessage } from './chatContext'
@@ -38,10 +39,8 @@ const PANEL_CHROME_BG = 'rgba(235, 219, 184, 0.94)'
 // origin, and the line the panel's top margin is measured from.
 const BUTTON_INSET = spacing.sm
 
-// Breathing room between the panel and the play area's edges. The top gap is
-// larger because the panel's top edge would otherwise sit right on the
-// floating buttons' line.
-const PANEL_GAP_TOP = spacing.lg
+// Breathing room between the panel and the play area's edges, equal on all
+// sides. The top edge is measured from the floating buttons' line.
 const PANEL_GAP = spacing.md
 
 export function ChatButton() {
@@ -91,12 +90,18 @@ export function ChatPanel({
 	const [draft, setDraft] = useState('')
 	const [error, setError] = useState<string | null>(null)
 
-	// Lift the whole panel by the keyboard's height rather than shrinking it —
+	// Lift the whole overlay by the keyboard's height rather than shrinking it —
 	// the panel's bottom edge is pinned to the play area, which sits well above
 	// the screen bottom, so padding-style avoidance leaves the composer covered.
+	// The play area already stops short of the screen bottom by the safe-area
+	// inset, which the keyboard covers — lifting by the full height would leave
+	// that inset as extra dead space above the keyboard.
+	const insets = useSafeAreaInsets()
 	const keyboard = useAnimatedKeyboard()
 	const lift = useAnimatedStyle(() => ({
-		transform: [{ translateY: -keyboard.height.value }],
+		transform: [
+			{ translateY: -Math.max(0, keyboard.height.value - insets.bottom) },
+		],
 	}))
 
 	const canSend = draft.trim().length > 0 && !sending
@@ -126,11 +131,10 @@ export function ChatPanel({
 	return (
 		// A light scrim: the panel itself is the translucent element, and a
 		// heavy backdrop on top of it would defeat glimpsing the board.
-		<Pressable
-			style={[styles.scrim, { top: topOffset + BUTTON_INSET }]}
-			onPress={() => setOpen(false)}
+		<Animated.View
+			style={[styles.scrim, { top: topOffset + BUTTON_INSET }, lift]}
 		>
-			<Animated.View style={[styles.fill, lift]}>
+			<Pressable style={styles.fill} onPress={() => setOpen(false)}>
 				{/* Swallows taps so they never reach the scrim. */}
 				<Pressable style={styles.panel} onPress={() => {}}>
 					<View style={styles.header}>
@@ -169,8 +173,8 @@ export function ChatPanel({
 						onSend={onSend}
 					/>
 				</Pressable>
-			</Animated.View>
-		</Pressable>
+			</Pressable>
+		</Animated.View>
 	)
 }
 
@@ -377,9 +381,7 @@ const styles = StyleSheet.create({
 		right: 0,
 		bottom: 0,
 		backgroundColor: 'rgba(0, 0, 0, 0.15)',
-		paddingTop: PANEL_GAP_TOP,
-		paddingHorizontal: PANEL_GAP,
-		paddingBottom: PANEL_GAP,
+		padding: PANEL_GAP,
 		zIndex: 10,
 	},
 	fill: {
