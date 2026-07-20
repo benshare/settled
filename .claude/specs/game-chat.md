@@ -276,7 +276,7 @@ measures it (`onLayout` on the board `Animated.View`, storing
 panel renders at `topOffset + BUTTON_INSET`. `BUTTON_INSET` is the shared
 `spacing.sm` that also positions slot 0, so the two can't drift.
 
-The scrim has **no top padding** for the same reason — the panel's top edge *is*
+The scrim has **no top padding** for the same reason — the panel's top edge _is_
 the anchor line, and padding there would push it back below the buttons it is
 meant to line up with. Horizontal and bottom margins stay at `spacing.md`.
 
