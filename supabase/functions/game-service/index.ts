@@ -3723,20 +3723,45 @@ async function handlePlaceSettlement(
 	}
 
 	let nextPlayers = state.players
+	const nomadEvents: unknown[] = []
 	const myBonus = bonusOf(state, meIdx)
 	if (round === 2 || myBonus === 'aristocrat') {
 		const grant = startingResourcesForVertex(state, vertex)
+		// Nomad: a starting settlement on the desert produces a resource, same
+		// as a 7-roll. One d5 per adjacent desert hex (settlement = 1 each), and
+		// each rolls a `nomad_produce` event so the reveal animation plays.
+		const nomadGrant: ResourceHand = {
+			brick: 0,
+			wood: 0,
+			sheep: 0,
+			wheat: 0,
+			ore: 0,
+		}
+		if (myBonus === 'nomad') {
+			for (const h of boardFor(state.variant).adjacentHexes[vertex]) {
+				if (state.hexes[h].resource !== null) continue
+				const resource = nomadDie()
+				nomadGrant[resource] += 1
+				nomadEvents.push({
+					kind: 'nomad_produce',
+					player: meIdx,
+					resource,
+					count: 1,
+					at: new Date().toISOString(),
+				})
+			}
+		}
 		nextPlayers = state.players.map((p, i) => {
 			if (i !== meIdx) return p
 			const r = p.resources
 			return {
 				...p,
 				resources: {
-					wood: r.wood + grant.wood,
-					wheat: r.wheat + grant.wheat,
-					sheep: r.sheep + grant.sheep,
-					brick: r.brick + grant.brick,
-					ore: r.ore + grant.ore,
+					wood: r.wood + grant.wood + nomadGrant.wood,
+					wheat: r.wheat + grant.wheat + nomadGrant.wheat,
+					sheep: r.sheep + grant.sheep + nomadGrant.sheep,
+					brick: r.brick + grant.brick + nomadGrant.brick,
+					ore: r.ore + grant.ore + nomadGrant.ore,
 				},
 			}
 		})
@@ -3767,7 +3792,7 @@ async function handlePlaceSettlement(
 	}
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
+		.update({ events: [...(game.events ?? []), event, ...nomadEvents] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
