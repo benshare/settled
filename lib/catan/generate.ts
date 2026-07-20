@@ -4,6 +4,7 @@ import {
 	type Board,
 	type Hex,
 	type HexNumber,
+	type PortKind,
 	type Resource,
 } from './board'
 import { BONUS_POOL, CURSE_POOL, type BonusId, type CurseId } from './bonuses'
@@ -202,8 +203,25 @@ export function generatePorts(variant: Variant): Port[] {
 	}
 	// Expanded (and any future variant): shuffle the fixed port-kind
 	// composition onto the fixed slots. Positions stay put; kinds are dealt.
-	const kinds = shuffle(board.portKinds)
+	// The expanded board carries two sheep 2:1 ports; reject any deal that
+	// lands them next to each other among the 2:1 ports (3:1s ignored) around
+	// the cyclic coastal ring, so wool access stays spread out.
+	let kinds = shuffle(board.portKinds)
+	while (sheepPortsAdjacent(kinds)) {
+		kinds = shuffle(board.portKinds)
+	}
 	return board.portSlots.map((edge, i) => ({ edge, kind: kinds[i] }))
+}
+
+// True when two sheep 2:1 ports sit adjacent among the 2:1 ports (ignoring
+// 3:1s) around the cyclic ring of port slots.
+function sheepPortsAdjacent(kinds: readonly PortKind[]): boolean {
+	const twoOnes = kinds.filter((k) => k !== '3:1')
+	const sheepIdx = twoOnes.flatMap((k, i) => (k === 'sheep' ? [i] : []))
+	if (sheepIdx.length < 2) return false
+	const [a, b] = sheepIdx
+	const gap = b - a
+	return gap === 1 || gap === twoOnes.length - 1
 }
 
 // Deal every player's select_bonus hand at once. Two bonuses + one curse per

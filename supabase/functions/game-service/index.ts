@@ -3155,8 +3155,22 @@ function generatePorts(variant: Variant): Port[] {
 			return { edge, kind: '3:1' }
 		})
 	}
-	const kinds = shuffle(board.portKinds)
+	// Reject any deal that lands the two sheep 2:1 ports next to each other
+	// among the 2:1 ports (3:1s ignored) around the cyclic ring of slots.
+	let kinds = shuffle(board.portKinds)
+	while (sheepPortsAdjacent(kinds)) {
+		kinds = shuffle(board.portKinds)
+	}
 	return board.portSlots.map((edge, i) => ({ edge, kind: kinds[i] }))
+}
+
+function sheepPortsAdjacent(kinds: PortKind[]): boolean {
+	const twoOnes = kinds.filter((k) => k !== '3:1')
+	const sheepIdx = twoOnes.flatMap((k, i) => (k === 'sheep' ? [i] : []))
+	if (sheepIdx.length < 2) return false
+	const [a, b] = sheepIdx
+	const gap = b - a
+	return gap === 1 || gap === twoOnes.length - 1
 }
 
 // --- Game generation -------------------------------------------------------
