@@ -3,8 +3,13 @@
 // hidden VP cards since the game is over. Offers two exits: "Back to games"
 // (routes to the list) and "View board" (dismisses so the user can inspect
 // the final position; the caller provides a floating reopen button).
+//
+// Three tabs: the final Scores, the shared Roll distribution, and the game
+// Highlights (fun superlatives). The roll/highlight stats are derived from the
+// event log by `gameStats.ts`.
 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
+import { type ComponentProps, useState } from 'react'
 import {
 	Modal,
 	Pressable,
@@ -13,11 +18,13 @@ import {
 	Text,
 	View,
 } from 'react-native'
+import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
 import { populistBonusVPFor } from './bonus'
 import { knightsPlayed } from './dev'
+import { gameHighlights, rollDistribution, type Highlight } from './gameStats'
 import { longestRoadFor } from './longestRoad'
 import { playerColors } from './palette'
 import type { GameState } from './types'
@@ -29,6 +36,8 @@ export type GameOverOverlayProps = {
 	meIdx: number
 	profilesById: Record<string, Profile>
 	gameState: GameState
+	// The full game event log (`games.events`). Backs the roll + highlight tabs.
+	events: GameEvent[]
 	// Final VP per player, fully revealed (includes VP cards). From
 	// GameContext.selfVP since the game is over.
 	pointsByPlayer: number[]
@@ -41,6 +50,14 @@ export type GameOverOverlayProps = {
 	onBackToGames: () => void
 }
 
+type TabKey = 'scores' | 'rolls' | 'highlights'
+
+const TABS: { key: TabKey; label: string }[] = [
+	{ key: 'scores', label: 'Scores' },
+	{ key: 'rolls', label: 'Rolls' },
+	{ key: 'highlights', label: 'Highlights' },
+]
+
 export function GameOverOverlay({
 	visible,
 	winnerIdx,
@@ -48,15 +65,23 @@ export function GameOverOverlay({
 	meIdx,
 	profilesById,
 	gameState,
+	events,
 	pointsByPlayer,
 	publicByPlayer,
 	onDismiss,
 	onBackToGames,
 }: GameOverOverlayProps) {
+	const [tab, setTab] = useState<TabKey>('scores')
 	// Winner + scoreboard only render when we actually have a completed game.
 	// `visible` can be false even for a complete game (user dismissed to peek
 	// at the board); that's handled by the Modal itself.
 	if (winnerIdx === null) return null
+
+	const nameFor = (i: number) =>
+		i === meIdx
+			? 'You'
+			: (profilesById[playerOrder[i]]?.username ?? 'Player')
+
 	return (
 		<Modal
 			visible={visible}
@@ -72,14 +97,25 @@ export function GameOverOverlay({
 						meIdx={meIdx}
 						profilesById={profilesById}
 					/>
-					<Scoreboard
-						gameState={gameState}
-						playerOrder={playerOrder}
-						meIdx={meIdx}
-						profilesById={profilesById}
-						pointsByPlayer={pointsByPlayer}
-						publicByPlayer={publicByPlayer}
-					/>
+					<TabBar tab={tab} onTab={setTab} />
+					{tab === 'scores' && (
+						<Scoreboard
+							gameState={gameState}
+							playerOrder={playerOrder}
+							meIdx={meIdx}
+							profilesById={profilesById}
+							pointsByPlayer={pointsByPlayer}
+							publicByPlayer={publicByPlayer}
+						/>
+					)}
+					{tab === 'rolls' && <RollDistribution events={events} />}
+					{tab === 'highlights' && (
+						<Highlights
+							events={events}
+							playerCount={playerOrder.length}
+							nameFor={nameFor}
+						/>
+					)}
 					<View style={styles.buttons}>
 						<Button variant="secondary" onPress={onDismiss}>
 							View board
@@ -89,6 +125,32 @@ export function GameOverOverlay({
 				</View>
 			</View>
 		</Modal>
+	)
+}
+
+function TabBar({ tab, onTab }: { tab: TabKey; onTab: (t: TabKey) => void }) {
+	return (
+		<View style={styles.tabBar}>
+			{TABS.map((t) => {
+				const active = t.key === tab
+				return (
+					<Pressable
+						key={t.key}
+						onPress={() => onTab(t.key)}
+						style={[styles.tab, active && styles.tabActive]}
+					>
+						<Text
+							style={[
+								styles.tabLabel,
+								active && styles.tabLabelActive,
+							]}
+						>
+							{t.label}
+						</Text>
+					</Pressable>
+				)
+			})}
+		</View>
 	)
 }
 
@@ -214,6 +276,139 @@ function Scoreboard({
 	)
 }
 
+// The shared 2–12 dice histogram. Counts only real `rolled` events (the dice
+// everyone shares); bonus rolls are excluded — see `rollDistribution`.
+function RollDistribution({ events }: { events: GameEvent[] }) {
+	const dist = rollDistribution(events)
+	const totals = Array.from({ length: 11 }, (_, k) => k + 2) // 2..12
+	const total = totals.reduce((s, n) => s + dist[n], 0)
+	const max = Math.max(1, ...totals.map((n) => dist[n]))
+
+	return (
+		<ScrollView
+			style={styles.scroll}
+			contentContainerStyle={styles.scrollInner}
+		>
+			{total === 0 ? (
+				<Text style={styles.emptyText}>No rolls yet.</Text>
+			) : (
+				<>
+					<Text style={styles.rollCaption}>
+						{total} roll{total === 1 ? '' : 's'} this game
+					</Text>
+					{totals.map((n) => {
+						const count = dist[n]
+						// 6 and 8 are the money numbers — tint them so the
+						// hot/cold shape reads at a glance.
+						const hot = n === 6 || n === 8
+						return (
+							<View key={n} style={styles.rollRow}>
+								<Text style={styles.rollNum}>{n}</Text>
+								<View style={styles.rollTrack}>
+									<View
+										style={[
+											styles.rollBar,
+											hot && styles.rollBarHot,
+											{
+												width: `${
+													(count / max) * 100
+												}%`,
+											},
+										]}
+									/>
+								</View>
+								<Text style={styles.rollCount}>{count}</Text>
+							</View>
+						)
+					})}
+				</>
+			)}
+		</ScrollView>
+	)
+}
+
+// Fun end-of-game superlatives. Each highlight names the tied leader(s), or a
+// muted "Nobody" when there's no standout — see `gameHighlights`.
+function Highlights({
+	events,
+	playerCount,
+	nameFor,
+}: {
+	events: GameEvent[]
+	playerCount: number
+	nameFor: (i: number) => string
+}) {
+	const highlights = gameHighlights(events, playerCount)
+	return (
+		<ScrollView
+			style={styles.scroll}
+			contentContainerStyle={styles.scrollInner}
+		>
+			{highlights.map((h) => (
+				<HighlightCard key={h.key} highlight={h} nameFor={nameFor} />
+			))}
+		</ScrollView>
+	)
+}
+
+function HighlightCard({
+	highlight,
+	nameFor,
+}: {
+	highlight: Highlight
+	nameFor: (i: number) => string
+}) {
+	const { title, subtitle, icon, winners, value, unit } = highlight
+	const hasWinner = winners.length > 0
+	return (
+		<View style={styles.highlightRow}>
+			<View style={styles.highlightIcon}>
+				<MaterialCommunityIcons
+					name={
+						icon as ComponentProps<
+							typeof MaterialCommunityIcons
+						>['name']
+					}
+					size={20}
+					color={colors.brand}
+				/>
+			</View>
+			<View style={styles.highlightBody}>
+				<Text style={styles.highlightTitle}>{title}</Text>
+				<Text style={styles.highlightSubtitle}>{subtitle}</Text>
+				{hasWinner ? (
+					<View style={styles.highlightWinners}>
+						{winners.map((i) => (
+							<View key={i} style={styles.highlightWinner}>
+								<View
+									style={[
+										styles.dot,
+										{
+											backgroundColor:
+												playerColors[i] ??
+												playerColors[0],
+										},
+									]}
+								/>
+								<Text style={styles.highlightWinnerName}>
+									{nameFor(i)}
+								</Text>
+							</View>
+						))}
+					</View>
+				) : (
+					<Text style={styles.highlightNobody}>Nobody</Text>
+				)}
+			</View>
+			{hasWinner && (
+				<Text style={styles.highlightValue}>
+					{value} {unit}
+				</Text>
+			)}
+		</View>
+	)
+}
+
 type ScoreChip = {
 	label: string
 	value: number
@@ -334,13 +529,140 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		color: colors.brand,
 	},
-	scroll: {
+	tabBar: {
+		flexDirection: 'row',
 		borderTopWidth: 1,
 		borderTopColor: colors.border,
+		borderBottomWidth: 1,
+		borderBottomColor: colors.border,
+	},
+	tab: {
+		flex: 1,
+		paddingVertical: spacing.sm,
+		alignItems: 'center',
+		borderBottomWidth: 2,
+		borderBottomColor: 'transparent',
+	},
+	tabActive: {
+		borderBottomColor: colors.brand,
+	},
+	tabLabel: {
+		fontSize: font.sm,
+		fontWeight: '700',
+		color: colors.textSecondary,
+	},
+	tabLabelActive: {
+		color: colors.brand,
+	},
+	scroll: {
+		flexShrink: 1,
 	},
 	scrollInner: {
 		padding: spacing.md,
 		gap: spacing.sm,
+	},
+	emptyText: {
+		fontSize: font.md,
+		color: colors.textSecondary,
+		textAlign: 'center',
+		paddingVertical: spacing.lg,
+	},
+	rollCaption: {
+		fontSize: font.sm,
+		color: colors.textSecondary,
+		marginBottom: spacing.xs,
+	},
+	rollRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+	},
+	rollNum: {
+		width: 22,
+		textAlign: 'right',
+		fontSize: font.sm,
+		fontWeight: '700',
+		color: colors.text,
+	},
+	rollTrack: {
+		flex: 1,
+		height: 14,
+		borderRadius: radius.full,
+		backgroundColor: colors.cardAlt,
+		overflow: 'hidden',
+	},
+	rollBar: {
+		height: '100%',
+		borderRadius: radius.full,
+		backgroundColor: colors.border,
+	},
+	rollBarHot: {
+		backgroundColor: colors.brand,
+	},
+	rollCount: {
+		width: 24,
+		fontSize: font.sm,
+		fontWeight: '700',
+		color: colors.text,
+	},
+	highlightRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+		backgroundColor: colors.card,
+		borderRadius: radius.md,
+		borderWidth: 1,
+		borderColor: colors.border,
+		padding: spacing.sm,
+	},
+	highlightIcon: {
+		width: 36,
+		height: 36,
+		borderRadius: radius.full,
+		backgroundColor: colors.cardAlt,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	highlightBody: {
+		flex: 1,
+		gap: 2,
+	},
+	highlightTitle: {
+		fontSize: font.md,
+		fontWeight: '800',
+		color: colors.text,
+	},
+	highlightSubtitle: {
+		fontSize: font.xs,
+		color: colors.textSecondary,
+	},
+	highlightWinners: {
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: spacing.sm,
+		marginTop: 2,
+	},
+	highlightWinner: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 4,
+	},
+	highlightWinnerName: {
+		fontSize: font.sm,
+		fontWeight: '600',
+		color: colors.text,
+	},
+	highlightNobody: {
+		fontSize: font.sm,
+		fontWeight: '600',
+		color: colors.textSecondary,
+		fontStyle: 'italic',
+		marginTop: 2,
+	},
+	highlightValue: {
+		fontSize: font.sm,
+		fontWeight: '700',
+		color: colors.brand,
 	},
 	row: {
 		backgroundColor: colors.card,

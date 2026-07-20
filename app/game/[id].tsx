@@ -1851,6 +1851,7 @@ function GameBody() {
 					meIdx={meIdx}
 					profilesById={profilesById}
 					gameState={gameState}
+					events={(game.events ?? []) as GameEvent[]}
 					pointsByPlayer={displayVP}
 					publicByPlayer={publicVP}
 					onDismiss={() => setGameOverOpen(false)}
