@@ -84,6 +84,7 @@ function testCanBuyDevCard() {
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -122,6 +123,7 @@ function testCanBuyDevCard() {
 			devCards: false,
 			numberLayout: 'random',
 			honk: true,
+			tradeMode: 'automatic',
 			extraBuild: {
 				enabled: false,
 				buildPhases: 'every',
@@ -166,6 +168,7 @@ function testLargestArmyStrictOvertake() {
 			devCards: true,
 			numberLayout: 'random',
 			honk: true,
+			tradeMode: 'automatic',
 			extraBuild: {
 				enabled: false,
 				buildPhases: 'every',
@@ -204,6 +207,7 @@ function testTotalVP() {
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -276,6 +280,7 @@ function testInitialGameStateSeedsDevState() {
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -296,6 +301,7 @@ function testInitialGameStateSeedsDevState() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

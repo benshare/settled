@@ -22,6 +22,7 @@ function fresh(players = 3): GameState {
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

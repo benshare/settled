@@ -147,6 +147,13 @@ type RejectTradeBody = {
 	game_id: string
 	offer_id: string
 }
+type ConfirmTradeBody = {
+	action: 'confirm_trade'
+	game_id: string
+	offer_id: string
+	// Index of the accepter the proposer chooses to trade with.
+	with: number
+}
 type BankTradeBody = {
 	action: 'bank_trade'
 	game_id: string
@@ -284,6 +291,7 @@ type Body =
 	| AcceptTradeBody
 	| CancelTradeBody
 	| RejectTradeBody
+	| ConfirmTradeBody
 	| BankTradeBody
 	| BuyDevCardBody
 	| PlayDevCardBody
@@ -679,6 +687,9 @@ type TradeOffer = {
 	receive: ResourceHand
 	createdAt: string
 	rejectedBy?: number[]
+	// Confirm mode: addressees who accepted and await the proposer's
+	// confirmation. Empty/absent in automatic mode.
+	acceptedBy?: number[]
 }
 
 type PortKind = '3:1' | Resource
@@ -1284,6 +1295,7 @@ function dealer<T>(pool: readonly T[]): (exclude?: T) => T {
 // --- Config ----------------------------------------------------------------
 
 type NumberLayout = 'spiral' | 'random'
+type TradeMode = 'automatic' | 'confirm'
 
 type BuildPhaseFrequency = 'every' | 'across'
 
@@ -1303,6 +1315,9 @@ type GameConfig = {
 	devCards: boolean
 	numberLayout: NumberLayout
 	honk: boolean
+	// Absent on legacy rows — read defensively (`=== 'confirm'`), defaulting to
+	// 'automatic' (today's immediate-swap behaviour).
+	tradeMode?: TradeMode
 	extraBuild: ExtraBuildConfig
 }
 
@@ -2996,6 +3011,10 @@ function addresseesOf(offer: TradeOffer, playerCount: number): number[] {
 
 function rejectedByOf(offer: TradeOffer): number[] {
 	return offer.rejectedBy ?? []
+}
+
+function acceptedByOf(offer: TradeOffer): number[] {
+	return offer.acceptedBy ?? []
 }
 
 function isOfferRejectedByAll(offer: TradeOffer, playerCount: number): boolean {
@@ -5505,6 +5524,7 @@ async function handleProposeTrade(
 		receive,
 		createdAt: new Date().toISOString(),
 		rejectedBy: [],
+		acceptedBy: [],
 	}
 
 	const nextPhase: Phase = { ...phase, trade: offer }
@@ -5573,6 +5593,57 @@ async function handleAcceptTrade(
 		return err(400, 'proposer can no longer afford')
 	if (!canAfford(state.players[meIdx].resources, offer.receive))
 		return err(400, 'you cannot afford')
+
+	// Confirm mode: an Accept only registers the acceptance; the proposer picks
+	// one to execute via confirm_trade. Automatic mode (default / legacy) swaps
+	// immediately, as below.
+	if (state.config.tradeMode === 'confirm') {
+		const existingAccepted = acceptedByOf(offer)
+		if (existingAccepted.includes(meIdx)) return json({ ok: true })
+		const nextOffer: TradeOffer = {
+			...offer,
+			acceptedBy: [...existingAccepted, meIdx],
+			// Accepting clears any prior rejection (defensive — a rejecter's
+			// banner is hidden, so re-accepting is unusual).
+			rejectedBy: rejectedByOf(offer).filter((i) => i !== meIdx),
+		}
+		const nextPhase: Phase = { ...phase, trade: nextOffer }
+		const { error: acceptErr } = await admin
+			.from('game_states')
+			.update({ phase: nextPhase })
+			.eq('game_id', game.id)
+		if (acceptErr) return err(500, 'could not update state')
+
+		const acceptEvent = {
+			kind: 'trade_accept_offered',
+			offer_id: offer.id,
+			from: offer.from,
+			by: meIdx,
+			at: new Date().toISOString(),
+		}
+		const { error: acceptLogErr } = await admin
+			.from('games')
+			.update({ events: [...(game.events ?? []), acceptEvent] })
+			.eq('id', game.id)
+		if (acceptLogErr) return err(500, 'could not log event')
+
+		const proposer = game.player_order[offer.from]
+		if (proposer && proposer !== me) {
+			EdgeRuntime.waitUntil(
+				sendNotifications(admin, [
+					{
+						userId: proposer,
+						kind: 'trade_accept_offered',
+						gate: 'trade',
+						senderProfileId: me,
+						gameId: game.id,
+					},
+				])
+			)
+		}
+
+		return json({ ok: true })
+	}
 
 	const nextPlayers = applyTradeToPlayers(
 		state.players,
@@ -5687,6 +5758,9 @@ async function handleRejectTrade(
 	const nextOffer: TradeOffer = {
 		...offer,
 		rejectedBy: [...existing, meIdx],
+		// Reject doubles as "withdraw" in confirm mode: drop any pending
+		// acceptance so backing out fully removes this player from the offer.
+		acceptedBy: acceptedByOf(offer).filter((i) => i !== meIdx),
 	}
 	const nextPhase: Phase = { ...phase, trade: nextOffer }
 	const { error: stateErr } = await admin
@@ -5719,6 +5793,87 @@ async function handleRejectTrade(
 					userId: proposerId,
 					kind: 'trade_rejected_all',
 					gate: 'trade',
+					gameId: game.id,
+				},
+			])
+		)
+	}
+
+	return json({ ok: true })
+}
+
+// Confirm mode: the proposer executes the swap with one accepter from
+// offer.acceptedBy. Closes the offer; other pending acceptances are discarded.
+async function handleConfirmTrade(
+	admin: SupabaseClient,
+	me: string,
+	body: ConfirmTradeBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+	const phase = state.phase
+	if (phase.kind !== 'main') return err(400, 'expected main phase')
+	const offer = phase.trade
+	if (!offer || offer.id !== body.offer_id) return err(404, 'offer not found')
+
+	const meIdx = game.player_order.indexOf(me)
+	if (meIdx < 0) return err(403, 'not a participant')
+	if (offer.from !== meIdx) return err(403, 'not your offer')
+
+	const withIdx = body.with
+	if (typeof withIdx !== 'number' || !Number.isInteger(withIdx))
+		return err(400, 'invalid accepter')
+	if (!acceptedByOf(offer).includes(withIdx))
+		return err(400, 'player has not accepted')
+	if (!canAfford(state.players[offer.from].resources, offer.give))
+		return err(400, 'you can no longer afford')
+	if (!canAfford(state.players[withIdx].resources, offer.receive))
+		return err(400, 'accepter can no longer afford')
+
+	const nextPlayers = applyTradeToPlayers(
+		state.players,
+		offer.from,
+		withIdx,
+		offer.give,
+		offer.receive
+	)
+	const nextPhase: Phase = { ...phase, trade: null }
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: nextPlayers, phase: nextPhase })
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	// Same event shape automatic-mode Accept emits — keeps ActionLog + stats
+	// (Friendliest/Antisocial) identical across both trade modes.
+	const event = {
+		kind: 'trade_accepted',
+		offer_id: offer.id,
+		from: offer.from,
+		to: withIdx,
+		give: offer.give,
+		receive: offer.receive,
+		at: new Date().toISOString(),
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), event] })
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not log event')
+
+	const accepterId = game.player_order[withIdx]
+	if (accepterId && accepterId !== me) {
+		EdgeRuntime.waitUntil(
+			sendNotifications(admin, [
+				{
+					userId: accepterId,
+					kind: 'trade_confirmed',
+					gate: 'trade',
+					senderProfileId: me,
 					gameId: game.id,
 				},
 			])
@@ -7507,6 +7662,8 @@ serve(async (req) => {
 			return handleCancelTrade(admin, me, body)
 		case 'reject_trade':
 			return handleRejectTrade(admin, me, body)
+		case 'confirm_trade':
+			return handleConfirmTrade(admin, me, body)
 		case 'bank_trade':
 			return handleBankTrade(admin, me, body)
 		case 'buy_dev_card':

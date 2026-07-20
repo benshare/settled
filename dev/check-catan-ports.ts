@@ -106,6 +106,7 @@ function checkGenerate() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -122,6 +123,7 @@ function stateWithSettlement(vertex: string, portKind: string): GameState {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -180,6 +182,7 @@ function checkAvailableOptions() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

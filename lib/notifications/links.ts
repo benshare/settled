@@ -7,6 +7,8 @@ export type NotificationKind =
 	| 'discard_required'
 	| 'trade_proposed'
 	| 'trade_accepted'
+	| 'trade_accept_offered'
+	| 'trade_confirmed'
 	| 'trade_rejected_all'
 	| 'friend_request'
 	| 'chat_message'
@@ -27,6 +29,8 @@ export function resolveNotificationLink(data: unknown): Href | null {
 		case 'discard_required':
 		case 'trade_proposed':
 		case 'trade_accepted':
+		case 'trade_accept_offered':
+		case 'trade_confirmed':
 		case 'trade_rejected_all':
 			return d.game_id ? (`/game/${d.game_id}` as Href) : '/play'
 		// Land in the conversation, not merely on the board — the message is

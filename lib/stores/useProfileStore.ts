@@ -3,6 +3,7 @@ import {
 	parseExtraBuild,
 	type ExtraBuildConfig,
 	type NumberLayout,
+	type TradeMode,
 } from '../catan/types'
 import type { Database } from '../database-types'
 import type { NotificationPrefs } from '../notifications'
@@ -18,6 +19,7 @@ export type GameDefaults = {
 		devCards: boolean
 		numberLayout: NumberLayout
 		honk: boolean
+		tradeMode: TradeMode
 		extraBuild: ExtraBuildConfig
 	}
 	extras: { bonuses: boolean; bonusSets: string[] }
@@ -32,6 +34,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 		devCards: true,
 		numberLayout: 'spiral',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: true,
 			buildPhases: 'every',
@@ -62,6 +65,11 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				typeof settings?.honk === 'boolean'
 					? settings.honk
 					: DEFAULT_GAME_DEFAULTS.settings.honk,
+			tradeMode:
+				settings?.tradeMode === 'confirm' ||
+				settings?.tradeMode === 'automatic'
+					? settings.tradeMode
+					: DEFAULT_GAME_DEFAULTS.settings.tradeMode,
 			extraBuild: parseExtraBuild(
 				settings?.extraBuild,
 				DEFAULT_GAME_DEFAULTS.settings.extraBuild

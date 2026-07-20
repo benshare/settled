@@ -45,6 +45,13 @@ export type NumberLayout = (typeof NUMBER_LAYOUTS)[number]
 export const BUILD_PHASE_FREQUENCIES = ['every', 'across'] as const
 export type BuildPhaseFrequency = (typeof BUILD_PHASE_FREQUENCIES)[number]
 
+// How player-to-player trade offers resolve. 'automatic' (today's behaviour,
+// the backfill default): an addressee's Accept executes the swap immediately.
+// 'confirm': Accept only registers an acceptance; the proposer then confirms
+// one of the acceptances to execute the swap.
+export const TRADE_MODES = ['automatic', 'confirm'] as const
+export type TradeMode = (typeof TRADE_MODES)[number]
+
 // `enabled` is the top-level on/off. When enabled, `buildPhases` sets the
 // cadence and `moreThanSeven` gates who may build: false = anyone in the phase
 // may build; true = only players holding more than 7 cards (the discard
@@ -68,6 +75,8 @@ export type GameConfig = {
 	// Whether the Honk nudge (ping a stalled player after the idle threshold)
 	// is available in this game. See lib/catan/honk.ts.
 	honk: boolean
+	// How player-to-player trades resolve. See TradeMode.
+	tradeMode: TradeMode
 	// See ExtraBuildConfig. Only affects games with >4 players; ignored
 	// otherwise.
 	extraBuild: ExtraBuildConfig
@@ -83,6 +92,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	devCards: true,
 	numberLayout: 'spiral',
 	honk: true,
+	tradeMode: 'automatic',
 	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
 }
 
@@ -107,6 +117,10 @@ export function parseGameConfig(raw: unknown): GameConfig {
 				? src.devCards
 				: DEFAULT_CONFIG.devCards,
 		honk: typeof src.honk === 'boolean' ? src.honk : DEFAULT_CONFIG.honk,
+		tradeMode:
+			src.tradeMode === 'confirm' || src.tradeMode === 'automatic'
+				? src.tradeMode
+				: DEFAULT_CONFIG.tradeMode,
 		numberLayout:
 			src.numberLayout === 'spiral' || src.numberLayout === 'random'
 				? src.numberLayout
@@ -175,6 +189,9 @@ export function summarizeGameConfig(
 	}
 	if (config.honk !== DEFAULT_CONFIG.honk) {
 		parts.push(config.honk ? 'Honking enabled' : 'Honking disabled')
+	}
+	if (config.tradeMode !== DEFAULT_CONFIG.tradeMode) {
+		parts.push('Confirm trades')
 	}
 	// Extra build phases only apply to >4 player games, so only surface a
 	// non-default value there.
@@ -317,6 +334,12 @@ export type TradeOffer = {
 	// Older offers written before reject existed may omit this; readers should
 	// default a missing array to `[]`.
 	rejectedBy?: number[]
+	// Indexes of addressed players who have accepted and are awaiting the
+	// proposer's confirmation (confirm mode only — unused in automatic mode,
+	// where Accept executes immediately). Never contains `from`; a player is in
+	// at most one of acceptedBy / rejectedBy. Readers default a missing array
+	// to `[]`.
+	acceptedBy?: number[]
 }
 
 export type Port = { edge: Edge; kind: PortKind }

@@ -75,6 +75,7 @@ function testFreshGameAllValid() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -92,6 +93,7 @@ function testDistanceRule() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -130,6 +132,7 @@ function testTargetSettlementRound1() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -148,6 +151,7 @@ function testTargetSettlementRound2() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -181,6 +185,7 @@ function testValidRoadEdges() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -212,6 +217,7 @@ function testStartingResourcesInterior() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -266,6 +272,7 @@ function testValidSettlementExcludesAllNeighbors() {
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
+		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

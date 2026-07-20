@@ -217,6 +217,7 @@ function GameBody() {
 	const acceptTrade = useGamesStore((s) => s.acceptTrade)
 	const cancelTrade = useGamesStore((s) => s.cancelTrade)
 	const rejectTrade = useGamesStore((s) => s.rejectTrade)
+	const confirmTrade = useGamesStore((s) => s.confirmTrade)
 	const bankTrade = useGamesStore((s) => s.bankTrade)
 	const buyDevCard = useGamesStore((s) => s.buyDevCard)
 	const playDevCard = useGamesStore((s) => s.playDevCard)
@@ -1067,6 +1068,14 @@ function GameBody() {
 		if (res.error) notify('Reject failed', res.error)
 	}
 
+	async function onConfirmTrade(accepterIdx: number) {
+		if (!game || !liveOffer) return
+		setSubmitting(true)
+		const res = await confirmTrade(game.id, liveOffer.id, accepterIdx)
+		setSubmitting(false)
+		if (res.error) notify('Confirm failed', res.error)
+	}
+
 	async function onBankTrade(
 		give: ResourceHandType,
 		receive: ResourceHandType,
@@ -1618,10 +1627,12 @@ function GameBody() {
 						offer={liveOffer}
 						meIdx={meIdx}
 						myHand={myHand}
+						players={gameState?.players ?? []}
 						playerOrder={game.player_order}
 						profilesById={profilesById}
 						submitting={submitting}
 						onAccept={onAcceptTrade}
+						onConfirm={onConfirmTrade}
 						onCancel={onCancelTrade}
 						onReject={onRejectTrade}
 					/>
