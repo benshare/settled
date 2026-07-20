@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Notifications from 'expo-notifications'
 import { Tabs, useRouter } from 'expo-router'
 import { useEffect } from 'react'
+import { Platform } from 'react-native'
 
 export const unstable_settings = {
 	initialRouteName: 'play',
@@ -27,6 +28,7 @@ export default function AppLayout() {
 	}, [user?.id])
 
 	useEffect(() => {
+		if (Platform.OS === 'web') return
 		const sub = Notifications.addNotificationResponseReceivedListener(
 			(resp) => {
 				const link = resolveNotificationLink(
