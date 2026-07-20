@@ -11,7 +11,7 @@
 //   would cover the whole screen.
 
 import { Ionicons } from '@expo/vector-icons'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
 	FlatList,
 	Pressable,
@@ -42,6 +42,11 @@ const BUTTON_INSET = spacing.sm
 // Breathing room between the panel and the play area's edges, equal on all
 // sides. The top edge is measured from the floating buttons' line.
 const PANEL_GAP = spacing.md
+
+// Taps this far inside the panel's visible edge still dismiss: the panel is
+// inset by `PANEL_GAP - DISMISS_SLOP` and pads the difference back with a
+// transparent, tap-transparent ring, so the visible geometry is unchanged.
+const DISMISS_SLOP = spacing.sm
 
 export function ChatButton() {
 	const { open, setOpen, unreadCount } = useChat()
@@ -90,18 +95,45 @@ export function ChatPanel({
 	const [draft, setDraft] = useState('')
 	const [error, setError] = useState<string | null>(null)
 
-	// Lift the whole overlay by the keyboard's height rather than shrinking it —
-	// the panel's bottom edge is pinned to the play area, which sits well above
-	// the screen bottom, so padding-style avoidance leaves the composer covered.
-	// The play area already stops short of the screen bottom by the safe-area
-	// inset, which the keyboard covers — lifting by the full height would leave
-	// that inset as extra dead space above the keyboard.
+	// The keyboard lifts the whole overlay — scrim included — by one translate,
+	// so nothing about the panel re-lays-out as it moves. The panel's bottom is
+	// pinned to the play area, which sits well above the screen bottom, so
+	// padding-style avoidance would leave the composer covered; the play area
+	// also already stops short of the screen bottom by the safe-area inset,
+	// which the keyboard covers, so lifting by the full keyboard height would
+	// leave that inset as dead space.
+	//
+	// Lifting alone would push the panel's top off the screen, so past the point
+	// where its top would clear `insets.top + PANEL_GAP` — the same gap it keeps
+	// from the top of its own zone at rest — the panel shortens instead, and its
+	// top parks there.
 	const insets = useSafeAreaInsets()
 	const keyboard = useAnimatedKeyboard()
-	const lift = useAnimatedStyle(() => ({
+
+	// The scrim's y in window space. The panel can rise by that much (minus the
+	// safe area) before its top hits the ceiling; beyond that it must shrink.
+	const scrimRef = useRef<View>(null)
+	const [scrimY, setScrimY] = useState(0)
+	const measureScrim = useCallback(() => {
+		// A layout pass while the panel is lifted would measure the translated
+		// position; the resting one is the only meaningful reading.
+		if (keyboard.height.value > 0) return
+		scrimRef.current?.measureInWindow((_x, y) => setScrimY(y))
+	}, [keyboard])
+	const headroom = Math.max(0, scrimY - insets.top)
+
+	const liftStyle = useAnimatedStyle(() => ({
 		transform: [
 			{ translateY: -Math.max(0, keyboard.height.value - insets.bottom) },
 		],
+	}))
+	// Absolutely positioned against both edges, so trimming the top margin
+	// shortens the panel rather than moving it.
+	const shrinkStyle = useAnimatedStyle(() => ({
+		marginTop: Math.max(
+			0,
+			Math.max(0, keyboard.height.value - insets.bottom) - headroom
+		),
 	}))
 
 	const canSend = draft.trim().length > 0 && !sending
@@ -132,10 +164,25 @@ export function ChatPanel({
 		// A light scrim: the panel itself is the translucent element, and a
 		// heavy backdrop on top of it would defeat glimpsing the board.
 		<Animated.View
-			style={[styles.scrim, { top: topOffset + BUTTON_INSET }, lift]}
+			ref={scrimRef}
+			onLayout={measureScrim}
+			style={[styles.scrim, { top: topOffset + BUTTON_INSET }, liftStyle]}
 		>
-			<Pressable style={styles.fill} onPress={() => setOpen(false)}>
-				{/* Swallows taps so they never reach the scrim. */}
+			{/* Behind the panel, so every tap outside it — including the slop
+			    ring — dismisses. */}
+			<Pressable
+				style={StyleSheet.absoluteFill}
+				onPress={() => setOpen(false)}
+				accessibilityLabel="Close chat"
+			/>
+
+			{/* box-none: the slop ring isn't a tap target itself, so taps in it
+			    fall through to the dismiss layer. */}
+			<Animated.View
+				pointerEvents="box-none"
+				style={[styles.panelWrap, shrinkStyle]}
+			>
+				{/* Swallows taps so they never reach the dismiss layer. */}
 				<Pressable style={styles.panel} onPress={() => {}}>
 					<View style={styles.header}>
 						<Text style={styles.title}>Chat</Text>
@@ -173,7 +220,7 @@ export function ChatPanel({
 						onSend={onSend}
 					/>
 				</Pressable>
-			</Pressable>
+			</Animated.View>
 		</Animated.View>
 	)
 }
@@ -381,11 +428,17 @@ const styles = StyleSheet.create({
 		right: 0,
 		bottom: 0,
 		backgroundColor: 'rgba(0, 0, 0, 0.15)',
-		padding: PANEL_GAP,
 		zIndex: 10,
 	},
-	fill: {
-		flex: 1,
+	// Inset by the gap less the slop ring, which `panel` pads back — so the
+	// panel's visible edge still sits PANEL_GAP from the play area.
+	panelWrap: {
+		position: 'absolute',
+		top: PANEL_GAP - DISMISS_SLOP,
+		left: PANEL_GAP - DISMISS_SLOP,
+		right: PANEL_GAP - DISMISS_SLOP,
+		bottom: PANEL_GAP - DISMISS_SLOP,
+		padding: DISMISS_SLOP,
 	},
 	panel: {
 		flex: 1,
