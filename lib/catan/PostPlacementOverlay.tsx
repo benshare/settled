@@ -16,7 +16,6 @@ import Animated, {
 	FadeOut,
 	LinearTransition,
 	useAnimatedStyle,
-	useSharedValue,
 	withTiming,
 } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -47,15 +46,14 @@ export function SpecialistDeclareOverlay({
 	const [minimized, setMinimized] = useState(false)
 
 	// Single chevron that flips by mirroring on the Y axis (scaleY 1 → -1);
-	// animating through 0 reads as a vertical flip rather than a swap.
-	const chevronFlip = useSharedValue(1)
+	// animating through 0 reads as a vertical flip rather than a swap. Driven
+	// straight off `minimized` — the worklet re-runs when it changes and
+	// withTiming animates to the new target.
 	const chevronStyle = useAnimatedStyle(() => ({
-		transform: [{ scaleY: chevronFlip.value }],
+		transform: [{ scaleY: withTiming(minimized ? -1 : 1, { duration: 220 }) }],
 	}))
 	function toggleMinimized() {
-		const next = !minimized
-		setMinimized(next)
-		chevronFlip.value = withTiming(next ? -1 : 1, { duration: 220 })
+		setMinimized((m) => !m)
 	}
 
 	// Anchored to the top (via backdropStyle) rather than centered so the header
