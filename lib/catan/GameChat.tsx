@@ -182,8 +182,11 @@ export function ChatPanel({
 				pointerEvents="box-none"
 				style={[styles.panelWrap, shrinkStyle]}
 			>
-				{/* Swallows taps so they never reach the dismiss layer. */}
-				<Pressable style={styles.panel} onPress={() => {}}>
+				{/* An opaque View swallows taps on its own (it sits above the
+				    dismiss layer), so no Pressable is needed here — and a
+				    Pressable would claim the touch responder and stop the
+				    message list from scrolling on native. */}
+				<View style={styles.panel}>
 					<View style={styles.header}>
 						<Text style={styles.title}>Chat</Text>
 						<Pressable
@@ -219,7 +222,7 @@ export function ChatPanel({
 						canSend={canSend}
 						onSend={onSend}
 					/>
-				</Pressable>
+				</View>
 			</Animated.View>
 		</Animated.View>
 	)
