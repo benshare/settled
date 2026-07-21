@@ -106,13 +106,14 @@ export function TradeBanner({
 					</Text>
 				) : (
 					<View style={styles.swapRow}>
-						<HandChips hand={offer.give} />
+						<HandChips hand={offer.give} label="Selling" />
 						<Ionicons
 							name="swap-horizontal"
 							size={16}
 							color={colors.textSecondary}
+							style={styles.swapIcon}
 						/>
-						<HandChips hand={offer.receive} />
+						<HandChips hand={offer.receive} label="Buying" />
 					</View>
 				)}
 				{showAccepters && (
@@ -218,21 +219,29 @@ const EMPTY_RESOURCES: ResourceHand = {
 	ore: 0,
 }
 
-function HandChips({ hand }: { hand: ResourceHand }) {
+function HandChips({ hand, label }: { hand: ResourceHand; label: string }) {
 	const shown = RESOURCES.filter((r) => hand[r] > 0)
 	if (shown.length === 0) return null
 	return (
-		<View style={styles.chipGroup}>
-			{shown.map((r) => (
-				<View
-					key={r}
-					style={[styles.chip, { backgroundColor: resourceColor[r] }]}
-				>
-					<Text style={styles.chipText}>
-						{hand[r]} {SHORT[r]}
-					</Text>
-				</View>
-			))}
+		<View style={styles.chipStack}>
+			<Text style={styles.chipLabel} numberOfLines={1}>
+				{label}
+			</Text>
+			<View style={styles.chipGroup}>
+				{shown.map((r) => (
+					<View
+						key={r}
+						style={[
+							styles.chip,
+							{ backgroundColor: resourceColor[r] },
+						]}
+					>
+						<Text style={styles.chipText}>
+							{hand[r]} {SHORT[r]}
+						</Text>
+					</View>
+				))}
+			</View>
 		</View>
 	)
 }
@@ -289,9 +298,24 @@ const styles = StyleSheet.create({
 	},
 	swapRow: {
 		flexDirection: 'row',
-		alignItems: 'center',
+		alignItems: 'flex-end',
 		gap: spacing.xs,
 		flexWrap: 'wrap',
+	},
+	// Nudged up so the arrow reads as centered against the chip row rather
+	// than sitting on its baseline.
+	swapIcon: {
+		marginBottom: 1,
+	},
+	chipStack: {
+		gap: 1,
+	},
+	chipLabel: {
+		fontSize: 9,
+		fontWeight: '700',
+		color: colors.textSecondary,
+		textTransform: 'uppercase',
+		letterSpacing: 0.3,
 	},
 	chipGroup: {
 		flexDirection: 'row',
