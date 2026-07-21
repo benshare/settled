@@ -5,6 +5,7 @@
 
 import {
 	bonusOf,
+	canScoutAffordDevCard,
 	carpenterVPOf,
 	populistBonusVPFor,
 	winVPThresholdFor,
@@ -64,6 +65,10 @@ export function canBuyDevCard(
 	} else {
 		return false
 	}
+	// A scout can pay the dev-card cost with a swapped resource, so gate on
+	// any affordable swap route rather than the standard cost alone.
+	if (bonusOf(state, meIdx) === 'scout')
+		return canScoutAffordDevCard(state.players[meIdx].resources)
 	return canAffordPurchase(state.players[meIdx], 'dev_card')
 }
 

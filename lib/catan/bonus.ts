@@ -20,7 +20,6 @@ import {
 import type { BonusId, CurseId } from './bonuses'
 import type { BuildKind } from './build'
 import {
-	vertexStateOf,
 	type BankKind,
 	type DiceRoll,
 	type GameState,
@@ -453,6 +452,8 @@ export function canMoveForgerToken(
 // resources (sheep / wheat / ore); `to` must be one of the other two.
 const SCOUT_COST_RESOURCES: readonly Resource[] = ['sheep', 'wheat', 'ore']
 
+export type ScoutSwap = { from: Resource; to: Resource }
+
 export function isValidScoutSwap(swap: {
 	from: Resource
 	to: Resource
@@ -482,6 +483,33 @@ export function scoutDevCardCost(swap?: {
 		out[swap.to] += 1
 	}
 	return out
+}
+
+// Every dev-card payment profile a scout can choose: the standard cost
+// (`null` = no swap) followed by each valid single-resource swap. Stable
+// order — standard first, then swaps in `from × to` order.
+export function scoutSwapOptions(): (ScoutSwap | null)[] {
+	const out: (ScoutSwap | null)[] = [null]
+	for (const from of SCOUT_COST_RESOURCES) {
+		for (const to of SCOUT_COST_RESOURCES) {
+			if (from !== to) out.push({ from, to })
+		}
+	}
+	return out
+}
+
+// The payment profiles a scout can actually afford out of `hand`, in the
+// stable order above (standard first). Empty when no route is affordable.
+export function affordableScoutSwaps(hand: ResourceHand): (ScoutSwap | null)[] {
+	return scoutSwapOptions().filter((swap) => {
+		const cost = scoutDevCardCost(swap ?? undefined)
+		return SCOUT_COST_RESOURCES.every((r) => hand[r] >= cost[r])
+	})
+}
+
+// True if a scout can buy a dev card by any swap route (or the standard cost).
+export function canScoutAffordDevCard(hand: ResourceHand): boolean {
+	return affordableScoutSwaps(hand).length > 0
 }
 
 // Sentinel for the maximum number of cards a scout can peek at when buying.
@@ -525,49 +553,29 @@ export const DEV_CARD_REFUND: ResourceHand = {
 	ore: 1,
 }
 
-// True if removing `edge` from the player's road network would split it
-// into multiple components that disconnect at least two of the player's
-// buildings (settlements / cities / super_cities). Used by the accountant
-// liquidation gate.
-//
-// Algorithm: BFS over the player's roads minus the candidate edge. Vertices
-// can be visited only via the player's roads; opponent buildings still block
-// at interior vertices (matches the build.ts road-chain rule). All of the
-// player's buildings must end up in the same BFS-reachable set seeded by any
-// one of them.
-export function roadRemovalSplitsBuildings(
+// True if the accountant may NOT liquidate `edge`: the player owns another
+// road, or a building, at BOTH of its endpoints, so the road sits in the
+// interior of their network. A road that dead-ends on at least one side —
+// nothing else of theirs on that endpoint — is liquidatable. Only the player's
+// own pieces count; an opponent's road or building at an endpoint is a
+// dead-end for this network.
+export function roadLiquidationBlocked(
 	state: GameState,
 	playerIdx: number,
 	edge: Edge
 ): boolean {
-	const myBuildings: Vertex[] = []
-	for (const [vid, vs] of Object.entries(state.vertices)) {
-		if (vs?.occupied && vs.player === playerIdx)
-			myBuildings.push(vid as Vertex)
-	}
-	if (myBuildings.length <= 1) return false
-
 	const board = boardFor(state.variant)
-	const seed = myBuildings[0]
-	const visited = new Set<Vertex>([seed])
-	const stack: Vertex[] = [seed]
-	while (stack.length > 0) {
-		const v = stack.pop()!
-		for (const e of board.adjacentEdges[v]) {
-			if (e === edge) continue
+	const [a, b] = edgeEndpoints(edge)
+	const endpointHeld = (v: Vertex): boolean => {
+		const vs = state.vertices[v]
+		if (vs?.occupied && vs.player === playerIdx) return true
+		return board.adjacentEdges[v].some((e) => {
+			if (e === edge) return false
 			const es = state.edges[e]
-			if (!es?.occupied || es.player !== playerIdx) continue
-			const [a, b] = edgeEndpoints(e)
-			const other = a === v ? b : a
-			if (visited.has(other)) continue
-			// Opponent building blocks chaining through `other`.
-			const ovs = vertexStateOf(state, other)
-			if (ovs.occupied && ovs.player !== playerIdx) continue
-			visited.add(other)
-			stack.push(other)
-		}
+			return !!es?.occupied && es.player === playerIdx
+		})
 	}
-	return myBuildings.some((b) => !visited.has(b))
+	return endpointHeld(a) && endpointHeld(b)
 }
 
 export const ACCOUNTANT_DEV_CARD_REFUND = DEV_CARD_REFUND

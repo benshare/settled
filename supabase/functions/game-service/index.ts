@@ -2596,36 +2596,23 @@ const DEV_CARD_REFUND: ResourceHand = {
 	ore: 1,
 }
 
-function roadRemovalSplitsBuildings(
+function roadLiquidationBlocked(
 	state: GameState,
 	playerIdx: number,
 	edge: Edge
 ): boolean {
-	const myBuildings: Vertex[] = []
-	for (const [vid, vs] of Object.entries(state.vertices)) {
-		if (vs?.occupied && vs.player === playerIdx)
-			myBuildings.push(vid as Vertex)
-	}
-	if (myBuildings.length <= 1) return false
-	const seed = myBuildings[0]
-	const visited = new Set<Vertex>([seed])
-	const stack: Vertex[] = [seed]
-	while (stack.length > 0) {
-		const v = stack.pop()!
-		for (const e of boardFor(state.variant).adjacentEdges[v]) {
-			if (e === edge) continue
+	const board = boardFor(state.variant)
+	const [a, b] = edge.split(' - ') as [Vertex, Vertex]
+	const endpointHeld = (v: Vertex): boolean => {
+		const vs = state.vertices[v]
+		if (vs?.occupied && vs.player === playerIdx) return true
+		return board.adjacentEdges[v].some((e) => {
+			if (e === edge) return false
 			const es = state.edges[e]
-			if (!es?.occupied || es.player !== playerIdx) continue
-			const [a, b] = e.split(' - ') as [Vertex, Vertex]
-			const other = a === v ? b : a
-			if (visited.has(other)) continue
-			const ovs = vertexStateOf(state, other)
-			if (ovs.occupied && ovs.player !== playerIdx) continue
-			visited.add(other)
-			stack.push(other)
-		}
+			return !!es?.occupied && es.player === playerIdx
+		})
 	}
-	return myBuildings.some((b) => !visited.has(b))
+	return endpointHeld(a) && endpointHeld(b)
 }
 
 // --- Set 3 bonus helpers (must match lib/catan/bonus) ----------------------
@@ -6390,7 +6377,7 @@ async function handleLiquidate(
 			const es = state.edges[edge]
 			if (!es?.occupied || es.player !== meIdx) return null
 			if (es.placedTurn >= state.round) return null
-			if (roadRemovalSplitsBuildings(state, meIdx, edge)) return null
+			if (roadLiquidationBlocked(state, meIdx, edge)) return null
 			return {
 				hand: ROAD_REFUND,
 				eventDetail: { kind: 'road', edge, at, refund: ROAD_REFUND },

@@ -112,6 +112,26 @@ function testCanBuyDevCard() {
 		),
 	}
 	assert(!canBuyDevCard(poor, 0, 0), 'unaffordable → false')
+	// Scout can pay with a substituted resource: 2 wheat + 1 ore (no sheep)
+	// is unaffordable at the standard cost but buyable via a sheep→wheat swap.
+	const subbedHand = hand({ wheat: 2, ore: 1 })
+	const nonScoutSub: GameState = {
+		...s,
+		players: s.players.map((p, i) =>
+			i === 0 ? { ...p, resources: subbedHand } : p
+		),
+	}
+	assert(
+		!canBuyDevCard(nonScoutSub, 0, 0),
+		'non-scout with substituted hand → false'
+	)
+	const scoutSub: GameState = {
+		...nonScoutSub,
+		players: nonScoutSub.players.map((p, i) =>
+			i === 0 ? { ...p, bonus: 'scout' } : p
+		),
+	}
+	assert(canBuyDevCard(scoutSub, 0, 0), 'scout with substituted hand → true')
 	// Empty deck.
 	const noDeck: GameState = { ...s, devDeck: [] }
 	assert(!canBuyDevCard(noDeck, 0, 0), 'empty deck → false')

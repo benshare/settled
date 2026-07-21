@@ -14,7 +14,7 @@ import {
 	ROAD_REFUND,
 	SETTLEMENT_REFUND,
 	SUPER_CITY_REFUND,
-	roadRemovalSplitsBuildings,
+	roadLiquidationBlocked,
 } from './bonus'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
@@ -107,7 +107,7 @@ function buildTargetList(state: GameState, playerIdx: number): Listed[] {
 		if (!es?.occupied || es.player !== playerIdx) continue
 		if (es.placedTurn >= state.round) continue
 		const eid = eidStr as Edge
-		if (roadRemovalSplitsBuildings(state, playerIdx, eid)) continue
+		if (roadLiquidationBlocked(state, playerIdx, eid)) continue
 		out.push({
 			kind: 'road',
 			label: 'Road',

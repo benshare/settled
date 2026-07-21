@@ -13,6 +13,7 @@ import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
 import {
+	affordableScoutSwaps,
 	canBuildMoreSuperCities,
 	canInvest,
 	canShepherdSwap,
@@ -20,6 +21,7 @@ import {
 	forgerActive,
 	investorTokenCount,
 	ritualCardCost,
+	type ScoutSwap,
 } from '@/lib/catan/bonus'
 import {
 	AccountantPicker,
@@ -44,6 +46,7 @@ import {
 	SpecialistDeclareOverlay,
 } from '@/lib/catan/PostPlacementOverlay'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
+import { ScoutCostPicker } from '@/lib/catan/ScoutCostPicker'
 import {
 	ScoutPickOverlay,
 	ScoutWaitOverlay,
@@ -263,6 +266,7 @@ function GameBody() {
 	const [shepherdOpen, setShepherdOpen] = useState(false)
 	const [forgerMoveOpen, setForgerMoveOpen] = useState(false)
 	const [accountantOpen, setAccountantOpen] = useState(false)
+	const [scoutCostOpen, setScoutCostOpen] = useState(false)
 	// When a city / super_city build is pending and the metropolitan
 	// player can swap wheat→ore, this carries the picked vertex until the
 	// swap modal resolves.
@@ -866,17 +870,39 @@ function GameBody() {
 	}
 
 	async function onBuyDevCard() {
+		if (!game || !myPlayer) return
+		// A scout may pay with a swapped resource. If more than one payment
+		// route is affordable, let them choose which cards to spend; a lone
+		// route is submitted automatically.
+		if (myPlayer.bonus === 'scout') {
+			const options = affordableScoutSwaps(myPlayer.resources)
+			if (options.length > 1) {
+				setScoutCostOpen(true)
+				return
+			}
+			return submitBuyDevCard(options[0] ?? null)
+		}
+		return submitBuyDevCard(null)
+	}
+
+	async function submitBuyDevCard(scoutSwap: ScoutSwap | null) {
 		if (!game) return
 		setSubmitting(true)
 		const smith = myPlayer?.bonus === 'smith'
 		const use =
-			!smith && myPlayer
+			!smith && !scoutSwap && myPlayer
 				? shouldUseBricklayer(myPlayer, 'dev_card')
 				: false
 		const smithSwap =
 			smith && myPlayer ? smithSwapFor(myPlayer, 'dev_card') : 0
-		const res = await buyDevCard(game.id, use, undefined, smithSwap)
+		const res = await buyDevCard(
+			game.id,
+			use,
+			scoutSwap ?? undefined,
+			smithSwap
+		)
 		setSubmitting(false)
+		setScoutCostOpen(false)
 		if (res.error) notify('Buy failed', res.error)
 	}
 
@@ -1612,6 +1638,15 @@ function GameBody() {
 					submitting={submitting}
 					onCancel={() => setAccountantOpen(false)}
 					onConfirm={onLiquidate}
+				/>
+			)}
+
+			{scoutCostOpen && myPlayer && (
+				<ScoutCostPicker
+					hand={myPlayer.resources}
+					submitting={submitting}
+					onCancel={() => setScoutCostOpen(false)}
+					onConfirm={(swap) => submitBuyDevCard(swap)}
 				/>
 			)}
 

@@ -17,6 +17,8 @@ import {
 	carpenterVPOf,
 	curioCollectorTriggers,
 	dicePairForTotal,
+	affordableScoutSwaps,
+	canScoutAffordDevCard,
 	effectiveBankRatio,
 	fortuneTellerTriggersOn,
 	grantsStartingResourcesOnRound,
@@ -31,7 +33,7 @@ import {
 	pipsAtVertex,
 	populistBonusVPFor,
 	ritualCardCost,
-	roadRemovalSplitsBuildings,
+	roadLiquidationBlocked,
 	scoutDevCardCost,
 	shepherdEffectiveHandSize,
 	specialistGiveResource,
@@ -705,59 +707,97 @@ function testScout() {
 	equal(std.sheep, 1, 'standard 1 sheep')
 	equal(std.wheat, 1, 'standard 1 wheat')
 	equal(std.ore, 1, 'standard 1 ore')
+
+	// Substituted-cost affordability: 2 wheat + 1 ore (no sheep) can't pay the
+	// standard cost but can via a sheep→wheat swap.
+	const subbed: ResourceHand = { ...emptyHand(), wheat: 2, ore: 1 }
+	assert(
+		canScoutAffordDevCard(subbed),
+		'scout affords dev card via substitution'
+	)
+	const subOpts = affordableScoutSwaps(subbed)
+	equal(subOpts.length, 1, 'exactly one affordable route')
+	assert(subOpts[0] !== null, 'the affordable route is a swap, not standard')
+
+	// Standard hand: only the no-swap route is affordable.
+	const exact: ResourceHand = { ...emptyHand(), sheep: 1, wheat: 1, ore: 1 }
+	const exactOpts = affordableScoutSwaps(exact)
+	equal(exactOpts.length, 1, 'standard-only exact hand: one route')
+	equal(exactOpts[0], null, 'that route is the standard cost')
+
+	// Rich hand: standard plus every swap is affordable (1 standard + 6 swaps).
+	const rich: ResourceHand = { ...emptyHand(), sheep: 2, wheat: 2, ore: 2 }
+	equal(affordableScoutSwaps(rich).length, 7, 'rich hand: all 7 routes')
+
+	// No wheat/sheep/ore at all: cannot afford by any route.
+	assert(!canScoutAffordDevCard(emptyHand()), 'empty hand affords nothing')
 }
 
-function testAccountantSplit() {
-	// Build a tiny network: settlements at A, B, C connected by roads
-	// A-B (edge1) and B-C (edge2). Removing edge1 disconnects A from {B,C}.
+function testAccountantLiquidation() {
+	// Board adjacency (standard): 1A touches edges '1A - 1B' and '1A - 2B';
+	// 1B touches '1A - 1B' and '1B - 1C'. The candidate is always '1A - 1B'.
 	const s = baseState()
-	// Use vertices 1A and 1B (adjacent through edge '1A - 1B').
-	const withPieces: GameState = {
+	const own = (player = 0) => ({
+		occupied: true as const,
+		player,
+		placedTurn: 0,
+	})
+	const bldg = (player = 0) => ({
+		...own(player),
+		building: 'settlement' as const,
+	})
+
+	// Both endpoints hold the player's own buildings → interior → blocked.
+	const bothBuildings: GameState = {
 		...s,
-		vertices: {
-			...s.vertices,
-			'1A': {
-				occupied: true,
-				player: 0,
-				building: 'settlement',
-				placedTurn: 0,
-			},
-			'1B': {
-				occupied: true,
-				player: 0,
-				building: 'settlement',
-				placedTurn: 0,
-			},
-		},
-		edges: {
-			...s.edges,
-			'1A - 1B': { occupied: true, player: 0, placedTurn: 0 },
-		},
+		vertices: { ...s.vertices, '1A': bldg(), '1B': bldg() },
+		edges: { ...s.edges, '1A - 1B': own() },
 	}
 	assert(
-		roadRemovalSplitsBuildings(withPieces, 0, '1A - 1B'),
-		'removing the only connecting road splits buildings'
+		roadLiquidationBlocked(bothBuildings, 0, '1A - 1B'),
+		'road between two of your buildings is blocked'
 	)
-	// Single building → never splits.
-	const single: GameState = {
+
+	// A settlement on one end, a dead-end on the other → liquidatable.
+	const deadEnd: GameState = {
 		...s,
-		vertices: {
-			...s.vertices,
-			'1A': {
-				occupied: true,
-				player: 0,
-				building: 'settlement',
-				placedTurn: 0,
-			},
-		},
+		vertices: { ...s.vertices, '1A': bldg() },
+		edges: { ...s.edges, '1A - 1B': own() },
+	}
+	assert(
+		!roadLiquidationBlocked(deadEnd, 0, '1A - 1B'),
+		'road that dead-ends on one side is liquidatable'
+	)
+
+	// Roads branch off BOTH endpoints, no buildings → still blocked. (The old
+	// connectivity check allowed this because there were ≤1 buildings.)
+	const interiorRoad: GameState = {
+		...s,
 		edges: {
 			...s.edges,
-			'1A - 1B': { occupied: true, player: 0, placedTurn: 0 },
+			'1A - 1B': own(),
+			'1A - 2B': own(),
+			'1B - 1C': own(),
 		},
 	}
 	assert(
-		!roadRemovalSplitsBuildings(single, 0, '1A - 1B'),
-		'single building never splits'
+		roadLiquidationBlocked(interiorRoad, 0, '1A - 1B'),
+		'road with your roads branching off both ends is blocked'
+	)
+
+	// Only opponent pieces sit at the endpoints → they don't count → allowed.
+	const opponentOnly: GameState = {
+		...s,
+		vertices: { ...s.vertices, '1A': bldg(1) },
+		edges: {
+			...s.edges,
+			'1A - 1B': own(0),
+			'1B - 1C': own(1),
+		},
+	}
+	assert(
+		!roadLiquidationBlocked(opponentOnly, 0, '1A - 1B'),
+		"opponent's road/building at an endpoint is a dead-end for you"
 	)
 }
 
@@ -1048,7 +1088,7 @@ function main() {
 		['set2: metropolitan', testMetropolitan],
 		['set2: forger', testForger],
 		['set2: scout', testScout],
-		['set2: accountant split check', testAccountantSplit],
+		['set2: accountant liquidation gate', testAccountantLiquidation],
 		['set3: plutocrat', testPlutocrat],
 		['set3: smith', testSmith],
 		['set3: merchant', testMerchant],
