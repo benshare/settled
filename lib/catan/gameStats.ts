@@ -75,7 +75,10 @@ function extremeAmong(
 	if (idxs.length === 0) return { winners: [], value: 0 }
 	let best = values[idxs[0]]
 	for (const i of idxs) {
-		best = mode === 'max' ? Math.max(best, values[i]) : Math.min(best, values[i])
+		best =
+			mode === 'max'
+				? Math.max(best, values[i])
+				: Math.min(best, values[i])
 	}
 	const winners = idxs.filter((i) => values[i] === best)
 	if (winners.length === idxs.length) return { winners: [], value: best }

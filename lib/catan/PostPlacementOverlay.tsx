@@ -50,7 +50,9 @@ export function SpecialistDeclareOverlay({
 	// straight off `minimized` — the worklet re-runs when it changes and
 	// withTiming animates to the new target.
 	const chevronStyle = useAnimatedStyle(() => ({
-		transform: [{ scaleY: withTiming(minimized ? -1 : 1, { duration: 220 }) }],
+		transform: [
+			{ scaleY: withTiming(minimized ? -1 : 1, { duration: 220 }) },
+		],
 	}))
 	function toggleMinimized() {
 		setMinimized((m) => !m)

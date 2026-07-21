@@ -4,7 +4,10 @@
 	"framework": null,
 	"cleanUrls": true,
 	"rewrites": [
-		{ "source": "/game/request/:id", "destination": "/game/request/[id].html" },
+		{
+			"source": "/game/request/:id",
+			"destination": "/game/request/[id].html"
+		},
 		{ "source": "/game/:id", "destination": "/game/[id].html" }
 	]
 }

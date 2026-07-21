@@ -2,7 +2,7 @@
 
 ## Problem
 
-Modals across the app are bespoke re-implementations of React Native's `<Modal>`. Roughly half wire up click-outside-to-dismiss (outer `Pressable` backdrop + inner swallow `Pressable`); the rest use a plain `<View>` backdrop and silently *don't* dismiss on an outside tap. This inconsistency is the reported bug ("many modals are not dismissed when clicking outside"). It's been patched ad hoc in several files.
+Modals across the app are bespoke re-implementations of React Native's `<Modal>`. Roughly half wire up click-outside-to-dismiss (outer `Pressable` backdrop + inner swallow `Pressable`); the rest use a plain `<View>` backdrop and silently _don't_ dismiss on an outside tap. This inconsistency is the reported bug ("many modals are not dismissed when clicking outside"). It's been patched ad hoc in several files.
 
 ## Goal
 

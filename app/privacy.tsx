@@ -21,9 +21,9 @@ export default function PrivacyScreen() {
 				<Text style={styles.updated}>Last updated: {LAST_UPDATED}</Text>
 
 				<Text style={styles.intro}>
-					Settled (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or
-					&ldquo;the app&rdquo;) is a companion app for playing tabletop
-					games with friends. This policy explains what information we
+					Settled (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;the
+					app&rdquo;) is a companion app for playing tabletop games
+					with friends. This policy explains what information we
 					collect, how we use it, and the choices you have. By using
 					Settled you agree to the practices described here.
 				</Text>
@@ -34,8 +34,8 @@ export default function PrivacyScreen() {
 					</Paragraph>
 					<Bullet styles={styles}>
 						<Bold styles={styles}>Phone number.</Bold> We use your
-						phone number to sign you in via a one-time SMS code and to
-						let friends find you. We do not use it for marketing.
+						phone number to sign you in via a one-time SMS code and
+						to let friends find you. We do not use it for marketing.
 					</Bullet>
 					<Bullet styles={styles}>
 						<Bold styles={styles}>Profile details.</Bold> A username
@@ -52,14 +52,14 @@ export default function PrivacyScreen() {
 						past games and sync play in real time.
 					</Bullet>
 					<Bullet styles={styles}>
-						<Bold styles={styles}>Push notification tokens.</Bold> If
-						you enable notifications, a device token used to deliver
-						alerts about games and friend activity.
+						<Bold styles={styles}>Push notification tokens.</Bold>{' '}
+						If you enable notifications, a device token used to
+						deliver alerts about games and friend activity.
 					</Bullet>
 					<Bullet styles={styles}>
-						<Bold styles={styles}>Basic technical data.</Bold> Standard
-						information such as device type and app version needed to
-						operate and troubleshoot the service.
+						<Bold styles={styles}>Basic technical data.</Bold>{' '}
+						Standard information such as device type and app version
+						needed to operate and troubleshoot the service.
 					</Bullet>
 				</Section>
 
@@ -78,8 +78,8 @@ export default function PrivacyScreen() {
 						To maintain, debug, and improve the app.
 					</Bullet>
 					<Paragraph styles={styles}>
-						We do not sell your personal information, and we do not use
-						it for advertising.
+						We do not sell your personal information, and we do not
+						use it for advertising.
 					</Paragraph>
 				</Section>
 
@@ -91,18 +91,18 @@ export default function PrivacyScreen() {
 						the app:
 					</Paragraph>
 					<Bullet styles={styles}>
-						<Bold styles={styles}>Supabase</Bold> for authentication,
-						database storage, and real-time sync.
+						<Bold styles={styles}>Supabase</Bold> for
+						authentication, database storage, and real-time sync.
 					</Bullet>
 					<Bullet styles={styles}>
 						<Bold styles={styles}>Expo</Bold> for delivering push
 						notifications.
 					</Bullet>
 					<Paragraph styles={styles}>
-						These providers process data on our behalf under their own
-						security and privacy commitments. We may also disclose
-						information if required by law or to protect the rights and
-						safety of our users.
+						These providers process data on our behalf under their
+						own security and privacy commitments. We may also
+						disclose information if required by law or to protect
+						the rights and safety of our users.
 					</Paragraph>
 				</Section>
 
@@ -117,8 +117,8 @@ export default function PrivacyScreen() {
 
 				<Section title="Your choices" styles={styles}>
 					<Bullet styles={styles}>
-						You can update your username and profile photo at any time
-						in the app.
+						You can update your username and profile photo at any
+						time in the app.
 					</Bullet>
 					<Bullet styles={styles}>
 						You can turn push notifications on or off in your device
@@ -132,26 +132,26 @@ export default function PrivacyScreen() {
 
 				<Section title="Children's privacy" styles={styles}>
 					<Paragraph styles={styles}>
-						Settled is not directed to children under 13, and we do not
-						knowingly collect personal information from them. If you
-						believe a child has provided us information, please contact
-						us and we will delete it.
+						Settled is not directed to children under 13, and we do
+						not knowingly collect personal information from them. If
+						you believe a child has provided us information, please
+						contact us and we will delete it.
 					</Paragraph>
 				</Section>
 
 				<Section title="Changes to this policy" styles={styles}>
 					<Paragraph styles={styles}>
-						We may update this policy from time to time. When we do, we
-						will revise the &ldquo;Last updated&rdquo; date above.
-						Continued use of the app after changes take effect
-						constitutes acceptance of the updated policy.
+						We may update this policy from time to time. When we do,
+						we will revise the &ldquo;Last updated&rdquo; date
+						above. Continued use of the app after changes take
+						effect constitutes acceptance of the updated policy.
 					</Paragraph>
 				</Section>
 
 				<Section title="Contact us" styles={styles}>
 					<Paragraph styles={styles}>
-						If you have questions about this policy or your data, reach
-						us at{' '}
+						If you have questions about this policy or your data,
+						reach us at{' '}
 						<Text
 							style={styles.link}
 							onPress={() =>
@@ -195,13 +195,7 @@ function Paragraph({
 	return <Text style={styles.body}>{children}</Text>
 }
 
-function Bullet({
-	children,
-	styles,
-}: {
-	children: ReactNode
-	styles: Styles
-}) {
+function Bullet({ children, styles }: { children: ReactNode; styles: Styles }) {
 	return (
 		<View style={styles.bulletRow}>
 			<Text style={styles.bulletDot}>{'•'}</Text>
