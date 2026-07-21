@@ -189,23 +189,6 @@ export function MagicianPickOverlay({
 	)
 }
 
-export function MagicianWaitOverlay({ rollerName }: { rollerName: string }) {
-	const { colors } = useTheme()
-	const styles = useMemo(() => makeStyles(colors), [colors])
-	return (
-		<Modal
-			visible
-			dismissOnBackdropPress={false}
-			contentStyle={styles.sheet}
-		>
-			<Text style={styles.title}>Magician</Text>
-			<Text style={styles.subtitle}>
-				Waiting on {rollerName} to work their magic…
-			</Text>
-		</Modal>
-	)
-}
-
 function empty(): ResourceHand {
 	return { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 }
 }

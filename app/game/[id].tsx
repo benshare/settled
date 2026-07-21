@@ -34,10 +34,7 @@ import {
 import { ForgerMovePicker } from '@/lib/catan/ForgerMovePicker'
 import { ForgerPickOverlay } from '@/lib/catan/ForgerPickOverlay'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
-import {
-	MagicianPickOverlay,
-	MagicianWaitOverlay,
-} from '@/lib/catan/MagicianPickOverlay'
+import { MagicianPickOverlay } from '@/lib/catan/MagicianPickOverlay'
 import { MetropolitanCostPicker } from '@/lib/catan/MetropolitanCostPicker'
 import {
 	ExplorerStatusBanner,
@@ -1299,6 +1296,19 @@ function GameBody() {
 					)
 				})()}
 
+			{gameState?.phase.kind === 'magician_pick' &&
+				gameState.phase.roller !== meIdx && (
+					<View style={styles.statusWrap}>
+						<Text style={styles.statusLine}>
+							Waiting on{' '}
+							{profilesById[
+								game.player_order[gameState.phase.roller]
+							]?.username ?? 'Player'}{' '}
+							to work their magic…
+						</Text>
+					</View>
+				)}
+
 			{!inPlacement && !inGameOver && !inBonusSelection && gameState && (
 				<>
 					{!inRoadBuilding && (
@@ -1569,29 +1579,20 @@ function GameBody() {
 					/>
 				)}
 
-			{gameState && gameState.phase.kind === 'magician_pick' && (
-				<>
-					{gameState.phase.roller === meIdx && myPlayer ? (
-						<MagicianPickOverlay
-							hand={myPlayer.resources}
-							actualTotal={
-								gameState.phase.roll.a + gameState.phase.roll.b
-							}
-							submitting={submitting}
-							onSkip={onSkipMagic}
-							onCast={onCastMagic}
-						/>
-					) : (
-						<MagicianWaitOverlay
-							rollerName={
-								profilesById[
-									game.player_order[gameState.phase.roller]
-								]?.username ?? 'Player'
-							}
-						/>
-					)}
-				</>
-			)}
+			{gameState &&
+				gameState.phase.kind === 'magician_pick' &&
+				gameState.phase.roller === meIdx &&
+				myPlayer && (
+					<MagicianPickOverlay
+						hand={myPlayer.resources}
+						actualTotal={
+							gameState.phase.roll.a + gameState.phase.roll.b
+						}
+						submitting={submitting}
+						onSkip={onSkipMagic}
+						onCast={onCastMagic}
+					/>
+				)}
 
 			{investOpen && myPlayer && (
 				<InvestPicker
