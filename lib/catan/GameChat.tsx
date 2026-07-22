@@ -11,7 +11,7 @@
 //   would cover the whole screen.
 
 import { Ionicons } from '@expo/vector-icons'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	FlatList,
 	Pressable,
@@ -25,6 +25,7 @@ import Animated, {
 	useAnimatedStyle,
 } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useGamesStore } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing, z } from '../theme'
 import { CHAT_MAX_CHARS, useChat, type ChatMessage } from './chatContext'
@@ -94,6 +95,15 @@ export function ChatPanel({
 	const { open, setOpen, messages, send, sending } = useChat()
 	const [draft, setDraft] = useState('')
 	const [error, setError] = useState<string | null>(null)
+
+	// Spectators send into this thread but were never in a participant list, so
+	// their profiles aren't in the store's cache. Without this they'd all
+	// render as 'Player'.
+	const ensureProfiles = useGamesStore((s) => s.ensureProfiles)
+	useEffect(() => {
+		if (!messages || messages.length === 0) return
+		ensureProfiles(messages.map((m) => m.sender))
+	}, [messages, ensureProfiles])
 
 	// The keyboard lifts the whole overlay — scrim included — by one translate,
 	// so nothing about the panel re-lays-out as it moves. The panel's bottom is
@@ -359,20 +369,27 @@ function MessageRow({
 	return (
 		<View style={[styles.row, gap]}>
 			{startsRun && (
-				<Text
-					style={[
-						styles.sender,
-						{
-							color:
-								seat >= 0
-									? (playerColors[seat] ??
-										colors.textSecondary)
-									: colors.textSecondary,
-						},
-					]}
-				>
-					{name}
-				</Text>
+				<View style={styles.senderLine}>
+					<Text
+						style={[
+							styles.sender,
+							{
+								color:
+									seat >= 0
+										? (playerColors[seat] ??
+											colors.textSecondary)
+										: colors.textSecondary,
+							},
+						]}
+					>
+						{name}
+					</Text>
+					{/* No seat means the sender isn't at the table — they're
+					    spectating. Labeled once per run, alongside the name. */}
+					{seat < 0 && (
+						<Text style={styles.spectatorTag}>watching</Text>
+					)}
+				</View>
 			)}
 			<View style={styles.bubble}>
 				<Text style={styles.bubbleText}>{message.body}</Text>
@@ -500,9 +517,22 @@ const styles = StyleSheet.create({
 		// separation from the run above is a marginTop.
 		marginTop: spacing.sm,
 	},
+	senderLine: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.xs,
+	},
 	sender: {
 		fontSize: font.xs,
 		fontWeight: '700',
+		paddingHorizontal: spacing.xs,
+	},
+	spectatorTag: {
+		fontSize: font.xs,
+		fontWeight: '600',
+		color: colors.textMuted,
+		backgroundColor: PANEL_CHROME_BG,
+		borderRadius: radius.sm,
 		paddingHorizontal: spacing.xs,
 	},
 	bubble: {

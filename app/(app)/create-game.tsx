@@ -74,6 +74,9 @@ export default function CreateGameScreen() {
 	const [tradeMode, setTradeMode] = useState<TradeMode>(
 		savedDefaults.settings.tradeMode
 	)
+	const [spectators, setSpectators] = useState(
+		savedDefaults.settings.spectators
+	)
 	const [extraBuildEnabled, setExtraBuildEnabled] = useState(
 		savedDefaults.settings.extraBuild.enabled
 	)
@@ -102,6 +105,7 @@ export default function CreateGameScreen() {
 	const savedFriendlyRobber = savedDefaults.settings.friendlyRobber
 	const savedLimitMonopoly = savedDefaults.settings.limitMonopoly
 	const savedTradeMode = savedDefaults.settings.tradeMode
+	const savedSpectators = savedDefaults.settings.spectators
 	const savedExtraBuild = savedDefaults.settings.extraBuild
 	useEffect(() => {
 		if (touched) return
@@ -114,6 +118,7 @@ export default function CreateGameScreen() {
 		setFriendlyRobber(savedFriendlyRobber)
 		setLimitMonopoly(savedLimitMonopoly)
 		setTradeMode(savedTradeMode)
+		setSpectators(savedSpectators)
 		setExtraBuildEnabled(savedExtraBuild.enabled)
 		setBuildPhases(savedExtraBuild.buildPhases)
 		setMoreThanSeven(savedExtraBuild.moreThanSeven)
@@ -127,6 +132,7 @@ export default function CreateGameScreen() {
 		savedFriendlyRobber,
 		savedLimitMonopoly,
 		savedTradeMode,
+		savedSpectators,
 		savedExtraBuild,
 		touched,
 	])
@@ -139,6 +145,7 @@ export default function CreateGameScreen() {
 			friendlyRobber,
 			limitMonopoly,
 			tradeMode,
+			spectators,
 			extraBuild: {
 				enabled: extraBuildEnabled,
 				buildPhases,
@@ -158,6 +165,8 @@ export default function CreateGameScreen() {
 			savedDefaults.settings.limitMonopoly ||
 		currentDefaults.settings.tradeMode !==
 			savedDefaults.settings.tradeMode ||
+		currentDefaults.settings.spectators !==
+			savedDefaults.settings.spectators ||
 		currentDefaults.settings.extraBuild.enabled !==
 			savedExtraBuild.enabled ||
 		currentDefaults.settings.extraBuild.buildPhases !==
@@ -212,6 +221,7 @@ export default function CreateGameScreen() {
 			friendlyRobber,
 			limitMonopoly,
 			tradeMode,
+			spectators,
 			extraBuild: {
 				enabled: extraBuildEnabled,
 				buildPhases,
@@ -384,6 +394,16 @@ export default function CreateGameScreen() {
 										value={friendlyRobber}
 										onToggle={() => {
 											setFriendlyRobber((v) => !v)
+											setTouched(true)
+										}}
+									/>
+									<CompactToggleRow
+										icon="eye"
+										title="Allow spectators"
+										description="Let friends of any player watch this game."
+										value={spectators}
+										onToggle={() => {
+											setSpectators((v) => !v)
 											setTouched(true)
 										}}
 									/>

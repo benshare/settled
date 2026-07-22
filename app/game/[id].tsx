@@ -9,6 +9,7 @@ import { BoardLegend } from '@/lib/catan/BoardLegend'
 import { ActionLog } from '@/lib/catan/ActionLog'
 import { ChatProvider } from '@/lib/catan/chatContext'
 import { ChatButton, ChatPanel } from '@/lib/catan/GameChat'
+import { WatcherButton } from '@/lib/catan/Watchers'
 import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
@@ -214,7 +215,7 @@ export default function GameDetailScreen() {
 
 function GameBody() {
 	const { user } = useAuth()
-	const { game, gameState, ready, publicVP, selfVP } = useGame()
+	const { game, gameState, ready, publicVP, selfVP, isSpectator } = useGame()
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const pickBonus = useGamesStore((s) => s.pickBonus)
 	const placeSettlement = useGamesStore((s) => s.placeSettlement)
@@ -1263,7 +1264,17 @@ function GameBody() {
 				/>
 			)}
 
-			{inPlacement && gameState && (
+			{/* A spectator has no bottom bar to read the table's state from,
+			    so the one line they do get has to cover every phase. */}
+			{isSpectator && gameState && !inGameOver && (
+				<View style={styles.statusWrap}>
+					<Text style={styles.statusLine}>
+						{spectatorStatus(game, gameState, profilesById)}
+					</Text>
+				</View>
+			)}
+
+			{inPlacement && gameState && !isSpectator && (
 				<PlacementHeader
 					game={game}
 					gameState={gameState}
@@ -1341,101 +1352,105 @@ function GameBody() {
 					</View>
 				)}
 
-			{!inPlacement && !inGameOver && !inBonusSelection && gameState && (
-				<>
-					{!inRoadBuilding && (
-						<BuildTradeBar
-							active={buildTool}
-							enabled={buildEnabled}
-							curseHints={buildCurseHints}
-							meIdx={meIdx}
-							tradeEnabled={tradeButtonEnabled}
-							tradeActive={tradeButtonActive}
-							devCardsEnabled={!!gameState?.config.devCards}
-							carpenterEnabled={
-								myPlayer?.bonus === 'carpenter'
-									? canBuildThisTurn &&
-										!myPlayer.boughtCarpenterVPThisTurn &&
-										myPlayer.resources.wood >= 4
-									: undefined
-							}
-							superCityEnabled={
-								myPlayer?.bonus === 'metropolitan'
-									? superCityEnabled
-									: undefined
-							}
-							superCityActive={buildTool === 'super_city'}
-							accountantEnabled={
-								myPlayer?.bonus === 'accountant'
-									? accountantEnabled
-									: undefined
-							}
-							investorEnabled={
-								myPlayer?.bonus === 'investor'
-									? canBuildThisTurn &&
-										RESOURCES.some((r) =>
-											canInvest(
-												myPlayer,
-												r,
-												selfVP[meIdx]
-											)
-										)
-									: undefined
-							}
-							onSelect={onBuildToolSelect}
-							onTradePress={onTradePress}
-							onBuyDevCard={onBuyDevCard}
-							onBuyCarpenterVP={onBuyCarpenterVP}
-							onSelectSuperCity={() =>
-								onBuildToolSelect('super_city')
-							}
-							onAccountant={() => setAccountantOpen(true)}
-							onInvest={() => setInvestOpen(true)}
-						/>
-					)}
-					{inRoadBuilding && (
-						<RoadBuildingStatus
-							game={game}
-							gameState={gameState}
-							meIdx={meIdx}
-							profilesById={profilesById}
-						/>
-					)}
-					{inRobberFlow && (
-						<RobberStatus
-							game={game}
-							gameState={gameState}
-							meIdx={meIdx}
-							profilesById={profilesById}
-						/>
-					)}
-					{gameState.phase.kind === 'discard' &&
-						meIdx >= 0 &&
-						gameState.phase.pending[meIdx] !== undefined && (
-							<DiscardBar
-								hand={gameState.players[meIdx].resources}
-								required={gameState.phase.pending[meIdx]!}
-								submitting={submitting}
-								isShepherd={
-									gameState.players[meIdx]?.bonus ===
-									'shepherd'
+			{!inPlacement &&
+				!inGameOver &&
+				!inBonusSelection &&
+				!isSpectator &&
+				gameState && (
+					<>
+						{!inRoadBuilding && (
+							<BuildTradeBar
+								active={buildTool}
+								enabled={buildEnabled}
+								curseHints={buildCurseHints}
+								meIdx={meIdx}
+								tradeEnabled={tradeButtonEnabled}
+								tradeActive={tradeButtonActive}
+								devCardsEnabled={!!gameState?.config.devCards}
+								carpenterEnabled={
+									myPlayer?.bonus === 'carpenter'
+										? canBuildThisTurn &&
+											!myPlayer.boughtCarpenterVPThisTurn &&
+											myPlayer.resources.wood >= 4
+										: undefined
 								}
-								onSubmit={onDiscard}
+								superCityEnabled={
+									myPlayer?.bonus === 'metropolitan'
+										? superCityEnabled
+										: undefined
+								}
+								superCityActive={buildTool === 'super_city'}
+								accountantEnabled={
+									myPlayer?.bonus === 'accountant'
+										? accountantEnabled
+										: undefined
+								}
+								investorEnabled={
+									myPlayer?.bonus === 'investor'
+										? canBuildThisTurn &&
+											RESOURCES.some((r) =>
+												canInvest(
+													myPlayer,
+													r,
+													selfVP[meIdx]
+												)
+											)
+										: undefined
+								}
+								onSelect={onBuildToolSelect}
+								onTradePress={onTradePress}
+								onBuyDevCard={onBuyDevCard}
+								onBuyCarpenterVP={onBuyCarpenterVP}
+								onSelectSuperCity={() =>
+									onBuildToolSelect('super_city')
+								}
+								onAccountant={() => setAccountantOpen(true)}
+								onInvest={() => setInvestOpen(true)}
 							/>
 						)}
-					{gameState.phase.kind === 'special_build' && (
-						<SpecialBuildBar
-							game={game}
-							gameState={gameState}
-							meIdx={meIdx}
-							profilesById={profilesById}
-							submitting={submitting}
-							onDone={onEndSpecialBuild}
-							onHonk={onHonk}
-						/>
-					)}
-				</>
-			)}
+						{inRoadBuilding && (
+							<RoadBuildingStatus
+								game={game}
+								gameState={gameState}
+								meIdx={meIdx}
+								profilesById={profilesById}
+							/>
+						)}
+						{inRobberFlow && (
+							<RobberStatus
+								game={game}
+								gameState={gameState}
+								meIdx={meIdx}
+								profilesById={profilesById}
+							/>
+						)}
+						{gameState.phase.kind === 'discard' &&
+							meIdx >= 0 &&
+							gameState.phase.pending[meIdx] !== undefined && (
+								<DiscardBar
+									hand={gameState.players[meIdx].resources}
+									required={gameState.phase.pending[meIdx]!}
+									submitting={submitting}
+									isShepherd={
+										gameState.players[meIdx]?.bonus ===
+										'shepherd'
+									}
+									onSubmit={onDiscard}
+								/>
+							)}
+						{gameState.phase.kind === 'special_build' && (
+							<SpecialBuildBar
+								game={game}
+								gameState={gameState}
+								meIdx={meIdx}
+								profilesById={profilesById}
+								submitting={submitting}
+								onDone={onEndSpecialBuild}
+								onHonk={onHonk}
+							/>
+						)}
+					</>
+				)}
 
 			{gameState && (
 				<PlayerDetailOverlay
@@ -1703,7 +1718,7 @@ function GameBody() {
 				// the PlayerStrip and placement header, so it's measured.
 				onLayout={(e) => setBoardTop(e.nativeEvent.layout.y)}
 			>
-				{liveOffer && (
+				{liveOffer && !isSpectator && (
 					<TradeBanner
 						offer={liveOffer}
 						meIdx={meIdx}
@@ -1783,12 +1798,12 @@ function GameBody() {
 				)}
 				<View pointerEvents="none" style={styles.boardInsetTop} />
 				<View pointerEvents="none" style={styles.boardInsetBottom} />
-				{gameState && !inBonusSelection && (
+				{gameState && (!inBonusSelection || isSpectator) && (
 					<BoardLegend
 						devCardsEnabled={!!gameState.config.devCards}
 					/>
 				)}
-				{gameState && !inBonusSelection && (
+				{gameState && (!inBonusSelection || isSpectator) && (
 					<ActionLog
 						events={(game.events ?? []) as GameEvent[]}
 						playerOrder={game.player_order}
@@ -1796,7 +1811,12 @@ function GameBody() {
 						meIdx={meIdx}
 					/>
 				)}
-				{gameState && !inBonusSelection && <ChatButton />}
+				{gameState && (!inBonusSelection || isSpectator) && (
+					<ChatButton />
+				)}
+				{gameState && (!inBonusSelection || isSpectator) && (
+					<WatcherButton />
+				)}
 				{pendingConfirm && (
 					<ConfirmBar
 						title={pendingConfirm.title}
@@ -1805,7 +1825,7 @@ function GameBody() {
 						onCancel={() => setPendingConfirm(null)}
 					/>
 				)}
-				{bonusSelectionData && (
+				{bonusSelectionData && !isSpectator && (
 					<View style={styles.bonusPaneFloat}>
 						<BonusSelection
 							hand={bonusSelectionData.myHand}
@@ -1837,51 +1857,55 @@ function GameBody() {
 				</View>
 			)}
 
-			{inMainLoop && !inGameOver && gameState && !tradePanelOpen && (
-				<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
-					<MainLoopBar
-						game={game}
-						gameState={gameState}
-						meIdx={meIdx}
-						isMyTurn={isMyActiveTurn}
-						profilesById={profilesById}
-						submitting={submitting}
-						onRoll={onRoll}
-						onConfirmRoll={onConfirmRoll}
-						onRerollDice={onRerollDice}
-						onEndTurn={onEndTurn}
-						onHonk={onHonk}
-						onRitualPress={
-							isMyActiveTurn &&
-							gameState.phase.kind === 'roll' &&
-							!gameState.phase.pending?.dice &&
-							myPlayer?.bonus === 'ritualist' &&
-							!myPlayer?.ritualWasUsedThisTurn
-								? () => setRitualOpen(true)
-								: undefined
-						}
-						onShepherdPress={
-							isMyActiveTurn &&
-							gameState.phase.kind === 'roll' &&
-							!gameState.phase.pending?.dice &&
-							myPlayer &&
-							canShepherdSwap(myPlayer)
-								? () => setShepherdOpen(true)
-								: undefined
-						}
-						onForgerMovePress={
-							isMyActiveTurn &&
-							gameState.phase.kind === 'roll' &&
-							!gameState.phase.pending?.dice &&
-							myPlayer &&
-							forgerActive(myPlayer) &&
-							!myPlayer.forgerMovedThisTurn
-								? () => setForgerMoveOpen(true)
-								: undefined
-						}
-					/>
-				</Animated.View>
-			)}
+			{inMainLoop &&
+				!inGameOver &&
+				!isSpectator &&
+				gameState &&
+				!tradePanelOpen && (
+					<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
+						<MainLoopBar
+							game={game}
+							gameState={gameState}
+							meIdx={meIdx}
+							isMyTurn={isMyActiveTurn}
+							profilesById={profilesById}
+							submitting={submitting}
+							onRoll={onRoll}
+							onConfirmRoll={onConfirmRoll}
+							onRerollDice={onRerollDice}
+							onEndTurn={onEndTurn}
+							onHonk={onHonk}
+							onRitualPress={
+								isMyActiveTurn &&
+								gameState.phase.kind === 'roll' &&
+								!gameState.phase.pending?.dice &&
+								myPlayer?.bonus === 'ritualist' &&
+								!myPlayer?.ritualWasUsedThisTurn
+									? () => setRitualOpen(true)
+									: undefined
+							}
+							onShepherdPress={
+								isMyActiveTurn &&
+								gameState.phase.kind === 'roll' &&
+								!gameState.phase.pending?.dice &&
+								myPlayer &&
+								canShepherdSwap(myPlayer)
+									? () => setShepherdOpen(true)
+									: undefined
+							}
+							onForgerMovePress={
+								isMyActiveTurn &&
+								gameState.phase.kind === 'roll' &&
+								!gameState.phase.pending?.dice &&
+								myPlayer &&
+								forgerActive(myPlayer) &&
+								!myPlayer.forgerMovedThisTurn
+									? () => setForgerMoveOpen(true)
+									: undefined
+							}
+						/>
+					</Animated.View>
+				)}
 
 			{tradePanelOpen && myHand && gameState && (
 				<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
@@ -2470,6 +2494,63 @@ function PlacementHeader({
 			<Text style={styles.statusLine}>{message}</Text>
 		</View>
 	)
+}
+
+// The whole of a spectator's turn-state readout. Players learn what the table
+// is waiting on from the bottom bars, which a spectator doesn't get — so this
+// one line has to cover every phase, including the sub-phases that would
+// otherwise read as the game having simply stopped.
+function spectatorStatus(
+	game: NonNullable<ReturnType<typeof useGame>['game']>,
+	gameState: NonNullable<ReturnType<typeof useGame>['gameState']>,
+	profilesById: Record<string, Profile>
+): string {
+	const nameOf = (idx: number) =>
+		profilesById[game.player_order[idx]]?.username ?? 'Player'
+	const listOf = (idxs: number[]) => idxs.map(nameOf).join(', ')
+	const current = nameOf(game.current_turn ?? 0)
+	const phase = gameState.phase
+
+	switch (phase.kind) {
+		case 'select_bonus':
+			return 'Players are choosing bonuses'
+		case 'initial_placement':
+			return `${current} is placing ${prefix(phase.step)} ${phase.step}`
+		case 'post_placement':
+			return 'Players are setting up their bonuses'
+		case 'roll':
+			return `${current}'s turn to roll`
+		case 'main':
+			return `${current}'s turn`
+		case 'discard': {
+			const owing = Object.keys(phase.pending).map(Number)
+			return owing.length > 0
+				? `Waiting on ${listOf(owing)} to discard`
+				: `${current}'s turn`
+		}
+		case 'move_robber':
+			return `${current} is moving the robber`
+		case 'steal':
+			return `${current} is stealing a card`
+		case 'road_building':
+			return `${current} is placing free roads`
+		case 'scout_pick':
+			return `${nameOf(phase.owner)} is peeking at dev cards`
+		case 'curio_pick':
+			return `Waiting on ${listOf(phase.pending)} to claim 3 resources`
+		case 'forger_pick':
+			return phase.queue.length > 0
+				? `${nameOf(phase.queue[0].idx)} is forging a copy`
+				: `${current}'s turn`
+		case 'magician_pick':
+			return `${nameOf(phase.roller)} is working their magic`
+		case 'special_build':
+			return phase.queue.length > 0
+				? `${nameOf(phase.queue[0])} is taking an extra build`
+				: `${current}'s turn`
+		case 'game_over':
+			return 'Game over'
+	}
 }
 
 function prefix(word: string): string {

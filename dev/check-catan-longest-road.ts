@@ -26,6 +26,7 @@ function fresh(players = 3): GameState {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

@@ -118,6 +118,7 @@ function testValidRobberHexes() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -140,6 +141,7 @@ function testStealCandidatesOpponentWithCards() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -171,6 +173,7 @@ function testStealCandidatesEmptyHand() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -196,6 +199,7 @@ function testStealCandidatesExcludesSelf() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -226,6 +230,7 @@ function testDistributeSkipsRobberHex() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

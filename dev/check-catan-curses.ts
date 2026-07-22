@@ -59,6 +59,7 @@ function baseState(): GameState {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

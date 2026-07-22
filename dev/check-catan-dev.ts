@@ -88,6 +88,7 @@ function testCanBuyDevCard() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -150,6 +151,7 @@ function testCanBuyDevCard() {
 			friendlyRobber: false,
 			limitMonopoly: false,
 			tradeMode: 'automatic',
+			spectators: true,
 			extraBuild: {
 				enabled: false,
 				buildPhases: 'every',
@@ -198,6 +200,7 @@ function testLargestArmyStrictOvertake() {
 			friendlyRobber: false,
 			limitMonopoly: false,
 			tradeMode: 'automatic',
+			spectators: true,
 			extraBuild: {
 				enabled: false,
 				buildPhases: 'every',
@@ -240,6 +243,7 @@ function testTotalVP() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -316,6 +320,7 @@ function testInitialGameStateSeedsDevState() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -340,6 +345,7 @@ function testInitialGameStateSeedsDevState() {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

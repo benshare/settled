@@ -89,6 +89,10 @@ export type GameConfig = {
 	limitMonopoly: boolean
 	// How player-to-player trades resolve. See TradeMode.
 	tradeMode: TradeMode
+	// Whether friends of any player may watch this game. Access control reads
+	// the denormalized `games.spectators` column, not this field — see
+	// .claude/specs/spectating.md.
+	spectators: boolean
 	// See ExtraBuildConfig. Only affects games with >4 players; ignored
 	// otherwise.
 	extraBuild: ExtraBuildConfig
@@ -108,6 +112,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	friendlyRobber: false,
 	limitMonopoly: false,
 	tradeMode: 'automatic',
+	spectators: true,
 	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
 }
 
@@ -148,6 +153,13 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			src.tradeMode === 'confirm' || src.tradeMode === 'automatic'
 				? src.tradeMode
 				: DEFAULT_CONFIG.tradeMode,
+		// A legacy row has no key and so reads as allowed, while its
+		// `games.spectators` column stays false — the column is the only
+		// authority for access, this value only feeds the settings summary.
+		spectators:
+			typeof src.spectators === 'boolean'
+				? src.spectators
+				: DEFAULT_CONFIG.spectators,
 		numberLayout:
 			src.numberLayout === 'spiral' || src.numberLayout === 'random'
 				? src.numberLayout
@@ -240,6 +252,9 @@ export function summarizeGameConfig(
 	}
 	if (config.tradeMode !== DEFAULT_CONFIG.tradeMode) {
 		parts.push('Confirm trades')
+	}
+	if (config.spectators !== DEFAULT_CONFIG.spectators) {
+		parts.push('Spectators disabled')
 	}
 	// Extra build phases only apply to >4 player games, so only surface a
 	// non-default value there.
