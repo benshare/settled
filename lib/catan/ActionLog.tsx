@@ -752,6 +752,7 @@ const styles = StyleSheet.create({
 	},
 	header: {
 		flexDirection: 'row',
+		flexShrink: 0,
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		paddingHorizontal: spacing.sm,
@@ -772,6 +773,7 @@ const styles = StyleSheet.create({
 	},
 	filterScroll: {
 		flexGrow: 0,
+		flexShrink: 0,
 		borderBottomWidth: 1,
 		borderBottomColor: colors.borderLight,
 	},
