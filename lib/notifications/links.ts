@@ -23,7 +23,7 @@ export function resolveNotificationLink(data: unknown): Href | null {
 	const d = data as NotificationData
 	switch (d.kind) {
 		case 'game_invite':
-			return '/play'
+			return '/games'
 		case 'game_started':
 		case 'your_turn':
 		case 'discard_required':
@@ -32,11 +32,11 @@ export function resolveNotificationLink(data: unknown): Href | null {
 		case 'trade_accept_offered':
 		case 'trade_confirmed':
 		case 'trade_rejected_all':
-			return d.game_id ? (`/game/${d.game_id}` as Href) : '/play'
+			return d.game_id ? (`/game/${d.game_id}` as Href) : '/games'
 		// Land in the conversation, not merely on the board — the message is
 		// what the tap was about.
 		case 'chat_message':
-			return d.game_id ? (`/game/${d.game_id}?chat=1` as Href) : '/play'
+			return d.game_id ? (`/game/${d.game_id}?chat=1` as Href) : '/games'
 		case 'friend_request':
 			return '/friends'
 		default:

@@ -69,7 +69,7 @@ export default function LoginScreen() {
 			.loadProfile(data.session.user.id)
 		setLoading(false)
 		if (profile) {
-			router.replace('/(app)/play')
+			router.replace('/(app)/games')
 		} else {
 			router.replace('/(auth)/set-username')
 		}
@@ -94,7 +94,7 @@ export default function LoginScreen() {
 				.loadProfile(data.session.user.id)
 			setLoading(false)
 			if (profile) {
-				router.replace('/(app)/play')
+				router.replace('/(app)/games')
 			} else {
 				router.replace('/(auth)/set-username')
 			}

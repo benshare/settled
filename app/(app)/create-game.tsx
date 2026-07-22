@@ -224,7 +224,7 @@ export default function CreateGameScreen() {
 			setError(error)
 			return
 		}
-		router.replace('/play')
+		router.replace('/games')
 	}
 
 	async function onSaveDefaults() {

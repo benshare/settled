@@ -11,7 +11,7 @@ import { useTheme } from '@/lib/ThemeContext'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
 	ActivityIndicator,
 	Pressable,
@@ -22,7 +22,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-export default function PlayScreen() {
+export default function GamesScreen() {
 	const { user } = useAuth()
 	const router = useRouter()
 	const { colors } = useTheme()
@@ -30,25 +30,29 @@ export default function PlayScreen() {
 	const pendingRequests = useGamesStore((s) => s.pendingRequests)
 	const activeGames = useGamesStore((s) => s.activeGames)
 	const spectatableGames = useGamesStore((s) => s.spectatableGames)
+	const completeGames = useGamesStore((s) => s.completeGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
+	const [historyOpen, setHistoryOpen] = useState(false)
 
 	const storeLoaded =
 		pendingRequests !== undefined &&
 		activeGames !== undefined &&
-		spectatableGames !== undefined
+		spectatableGames !== undefined &&
+		completeGames !== undefined
 	// A populated Watch list isn't "no games yet" in spirit, but the prompt to
 	// start one reads as wrong sitting under a list of games on screen.
 	const showEmpty =
 		storeLoaded &&
 		pendingRequests.length === 0 &&
 		activeGames.length === 0 &&
-		spectatableGames.length === 0
+		spectatableGames.length === 0 &&
+		completeGames.length === 0
 
 	return (
 		<SafeAreaView style={styles.safe}>
 			<ScrollView contentContainerStyle={styles.container}>
 				<View style={styles.header}>
-					<Text style={styles.title}>Play</Text>
+					<Text style={styles.title}>Games</Text>
 					<Pressable
 						onPress={() => router.push('/create-game')}
 						style={({ pressed }) => [
@@ -112,6 +116,40 @@ export default function PlayScreen() {
 								onPress={() => router.push(`/game/${g.id}`)}
 							/>
 						))}
+					</View>
+				)}
+
+				{(completeGames ?? []).length > 0 && (
+					<View style={styles.section}>
+						<Pressable
+							onPress={() => setHistoryOpen((open) => !open)}
+							style={({ pressed }) => [
+								styles.historyHeader,
+								pressed && styles.pressed,
+							]}
+							hitSlop={8}
+						>
+							<Text style={styles.sectionHeading}>History</Text>
+							<Ionicons
+								name={
+									historyOpen
+										? 'chevron-down'
+										: 'chevron-forward'
+								}
+								size={16}
+								color={colors.textSecondary}
+							/>
+						</Pressable>
+						{historyOpen &&
+							(completeGames ?? []).map((g) => (
+								<GameHistoryRow
+									key={g.id}
+									game={g}
+									profilesById={profilesById}
+									meId={user?.id}
+									onPress={() => router.push(`/game/${g.id}`)}
+								/>
+							))}
 					</View>
 				)}
 
@@ -257,6 +295,59 @@ function SpectateRow({
 	)
 }
 
+// A finished game, listed under History: same participants, but dated rather
+// than tappable-into-a-turn, so the row carries a secondary line instead of an
+// icon.
+function GameHistoryRow({
+	game,
+	profilesById,
+	meId,
+	onPress,
+}: {
+	game: Game
+	profilesById: Record<string, Profile>
+	meId: string | undefined
+	onPress: () => void
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	const names = game.participants
+		.map((id) => {
+			if (id === meId) return 'me'
+			return profilesById[id]?.username ?? '…'
+		})
+		.join(', ')
+	return (
+		<Pressable
+			onPress={onPress}
+			style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+		>
+			<View style={styles.historyRowText}>
+				<Text style={styles.rowPrimary} numberOfLines={1}>
+					{names}
+				</Text>
+				<Text style={styles.rowSecondary}>
+					{formatDate(game.created_at)}
+				</Text>
+			</View>
+			<Ionicons
+				name="chevron-forward"
+				size={20}
+				color={colors.textMuted}
+			/>
+		</Pressable>
+	)
+}
+
+function formatDate(iso: string): string {
+	const d = new Date(iso)
+	return d.toLocaleDateString(undefined, {
+		month: 'short',
+		day: 'numeric',
+		year: 'numeric',
+	})
+}
+
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
 		safe: {
@@ -323,6 +414,23 @@ function makeStyles(colors: ColorScheme) {
 			flex: 1,
 			fontSize: font.md,
 			color: colors.text,
+		},
+		historyHeader: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.xs,
+		},
+		historyRowText: {
+			flex: 1,
+			gap: 2,
+		},
+		rowPrimary: {
+			fontSize: font.md,
+			color: colors.text,
+		},
+		rowSecondary: {
+			fontSize: font.sm,
+			color: colors.textMuted,
 		},
 		emptyText: {
 			fontSize: font.base,
