@@ -11,14 +11,11 @@ import {
 	Pressable,
 	StyleProp,
 	StyleSheet,
+	View,
 	ViewStyle,
 } from 'react-native'
 import Animated from 'react-native-reanimated'
 import { radius, spacing } from '../theme'
-
-// Animated so callers can pass a `layout` transition (e.g. a sheet that resizes
-// as its content grows/shrinks). Stays a Pressable so it still swallows taps.
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable)
 
 export function Modal({
 	visible,
@@ -44,19 +41,25 @@ export function Modal({
 			animationType="fade"
 			onRequestClose={onDismiss}
 		>
-			<Pressable
-				style={[styles.backdrop, backdropStyle]}
-				onPress={dismissOnBackdropPress ? onDismiss : undefined}
-			>
-				{/* Inner Pressable swallows taps so presses on the content never
-				    bubble to the backdrop and dismiss it. */}
-				<AnimatedPressable
+			<View style={[styles.backdrop, backdropStyle]}>
+				{/* The dismiss target sits *behind* the content rather than
+				    wrapping it. A Pressable ancestor claims the touch responder
+				    on press-in, which starves any ScrollView inside the sheet of
+				    its drag gesture — as a sibling it can't, and taps on the
+				    content simply never reach it. */}
+				{dismissOnBackdropPress && onDismiss && (
+					<Pressable
+						style={StyleSheet.absoluteFill}
+						onPress={onDismiss}
+					/>
+				)}
+				<Animated.View
 					style={[styles.content, contentStyle]}
 					layout={layout}
 				>
 					{children}
-				</AnimatedPressable>
-			</Pressable>
+				</Animated.View>
+			</View>
 		</RNModal>
 	)
 }
