@@ -97,7 +97,6 @@ export function GameOverOverlay({
 	return (
 		<Modal
 			visible={visible}
-			dismissOnBackdropPress={false}
 			onDismiss={onDismiss}
 			contentStyle={[
 				styles.sheet,
