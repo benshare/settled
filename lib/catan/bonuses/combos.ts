@@ -6,16 +6,16 @@ import type { BonusId, CurseId } from './index'
 // at deal time (see dealBonusHands) when `config.bannedCombos` is on: curses go
 // out first, then each player's bonuses are drawn from what's compatible.
 export const BANNED_BONUSES_BY_CURSE: Record<CurseId, readonly BonusId[]> = {
-	age: [],
-	decadence: [],
-	ambition: [],
-	elitism: [],
+	age: ['accountant', 'investor'],
+	decadence: ['metropolitan'],
+	ambition: ['thrill_seeker'],
+	elitism: ['metropolitan', 'haunt'],
 	asceticism: [],
 	nomadism: [],
-	avarice: [],
-	power: [],
-	compaction: [],
-	provinciality: [],
+	avarice: ['hoarder'],
+	power: ['metropolitan', 'plutocrat'],
+	compaction: ['explorer', 'fencer'],
+	provinciality: ['specialist', 'merchant'],
 	youth: [],
 }
 
