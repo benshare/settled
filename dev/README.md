@@ -44,3 +44,22 @@ Unit-style checks for `lib/catan/placement.ts` — distance rule, target-settlem
 ```sh
 npx tsx dev/check-catan-placement.ts
 ```
+
+### `check-stats.ts`
+
+Unit-style checks for `lib/stats.ts` — the Stats tab's aggregations (averages over empty input, per-game rounds, opponent counting and the top-5 cap, bonus pick/win rates and their tie-breaks). Run after editing the stats derivations.
+
+```sh
+npx tsx dev/check-stats.ts
+```
+
+### `backfill-game-results.ts`
+
+Fills `game_results` for games that finished before the edge function started writing summaries. Reads each completed game's `game_states` row and scores it with the real `totalVP`, so backfilled rows match what a game completing today would record. Idempotent — games that already have rows are skipped. `offered_bonuses` stays null; the declined bonus pair was never stored for those games.
+
+Unlike the other check scripts this one talks to the database, so it needs the env file. Dry-run it first.
+
+```sh
+npx tsx --env-file=.env dev/backfill-game-results.ts --dry-run
+npx tsx --env-file=.env dev/backfill-game-results.ts
+```

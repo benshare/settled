@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       friend_requests: {
@@ -212,6 +187,66 @@ export type Database = {
           {
             foreignKeyName: "game_requests_proposer_profiles_fkey"
             columns: ["proposer"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      game_results: {
+        Row: {
+          bonus: string | null
+          completed_at: string
+          curse: string | null
+          game_id: string
+          offered_bonuses: string[] | null
+          placement: number
+          player_count: number
+          player_index: number
+          points: number
+          turns: number
+          user_id: string
+          won: boolean
+        }
+        Insert: {
+          bonus?: string | null
+          completed_at?: string
+          curse?: string | null
+          game_id: string
+          offered_bonuses?: string[] | null
+          placement: number
+          player_count: number
+          player_index: number
+          points: number
+          turns: number
+          user_id: string
+          won: boolean
+        }
+        Update: {
+          bonus?: string | null
+          completed_at?: string
+          curse?: string | null
+          game_id?: string
+          offered_bonuses?: string[] | null
+          placement?: number
+          player_count?: number
+          player_index?: number
+          points?: number
+          turns?: number
+          user_id?: string
+          won?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_results_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_results_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -518,9 +553,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       friend_request_status: ["pending", "accepted", "rejected"],
