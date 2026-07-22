@@ -7,7 +7,13 @@ import {
 	type PortKind,
 	type Resource,
 } from './board'
-import { BONUS_POOL, CURSE_POOL, type BonusId, type CurseId } from './bonuses'
+import {
+	BONUS_POOL,
+	CURSE_POOL,
+	isBannedCombo,
+	type BonusId,
+	type CurseId,
+} from './bonuses'
 import { buildInitialDevDeck } from './dev'
 import {
 	type GameConfig,
@@ -229,20 +235,29 @@ function sheepPortsAdjacent(kinds: readonly PortKind[]): boolean {
 // no curse is ever offered to two players or twice to the same player. Bonuses
 // come from the subset of BONUS_POOL whose `set` is in `bonusSets`, falling
 // back to the full pool when the filter produces nothing.
+//
+// Curses go out first so that, when `bannedCombos` is on, each player's two
+// bonuses can be drawn from what's compatible with the curse they already hold
+// (see BANNED_BONUSES_BY_CURSE).
 export function dealBonusHands(
 	playerCount: number,
-	bonusSets: readonly string[]
+	bonusSets: readonly string[],
+	bannedCombos = true
 ): Record<number, SelectBonusHand> {
 	const filtered = BONUS_POOL.filter((b) => bonusSets.includes(b.set))
 	const bonusPool = filtered.length > 0 ? filtered : BONUS_POOL
 	const drawBonus = dealer(bonusPool.map((b) => b.id as BonusId))
 	const drawCurse = dealer(CURSE_POOL.map((c) => c.id as CurseId))
 	const hands: Record<number, SelectBonusHand> = {}
+	const curses = Array.from({ length: playerCount }, () => drawCurse())
 	for (let i = 0; i < playerCount; i++) {
-		const first = drawBonus()
+		const curse = curses[i]
+		const compatible = (b: BonusId) =>
+			!bannedCombos || !isBannedCombo(curse, b)
+		const first = drawBonus(compatible)
 		hands[i] = {
-			offered: [first, drawBonus(first)],
-			curse: drawCurse(),
+			offered: [first, drawBonus((b) => b !== first && compatible(b))],
+			curse,
 			chosen: null,
 		}
 	}
@@ -251,19 +266,23 @@ export function dealBonusHands(
 
 // Deals from a shuffled pass over `pool`, reshuffling only once the pass is
 // exhausted — so a card repeats only after every other card has been dealt.
-// `exclude` skips a card the caller is already holding, which keeps a player's
+// `accept` filters to the cards the caller can take (a bonus they aren't
+// already holding, one compatible with their curse), which keeps a player's
 // two offered bonuses distinct even when the pool is smaller than the table
-// needs (e.g. set 3 alone is 7 cards, and a 4-player table wants 8).
-function dealer<T>(pool: readonly T[]): (exclude?: T) => T {
+// needs (e.g. set 3 alone is 7 cards, and a 4-player table wants 8). When no
+// card in the whole pool is acceptable the filter is ignored rather than
+// failing to deal.
+function dealer<T>(pool: readonly T[]): (accept?: (x: T) => boolean) => T {
 	if (pool.length < 2) throw new Error('pool too small to deal')
 	let bag: T[] = []
-	return (exclude?: T) => {
+	return (accept?: (x: T) => boolean) => {
 		if (bag.length === 0) bag = shuffle(pool)
-		let idx = bag.findIndex((x) => x !== exclude)
-		if (idx < 0) {
+		let idx = accept ? bag.findIndex(accept) : 0
+		if (idx < 0 && accept) {
 			bag = shuffle(pool)
-			idx = bag.findIndex((x) => x !== exclude)
+			idx = bag.findIndex(accept)
 		}
+		if (idx < 0) idx = 0
 		return bag.splice(idx, 1)[0]
 	}
 }
@@ -283,7 +302,11 @@ export function initialGameState(
 	if (config.bonuses) {
 		phase = {
 			kind: 'select_bonus',
-			hands: dealBonusHands(playerCount, config.bonusSets),
+			hands: dealBonusHands(
+				playerCount,
+				config.bonusSets,
+				config.bannedCombos
+			),
 		}
 	} else {
 		phase = { kind: 'initial_placement', round: 1, step: 'settlement' }

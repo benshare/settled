@@ -81,6 +81,7 @@ function testCanBuyDevCard() {
 	const base = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
@@ -142,6 +143,7 @@ function testCanBuyDevCard() {
 		config: {
 			bonuses: false,
 			bonusSets: ['1'],
+			bannedCombos: true,
 			devCards: false,
 			numberLayout: 'random',
 			honk: true,
@@ -189,6 +191,7 @@ function testLargestArmyStrictOvertake() {
 		const base = initialGameState('standard', 4, {
 			bonuses: false,
 			bonusSets: ['1'],
+			bannedCombos: true,
 			devCards: true,
 			numberLayout: 'random',
 			honk: true,
@@ -230,6 +233,7 @@ function testTotalVP() {
 	const base = initialGameState('standard', 2, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
@@ -305,6 +309,7 @@ function testInitialGameStateSeedsDevState() {
 	const on = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
@@ -328,6 +333,7 @@ function testInitialGameStateSeedsDevState() {
 	const off = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,

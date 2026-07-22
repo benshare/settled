@@ -95,6 +95,7 @@ function testRoadValidity() {
 	let s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -122,6 +123,7 @@ function testRoadBlockedByOpponentSettlement() {
 	let s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -163,6 +165,7 @@ function testSettlementValidity() {
 	let s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -196,6 +199,7 @@ function testSettlementNeedsRoad() {
 	let s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -221,6 +225,7 @@ function testCityValidity() {
 	let s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,

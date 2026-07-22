@@ -111,6 +111,7 @@ function testValidRobberHexes() {
 	const s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -132,6 +133,7 @@ function testStealCandidatesOpponentWithCards() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -162,6 +164,7 @@ function testStealCandidatesEmptyHand() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -186,6 +189,7 @@ function testStealCandidatesExcludesSelf() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -215,6 +219,7 @@ function testDistributeSkipsRobberHex() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,

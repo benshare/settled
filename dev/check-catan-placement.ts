@@ -72,6 +72,7 @@ function testFreshGameAllValid() {
 	const s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -92,6 +93,7 @@ function testDistanceRule() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -133,6 +135,7 @@ function testTargetSettlementRound1() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -154,6 +157,7 @@ function testTargetSettlementRound2() {
 	let s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -190,6 +194,7 @@ function testValidRoadEdges() {
 	let s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -224,6 +229,7 @@ function testStartingResourcesInterior() {
 	const s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -281,6 +287,7 @@ function testValidSettlementExcludesAllNeighbors() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,

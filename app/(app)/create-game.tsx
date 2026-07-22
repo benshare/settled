@@ -57,6 +57,9 @@ export default function CreateGameScreen() {
 	const [bonusSets, setBonusSets] = useState<string[]>(
 		savedDefaults.extras.bonusSets
 	)
+	const [bannedCombos, setBannedCombos] = useState(
+		savedDefaults.extras.bannedCombos
+	)
 	const [devCards, setDevCards] = useState(savedDefaults.settings.devCards)
 	const [numberLayout, setNumberLayout] = useState<NumberLayout>(
 		savedDefaults.settings.numberLayout
@@ -92,6 +95,7 @@ export default function CreateGameScreen() {
 	const [touched, setTouched] = useState(false)
 	const savedBonuses = savedDefaults.extras.bonuses
 	const savedBonusSets = savedDefaults.extras.bonusSets
+	const savedBannedCombos = savedDefaults.extras.bannedCombos
 	const savedDevCards = savedDefaults.settings.devCards
 	const savedNumberLayout = savedDefaults.settings.numberLayout
 	const savedHonk = savedDefaults.settings.honk
@@ -103,6 +107,7 @@ export default function CreateGameScreen() {
 		if (touched) return
 		setBonuses(savedBonuses)
 		setBonusSets(savedBonusSets)
+		setBannedCombos(savedBannedCombos)
 		setDevCards(savedDevCards)
 		setNumberLayout(savedNumberLayout)
 		setHonk(savedHonk)
@@ -115,6 +120,7 @@ export default function CreateGameScreen() {
 	}, [
 		savedBonuses,
 		savedBonusSets,
+		savedBannedCombos,
 		savedDevCards,
 		savedNumberLayout,
 		savedHonk,
@@ -139,7 +145,7 @@ export default function CreateGameScreen() {
 				moreThanSeven,
 			},
 		},
-		extras: { bonuses, bonusSets },
+		extras: { bonuses, bonusSets, bannedCombos },
 	}
 	const dirty =
 		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
@@ -159,6 +165,8 @@ export default function CreateGameScreen() {
 		currentDefaults.settings.extraBuild.moreThanSeven !==
 			savedExtraBuild.moreThanSeven ||
 		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses ||
+		currentDefaults.extras.bannedCombos !==
+			savedDefaults.extras.bannedCombos ||
 		!sameStringSet(
 			currentDefaults.extras.bonusSets,
 			savedDefaults.extras.bonusSets
@@ -197,6 +205,7 @@ export default function CreateGameScreen() {
 		const { error } = await createRequest(user.id, Array.from(selected), {
 			bonuses,
 			bonusSets,
+			bannedCombos,
 			devCards,
 			numberLayout,
 			honk,
@@ -468,54 +477,72 @@ export default function CreateGameScreen() {
 										}}
 									/>
 									{bonuses && (
-										<View style={styles.subOptions}>
-											{(['1', '2', '3'] as const).map(
-												(setId) => {
-													// Sets 1, 2, and 3 are all live.
-													const locked = false
-													return (
-														<CheckboxRow
-															key={setId}
-															label={`Set ${setId}`}
-															checked={bonusSets.includes(
-																setId
-															)}
-															disabled={locked}
-															onToggle={() => {
-																setBonusSets(
-																	(prev) => {
-																		if (
-																			prev.includes(
-																				setId
-																			)
-																		) {
-																			// Keep at least one set enabled.
+										<>
+											<View style={styles.subOptions}>
+												{(['1', '2', '3'] as const).map(
+													(setId) => {
+														// Sets 1, 2, and 3 are all live.
+														const locked = false
+														return (
+															<CheckboxRow
+																key={setId}
+																label={`Set ${setId}`}
+																checked={bonusSets.includes(
+																	setId
+																)}
+																disabled={
+																	locked
+																}
+																onToggle={() => {
+																	setBonusSets(
+																		(
+																			prev
+																		) => {
 																			if (
-																				prev.length <=
-																				1
-																			)
-																				return prev
-																			return prev.filter(
-																				(
-																					s
-																				) =>
-																					s !==
+																				prev.includes(
 																					setId
-																			)
+																				)
+																			) {
+																				// Keep at least one set enabled.
+																				if (
+																					prev.length <=
+																					1
+																				)
+																					return prev
+																				return prev.filter(
+																					(
+																						s
+																					) =>
+																						s !==
+																						setId
+																				)
+																			}
+																			return [
+																				...prev,
+																				setId,
+																			]
 																		}
-																		return [
-																			...prev,
-																			setId,
-																		]
-																	}
-																)
-																setTouched(true)
-															}}
-														/>
-													)
-												}
-											)}
-										</View>
+																	)
+																	setTouched(
+																		true
+																	)
+																}}
+															/>
+														)
+													}
+												)}
+											</View>
+											<CompactToggleRow
+												icon="close-circle"
+												title="Ban bad combos"
+												description="Never offer a bonus that clashes with a player's curse."
+												value={bannedCombos}
+												onToggle={() => {
+													setBannedCombos((v) => !v)
+													setTouched(true)
+												}}
+											/>
+										</>
 									)}
 								</CollapsibleSection>
 							</View>

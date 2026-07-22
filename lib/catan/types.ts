@@ -70,6 +70,10 @@ export type GameConfig = {
 	// Which bonus sets are in the draw pool when `bonuses` is on. Only '1' is
 	// live today; '2' and '3' are defined in the data but disabled in the UI.
 	bonusSets: string[]
+	// When true (the default), a player is never offered a bonus their curse
+	// bans — see BANNED_BONUSES_BY_CURSE in lib/catan/bonuses/combos.ts. Only
+	// meaningful while `bonuses` is on.
+	bannedCombos: boolean
 	devCards: boolean
 	numberLayout: NumberLayout
 	// Whether the Honk nudge (ping a stalled player after the idle threshold)
@@ -97,6 +101,7 @@ export type GameConfig = {
 export const DEFAULT_CONFIG: GameConfig = {
 	bonuses: false,
 	bonusSets: ['1'],
+	bannedCombos: true,
 	devCards: true,
 	numberLayout: 'spiral',
 	honk: true,
@@ -122,6 +127,10 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			src.bonusSets.every((s) => typeof s === 'string')
 				? (src.bonusSets as string[])
 				: DEFAULT_CONFIG.bonusSets,
+		bannedCombos:
+			typeof src.bannedCombos === 'boolean'
+				? src.bannedCombos
+				: DEFAULT_CONFIG.bannedCombos,
 		devCards:
 			typeof src.devCards === 'boolean'
 				? src.devCards
@@ -200,6 +209,9 @@ export function summarizeGameConfig(
 		}
 	} else if (nonDefaultSets) {
 		parts.push(`Bonuses (sets ${[...config.bonusSets].sort().join(', ')})`)
+	}
+	if (config.bonuses && !config.bannedCombos) {
+		parts.push('Curse pairings unrestricted')
 	}
 	if (config.devCards !== DEFAULT_CONFIG.devCards) {
 		parts.push(config.devCards ? 'Dev cards enabled' : 'Dev cards disabled')

@@ -1249,12 +1249,35 @@ const BONUS_SET_OF: Record<BonusId, '1' | '2' | '3'> = {
 	haunt: '3',
 }
 
+// Bonus / curse pairings that shouldn't be dealt together. Mirror of
+// lib/catan/bonuses/combos.ts. Enforced when `config.bannedCombos` is on.
+const BANNED_BONUSES_BY_CURSE: Record<CurseId, readonly BonusId[]> = {
+	age: [],
+	decadence: [],
+	ambition: [],
+	elitism: [],
+	asceticism: [],
+	nomadism: [],
+	avarice: [],
+	power: [],
+	compaction: [],
+	provinciality: [],
+	youth: [],
+}
+
+function isBannedCombo(curse: CurseId, bonus: BonusId): boolean {
+	return BANNED_BONUSES_BY_CURSE[curse]?.includes(bonus) ?? false
+}
+
 // Mirror of lib/catan/generate.ts dealBonusHands: deal every player's hand at
 // once, drawing bonuses and curses WITHOUT replacement across the whole table
-// so no card is ever offered to two players or twice to one player.
+// so no card is ever offered to two players or twice to one player. Curses go
+// out first so each player's bonuses can be drawn from what's compatible with
+// the curse they already hold (when `bannedCombos` is on).
 function dealBonusHands(
 	playerCount: number,
-	bonusSets: readonly string[]
+	bonusSets: readonly string[],
+	bannedCombos = true
 ): Record<number, SelectBonusHand> {
 	const filtered = BONUS_IDS.filter((id) =>
 		bonusSets.includes(BONUS_SET_OF[id])
@@ -1263,11 +1286,15 @@ function dealBonusHands(
 	const drawBonus = dealer(bonusPool)
 	const drawCurse = dealer(CURSE_IDS)
 	const hands: Record<number, SelectBonusHand> = {}
+	const curses = Array.from({ length: playerCount }, () => drawCurse())
 	for (let i = 0; i < playerCount; i++) {
-		const first = drawBonus()
+		const curse = curses[i]
+		const compatible = (b: BonusId) =>
+			!bannedCombos || !isBannedCombo(curse, b)
+		const first = drawBonus(compatible)
 		hands[i] = {
-			offered: [first, drawBonus(first)],
-			curse: drawCurse(),
+			offered: [first, drawBonus((b) => b !== first && compatible(b))],
+			curse,
 			chosen: null,
 		}
 	}
@@ -1275,19 +1302,22 @@ function dealBonusHands(
 }
 
 // Deals from a shuffled pass over `pool`, reshuffling only once the pass is
-// exhausted. `exclude` skips a card the caller is already holding, keeping a
-// player's two offered bonuses distinct even when the pool is smaller than the
-// table needs (set 3 alone is 7 cards; a 4-player table wants 8).
-function dealer<T>(pool: readonly T[]): (exclude?: T) => T {
+// exhausted. `accept` filters to the cards the caller can take, keeping a
+// player's two offered bonuses distinct — and compatible with their curse —
+// even when the pool is smaller than the table needs (set 3 alone is 7 cards;
+// a 4-player table wants 8). When nothing in the pool is acceptable the filter
+// is ignored rather than failing to deal.
+function dealer<T>(pool: readonly T[]): (accept?: (x: T) => boolean) => T {
 	if (pool.length < 2) throw new Error('pool too small to deal')
 	let bag: T[] = []
-	return (exclude?: T) => {
+	return (accept?: (x: T) => boolean) => {
 		if (bag.length === 0) bag = shuffle(pool)
-		let idx = bag.findIndex((x) => x !== exclude)
-		if (idx < 0) {
+		let idx = accept ? bag.findIndex(accept) : 0
+		if (idx < 0 && accept) {
 			bag = shuffle(pool)
-			idx = bag.findIndex((x) => x !== exclude)
+			idx = bag.findIndex(accept)
 		}
+		if (idx < 0) idx = 0
 		return bag.splice(idx, 1)[0]
 	}
 }
@@ -1312,6 +1342,9 @@ type ExtraBuildConfig = {
 type GameConfig = {
 	bonuses: boolean
 	bonusSets: string[]
+	// Absent on rows created before the option shipped — read defensively
+	// (`!== false`), defaulting to on.
+	bannedCombos?: boolean
 	devCards: boolean
 	numberLayout: NumberLayout
 	honk: boolean
@@ -3545,7 +3578,11 @@ async function handleRespond(
 		if (config.bonuses) {
 			initialPhase = {
 				kind: 'select_bonus',
-				hands: dealBonusHands(playerOrder.length, config.bonusSets),
+				hands: dealBonusHands(
+					playerOrder.length,
+					config.bonusSets,
+					config.bannedCombos !== false
+				),
 			}
 		} else {
 			initialPhase = INITIAL_PHASE

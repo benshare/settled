@@ -3,7 +3,11 @@
 // first failure. One `test*` function per bonus.
 
 import { boardFor, type Vertex } from '../lib/catan/board'
-import type { BonusId } from '../lib/catan/bonuses'
+import {
+	BANNED_BONUSES_BY_CURSE,
+	isBannedCombo,
+	type BonusId,
+} from '../lib/catan/bonuses'
 import {
 	BRICKLAYER_COST,
 	bonusOf,
@@ -88,6 +92,7 @@ function baseState(): GameState {
 	return initialGameState('standard', 3, {
 		bonuses: true,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
@@ -843,6 +848,41 @@ function testDealNoDuplicates() {
 	}
 }
 
+// The banned table ships empty, so stub a ban in and confirm the deal honours
+// it — and that flipping `bannedCombos` off lets the pairing through again.
+function testDealBannedCombos() {
+	const banned = BANNED_BONUSES_BY_CURSE as Record<string, readonly BonusId[]>
+	const original = banned.ambition
+	banned.ambition = ['gambler', 'veteran', 'hoarder']
+	try {
+		assert(isBannedCombo('ambition', 'gambler'), 'stubbed ban reads back')
+		assert(!isBannedCombo('age', 'gambler'), 'other curses unaffected')
+		let sawBannedWithoutRule = false
+		for (let trial = 0; trial < 300; trial++) {
+			const on = dealBonusHands(4, ['1'], true)
+			for (let i = 0; i < 4; i++) {
+				if (on[i].curse !== 'ambition') continue
+				for (const b of on[i].offered) {
+					assert(
+						!banned.ambition.includes(b),
+						`banned ${b} offered alongside ambition`
+					)
+				}
+			}
+			const off = dealBonusHands(4, ['1'], false)
+			for (let i = 0; i < 4; i++) {
+				if (off[i].curse !== 'ambition') continue
+				if (off[i].offered.some((b) => banned.ambition.includes(b))) {
+					sawBannedWithoutRule = true
+				}
+			}
+		}
+		assert(sawBannedWithoutRule, 'bannedCombos off still deals the pairing')
+	} finally {
+		banned.ambition = original
+	}
+}
+
 // --- Set 3 -----------------------------------------------------------------
 
 function hand(p: Partial<ResourceHand>): ResourceHand {
@@ -1098,6 +1138,7 @@ function main() {
 		['set3: magician', testMagician],
 		['set3: haunt ghosts', testHaunt],
 		['deal: no duplicate offers', testDealNoDuplicates],
+		['deal: banned combos', testDealBannedCombos],
 	]
 	for (const [name, fn] of tests) {
 		fn()

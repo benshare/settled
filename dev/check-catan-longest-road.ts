@@ -19,6 +19,7 @@ function fresh(players = 3): GameState {
 	return initialGameState('standard', players, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,

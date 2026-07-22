@@ -52,6 +52,7 @@ function baseState(): GameState {
 	return initialGameState('standard', 3, {
 		bonuses: true,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,

@@ -58,6 +58,7 @@ function testRolledSevenYieldsNothing() {
 	const s = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -78,6 +79,7 @@ function testSettlementGetsOne() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -104,6 +106,7 @@ function testCityGetsTwo() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -129,6 +132,7 @@ function testMismatchedRollPaysNothing() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,

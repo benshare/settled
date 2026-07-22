@@ -24,7 +24,7 @@ export type GameDefaults = {
 		tradeMode: TradeMode
 		extraBuild: ExtraBuildConfig
 	}
-	extras: { bonuses: boolean; bonusSets: string[] }
+	extras: { bonuses: boolean; bonusSets: string[]; bannedCombos: boolean }
 }
 
 // Default used before a profile loads, and as a fallback when a row is
@@ -45,7 +45,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 			moreThanSeven: false,
 		},
 	},
-	extras: { bonuses: false, bonusSets: ['1'] },
+	extras: { bonuses: false, bonusSets: ['1'], bannedCombos: true },
 }
 
 // Narrow the JSONB blob to GameDefaults. Silently falls back on shape drift.
@@ -97,6 +97,10 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				extras.bonusSets.every((s) => typeof s === 'string')
 					? (extras.bonusSets as string[])
 					: DEFAULT_GAME_DEFAULTS.extras.bonusSets,
+			bannedCombos:
+				typeof extras?.bannedCombos === 'boolean'
+					? extras.bannedCombos
+					: DEFAULT_GAME_DEFAULTS.extras.bannedCombos,
 		},
 	}
 }

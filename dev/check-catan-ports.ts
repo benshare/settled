@@ -103,6 +103,7 @@ function checkGenerate() {
 	const gs = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -122,6 +123,7 @@ function stateWithSettlement(vertex: string, portKind: string): GameState {
 	const base = initialGameState('standard', 2, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
@@ -183,6 +185,7 @@ function checkAvailableOptions() {
 	const noPort = initialGameState('standard', 2, {
 		bonuses: false,
 		bonusSets: ['1'],
+		bannedCombos: true,
 		devCards: false,
 		numberLayout: 'random',
 		honk: true,
