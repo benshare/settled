@@ -1149,8 +1149,6 @@ function GameBody() {
 		!!myPlayer &&
 		(!gameState!.config.extraBuild.moreThanSeven || handSize(myPlayer) > 7)
 	const canBuildBasic = canBuildThisTurn || sbBuildAllowed
-	// Scout's peek-buy can't run inside a special-build slot (server rejects it).
-	const scoutBlockedInSB = isMySpecialBuild && myPlayer?.bonus === 'scout'
 	// Legal targets are computed once: they gate the build buttons and also
 	// tell curseBuildReason whether a per-location curse is what's blocking.
 	const hasLegalTarget = {
@@ -1180,7 +1178,6 @@ function GameBody() {
 			hasLegalTarget.city,
 		dev_card:
 			!!gameState &&
-			!scoutBlockedInSB &&
 			canBuyDevCard(gameState, meIdx, game?.current_turn ?? -1),
 	}
 	const buildCurseHints: BuildCurseHints = (() => {
@@ -2310,7 +2307,9 @@ function RobberStatus({
 	} else if (phase.kind === 'move_robber') {
 		status =
 			meIdx === currentIdx
-				? 'You rolled 7 — move the robber'
+				? phase.from7
+					? 'You rolled 7 — move the robber'
+					: 'You played a knight — move the robber'
 				: `${currentName} is moving the robber`
 	} else {
 		status =
@@ -2319,10 +2318,11 @@ function RobberStatus({
 				: `${currentName} is stealing`
 	}
 
-	// Dice are only relevant when the sub-phase was triggered by a 7-roll
-	// (resume.kind === 'main'). Knight-triggered pre-roll chains resume to
-	// `roll` and have no dice to show yet.
-	const dice = phase.resume.kind === 'main' ? phase.resume.roll : null
+	// Dice are only relevant when the sub-phase was triggered by a 7-roll.
+	// A knight can be played from main (where `resume` carries that turn's
+	// roll), so gate on `from7` rather than the resume shape.
+	const dice =
+		phase.from7 && phase.resume.kind === 'main' ? phase.resume.roll : null
 	return (
 		<View style={styles.actionBar}>
 			<View style={styles.mainLoopRow}>

@@ -465,10 +465,12 @@ export type Phase =
 	// Scout dev-card peek. After the buy commits, the buyer sees the top
 	// up-to-3 cards and picks one. The other two return to the bottom of
 	// the deck in their drawn order. `cards` is the drawn slice (top-most
-	// first); `owner` is the buying player.
+	// first); `owner` is the buying player. `resume` also accepts a
+	// `special_build` snapshot, since a scout may buy in their special-build
+	// slot and must land back on the queue they came from.
 	| {
 			kind: 'scout_pick'
-			resume: ResumePhase
+			resume: ResumePhase | { kind: 'special_build'; queue: number[] }
 			owner: number
 			cards: DevCardId[]
 	  }

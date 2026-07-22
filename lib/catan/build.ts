@@ -14,6 +14,7 @@ import {
 import {
 	BRICKLAYER_COST,
 	canBuildMoreSuperCities,
+	canScoutAffordDevCard,
 	isFenceReservedAgainst,
 	isGhost,
 	metropolitanCityCost,
@@ -418,11 +419,15 @@ export function canTakeSpecialBuildAction(
 		validBuildCityVertices(state, idx).length > 0
 	)
 		return true
-	if (
-		state.config.devCards &&
-		state.devDeck.length > 0 &&
-		canAffordPurchase(p, 'dev_card')
-	)
-		return true
+	// A scout can pay the dev-card cost with a swapped resource, so gate on
+	// any affordable swap route rather than the standard cost alone.
+	if (state.config.devCards && state.devDeck.length > 0) {
+		if (
+			p.bonus === 'scout'
+				? canScoutAffordDevCard(p.resources)
+				: canAffordPurchase(p, 'dev_card')
+		)
+			return true
+	}
 	return false
 }

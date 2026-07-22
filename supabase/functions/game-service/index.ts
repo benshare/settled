@@ -1994,12 +1994,16 @@ function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
 		)
 	)
 		return true
-	if (
-		state.config.devCards &&
-		state.devDeck.length > 0 &&
-		canAffordAnyCost(p, DEV_CARD_COST)
-	)
-		return true
+	// A scout can pay the dev-card cost with a swapped resource, so gate on
+	// any affordable swap route rather than the standard cost alone.
+	if (state.config.devCards && state.devDeck.length > 0) {
+		if (
+			p.bonus === 'scout'
+				? canScoutAffordDevCard(p.resources)
+				: canAffordAnyCost(p, DEV_CARD_COST)
+		)
+			return true
+	}
 	return false
 }
 
@@ -2563,6 +2567,18 @@ function scoutDevCardCost(swap?: {
 		out[swap.to] += 1
 	}
 	return out
+}
+
+// True if a scout can buy a dev card by any swap route (or the standard cost).
+function canScoutAffordDevCard(hand: ResourceHand): boolean {
+	if (canAfford(hand, scoutDevCardCost())) return true
+	for (const from of SCOUT_COST_RESOURCES) {
+		for (const to of SCOUT_COST_RESOURCES) {
+			if (from === to) continue
+			if (canAfford(hand, scoutDevCardCost({ from, to }))) return true
+		}
+	}
+	return false
 }
 
 const SCOUT_PEEK_SIZE = 3
@@ -6106,13 +6122,6 @@ async function handleBuyDevCard(
 	}
 
 	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
-	// Scout's peek buy opens a scout_pick sub-phase whose resume can't hold the
-	// special-build queue, so scouts buy dev cards on their own turn only.
-	if (
-		state.phase.kind === 'special_build' &&
-		bonusOf(state, meIdx) === 'scout'
-	)
-		return err(400, 'scout dev-card buys only allowed on your turn')
 	const useBricklayer = !!body.use_bricklayer
 
 	// Scout: optionally swap one of the standard cost resources for a
@@ -6171,9 +6180,14 @@ async function handleBuyDevCard(
 			}
 			return next
 		})
+		// A scout buying in their special-build slot returns to that slot (the
+		// queue is unchanged — only end_special_build pops it).
 		const scoutPhase: Phase = {
 			kind: 'scout_pick',
-			resume: { kind: 'main', roll: state.phase.roll, trade: null },
+			resume:
+				state.phase.kind === 'special_build'
+					? { kind: 'special_build', queue: state.phase.queue }
+					: { kind: 'main', roll: state.phase.roll, trade: null },
 			owner: meIdx,
 			cards: peek,
 		}
