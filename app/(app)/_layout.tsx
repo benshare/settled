@@ -14,7 +14,7 @@ import { useEffect } from 'react'
 import { Platform } from 'react-native'
 
 export const unstable_settings = {
-	initialRouteName: 'play',
+	initialRouteName: 'games',
 }
 
 export default function AppLayout() {
@@ -64,21 +64,21 @@ export default function AppLayout() {
 			}}
 		>
 			<Tabs.Screen
-				name="play"
+				name="games"
 				options={{
-					title: 'Play',
+					title: 'Games',
 					tabBarIcon: ({ color, size }) => (
-						<PlayTabIcon color={color} size={size} />
+						<GamesTabIcon color={color} size={size} />
 					),
 				}}
 			/>
 			<Tabs.Screen
-				name="history"
+				name="stats"
 				options={{
-					title: 'History',
+					title: 'Stats',
 					tabBarIcon: ({ color, size }) => (
 						<Ionicons
-							name="time-outline"
+							name="stats-chart-outline"
 							color={color}
 							size={size}
 						/>
@@ -124,7 +124,7 @@ function FriendsTabIcon({ color, size }: { color: string; size: number }) {
 	)
 }
 
-function PlayTabIcon({ color, size }: { color: string; size: number }) {
+function GamesTabIcon({ color, size }: { color: string; size: number }) {
 	const { user } = useAuth()
 	const meId = user?.id
 	const showDot = useGamesStore((s) => {

@@ -1979,7 +1979,7 @@ function GameBody() {
 					pointsByPlayer={displayVP}
 					publicByPlayer={publicVP}
 					onDismiss={() => setGameOverOpen(false)}
-					onBackToGames={() => router.replace('/play')}
+					onBackToGames={() => router.replace('/games')}
 				/>
 			)}
 			{inGameOver && !gameOverOpen && (
