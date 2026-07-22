@@ -1326,6 +1326,10 @@ type GameConfig = {
 	// Absent on legacy rows — read defensively (`=== 'confirm'`), defaulting to
 	// 'automatic' (today's immediate-swap behaviour).
 	tradeMode?: TradeMode
+	// Whether friends of any player may watch. Absent on legacy rows — read
+	// defensively (`=== true`). Denormalized onto `games.spectators` at game
+	// creation, which is the only authority for access control.
+	spectators?: boolean
 	extraBuild: ExtraBuildConfig
 }
 
@@ -3520,6 +3524,7 @@ async function handleRespond(
 			...nextInvited.map((e) => e.user),
 		]
 		const playerOrder = shuffle(participants)
+		const config = request.config as GameConfig
 
 		const { data: inserted, error: insertErr } = await admin
 			.from('games')
@@ -3528,6 +3533,10 @@ async function handleRespond(
 				player_order: playerOrder,
 				current_turn: 0,
 				status: 'placement',
+				// Denormalized off the config so RLS can gate the row without
+				// reaching into game_states. Written once, never mutated —
+				// a game's openness is fixed when it starts.
+				spectators: config.spectators === true,
 			})
 			.select('id')
 			.single()
@@ -3535,7 +3544,6 @@ async function handleRespond(
 
 		// 5-6 player games auto-select the expanded 30-hex board.
 		const variant = variantForPlayerCount(playerOrder.length)
-		const config = request.config as GameConfig
 		// Older requests predate numberLayout — default to spiral.
 		const { hexes: generatedHexes, desert } = generateHexes(
 			variant,
@@ -4603,6 +4611,32 @@ const CHAT_MAX_CHARS = 500
 // missed beat before we consider someone away.
 const CHAT_PRESENCE_MS = 30_000
 
+// Service-role mirror of the spectator RLS predicate (see the migration and
+// .claude/specs/spectating.md): the game opted in, the caller is not seated,
+// and they are friends with at least one player. The admin client bypasses RLS,
+// so this check is the whole authorization — keep it in step with the policy.
+async function isGameSpectator(
+	admin: SupabaseClient,
+	participants: string[],
+	spectatorsEnabled: boolean,
+	me: string
+): Promise<boolean> {
+	if (!spectatorsEnabled) return false
+	if (participants.includes(me)) return false
+
+	const { data } = await admin
+		.from('friends')
+		.select('user_id_a, user_id_b')
+		.or(`user_id_a.eq.${me},user_id_b.eq.${me}`)
+
+	const friendIds = new Set(
+		((data ?? []) as { user_id_a: string; user_id_b: string }[]).map((r) =>
+			r.user_id_a === me ? r.user_id_b : r.user_id_a
+		)
+	)
+	return participants.some((p) => friendIds.has(p))
+}
+
 async function handleSendMessage(
 	admin: SupabaseClient,
 	me: string,
@@ -4617,14 +4651,19 @@ async function handleSendMessage(
 	// completed games, so there is no status precondition to check.
 	const { data: game, error: gameErr } = await admin
 		.from('games')
-		.select('id, participants')
+		.select('id, participants, spectators')
 		.eq('id', body.game_id)
 		.maybeSingle()
 	if (gameErr) return err(500, gameErr.message)
 	if (!game) return err(404, 'game not found')
 
 	const participants = (game.participants ?? []) as string[]
-	if (!participants.includes(me)) return err(403, 'not a participant')
+	if (
+		!participants.includes(me) &&
+		!(await isGameSpectator(admin, participants, !!game.spectators, me))
+	) {
+		return err(403, 'not a participant')
+	}
 
 	const { data: inserted, error } = await admin
 		.from('game_messages')
@@ -4640,6 +4679,12 @@ async function handleSendMessage(
 
 // Everyone in the game except the sender and anyone whose read cursor says they
 // are looking at the thread right now.
+//
+// Spectators send into this thread but are never targets: they are not
+// enumerable server-side (presence is ephemeral, and game_chat_reads would only
+// cover ones who had opened the panel once, then keep pushing them long after
+// they stopped watching). Watching is a foreground activity — realtime covers
+// it. A spectator's message still pushes the players, per the spec.
 async function notifyChat(
 	admin: SupabaseClient,
 	gameId: string,

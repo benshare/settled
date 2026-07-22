@@ -80,6 +80,15 @@ Two further guards, because none of the above is worth trusting on its own:
 reliably surface the close and supabase-js will otherwise keep rejoining a dead
 one.
 
+## Spectatable games share the active-games query
+
+With the spectator RLS policies in place (see `.claude/specs/spectating.md`), `select * from games where status in ('placement','active')` returns two different things: games the user is seated at, and games they're merely allowed to watch. `loadForUser` issues one query and partitions the rows by `participants.includes(userId)` into `activeGames` / `spectatableGames`; `handleGameChange` routes realtime rows by the same test, which is why the store keeps `meId`.
+
+Two consequences that are easy to get wrong:
+
+- **The completed-games query needs `.contains('participants', [userId])`.** Without it, every finished game the user only watched lands in their History.
+- **`spectatableGames` is a first-contact surface** — it shows a friend's co-players, who the viewer may never have met — so it filters dev profiles in production per the rule below. Games the user is seated at are never filtered.
+
 ## Dev-flagged profiles
 
 `profiles.dev` is a boolean column (default `false`) used to mark users that only exist for local/dev testing — see `dev/seed-test-users.mjs`, which sets it to `true`. **In production builds, every user-facing query that returns or searches profiles must filter these out.** Non-`__DEV__` clients should never show a dev user to a real user.

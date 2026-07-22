@@ -29,12 +29,20 @@ export default function PlayScreen() {
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const pendingRequests = useGamesStore((s) => s.pendingRequests)
 	const activeGames = useGamesStore((s) => s.activeGames)
+	const spectatableGames = useGamesStore((s) => s.spectatableGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
 
 	const storeLoaded =
-		pendingRequests !== undefined && activeGames !== undefined
+		pendingRequests !== undefined &&
+		activeGames !== undefined &&
+		spectatableGames !== undefined
+	// A populated Watch list isn't "no games yet" in spirit, but the prompt to
+	// start one reads as wrong sitting under a list of games on screen.
 	const showEmpty =
-		storeLoaded && pendingRequests.length === 0 && activeGames.length === 0
+		storeLoaded &&
+		pendingRequests.length === 0 &&
+		activeGames.length === 0 &&
+		spectatableGames.length === 0
 
 	return (
 		<SafeAreaView style={styles.safe}>
@@ -87,6 +95,20 @@ export default function PlayScreen() {
 								game={g}
 								profilesById={profilesById}
 								meId={user?.id}
+								onPress={() => router.push(`/game/${g.id}`)}
+							/>
+						))}
+					</View>
+				)}
+
+				{(spectatableGames ?? []).length > 0 && (
+					<View style={styles.section}>
+						<Text style={styles.sectionHeading}>Watch</Text>
+						{(spectatableGames ?? []).map((g) => (
+							<SpectateRow
+								key={g.id}
+								game={g}
+								profilesById={profilesById}
 								onPress={() => router.push(`/game/${g.id}`)}
 							/>
 						))}
@@ -182,6 +204,49 @@ function GameRow({
 			/>
 			<Text style={styles.rowText} numberOfLines={1}>
 				{names}
+			</Text>
+			<Ionicons
+				name="chevron-forward"
+				size={20}
+				color={colors.textMuted}
+			/>
+		</Pressable>
+	)
+}
+
+// A game the viewer isn't in but is allowed to watch. No "me" in the name list
+// — they're not at the table — and no seat, so the row is purely descriptive.
+function SpectateRow({
+	game,
+	profilesById,
+	onPress,
+}: {
+	game: Game
+	profilesById: Record<string, Profile>
+	onPress: () => void
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	const names = game.participants.map(
+		(id) => profilesById[id]?.username ?? '…'
+	)
+	const label =
+		names.length > 3
+			? `${names.slice(0, 3).join(', ')}, +${names.length - 3}`
+			: names.join(', ')
+	return (
+		<Pressable
+			onPress={onPress}
+			style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+		>
+			<Ionicons
+				name="eye-outline"
+				size={24}
+				color={colors.text}
+				style={styles.rowIcon}
+			/>
+			<Text style={styles.rowText} numberOfLines={1}>
+				{label}
 			</Text>
 			<Ionicons
 				name="chevron-forward"

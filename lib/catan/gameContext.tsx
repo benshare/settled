@@ -3,6 +3,7 @@
 // useGame() so descendants don't have to re-derive the same subscriptions.
 
 import { useAppForeground } from '@/lib/appState'
+import { useAuth } from '@/lib/auth'
 import { onGameMutated } from '@/lib/gameSync'
 import { uniqueTopic } from '@/lib/realtime'
 import { useGamesStore, type Game } from '@/lib/stores/useGamesStore'
@@ -33,6 +34,14 @@ export type GameContextValue = {
 	// PlayerDetailOverlay / GameOverOverlay can't drift on the calculation.
 	publicVP: number[]
 	selfVP: number[]
+	// True when the viewer is watching a game they aren't seated at. False
+	// until `game` resolves, so a spectator never briefly renders as a player.
+	// Every consumer reads it from here rather than re-deriving, so the board
+	// and the chat can't disagree about who is watching.
+	isSpectator: boolean
+	// User ids of the spectators currently on this game's screen, from an
+	// ephemeral presence channel. Players see it too — that's the point.
+	watcherIds: string[]
 }
 
 const GameContext = createContext<GameContextValue | null>(null)
@@ -50,15 +59,18 @@ export function GameProvider({
 	gameId: string
 	children: ReactNode
 }) {
+	const { user } = useAuth()
 	const activeGames = useGamesStore((s) => s.activeGames)
+	const spectatableGames = useGamesStore((s) => s.spectatableGames)
 	const completeGames = useGamesStore((s) => s.completeGames)
 	const storeReady = activeGames !== undefined && completeGames !== undefined
 
 	const storeGame = useMemo(
 		() =>
 			(activeGames ?? []).find((g) => g.id === gameId) ??
+			(spectatableGames ?? []).find((g) => g.id === gameId) ??
 			(completeGames ?? []).find((g) => g.id === gameId),
-		[activeGames, completeGames, gameId]
+		[activeGames, spectatableGames, completeGames, gameId]
 	)
 
 	const [liveGame, setLiveGame] = useState<Game | undefined>(storeGame)
@@ -210,6 +222,43 @@ export function GameProvider({
 		}
 	}, [gameId, resyncNonce, fetchState])
 
+	const game = liveGame ?? storeGame
+	const meId = user?.id
+	const isSpectator = !!game && !!meId && !game.participants.includes(meId)
+
+	// --- Watcher presence --------------------------------------------------
+	// Ephemeral, so there's no table and nothing to clean up: a watcher who
+	// closes the app simply stops being present. Everyone joins the channel
+	// (players need to read the count) but only spectators `track()`, so the
+	// roster is watchers rather than attendance. Best-effort by construction —
+	// a dropped socket under-counts until the next foreground, which is why
+	// this is presence and not a heartbeat table.
+	const [watcherIds, setWatcherIds] = useState<string[]>([])
+	useEffect(() => {
+		if (!gameId || !meId) return
+		setWatcherIds([])
+		const channel = supabase.channel(uniqueTopic(`watchers:${gameId}`), {
+			config: { presence: { key: meId } },
+		})
+		const sync = () => {
+			setWatcherIds(Object.keys(channel.presenceState()))
+		}
+		channel
+			.on('presence', { event: 'sync' }, sync)
+			.on('presence', { event: 'join' }, sync)
+			.on('presence', { event: 'leave' }, sync)
+			.subscribe((status) => {
+				// Re-tracked on every join, including the automatic rejoin
+				// after a dropped connection.
+				if (status === 'SUBSCRIBED' && isSpectator) {
+					channel.track({ at: new Date().toISOString() })
+				}
+			})
+		return () => {
+			supabase.removeChannel(channel)
+		}
+	}, [gameId, meId, isSpectator, resyncNonce])
+
 	const { publicVP, selfVP } = useMemo(() => {
 		if (!gameState) return { publicVP: [], selfVP: [] }
 		const pub = gameState.players.map((_, i) =>
@@ -223,20 +272,23 @@ export function GameProvider({
 
 	const value = useMemo<GameContextValue>(
 		() => ({
-			game: liveGame ?? storeGame,
+			game,
 			gameState,
 			ready: storeReady && stateLoaded,
 			publicVP,
 			selfVP,
+			isSpectator,
+			watcherIds,
 		}),
 		[
-			liveGame,
-			storeGame,
+			game,
 			gameState,
 			storeReady,
 			stateLoaded,
 			publicVP,
 			selfVP,
+			isSpectator,
+			watcherIds,
 		]
 	)
 

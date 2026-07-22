@@ -341,12 +341,23 @@ async function edgeErrorMessage(error: unknown): Promise<string | null> {
 type GamesStore = {
 	pendingRequests: GameRequest[] | undefined
 	activeGames: Game[] | undefined
+	// In-progress games the viewer is NOT in but may watch: the spectator RLS
+	// policy lets them read any spectators-enabled game that includes a friend.
+	// They arrive on the same query as `activeGames` and are split out by
+	// participation — see loadForUser.
+	spectatableGames: Game[] | undefined
 	completeGames: Game[] | undefined
 	profilesById: Record<string, Profile>
+	// The user the lists were loaded for. Kept so the realtime handler can
+	// route an incoming row into the right list without a hook's help.
+	meId: string | undefined
 	loading: boolean
 
 	loadForUser: (userId: string) => Promise<void>
 	clear: () => void
+	// Fetch and cache any profiles we don't already hold. Spectators and their
+	// chat messages surface ids that were never in a participant list.
+	ensureProfiles: (ids: string[]) => Promise<void>
 
 	createRequest: (
 		meId: string,
@@ -564,12 +575,14 @@ function decodeInvited(raw: unknown): InvitedEntry[] {
 export const useGamesStore = create<GamesStore>((set, get) => ({
 	pendingRequests: undefined,
 	activeGames: undefined,
+	spectatableGames: undefined,
 	completeGames: undefined,
 	profilesById: {},
+	meId: undefined,
 	loading: false,
 
 	async loadForUser(userId) {
-		set({ loading: true })
+		set({ loading: true, meId: userId })
 
 		const requestsPromise = supabase
 			.from('game_requests')
@@ -582,10 +595,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			.in('status', ['placement', 'active'])
 			.order('created_at', { ascending: false })
 
+		// Scoped to games I actually played in. Without this, the spectator
+		// policy would drop every finished game I merely watched into History.
 		const completePromise = supabase
 			.from('games')
 			.select('*')
 			.eq('status', 'complete')
+			.contains('participants', [userId])
 			.order('created_at', { ascending: false })
 
 		const [requestsRes, activeRes, completeRes] = await Promise.all([
@@ -604,7 +620,16 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		}
 
-		const activeGames: Game[] = activeRes.data ?? []
+		// The in-progress query now returns two different things: games I'm
+		// seated at, and games I'm merely allowed to watch. One query, split
+		// by participation.
+		const inProgress: Game[] = activeRes.data ?? []
+		const activeGames = inProgress.filter((g) =>
+			g.participants.includes(userId)
+		)
+		let spectatableGames = inProgress.filter(
+			(g) => !g.participants.includes(userId)
+		)
 		const completeGames: Game[] = completeRes.data ?? []
 
 		const ids = new Set<string>()
@@ -613,6 +638,8 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			for (const inv of r.invited) ids.add(inv.user)
 		}
 		for (const g of activeGames) for (const p of g.participants) ids.add(p)
+		for (const g of spectatableGames)
+			for (const p of g.participants) ids.add(p)
 		for (const g of completeGames)
 			for (const p of g.participants) ids.add(p)
 		ids.add(userId)
@@ -628,9 +655,19 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			}
 		}
 
+		// The Watch list surfaces a friend's co-players, who the viewer may
+		// never have met — a first-contact surface, so it filters dev users in
+		// production. Games I'm seated at are never filtered.
+		if (!__DEV__) {
+			spectatableGames = spectatableGames.filter((g) =>
+				g.participants.every((p) => profilesById[p]?.dev !== true)
+			)
+		}
+
 		set({
 			pendingRequests,
 			activeGames,
+			spectatableGames,
 			completeGames,
 			profilesById,
 			loading: false,
@@ -670,10 +707,26 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		set({
 			pendingRequests: undefined,
 			activeGames: undefined,
+			spectatableGames: undefined,
 			completeGames: undefined,
 			profilesById: {},
+			meId: undefined,
 			loading: false,
 		})
+	},
+
+	async ensureProfiles(ids) {
+		const known = get().profilesById
+		const missing = Array.from(new Set(ids)).filter((id) => !known[id])
+		if (missing.length === 0) return
+		const { data: profiles } = await supabase
+			.from('profiles')
+			.select(PROFILE_COLS)
+			.in('id', missing)
+		if (!profiles || profiles.length === 0) return
+		const next = { ...get().profilesById }
+		for (const p of profiles) next[p.id] = p
+		set({ profilesById: next })
 	},
 
 	async createRequest(_meId, invitedIds, config) {
@@ -1084,43 +1137,62 @@ function handleGameChange(
 	set: (partial: Partial<GamesStore>) => void
 ) {
 	const active = get().activeGames
+	const spectatable = get().spectatableGames
 	const complete = get().completeGames
-	if (!active || !complete) return
+	const meId = get().meId
+	if (!active || !spectatable || !complete || !meId) return
 
 	if (payload.eventType === 'DELETE') {
 		const oldId = (payload.old as { id?: string }).id
 		if (!oldId) return
 		set({
 			activeGames: active.filter((g) => g.id !== oldId),
+			spectatableGames: spectatable.filter((g) => g.id !== oldId),
 			completeGames: complete.filter((g) => g.id !== oldId),
 		})
 		return
 	}
 
 	const game = payload.new as Game
+	// A game reaches this handler either because I'm seated at it or because
+	// the spectator policy let it through; which list it belongs in follows
+	// from participation, exactly as in loadForUser.
+	const mine = game.participants.includes(meId)
 
 	if (payload.eventType === 'INSERT') {
 		if (game.status === 'complete') {
-			set({ completeGames: [game, ...complete] })
-		} else {
+			// A finished game I only watched never enters History.
+			if (mine) set({ completeGames: [game, ...complete] })
+		} else if (mine) {
 			set({ activeGames: [game, ...active] })
+		} else {
+			set({ spectatableGames: [game, ...spectatable] })
 		}
 		return
 	}
 
-	// UPDATE — game may have moved from active to complete.
+	// UPDATE — game may have moved from in-progress to complete.
 	if (payload.eventType === 'UPDATE') {
 		if (game.status === 'complete') {
 			set({
 				activeGames: active.filter((g) => g.id !== game.id),
-				completeGames: [
-					game,
-					...complete.filter((g) => g.id !== game.id),
-				],
+				// A game that ends stops being watchable; the spectator keeps
+				// read access (the RLS policy is status-agnostic) so a viewer
+				// already on the screen still sees the recap.
+				spectatableGames: spectatable.filter((g) => g.id !== game.id),
+				completeGames: mine
+					? [game, ...complete.filter((g) => g.id !== game.id)]
+					: complete,
+			})
+		} else if (mine) {
+			set({
+				activeGames: active.map((g) => (g.id === game.id ? game : g)),
 			})
 		} else {
 			set({
-				activeGames: active.map((g) => (g.id === game.id ? game : g)),
+				spectatableGames: spectatable.map((g) =>
+					g.id === game.id ? game : g
+				),
 			})
 		}
 	}
@@ -1161,24 +1233,10 @@ async function handleRequestChange(
 	}
 
 	if (payload.eventType === 'INSERT') {
-		// Fetch profiles for any user IDs we don't already have.
-		const known = get().profilesById
-		const missing: string[] = []
-		if (!known[decoded.proposer]) missing.push(decoded.proposer)
-		for (const inv of decoded.invited) {
-			if (!known[inv.user]) missing.push(inv.user)
-		}
-		if (missing.length > 0) {
-			const { data: profiles } = await supabase
-				.from('profiles')
-				.select(PROFILE_COLS)
-				.in('id', missing)
-			if (profiles) {
-				const next = { ...get().profilesById }
-				for (const p of profiles) next[p.id] = p
-				set({ profilesById: next })
-			}
-		}
+		await get().ensureProfiles([
+			decoded.proposer,
+			...decoded.invited.map((inv) => inv.user),
+		])
 		set({ pendingRequests: [decoded, ...(get().pendingRequests ?? [])] })
 	}
 }

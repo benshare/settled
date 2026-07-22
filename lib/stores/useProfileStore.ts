@@ -22,6 +22,7 @@ export type GameDefaults = {
 		friendlyRobber: boolean
 		limitMonopoly: boolean
 		tradeMode: TradeMode
+		spectators: boolean
 		extraBuild: ExtraBuildConfig
 	}
 	extras: { bonuses: boolean; bonusSets: string[] }
@@ -39,6 +40,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 		friendlyRobber: false,
 		limitMonopoly: false,
 		tradeMode: 'automatic',
+		spectators: true,
 		extraBuild: {
 			enabled: true,
 			buildPhases: 'every',
@@ -82,6 +84,10 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				settings?.tradeMode === 'automatic'
 					? settings.tradeMode
 					: DEFAULT_GAME_DEFAULTS.settings.tradeMode,
+			spectators:
+				typeof settings?.spectators === 'boolean'
+					? settings.spectators
+					: DEFAULT_GAME_DEFAULTS.settings.spectators,
 			extraBuild: parseExtraBuild(
 				settings?.extraBuild,
 				DEFAULT_GAME_DEFAULTS.settings.extraBuild
