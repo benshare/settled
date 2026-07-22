@@ -1,7 +1,8 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
 import type { Hex, Resource } from '../catan/board'
-import type { BonusId } from '../catan/bonuses'
+import type { MerchantAddon } from '../catan/bonus'
+import type { BonusId, CurseId } from '../catan/bonuses'
 import type { DevCardId } from '../catan/devCards'
 import type { DiceRoll, GameConfig, ResourceHand } from '../catan/types'
 import type { Database } from '../database-types'
@@ -101,12 +102,15 @@ export type GameEvent =
 			by: number
 			at: string
 	  }
+	// `merchant` is the optional 1:1 side-conversion a merchant rode along
+	// with the trade; absent for everyone else.
 	| {
 			kind: 'bank_trade'
 			player: number
 			give: ResourceHand
 			receive: ResourceHand
 			ratio: 2 | 3 | 4
+			merchant?: MerchantAddon | null
 			at: string
 	  }
 	// Dev-card events. `dev_bought` intentionally carries no card id so the
@@ -152,6 +156,113 @@ export type GameEvent =
 			gain: ResourceHand
 			at: string
 	  }
+	// --- Bonus-card events -------------------------------------------------
+	// Everything below is written by a bonus (sets 1-3) rather than a base
+	// rule. `ActionLog` groups them under the "Bonuses" filter.
+	//
+	// One per seat, written together the moment the last player locks in their
+	// pick — bonuses and curses are public from then on.
+	| {
+			kind: 'bonus_chosen'
+			player: number
+			bonus: BonusId
+			curse?: CurseId
+			at: string
+	  }
+	| { kind: 'specialist_set'; player: number; resource: Resource; at: string }
+	// Hoarder: over the limit on a 7 but keeping everything. `count` is the
+	// hand they held onto.
+	| { kind: 'hoarder_kept'; player: number; count: number; at: string }
+	| { kind: 'carpenter_vp'; player: number; at: string }
+	| {
+			kind: 'knight_tapped'
+			player: number
+			resources: [Resource, Resource]
+			at: string
+	  }
+	// Gambler: the first roll was thrown away for a second one. The kept roll
+	// is logged separately as a normal `rolled`.
+	| {
+			kind: 'reroll'
+			player: number
+			old_dice: [number, number]
+			new_dice: [number, number]
+			at: string
+	  }
+	| { kind: 'explorer_road'; player: number; edge: string; at: string }
+	| {
+			kind: 'shepherd_swap'
+			player: number
+			take: [Resource, Resource]
+			at: string
+	  }
+	| {
+			kind: 'ritual_roll'
+			player: number
+			dice: [number, number]
+			total: number
+			discard: ResourceHand
+			at: string
+	  }
+	| { kind: 'curio_collected'; player: number; take: Resource[]; at: string }
+	// A 7's robber move snaps every forger token to the new hex — activating
+	// it the first time (`_set`), relocating it after that (`_move`). The
+	// forger can also move it themselves on their turn (`_move`).
+	| { kind: 'forger_token_set'; player: number; hex: Hex; at: string }
+	| { kind: 'forger_token_move'; player: number; hex: Hex; at: string }
+	// `target` is the copied player's seat index.
+	| {
+			kind: 'forger_copy'
+			player: number
+			target: number
+			gain: ResourceHand
+			at: string
+	  }
+	// `swap` is the substituted cost the scout paid with, when they used one.
+	| {
+			kind: 'scout_buy'
+			player: number
+			swap: { from: Resource; to: Resource } | null
+			at: string
+	  }
+	| {
+			kind: 'liquidate'
+			player: number
+			detail:
+				| { kind: 'road'; edge: string; refund: ResourceHand }
+				| { kind: 'settlement'; vertex: string; refund: ResourceHand }
+				| { kind: 'city'; vertex: string; refund: ResourceHand }
+				| { kind: 'super_city'; vertex: string; refund: ResourceHand }
+				| { kind: 'dev_card'; id: DevCardId; refund: ResourceHand }
+			at: string
+	  }
+	| {
+			kind: 'build_super_city'
+			player: number
+			vertex: string
+			cost: ResourceHand
+			at: string
+	  }
+	| { kind: 'fence_token'; player: number; edge: string; at: string }
+	| { kind: 'invest'; player: number; resource: Resource; at: string }
+	| {
+			kind: 'investor_payout'
+			player: number
+			gain: ResourceHand
+			at: string
+	  }
+	| {
+			kind: 'magic_cast'
+			player: number
+			target: number
+			discard: ResourceHand
+			gain: ResourceHand
+			at: string
+	  }
+	| { kind: 'magic_skipped'; player: number; at: string }
+	// Haunt: the spots themselves stay private, so only the fact is logged.
+	| { kind: 'haunt_spots_set'; player: number; at: string }
+	| { kind: 'ghost_spawned'; player: number; vertex: string; at: string }
 	// Terminal event. Written once per game when a player reaches 10 VP.
 	// `vpCards` reveals each player's previously-hidden VP card count so
 	// clients can render a final scoreboard without a separate read.

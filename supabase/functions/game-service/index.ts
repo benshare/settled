@@ -2156,6 +2156,24 @@ function requiredDiscards(players: PlayerState[]): Record<number, number> {
 	return out
 }
 
+// A hoarder over the limit silently skips the discard, which from the table
+// looks like the 7 never happened to them. Log it so the log explains itself.
+function hoarderKeptEvents(players: PlayerState[]): unknown[] {
+	const out: unknown[] = []
+	players.forEach((p, i) => {
+		if (p.bonus !== 'hoarder') return
+		const total = handSize(p.resources)
+		if (total <= 7) return
+		out.push({
+			kind: 'hoarder_kept',
+			player: i,
+			count: total,
+			at: new Date().toISOString(),
+		})
+	})
+	return out
+}
+
 function isValidDiscardSelection(
 	hand: ResourceHand,
 	selection: ResourceHand,
@@ -3666,6 +3684,25 @@ async function handlePickBonus(
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
+	// Logged only once everyone has locked in, so the log can't leak an early
+	// picker's bonus to players still choosing. Bonuses and curses are public
+	// from that point on (the player strip shows them).
+	if (allChosen) {
+		const at = new Date().toISOString()
+		const events = nextPlayers.map((p, i) => ({
+			kind: 'bonus_chosen',
+			player: i,
+			bonus: p.bonus,
+			curse: p.curse,
+			at,
+		}))
+		const { error: gameErr } = await admin
+			.from('games')
+			.update({ events: [...(game.events ?? []), ...events] })
+			.eq('id', game.id)
+		if (gameErr) return err(500, 'could not log event')
+	}
+
 	return json({ ok: true })
 }
 
@@ -4007,6 +4044,7 @@ async function applyRollOutcome(
 		// production is applied once every owed discard has been submitted
 		// (see handleDiscard), or immediately when nobody owes one.
 		const pending = requiredDiscards(state.players)
+		const hoarderEvents = hoarderKeptEvents(state.players)
 		const resume: ResumePhase = { kind: 'main', roll: dice, trade: null }
 		const hasDiscards = Object.keys(pending).length > 0
 		const nomadResult = hasDiscards
@@ -4029,7 +4067,11 @@ async function applyRollOutcome(
 		const { error: gameErr } = await admin
 			.from('games')
 			.update({
-				events: [...existingEvents, ...nomadResult.events],
+				events: [
+					...existingEvents,
+					...hoarderEvents,
+					...nomadResult.events,
+				],
 			})
 			.eq('id', game.id)
 		if (gameErr) return err(500, 'could not log event')

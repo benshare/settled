@@ -4,13 +4,14 @@
 // event log that the edge function already writes.
 
 import { Ionicons } from '@expo/vector-icons'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
+import { bonusById, curseById } from './bonuses'
 import { devCardById } from './devCards'
 import { playerColors } from './palette'
 
@@ -26,6 +27,78 @@ type LogContext = {
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	meIdx: number
+}
+
+// Filter categories. Kinds may belong to more than one bucket — a ritual roll
+// is both a roll and a bonus — so these are membership lists, not a partition.
+// `satisfies` keeps them honest against the event union: a renamed or dropped
+// kind fails to compile here rather than silently filtering to nothing.
+const CATEGORIES = {
+	rolls: ['rolled', 'reroll', 'ritual_roll', 'fortune_teller_roll'],
+	builds: [
+		'settlement_placed',
+		'road_placed',
+		'road_built',
+		'settlement_built',
+		'city_built',
+		'build_super_city',
+		'explorer_road',
+		'ghost_spawned',
+		'liquidate',
+		'dev_bought',
+		'scout_buy',
+		'dev_played',
+		'largest_army_changed',
+		'longest_road_changed',
+	],
+	trades: ['trade_accepted', 'bank_trade', 'shepherd_swap'],
+	robber: ['discarded', 'robber_moved', 'stolen', 'hoarder_kept'],
+	bonuses: [
+		'bonus_chosen',
+		'specialist_set',
+		'hoarder_kept',
+		'carpenter_vp',
+		'knight_tapped',
+		'reroll',
+		'nomad_produce',
+		'fortune_teller_roll',
+		'explorer_road',
+		'shepherd_swap',
+		'ritual_roll',
+		'curio_collected',
+		'forger_token_set',
+		'forger_token_move',
+		'forger_copy',
+		'scout_buy',
+		'liquidate',
+		'build_super_city',
+		'fence_token',
+		'invest',
+		'investor_payout',
+		'magic_cast',
+		'haunt_spots_set',
+		'ghost_spawned',
+	],
+} satisfies Record<string, GameEvent['kind'][]>
+
+type Category = keyof typeof CATEGORIES
+type Filter = 'all' | Category
+
+const FILTERS: { key: Filter; label: string }[] = [
+	{ key: 'all', label: 'All' },
+	{ key: 'rolls', label: 'Rolls' },
+	{ key: 'builds', label: 'Builds' },
+	{ key: 'trades', label: 'Trades' },
+	{ key: 'robber', label: 'Robber' },
+	{ key: 'bonuses', label: 'Bonuses' },
+]
+
+const KINDS_BY_FILTER: Record<Category, ReadonlySet<GameEvent['kind']>> = {
+	rolls: new Set(CATEGORIES.rolls),
+	builds: new Set(CATEGORIES.builds),
+	trades: new Set(CATEGORIES.trades),
+	robber: new Set(CATEGORIES.robber),
+	bonuses: new Set(CATEGORIES.bonuses),
 }
 
 // A single rendered log line: the message plus the player index it belongs to
@@ -44,6 +117,22 @@ export function ActionLog({
 	meIdx: number
 }) {
 	const [open, setOpen] = useState(false)
+	const [filter, setFilter] = useState<Filter>('all')
+
+	// Newest-first: the freshest action sits at the top so recent activity is
+	// visible without scrolling.
+	const lines = useMemo(() => {
+		const ctx: LogContext = { playerOrder, profilesById, meIdx }
+		const out: { key: string; line: LogLine }[] = []
+		for (let i = events.length - 1; i >= 0; i--) {
+			const e = events[i]
+			if (filter !== 'all' && !KINDS_BY_FILTER[filter].has(e.kind))
+				continue
+			const line = describeEvent(e, ctx)
+			if (line) out.push({ key: `${e.at}-${i}`, line })
+		}
+		return out
+	}, [events, filter, playerOrder, profilesById, meIdx])
 
 	if (!open) {
 		return (
@@ -59,15 +148,6 @@ export function ActionLog({
 				<Ionicons name="list" size={22} color={colors.text} />
 			</Pressable>
 		)
-	}
-
-	const ctx: LogContext = { playerOrder, profilesById, meIdx }
-	// Newest-first: the freshest action sits at the top so recent activity is
-	// visible without scrolling.
-	const lines: { key: string; line: LogLine }[] = []
-	for (let i = events.length - 1; i >= 0; i--) {
-		const line = describeEvent(events[i], ctx)
-		if (line) lines.push({ key: `${events[i].at}-${i}`, line })
 	}
 
 	return (
@@ -94,8 +174,42 @@ export function ActionLog({
 					/>
 				</Pressable>
 			</View>
+			<ScrollView
+				horizontal
+				style={styles.filterScroll}
+				contentContainerStyle={styles.filterRow}
+				showsHorizontalScrollIndicator={false}
+			>
+				{FILTERS.map((f) => {
+					const active = f.key === filter
+					return (
+						<Pressable
+							key={f.key}
+							onPress={() => setFilter(f.key)}
+							style={({ pressed }) => [
+								styles.chip,
+								active && styles.chipActive,
+								pressed && styles.pressed,
+							]}
+							accessibilityRole="button"
+							accessibilityState={{ selected: active }}
+						>
+							<Text
+								style={[
+									styles.chipText,
+									active && styles.chipTextActive,
+								]}
+							>
+								{f.label}
+							</Text>
+						</Pressable>
+					)
+				})}
+			</ScrollView>
 			{lines.length === 0 ? (
-				<Text style={styles.empty}>No actions yet.</Text>
+				<Text style={styles.empty}>
+					{filter === 'all' ? 'No actions yet.' : 'Nothing here yet.'}
+				</Text>
 			) : (
 				<ScrollView
 					style={styles.scroll}
@@ -176,7 +290,9 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'bank_trade':
 			return {
-				text: `${who(e.player)} traded with the bank`,
+				text: e.merchant
+					? `${who(e.player)} traded with the bank and converted ${e.merchant.count} ${RESOURCE_LABELS[e.merchant.resource]} (merchant)`
+					: `${who(e.player)} traded with the bank`,
 				player: e.player,
 			}
 		case 'dev_bought':
@@ -226,6 +342,125 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 						: `${who(e.player)} has been Honked`,
 				player: e.player,
 			}
+		case 'bonus_chosen': {
+			const bonus = bonusById(e.bonus)?.title ?? 'a bonus'
+			const curse = e.curse ? curseById(e.curse)?.title : null
+			return {
+				text: curse
+					? `${who(e.player)}: ${bonus} — ${curse}`
+					: `${who(e.player)}: ${bonus}`,
+				player: e.player,
+			}
+		}
+		case 'hoarder_kept':
+			return {
+				text: `${who(e.player)} kept all ${e.count} cards (hoarder)`,
+				player: e.player,
+			}
+		case 'specialist_set':
+			return {
+				text: `${who(e.player)} specialized in ${RESOURCE_LABELS[e.resource]}`,
+				player: e.player,
+			}
+		case 'carpenter_vp':
+			return {
+				text: `${who(e.player)} bought a victory point (carpenter)`,
+				player: e.player,
+			}
+		case 'knight_tapped':
+			return {
+				text: `${who(e.player)} tapped a knight for ${RESOURCE_LABELS[e.resources[0]]} and ${RESOURCE_LABELS[e.resources[1]]}`,
+				player: e.player,
+			}
+		case 'reroll':
+			return {
+				text: `${who(e.player)} rerolled the dice (gambler)`,
+				player: e.player,
+			}
+		case 'explorer_road':
+			return {
+				text: `${who(e.player)} placed a free road (explorer)`,
+				player: e.player,
+			}
+		case 'shepherd_swap':
+			return {
+				text: `${who(e.player)} swapped sheep for ${RESOURCE_LABELS[e.take[0]]} and ${RESOURCE_LABELS[e.take[1]]} (shepherd)`,
+				player: e.player,
+			}
+		case 'ritual_roll':
+			return {
+				text: `${who(e.player)} performed a ritual and rolled ${e.total}`,
+				player: e.player,
+			}
+		case 'curio_collected':
+			return {
+				text: `${who(e.player)} collected ${describeHand(e.take)} (curio collector)`,
+				player: e.player,
+			}
+		case 'forger_token_set':
+			return {
+				text: `${cap(possessive(e.player, ctx))} forger token activated`,
+				player: e.player,
+			}
+		case 'forger_token_move':
+			return {
+				text: `${who(e.player)} moved their forger token`,
+				player: e.player,
+			}
+		case 'forger_copy':
+			return {
+				text: `${who(e.player)} copied ${possessive(e.target, ctx)} production (forger)`,
+				player: e.player,
+			}
+		// The card itself is acquired at `confirm_scout_card`, which logs the
+		// usual `dev_bought` — this is the peek that precedes it.
+		case 'scout_buy':
+			return {
+				text: e.swap
+					? `${who(e.player)} peeked at the deck, paying ${RESOURCE_LABELS[e.swap.to]} for ${RESOURCE_LABELS[e.swap.from]} (scout)`
+					: `${who(e.player)} peeked at the deck (scout)`,
+				player: e.player,
+			}
+		case 'liquidate':
+			return {
+				text: `${who(e.player)} liquidated ${LIQUIDATION_LABELS[e.detail.kind]}`,
+				player: e.player,
+			}
+		case 'build_super_city':
+			return {
+				text: `${who(e.player)} built a super city`,
+				player: e.player,
+			}
+		case 'fence_token':
+			return {
+				text: `${who(e.player)} reserved an edge (fencer)`,
+				player: e.player,
+			}
+		case 'invest':
+			return {
+				text: `${who(e.player)} set aside an investment`,
+				player: e.player,
+			}
+		case 'investor_payout':
+			return {
+				text: `${who(e.player)} collected an investment payout`,
+				player: e.player,
+			}
+		case 'magic_cast':
+			return {
+				text: `${who(e.player)} conjured production for ${e.target} (magician)`,
+				player: e.player,
+			}
+		case 'haunt_spots_set':
+			return {
+				text: `${who(e.player)} chose their haunted spots`,
+				player: e.player,
+			}
+		case 'ghost_spawned':
+			return {
+				text: `A ghost appeared on ${possessive(e.player, ctx)} haunted spot`,
+				player: e.player,
+			}
 		case 'game_complete': {
 			// Two historical shapes carry the winner under different keys.
 			const winner = 'winner' in e ? e.winner : e.winner_index
@@ -237,6 +472,7 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 		case 'trade_proposed':
 		case 'trade_canceled':
 		case 'trade_rejected':
+		case 'magic_skipped':
 			return null
 		default:
 			return null
@@ -247,6 +483,34 @@ function nameFor(idx: number, ctx: LogContext): string {
 	if (idx === ctx.meIdx) return 'You'
 	const uid = ctx.playerOrder[idx]
 	return ctx.profilesById[uid]?.username ?? 'Player'
+}
+
+// "your production" rather than "You's production" for the self case.
+function possessive(idx: number, ctx: LogContext): string {
+	return idx === ctx.meIdx ? 'your' : `${nameFor(idx, ctx)}'s`
+}
+
+// For the possessive at the start of a line, where "your" would read as a typo.
+function cap(s: string): string {
+	return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+// "2 wheat, 1 ore" from a list of picked resources.
+function describeHand(take: Resource[]): string {
+	const counts = {} as Record<Resource, number>
+	for (const r of take) counts[r] = (counts[r] ?? 0) + 1
+	const parts = RESOURCES.filter((r) => counts[r] > 0).map(
+		(r) => `${counts[r]} ${RESOURCE_LABELS[r]}`
+	)
+	return parts.length > 0 ? parts.join(', ') : 'nothing'
+}
+
+const LIQUIDATION_LABELS: Record<string, string> = {
+	road: 'a road',
+	settlement: 'a settlement',
+	city: 'a city',
+	super_city: 'a super city',
+	dev_card: 'a development card',
 }
 
 const styles = StyleSheet.create({
@@ -306,6 +570,36 @@ const styles = StyleSheet.create({
 		height: 28,
 		alignItems: 'center',
 		justifyContent: 'center',
+	},
+	filterScroll: {
+		flexGrow: 0,
+		borderBottomWidth: 1,
+		borderBottomColor: colors.borderLight,
+	},
+	filterRow: {
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+		gap: spacing.xs,
+	},
+	chip: {
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 3,
+		borderRadius: radius.full,
+		borderWidth: 1,
+		borderColor: colors.border,
+		backgroundColor: colors.cardAlt,
+	},
+	chipActive: {
+		backgroundColor: colors.brand,
+		borderColor: colors.brand,
+	},
+	chipText: {
+		fontSize: font.xs,
+		fontWeight: '600',
+		color: colors.textSecondary,
+	},
+	chipTextActive: {
+		color: colors.white,
 	},
 	scroll: {
 		flexGrow: 0,
