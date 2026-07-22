@@ -10,7 +10,14 @@
 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { type ComponentProps, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+	Pressable,
+	ScrollView,
+	StyleSheet,
+	Text,
+	useWindowDimensions,
+	View,
+} from 'react-native'
 import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { Modal } from '../modules/Modal'
@@ -50,6 +57,12 @@ type TabKey = 'scores' | 'rolls' | 'highlights'
 // number); every other bar is scaled against it.
 const ROLL_CHART_HEIGHT = 160
 
+// The sheet takes a *definite* height rather than a `maxHeight` so the tab
+// bodies can flex-shrink into a scrollable area — under a max-constraint alone
+// the ScrollView measures at full content height and never scrolls.
+const SHEET_MAX_HEIGHT = 640
+const SHEET_HEIGHT_RATIO = 0.85
+
 const TABS: { key: TabKey; label: string }[] = [
 	{ key: 'scores', label: 'Scores' },
 	{ key: 'rolls', label: 'Rolls' },
@@ -70,6 +83,7 @@ export function GameOverOverlay({
 	onBackToGames,
 }: GameOverOverlayProps) {
 	const [tab, setTab] = useState<TabKey>('scores')
+	const { height: windowHeight } = useWindowDimensions()
 	// Winner + scoreboard only render when we actually have a completed game.
 	// `visible` can be false even for a complete game (user dismissed to peek
 	// at the board); that's handled by the Modal itself.
@@ -85,7 +99,15 @@ export function GameOverOverlay({
 			visible={visible}
 			dismissOnBackdropPress={false}
 			onDismiss={onDismiss}
-			contentStyle={styles.sheet}
+			contentStyle={[
+				styles.sheet,
+				{
+					height: Math.min(
+						SHEET_MAX_HEIGHT,
+						windowHeight * SHEET_HEIGHT_RATIO
+					),
+				},
+			]}
 		>
 			<Header
 				winnerIdx={winnerIdx}
@@ -113,10 +135,16 @@ export function GameOverOverlay({
 				/>
 			)}
 			<View style={styles.buttons}>
-				<Button variant="secondary" onPress={onDismiss}>
+				<Button
+					variant="secondary"
+					onPress={onDismiss}
+					style={styles.button}
+				>
 					View board
 				</Button>
-				<Button onPress={onBackToGames}>Back to games</Button>
+				<Button onPress={onBackToGames} style={styles.button}>
+					Back to games
+				</Button>
 			</View>
 		</Modal>
 	)
@@ -491,7 +519,6 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: colors.border,
 		overflow: 'hidden',
-		maxHeight: '85%',
 	},
 	header: {
 		padding: spacing.lg,
@@ -541,7 +568,7 @@ const styles = StyleSheet.create({
 		color: colors.brand,
 	},
 	scroll: {
-		flexShrink: 1,
+		flex: 1,
 	},
 	scrollInner: {
 		padding: spacing.md,
@@ -704,6 +731,11 @@ const styles = StyleSheet.create({
 		padding: spacing.md,
 		borderTopWidth: 1,
 		borderTopColor: colors.border,
+	},
+	// Even halves so neither label can push the row past the sheet width.
+	button: {
+		flex: 1,
+		paddingHorizontal: spacing.sm,
 	},
 	finalScoreBtn: {
 		position: 'absolute',

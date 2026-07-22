@@ -7630,14 +7630,12 @@ async function handlePlayDevCard(
 			if (!r1 || !r2) return err(400, 'invalid year_of_plenty payload')
 			nextPlayers = nextPlayers.map((p, i) => {
 				if (i !== meIdx) return p
-				return {
-					...p,
-					resources: {
-						...p.resources,
-						[r1]: p.resources[r1] + 1,
-						[r2]: p.resources[r2] + 1,
-					},
-				}
+				// r1 and r2 can be the same resource, so add cumulatively rather
+				// than with two computed keys (the second would clobber the first).
+				const resources = { ...p.resources }
+				resources[r1] += 1
+				resources[r2] += 1
+				return { ...p, resources }
 			})
 			events.push({
 				kind: 'dev_played',
