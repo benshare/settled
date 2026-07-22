@@ -162,6 +162,22 @@ export const radius = {
 	full: 999,
 } as const
 
+// Stacking order for the in-tree overlays on the game screen. React Native's
+// `<Modal>` renders in its own layer (a native window; a body portal on web), so
+// modals always win — these values only order the non-modal overlays, which is
+// where the ambiguity actually lives.
+export const z = {
+	// The board container. Lifts it above the player strip and the action bars
+	// (its siblings), so the panels floating inside it can overhang them.
+	playArea: 10,
+	// Collapsed floating buttons in the board's top-right stack.
+	floatingButton: 20,
+	// What those buttons open, plus the other floating panels over the board.
+	panel: 30,
+	// Chat — mounted at the play-area root so it covers the action bars.
+	chat: 40,
+} as const
+
 export const font = {
 	xs: 11,
 	sm: 13,

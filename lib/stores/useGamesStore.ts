@@ -49,11 +49,16 @@ export type GameEvent =
 			at: string
 	  }
 	| { kind: 'placement_complete'; at: string }
+	// `gains` is the production this roll paid out, keyed by seat — the only
+	// record of it anywhere, since distribution is otherwise invisible to the
+	// log. Absent on 7s (nothing produced) and on events from before it was
+	// written, so treat a missing value as "unknown", not "nobody collected".
 	| {
 			kind: 'rolled'
 			player: number
 			dice: [number, number]
 			total: number
+			gains?: Record<number, ResourceHand>
 			at: string
 	  }
 	| { kind: 'turn_ended'; player: number; at: string }
@@ -196,12 +201,14 @@ export type GameEvent =
 			take: [Resource, Resource]
 			at: string
 	  }
+	// Same `gains` as `rolled`, but a ritual pays only the ritualist.
 	| {
 			kind: 'ritual_roll'
 			player: number
 			dice: [number, number]
 			total: number
 			discard: ResourceHand
+			gains?: Record<number, ResourceHand>
 			at: string
 	  }
 	| { kind: 'curio_collected'; player: number; take: Resource[]; at: string }

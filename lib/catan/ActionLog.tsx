@@ -9,7 +9,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
-import { colors, font, radius, spacing } from '../theme'
+import { colors, font, radius, spacing, z } from '../theme'
+import type { ResourceHand } from './types'
 import { RESOURCES, type Resource } from './board'
 import { bonusById, curseById } from './bonuses'
 import { devCardById } from './devCards'
@@ -102,8 +103,18 @@ const KINDS_BY_FILTER: Record<Category, ReadonlySet<GameEvent['kind']>> = {
 }
 
 // A single rendered log line: the message plus the player index it belongs to
-// (for the colored dot). `player: null` renders a neutral marker.
-type LogLine = { text: string; player: number | null }
+// (for the colored dot). `player: null` renders a neutral marker. `detail` is
+// the expanded body — omitted for events with nothing more to say, which is
+// what makes a row tappable or not.
+type LogLine = {
+	text: string
+	player: number | null
+	detail?: DetailRow[]
+}
+
+// One line of an expanded row: an optional label (who / what side of a trade)
+// and the resources. A row with no label is a plain note.
+type DetailRow = { label?: string; text: string }
 
 export function ActionLog({
 	events,
@@ -118,6 +129,16 @@ export function ActionLog({
 }) {
 	const [open, setOpen] = useState(false)
 	const [filter, setFilter] = useState<Filter>('all')
+	// Keyed the same way as the rendered rows, so an expansion survives new
+	// events landing above it. Everything starts collapsed.
+	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+
+	const toggle = (key: string) =>
+		setExpanded((prev) => {
+			const next = new Set(prev)
+			if (!next.delete(key)) next.add(key)
+			return next
+		})
 
 	// Newest-first: the freshest action sits at the top so recent activity is
 	// visible without scrolling.
@@ -217,25 +238,88 @@ export function ActionLog({
 					showsVerticalScrollIndicator={false}
 				>
 					{lines.map(({ key, line }) => (
-						<View key={key} style={styles.row}>
-							<View
-								style={[
-									styles.dot,
-									{
-										backgroundColor:
-											line.player === null
-												? colors.textMuted
-												: (playerColors[line.player] ??
-													playerColors[0]),
-									},
-								]}
-							/>
-							<Text style={styles.rowText}>{line.text}</Text>
-						</View>
+						<LogRow
+							key={key}
+							line={line}
+							expanded={expanded.has(key)}
+							onToggle={() => toggle(key)}
+						/>
 					))}
 				</ScrollView>
 			)}
 		</Animated.View>
+	)
+}
+
+function LogRow({
+	line,
+	expanded,
+	onToggle,
+}: {
+	line: LogLine
+	expanded: boolean
+	onToggle: () => void
+}) {
+	const dot = (
+		<View
+			style={[
+				styles.dot,
+				{
+					backgroundColor:
+						line.player === null
+							? colors.textMuted
+							: (playerColors[line.player] ?? playerColors[0]),
+				},
+			]}
+		/>
+	)
+
+	if (!line.detail) {
+		return (
+			<View style={styles.row}>
+				{dot}
+				<Text style={styles.rowText}>{line.text}</Text>
+			</View>
+		)
+	}
+
+	return (
+		<View>
+			<Pressable
+				onPress={onToggle}
+				style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+				accessibilityRole="button"
+				accessibilityState={{ expanded }}
+			>
+				{dot}
+				<Text style={styles.rowText}>{line.text}</Text>
+				<Ionicons
+					name={expanded ? 'chevron-up' : 'chevron-down'}
+					size={12}
+					color={colors.textMuted}
+				/>
+			</Pressable>
+			{expanded && (
+				<Animated.View
+					entering={FadeIn.duration(120)}
+					style={styles.detail}
+				>
+					{line.detail.map((d, i) => (
+						<View
+							key={`${d.label ?? ''}-${i}`}
+							style={styles.detailRow}
+						>
+							{d.label !== undefined && (
+								<Text style={styles.detailLabel}>
+									{d.label}
+								</Text>
+							)}
+							<Text style={styles.detailText}>{d.text}</Text>
+						</View>
+					))}
+				</Animated.View>
+			)}
+		</View>
 	)
 }
 
@@ -256,6 +340,7 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			return {
 				text: `${who(e.player)} rolled ${e.total}`,
 				player: e.player,
+				detail: gainsDetail(e.gains, ctx),
 			}
 		case 'road_built':
 			return { text: `${who(e.player)} built a road`, player: e.player }
@@ -287,14 +372,31 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			return {
 				text: `${who(e.from)} traded with ${who(e.to)}`,
 				player: e.from,
+				detail: [
+					{ label: `${who(e.from)} gave`, text: handText(e.give) },
+					{ label: `${who(e.to)} gave`, text: handText(e.receive) },
+				],
 			}
-		case 'bank_trade':
+		case 'bank_trade': {
+			const detail: DetailRow[] = [
+				{ label: 'Gave', text: handText(e.give) },
+				{ label: 'Got', text: handText(e.receive) },
+				{ label: 'Rate', text: `${e.ratio}:1` },
+			]
+			if (e.merchant) {
+				detail.push({
+					label: 'Merchant',
+					text: `${e.merchant.count} ${RESOURCE_LABELS[e.merchant.resource]} → ${handText(e.merchant.take)}`,
+				})
+			}
 			return {
 				text: e.merchant
-					? `${who(e.player)} traded with the bank and converted ${e.merchant.count} ${RESOURCE_LABELS[e.merchant.resource]} (merchant)`
+					? `${who(e.player)} traded with the bank (merchant)`
 					: `${who(e.player)} traded with the bank`,
 				player: e.player,
+				detail,
 			}
+		}
 		case 'dev_bought':
 			return {
 				text: `${who(e.player)} bought a development card`,
@@ -304,6 +406,7 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			return {
 				text: `${who(e.player)} played ${devCardById(e.id)?.title ?? 'a card'}`,
 				player: e.player,
+				detail: devPlayedDetail(e),
 			}
 		case 'largest_army_changed':
 			return {
@@ -322,16 +425,12 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				text: `${who(e.player)} gained ${e.count} ${RESOURCE_LABELS[e.resource]} (nomad)`,
 				player: e.player,
 			}
-		case 'fortune_teller_roll': {
-			const parts = RESOURCES.filter((r) => e.gain[r] > 0).map(
-				(r) => `${e.gain[r]} ${RESOURCE_LABELS[r]}`
-			)
-			const gained = parts.length > 0 ? parts.join(', ') : 'nothing'
+		case 'fortune_teller_roll':
 			return {
-				text: `${who(e.player)} rolled ${e.total} (fortune teller), gained ${gained}`,
+				text: `${who(e.player)} rolled ${e.total} (fortune teller)`,
 				player: e.player,
+				detail: [{ label: 'Gained', text: handText(e.gain) }],
 			}
-		}
 		// Spelled out for self because `nameFor` returns 'You', and
 		// "You has been Honked" is broken grammar.
 		case 'honked':
@@ -369,13 +468,29 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'knight_tapped':
 			return {
-				text: `${who(e.player)} tapped a knight for ${RESOURCE_LABELS[e.resources[0]]} and ${RESOURCE_LABELS[e.resources[1]]}`,
+				text: `${who(e.player)} tapped a knight (veteran)`,
 				player: e.player,
+				detail: [
+					{
+						label: 'Gained',
+						text: `1 ${RESOURCE_LABELS[e.resources[0]]}, 1 ${RESOURCE_LABELS[e.resources[1]]}`,
+					},
+				],
 			}
 		case 'reroll':
 			return {
 				text: `${who(e.player)} rerolled the dice (gambler)`,
 				player: e.player,
+				detail: [
+					{
+						label: 'Threw away',
+						text: `${e.old_dice[0] + e.old_dice[1]} (${e.old_dice.join(' + ')})`,
+					},
+					{
+						label: 'Kept',
+						text: `${e.new_dice[0] + e.new_dice[1]} (${e.new_dice.join(' + ')})`,
+					},
+				],
 			}
 		case 'explorer_road':
 			return {
@@ -384,18 +499,29 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'shepherd_swap':
 			return {
-				text: `${who(e.player)} swapped sheep for ${RESOURCE_LABELS[e.take[0]]} and ${RESOURCE_LABELS[e.take[1]]} (shepherd)`,
+				text: `${who(e.player)} swapped sheep (shepherd)`,
 				player: e.player,
+				detail: [
+					{
+						label: 'Got',
+						text: `1 ${RESOURCE_LABELS[e.take[0]]}, 1 ${RESOURCE_LABELS[e.take[1]]}`,
+					},
+				],
 			}
 		case 'ritual_roll':
 			return {
 				text: `${who(e.player)} performed a ritual and rolled ${e.total}`,
 				player: e.player,
+				detail: [
+					{ label: 'Discarded', text: handText(e.discard) },
+					...(gainsDetail(e.gains, ctx) ?? []),
+				],
 			}
 		case 'curio_collected':
 			return {
-				text: `${who(e.player)} collected ${describeHand(e.take)} (curio collector)`,
+				text: `${who(e.player)} collected 3 resources (curio collector)`,
 				player: e.player,
+				detail: [{ label: 'Took', text: describeHand(e.take) }],
 			}
 		case 'forger_token_set':
 			return {
@@ -411,25 +537,34 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			return {
 				text: `${who(e.player)} copied ${possessive(e.target, ctx)} production (forger)`,
 				player: e.player,
+				detail: [{ label: 'Gained', text: handText(e.gain) }],
 			}
 		// The card itself is acquired at `confirm_scout_card`, which logs the
 		// usual `dev_bought` — this is the peek that precedes it.
 		case 'scout_buy':
 			return {
-				text: e.swap
-					? `${who(e.player)} peeked at the deck, paying ${RESOURCE_LABELS[e.swap.to]} for ${RESOURCE_LABELS[e.swap.from]} (scout)`
-					: `${who(e.player)} peeked at the deck (scout)`,
+				text: `${who(e.player)} peeked at the deck (scout)`,
 				player: e.player,
+				detail: e.swap
+					? [
+							{
+								label: 'Paid',
+								text: `${RESOURCE_LABELS[e.swap.to]} instead of ${RESOURCE_LABELS[e.swap.from]}`,
+							},
+						]
+					: undefined,
 			}
 		case 'liquidate':
 			return {
 				text: `${who(e.player)} liquidated ${LIQUIDATION_LABELS[e.detail.kind]}`,
 				player: e.player,
+				detail: [{ label: 'Refund', text: handText(e.detail.refund) }],
 			}
 		case 'build_super_city':
 			return {
 				text: `${who(e.player)} built a super city`,
 				player: e.player,
+				detail: [{ label: 'Cost', text: handText(e.cost) }],
 			}
 		case 'fence_token':
 			return {
@@ -440,16 +575,24 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			return {
 				text: `${who(e.player)} set aside an investment`,
 				player: e.player,
+				detail: [
+					{ label: 'Trio', text: `3 ${RESOURCE_LABELS[e.resource]}` },
+				],
 			}
 		case 'investor_payout':
 			return {
 				text: `${who(e.player)} collected an investment payout`,
 				player: e.player,
+				detail: [{ label: 'Gained', text: handText(e.gain) }],
 			}
 		case 'magic_cast':
 			return {
 				text: `${who(e.player)} conjured production for ${e.target} (magician)`,
 				player: e.player,
+				detail: [
+					{ label: 'Discarded', text: handText(e.discard) },
+					{ label: 'Gained', text: handText(e.gain) },
+				],
 			}
 		case 'haunt_spots_set':
 			return {
@@ -483,6 +626,62 @@ function nameFor(idx: number, ctx: LogContext): string {
 	if (idx === ctx.meIdx) return 'You'
 	const uid = ctx.playerOrder[idx]
 	return ctx.profilesById[uid]?.username ?? 'Player'
+}
+
+// One detail row per seat that collected, in seat order. `undefined` (rather
+// than an empty list) when the roll predates `gains` being recorded, so the
+// row stays un-expandable instead of claiming nobody collected.
+function gainsDetail(
+	gains: Record<number, ResourceHand> | undefined,
+	ctx: LogContext
+): DetailRow[] | undefined {
+	if (!gains) return undefined
+	const rows = Object.keys(gains)
+		.map(Number)
+		.sort((a, b) => a - b)
+		.filter((idx) => handTotal(gains[idx]) > 0)
+		.map((idx) => ({
+			label: nameFor(idx, ctx),
+			text: handText(gains[idx]),
+		}))
+	return rows.length > 0 ? rows : [{ text: 'Nobody collected anything.' }]
+}
+
+function devPlayedDetail(
+	e: Extract<GameEvent, { kind: 'dev_played' }>
+): DetailRow[] | undefined {
+	if (e.take) {
+		return [
+			{
+				label: 'Took',
+				text: `1 ${RESOURCE_LABELS[e.take[0]]}, 1 ${RESOURCE_LABELS[e.take[1]]}`,
+			},
+		]
+	}
+	if (e.resource) {
+		return [
+			{ label: 'Named', text: RESOURCE_LABELS[e.resource] },
+			{
+				label: 'Took',
+				text: `${e.total ?? 0} ${RESOURCE_LABELS[e.resource]}`,
+			},
+		]
+	}
+	return undefined
+}
+
+// "2 wheat, 1 ore" — or "nothing" for an empty hand.
+function handText(hand: ResourceHand): string {
+	const parts = RESOURCES.filter((r) => hand[r] > 0).map(
+		(r) => `${hand[r]} ${RESOURCE_LABELS[r]}`
+	)
+	return parts.length > 0 ? parts.join(', ') : 'nothing'
+}
+
+function handTotal(hand: ResourceHand): number {
+	let n = 0
+	for (const r of RESOURCES) n += hand[r]
+	return n
 }
 
 // "your production" rather than "You's production" for the self case.
@@ -531,7 +730,7 @@ const styles = StyleSheet.create({
 		shadowOpacity: 0.12,
 		shadowRadius: 6,
 		elevation: 3,
-		zIndex: 4,
+		zIndex: z.floatingButton,
 	},
 	panel: {
 		position: 'absolute',
@@ -549,7 +748,7 @@ const styles = StyleSheet.create({
 		shadowOpacity: 0.12,
 		shadowRadius: 6,
 		elevation: 3,
-		zIndex: 5,
+		zIndex: z.panel,
 	},
 	header: {
 		flexDirection: 'row',
@@ -632,6 +831,26 @@ const styles = StyleSheet.create({
 		flex: 1,
 		fontSize: font.sm,
 		color: colors.text,
+	},
+	// Indented to clear the row's dot, so detail reads as belonging to it.
+	detail: {
+		paddingLeft: 10 + spacing.xs,
+		paddingTop: 2,
+		paddingBottom: spacing.xs,
+		gap: 1,
+	},
+	detailRow: {
+		flexDirection: 'row',
+		gap: spacing.xs,
+	},
+	detailLabel: {
+		fontSize: font.xs,
+		color: colors.textMuted,
+	},
+	detailText: {
+		flex: 1,
+		fontSize: font.xs,
+		color: colors.textSecondary,
 	},
 	pressed: {
 		opacity: 0.7,

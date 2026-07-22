@@ -4114,6 +4114,19 @@ async function applyRollOutcome(
 		}
 	}
 
+	// Production is public at the table but nothing else in the log records
+	// it, so hang the per-seat gains off the roll event itself for the action
+	// log to expand. Mutating the caller's event object is safe: it was built
+	// moments ago and only spread (shallow) into `existingEvents`, never
+	// persisted yet. A 7 returns above, so it never reaches here.
+	for (let i = extraEvents.length - 1; i >= 0; i--) {
+		const e = extraEvents[i] as { kind?: string; gains?: unknown }
+		if (e?.kind === 'rolled' || e?.kind === 'ritual_roll') {
+			e.gains = gains
+			break
+		}
+	}
+
 	let nextPlayers = state.players.map((p, i) => {
 		const g = gains[i]
 		if (!g) return p
