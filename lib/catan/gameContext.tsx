@@ -74,6 +74,13 @@ export function GameProvider({
 	)
 
 	const [liveGame, setLiveGame] = useState<Game | undefined>(storeGame)
+	// The header's tab strip switches games without remounting the provider, so
+	// the previously fetched row has to be dropped or it outlives its game
+	// until the new fetch lands. `storeGame` is already keyed to `gameId`, so
+	// the `??` fallback below covers the gap.
+	useEffect(() => {
+		setLiveGame(undefined)
+	}, [gameId])
 	useEffect(() => {
 		if (storeGame && !liveGame) setLiveGame(storeGame)
 	}, [storeGame, liveGame])

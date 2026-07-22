@@ -66,6 +66,7 @@ import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { FinalScoreButton, GameOverOverlay } from '@/lib/catan/GameOverOverlay'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
+import { GameTitle } from '@/lib/catan/GameTitle'
 import { waterColor } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
@@ -178,26 +179,26 @@ export default function GameDetailScreen() {
 
 	return (
 		<SafeAreaView style={styles.safe}>
-			<View style={styles.header}>
-				<Pressable
-					onPress={() => router.back()}
-					hitSlop={8}
-					style={({ pressed }) => [
-						styles.back,
-						pressed && styles.pressed,
-					]}
-				>
-					<Ionicons
-						name="chevron-back"
-						size={26}
-						color={colors.text}
-					/>
-				</Pressable>
-				<Text style={styles.title}>Game</Text>
-				<View style={styles.back} />
-			</View>
-
 			<GameProvider gameId={id}>
+				<View style={styles.header}>
+					<Pressable
+						onPress={() => router.back()}
+						hitSlop={8}
+						style={({ pressed }) => [
+							styles.back,
+							pressed && styles.pressed,
+						]}
+					>
+						<Ionicons
+							name="chevron-back"
+							size={26}
+							color={colors.text}
+						/>
+					</Pressable>
+					<GameTitle gameId={id} />
+					<View style={styles.back} />
+				</View>
+
 				{/* `chat=1` arrives from a chat notification tap, so the
 				    conversation is open on landing. Consumed immediately (see
 				    below) so a second tap re-opens it. */}
@@ -2592,11 +2593,6 @@ const styles = StyleSheet.create({
 	},
 	pressed: {
 		opacity: 0.7,
-	},
-	title: {
-		fontSize: font.md,
-		fontWeight: '700',
-		color: colors.text,
 	},
 	center: {
 		flex: 1,
