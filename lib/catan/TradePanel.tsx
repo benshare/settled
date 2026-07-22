@@ -67,7 +67,6 @@ export function TradePanel({
 	playerOrder,
 	profilesById,
 	submitting,
-	bankOnly = false,
 	onSend,
 	onSendBank,
 	onCancel,
@@ -78,9 +77,6 @@ export function TradePanel({
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	submitting: boolean
-	// Bank/port trades only — hides the player-to-player composer. Used by the
-	// special build phase, where trading with other players isn't allowed.
-	bankOnly?: boolean
 	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
 	onSendBank: (
 		give: ResourceHand,
@@ -94,13 +90,7 @@ export function TradePanel({
 		[state, meIdx]
 	)
 
-	const [mode, setMode] = useState<Mode>(() =>
-		bankOnly
-			? bankOptions.length === 1
-				? { kind: 'bank_compose', choice: bankOptions[0] }
-				: { kind: 'bank_select' }
-			: { kind: 'player' }
-	)
+	const [mode, setMode] = useState<Mode>({ kind: 'player' })
 
 	function startBank() {
 		// If the only option is 4:1 (no ports), skip the selector.
@@ -133,7 +123,7 @@ export function TradePanel({
 					state.players[meIdx]?.specialistResource ?? null
 				}
 				onPick={(choice) => setMode({ kind: 'bank_compose', choice })}
-				onBack={bankOnly ? onCancel : () => setMode({ kind: 'player' })}
+				onBack={() => setMode({ kind: 'player' })}
 			/>
 		)
 	}
@@ -148,15 +138,12 @@ export function TradePanel({
 			submitting={submitting}
 			onBack={() => {
 				// With multiple ratios, step back to the selector; with only
-				// 4:1 there's no selector, so back exits (to player mode in the
-				// normal flow, or fully out when bank-only).
-				if (bankOptions.length > 1) {
-					setMode({ kind: 'bank_select' })
-				} else if (bankOnly) {
-					onCancel()
-				} else {
-					setMode({ kind: 'player' })
-				}
+				// 4:1 there's no selector, so back returns to player mode.
+				setMode(
+					bankOptions.length > 1
+						? { kind: 'bank_select' }
+						: { kind: 'player' }
+				)
 			}}
 			onCancel={onCancel}
 			onSend={onSendBank}

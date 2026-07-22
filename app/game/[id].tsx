@@ -1196,9 +1196,10 @@ function GameBody() {
 
 	const hasLiveTrade = !!liveOffer
 	const liveTradeIsMine = !!liveOffer && liveOffer.from === meIdx
-	// The Trade button also opens in a special-build slot, but bank-only (player
-	// trades stay main-only — see the TradePanel `bankOnly` prop below).
-	const tradeButtonEnabled = canBuildBasic && !hasLiveTrade && !tradePanelOpen
+	// Trading — player and bank/port alike — is a main-turn action only. A
+	// special-build slot is build/buy, so the Trade button stays off there.
+	const tradeButtonEnabled =
+		canBuildThisTurn && !hasLiveTrade && !tradePanelOpen
 	const tradeButtonActive = tradePanelOpen || liveTradeIsMine
 
 	// Set-2 build-bar enablement.
@@ -1885,7 +1886,6 @@ function GameBody() {
 						playerOrder={game.player_order}
 						profilesById={profilesById}
 						submitting={submitting}
-						bankOnly={isMySpecialBuild}
 						onSend={onProposeTrade}
 						onSendBank={onBankTrade}
 						onCancel={() => setTradePanelOpen(false)}
@@ -2389,7 +2389,7 @@ function SpecialBuildBar({
 			<View style={styles.mainLoopRow}>
 				<Text style={styles.mainLoopStatus} numberOfLines={2}>
 					{isMe
-						? 'Special build — build, buy, or bank trade'
+						? 'Special build — build or buy a dev card'
 						: `Special build — ${actorName} is building`}
 				</Text>
 				{isMe ? (

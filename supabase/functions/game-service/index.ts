@@ -1967,35 +1967,8 @@ function canAffordAnyCost(p: PlayerState, standardCost: ResourceHand): boolean {
 	)
 }
 
-// Can the player execute at least one bank/port trade right now?
-function canBankTradeSrv(state: GameState, playerIdx: number): boolean {
-	const p = state.players[playerIdx]
-	if (!p) return false
-	const specialty =
-		p.bonus === 'specialist' ? (p.specialistResource ?? null) : null
-	if (curseOf(state, playerIdx) === 'provinciality') {
-		for (const r of RESOURCES) {
-			const need = specialty === r ? Math.max(2, 5 - 1) : 5
-			if (p.resources[r] >= need) return true
-		}
-		return false
-	}
-	const kinds = playerPortKinds(state, playerIdx)
-	for (const r of RESOURCES) {
-		// Specialist pays one fewer on a 2:1 specialty port → 1:1, so a single
-		// specialty card is enough to trade there.
-		const need = specialty === r ? Math.max(1, 2 - 1) : 2
-		if (kinds.has(r) && p.resources[r] >= need) return true
-	}
-	const generic = kinds.has('3:1') ? 3 : 4
-	for (const r of RESOURCES) {
-		const need = specialty === r ? Math.max(1, generic - 1) : generic
-		if (p.resources[r] >= need) return true
-	}
-	return false
-}
-
-// Can player `idx` take ANY special-build action right now (build/buy/bank)?
+// Can player `idx` take ANY special-build action right now (build/buy)? Bank and
+// port trades are not special-build actions — see the note on the client rule.
 // Honors the `moreThanSeven` house rule. Mirror of build.canTakeSpecialBuildAction.
 function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
 	const p = state.players[idx]
@@ -2027,7 +2000,7 @@ function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
 		canAffordAnyCost(p, DEV_CARD_COST)
 	)
 		return true
-	return canBankTradeSrv(state, idx)
+	return false
 }
 
 // Drop leading queue members who cannot act, so the queue only ever stops on a
@@ -6026,11 +5999,13 @@ async function handleBankTrade(
 
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	// Bank trades are allowed on your own main turn or in your special-build slot.
+	// Bank/port trades are a main-turn action only — not available in a
+	// special-build slot.
 	const inMain = state.phase.kind === 'main' && game.current_turn === meIdx
-	if (!inMain && !isSpecialBuildActor(state, meIdx)) {
-		if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
-			return err(400, 'expected main phase')
+	if (!inMain) {
+		if (state.phase.kind === 'special_build')
+			return err(400, 'no trading during special build')
+		if (state.phase.kind !== 'main') return err(400, 'expected main phase')
 		return err(403, 'not your turn')
 	}
 

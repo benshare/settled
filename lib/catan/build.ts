@@ -31,7 +31,6 @@ import {
 	canPlaceUnderPower,
 	settlementKeepsYouthOK,
 } from './curses'
-import { canBankTrade } from './ports'
 import {
 	edgeStateOf,
 	vertexStateOf,
@@ -391,11 +390,12 @@ export function handSize(p: PlayerState): number {
 }
 
 // Can player `idx` take ANY action in a special build phase right now — build a
-// road/settlement/city, buy a dev card, or bank/port trade? Used to auto-skip a
-// queued player with nothing to do and to gate slot actions. Honors the
-// `moreThanSeven` house rule: while it's set, a player at or below 7 cards may
-// not build at all (a bank trade down is still counted, since that's exactly
-// how such a player spends below the discard threshold).
+// road/settlement/city or buy a dev card? Used to auto-skip a queued player with
+// nothing to do and to gate slot actions. Honors the `moreThanSeven` house rule:
+// while it's set, a player at or below 7 cards may not act at all.
+// Bank/port trades are deliberately NOT a special-build action: trading down
+// mid-slot could drop a player back under the `moreThanSeven` threshold and
+// silently strip the build they entered the slot for.
 export function canTakeSpecialBuildAction(
 	state: GameState,
 	idx: number
@@ -424,5 +424,5 @@ export function canTakeSpecialBuildAction(
 		canAffordPurchase(p, 'dev_card')
 	)
 		return true
-	return canBankTrade(state, idx)
+	return false
 }
