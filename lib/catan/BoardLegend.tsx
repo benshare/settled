@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
-import { colors, font, radius, spacing } from '../theme'
+import { colors, font, radius, spacing, z } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { BUILD_COSTS } from './build'
 import { DEV_CARD_COST } from './dev'
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
 		shadowOpacity: 0.12,
 		shadowRadius: 6,
 		elevation: 3,
-		zIndex: 4,
+		zIndex: z.floatingButton,
 	},
 	panel: {
 		position: 'absolute',
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
 		shadowOpacity: 0.12,
 		shadowRadius: 6,
 		elevation: 3,
-		zIndex: 4,
+		zIndex: z.panel,
 	},
 	header: {
 		flexDirection: 'row',

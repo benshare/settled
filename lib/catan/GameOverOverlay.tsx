@@ -15,7 +15,7 @@ import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
-import { colors, font, radius, spacing } from '../theme'
+import { colors, font, radius, spacing, z } from '../theme'
 import { populistBonusVPFor } from './bonus'
 import { knightsPlayed } from './dev'
 import { gameHighlights, rollDistribution, type Highlight } from './gameStats'
@@ -709,6 +709,8 @@ const styles = StyleSheet.create({
 		position: 'absolute',
 		right: spacing.md,
 		bottom: spacing.md,
+		// Sits over the board container, which is lifted above its siblings.
+		zIndex: z.panel,
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: 6,

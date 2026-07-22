@@ -26,7 +26,7 @@ import Animated, {
 } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { Profile } from '../stores/useProfileStore'
-import { colors, font, radius, spacing } from '../theme'
+import { colors, font, radius, spacing, z } from '../theme'
 import { CHAT_MAX_CHARS, useChat, type ChatMessage } from './chatContext'
 import { playerColors } from './palette'
 
@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
 		shadowOpacity: 0.12,
 		shadowRadius: 6,
 		elevation: 3,
-		zIndex: 4,
+		zIndex: z.floatingButton,
 	},
 	badge: {
 		position: 'absolute',
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
 		right: 0,
 		bottom: 0,
 		backgroundColor: 'rgba(0, 0, 0, 0.15)',
-		zIndex: 10,
+		zIndex: z.chat,
 	},
 	// Inset by the gap less the slop ring, which `panel` pads back — so the
 	// panel's visible edge still sits PANEL_GAP from the play area.

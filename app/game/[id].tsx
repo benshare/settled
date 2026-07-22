@@ -85,7 +85,7 @@ import { canHonk } from '@/lib/catan/honk'
 import { Button } from '@/lib/modules/Button'
 import { useGamesStore, type GameEvent } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
-import { colors, font, radius, spacing } from '@/lib/theme'
+import { colors, font, radius, spacing, z } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -2531,6 +2531,9 @@ const styles = StyleSheet.create({
 	boardContainer: {
 		flex: 1,
 		backgroundColor: waterColor,
+		// Above the player strip and the action bars, which are siblings, so the
+		// panels floating inside it can overhang them rather than slide under.
+		zIndex: z.playArea,
 	},
 	boardInsetTop: {
 		position: 'absolute',
@@ -2578,7 +2581,7 @@ const styles = StyleSheet.create({
 		left: spacing.sm,
 		right: spacing.sm,
 		bottom: spacing.sm,
-		zIndex: 5,
+		zIndex: z.panel,
 	},
 	confirmFloat: {
 		position: 'absolute',
@@ -2597,6 +2600,8 @@ const styles = StyleSheet.create({
 		shadowRadius: 6,
 		elevation: 3,
 		maxWidth: 220,
+		// Shares the buttons' corner, so it has to win against them.
+		zIndex: z.panel,
 	},
 	confirmTitle: {
 		fontSize: font.sm,
