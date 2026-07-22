@@ -111,8 +111,8 @@ export function PlayerStrip({
 							</View>
 							{showDevCards && devCount > 0 && (
 								<View style={styles.gridStat}>
-									<Ionicons
-										name="shield"
+									<MaterialCommunityIcons
+										name="script-text"
 										size={12}
 										color={colors.textSecondary}
 									/>

@@ -140,13 +140,7 @@ function Body({
 					}
 				/>
 				<StatChip icon="albums-outline" label="Cards" value={cards} />
-				{showDevCards && (
-					<StatChip
-						icon="shield-outline"
-						label="Dev"
-						value={devCount}
-					/>
-				)}
+				{showDevCards && <DevChip count={devCount} />}
 			</View>
 
 			<View style={styles.statsRow}>
@@ -216,6 +210,20 @@ function StatChip({
 			<Ionicons name={icon} size={16} color={colors.textSecondary} />
 			<Text style={styles.chipValue}>{value}</Text>
 			<Text style={styles.chipLabel}>{label}</Text>
+		</View>
+	)
+}
+
+function DevChip({ count }: { count: number }) {
+	return (
+		<View style={styles.chip}>
+			<MaterialCommunityIcons
+				name="script-text-outline"
+				size={16}
+				color={colors.textSecondary}
+			/>
+			<Text style={styles.chipValue}>{count}</Text>
+			<Text style={styles.chipLabel}>Dev</Text>
 		</View>
 	)
 }
