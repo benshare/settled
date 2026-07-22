@@ -161,7 +161,12 @@ const styles = StyleSheet.create({
 		flex: 1,
 	},
 	strip: {
+		// flexGrow lets the content fill the strip so justifyContent can centre
+		// it; once there are enough tabs to overflow, both go inert and the
+		// strip scrolls from the left as usual.
+		flexGrow: 1,
 		alignItems: 'center',
+		justifyContent: 'center',
 		gap: spacing.xs,
 		paddingHorizontal: spacing.xs,
 	},

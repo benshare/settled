@@ -3637,7 +3637,11 @@ async function handleRespond(
 			.insert({
 				participants,
 				player_order: playerOrder,
-				current_turn: 0,
+				// Bonus selection is simultaneous — nobody holds the turn, and
+				// naming a seat there is actively wrong (the header's tab strip
+				// reads this column to badge "waiting on you"). Set to 0 when
+				// the phase resolves to initial_placement in handlePickBonus.
+				current_turn: config.bonuses ? null : 0,
 				status: 'placement',
 				// Denormalized off the config so RLS can gate the row without
 				// reaching into game_states. Written once, never mutated —
@@ -3819,7 +3823,12 @@ async function handlePickBonus(
 		}))
 		const { error: gameErr } = await admin
 			.from('games')
-			.update({ events: [...(game.events ?? []), ...events] })
+			.update({
+				// Held null for the duration of the simultaneous phase; the
+				// snake order starts now. See the insert in handleRespond.
+				current_turn: 0,
+				events: [...(game.events ?? []), ...events],
+			})
 			.eq('id', game.id)
 		if (gameErr) return err(500, 'could not log event')
 	}
