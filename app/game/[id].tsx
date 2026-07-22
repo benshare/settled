@@ -66,7 +66,7 @@ import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { FinalScoreButton, GameOverOverlay } from '@/lib/catan/GameOverOverlay'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
-import { GameSwitchTransition } from '@/lib/catan/GameSwitchTransition'
+import { GameSlide, GameSwitchProvider } from '@/lib/catan/GameSwitchTransition'
 import { GameTitle } from '@/lib/catan/GameTitle'
 import { waterColor } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
@@ -181,25 +181,6 @@ export default function GameDetailScreen() {
 	return (
 		<SafeAreaView style={styles.safe}>
 			<GameProvider gameId={id}>
-				<View style={styles.header}>
-					<Pressable
-						onPress={() => router.back()}
-						hitSlop={8}
-						style={({ pressed }) => [
-							styles.back,
-							pressed && styles.pressed,
-						]}
-					>
-						<Ionicons
-							name="chevron-back"
-							size={26}
-							color={colors.text}
-						/>
-					</Pressable>
-					<GameTitle gameId={id} />
-					<View style={styles.back} />
-				</View>
-
 				{/* `chat=1` arrives from a chat notification tap, so the
 				    conversation is open on landing. Consumed immediately (see
 				    below) so a second tap re-opens it. */}
@@ -208,16 +189,39 @@ export default function GameDetailScreen() {
 					meId={user?.id}
 					requestOpen={chat === '1'}
 				>
-					<GameSwitchTransition gameId={id}>
-						<GameBody />
-					</GameSwitchTransition>
+					<GameSwitchProvider gameId={id}>
+						<GameBody gameId={id} />
+					</GameSwitchProvider>
 				</ChatProvider>
 			</GameProvider>
 		</SafeAreaView>
 	)
 }
 
-function GameBody() {
+// The fixed part of the top menu: it holds position while everything below it
+// slides between games, which is what makes the tab strip a place to switch
+// *from* rather than another thing in motion.
+function GameHeader({ gameId }: { gameId: string }) {
+	const router = useRouter()
+	return (
+		<View style={styles.header}>
+			<Pressable
+				onPress={() => router.back()}
+				hitSlop={8}
+				style={({ pressed }) => [
+					styles.back,
+					pressed && styles.pressed,
+				]}
+			>
+				<Ionicons name="chevron-back" size={26} color={colors.text} />
+			</Pressable>
+			<GameTitle gameId={gameId} />
+			<View style={styles.back} />
+		</View>
+	)
+}
+
+function GameBody({ gameId }: { gameId: string }) {
 	const { user } = useAuth()
 	const { game, gameState, ready, publicVP, selfVP, isSpectator } = useGame()
 	const profilesById = useGamesStore((s) => s.profilesById)
@@ -289,8 +293,8 @@ function GameBody() {
 		preview?: BuildSelection
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
-	// Board container's y within bodyRoot, so the chat panel can anchor to the
-	// same line as the floating buttons. See the boardContainer onLayout.
+	// Game area's y within the screen root, so the chat panel can anchor to the
+	// same line as the floating buttons. See the gameArea onLayout.
 	const [boardTop, setBoardTop] = useState(0)
 	// Haunt: the vertices the local haunt player has tapped (needs 2) during
 	// post_placement, before committing. Investor: whether the invest picker
@@ -603,15 +607,21 @@ function GameBody() {
 
 	if (!ready && !game) {
 		return (
-			<View style={styles.center}>
-				<ActivityIndicator color={colors.brand} />
+			<View style={styles.root}>
+				<GameHeader gameId={gameId} />
+				<View style={styles.center}>
+					<ActivityIndicator color={colors.brand} />
+				</View>
 			</View>
 		)
 	}
 	if (!game) {
 		return (
-			<View style={styles.center}>
-				<Text style={styles.hint}>Game not found.</Text>
+			<View style={styles.root}>
+				<GameHeader gameId={gameId} />
+				<View style={styles.center}>
+					<Text style={styles.hint}>Game not found.</Text>
+				</View>
 			</View>
 		)
 	}
@@ -1254,319 +1264,333 @@ function GameBody() {
 			: null
 
 	return (
-		<View style={styles.bodyRoot}>
-			{gameState && (
-				<PlayerStrip
-					playerOrder={game.player_order}
-					currentTurn={game.current_turn}
-					meIdx={meIdx}
-					profilesById={profilesById}
-					gameState={gameState}
-					pointsByPlayer={displayVP}
-					publicByPlayer={publicVP}
-					onPressPlayer={setOpenPlayerIdx}
-				/>
-			)}
+		<View style={styles.root}>
+			<GameHeader gameId={gameId} />
 
-			{/* A spectator has no bottom bar to read the table's state from,
+			{/* Top menu — background holds still, everything under the fixed
+			    header slides as one. */}
+			<View style={styles.topMenu}>
+				<GameSlide>
+					{gameState && (
+						<PlayerStrip
+							playerOrder={game.player_order}
+							currentTurn={game.current_turn}
+							meIdx={meIdx}
+							profilesById={profilesById}
+							gameState={gameState}
+							pointsByPlayer={displayVP}
+							publicByPlayer={publicVP}
+							onPressPlayer={setOpenPlayerIdx}
+						/>
+					)}
+
+					{/* A spectator has no bottom bar to read the table's state from,
 			    so the one line they do get has to cover every phase. */}
-			{isSpectator && gameState && !inGameOver && (
-				<View style={styles.statusWrap}>
-					<Text style={styles.statusLine}>
-						{spectatorStatus(game, gameState, profilesById)}
-					</Text>
-				</View>
-			)}
-
-			{inPlacement && gameState && !isSpectator && (
-				<PlacementHeader
-					game={game}
-					gameState={gameState}
-					meIdx={meIdx}
-					isMyTurn={isMyPlacementTurn}
-					profilesById={profilesById}
-				/>
-			)}
-
-			{inPostPlacement &&
-				gameState?.phase.kind === 'post_placement' &&
-				(() => {
-					const specialistPending = gameState.phase.pending.specialist
-					// My own pick is a modal; only surface a top-line status
-					// while I'm waiting on other players to declare theirs.
-					if (specialistPending.includes(meIdx)) return null
-					const waiting = specialistPending
-						.filter((i) => i !== meIdx)
-						.map(
-							(i) =>
-								profilesById[game.player_order[i]]?.username ??
-								'Player'
-						)
-					if (waiting.length === 0) return null
-					return (
+					{isSpectator && gameState && !inGameOver && (
 						<View style={styles.statusWrap}>
 							<Text style={styles.statusLine}>
-								Waiting for {waiting.join(', ')} to declare
-								their specialty…
+								{spectatorStatus(game, gameState, profilesById)}
 							</Text>
 						</View>
-					)
-				})()}
+					)}
 
-			{gameState?.phase.kind === 'magician_pick' &&
-				gameState.phase.roller !== meIdx && (
-					<View style={styles.statusWrap}>
-						<Text style={styles.statusLine}>
-							Waiting on{' '}
-							{profilesById[
-								game.player_order[gameState.phase.roller]
-							]?.username ?? 'Player'}{' '}
-							to work their magic…
-						</Text>
-					</View>
-				)}
+					{inPlacement && gameState && !isSpectator && (
+						<PlacementHeader
+							game={game}
+							gameState={gameState}
+							meIdx={meIdx}
+							isMyTurn={isMyPlacementTurn}
+							profilesById={profilesById}
+						/>
+					)}
 
-			{gameState?.phase.kind === 'scout_pick' &&
-				gameState.phase.owner !== meIdx && (
-					<View style={styles.statusWrap}>
-						<Text style={styles.statusLine}>
-							Waiting on{' '}
-							{profilesById[
-								game.player_order[gameState.phase.owner]
-							]?.username ?? 'Player'}{' '}
-							to choose 1 of 3 peeked dev cards…
-						</Text>
-					</View>
-				)}
-
-			{gameState?.phase.kind === 'curio_pick' &&
-				!gameState.phase.pending.includes(meIdx) && (
-					<View style={styles.statusWrap}>
-						<Text style={styles.statusLine}>
-							Waiting on{' '}
-							{gameState.phase.pending
+					{inPostPlacement &&
+						gameState?.phase.kind === 'post_placement' &&
+						(() => {
+							const specialistPending =
+								gameState.phase.pending.specialist
+							// My own pick is a modal; only surface a top-line status
+							// while I'm waiting on other players to declare theirs.
+							if (specialistPending.includes(meIdx)) return null
+							const waiting = specialistPending
+								.filter((i) => i !== meIdx)
 								.map(
 									(i) =>
 										profilesById[game.player_order[i]]
 											?.username ?? 'Player'
 								)
-								.join(', ')}{' '}
-							to claim 3 resources…
-						</Text>
-					</View>
-				)}
+							if (waiting.length === 0) return null
+							return (
+								<View style={styles.statusWrap}>
+									<Text style={styles.statusLine}>
+										Waiting for {waiting.join(', ')} to
+										declare their specialty…
+									</Text>
+								</View>
+							)
+						})()}
 
-			{!inPlacement &&
-				!inGameOver &&
-				!inBonusSelection &&
-				!isSpectator &&
-				gameState && (
-					<>
-						{!inRoadBuilding && (
-							<BuildTradeBar
-								active={buildTool}
-								enabled={buildEnabled}
-								curseHints={buildCurseHints}
-								meIdx={meIdx}
-								tradeEnabled={tradeButtonEnabled}
-								tradeActive={tradeButtonActive}
-								devCardsEnabled={!!gameState?.config.devCards}
-								carpenterEnabled={
-									myPlayer?.bonus === 'carpenter'
-										? canBuildThisTurn &&
-											!myPlayer.boughtCarpenterVPThisTurn &&
-											myPlayer.resources.wood >= 4
-										: undefined
-								}
-								superCityEnabled={
-									myPlayer?.bonus === 'metropolitan'
-										? superCityEnabled
-										: undefined
-								}
-								superCityActive={buildTool === 'super_city'}
-								accountantEnabled={
-									myPlayer?.bonus === 'accountant'
-										? accountantEnabled
-										: undefined
-								}
-								investorEnabled={
-									myPlayer?.bonus === 'investor'
-										? canBuildThisTurn &&
-											RESOURCES.some((r) =>
-												canInvest(
-													myPlayer,
-													r,
-													selfVP[meIdx]
-												)
-											)
-										: undefined
-								}
-								onSelect={onBuildToolSelect}
-								onTradePress={onTradePress}
-								onBuyDevCard={onBuyDevCard}
-								onBuyCarpenterVP={onBuyCarpenterVP}
-								onSelectSuperCity={() =>
-									onBuildToolSelect('super_city')
-								}
-								onAccountant={() => setAccountantOpen(true)}
-								onInvest={() => setInvestOpen(true)}
-							/>
+					{gameState?.phase.kind === 'magician_pick' &&
+						gameState.phase.roller !== meIdx && (
+							<View style={styles.statusWrap}>
+								<Text style={styles.statusLine}>
+									Waiting on{' '}
+									{profilesById[
+										game.player_order[
+											gameState.phase.roller
+										]
+									]?.username ?? 'Player'}{' '}
+									to work their magic…
+								</Text>
+							</View>
 						)}
-						{inRoadBuilding && (
-							<RoadBuildingStatus
-								game={game}
-								gameState={gameState}
-								meIdx={meIdx}
-								profilesById={profilesById}
-							/>
-						)}
-						{inRobberFlow && (
-							<RobberStatus
-								game={game}
-								gameState={gameState}
-								meIdx={meIdx}
-								profilesById={profilesById}
-							/>
-						)}
-						{gameState.phase.kind === 'discard' &&
-							meIdx >= 0 &&
-							gameState.phase.pending[meIdx] !== undefined && (
-								<DiscardBar
-									hand={gameState.players[meIdx].resources}
-									required={gameState.phase.pending[meIdx]!}
-									submitting={submitting}
-									isShepherd={
-										gameState.players[meIdx]?.bonus ===
-										'shepherd'
-									}
-									onSubmit={onDiscard}
-								/>
-							)}
-						{gameState.phase.kind === 'special_build' && (
-							<SpecialBuildBar
-								game={game}
-								gameState={gameState}
-								meIdx={meIdx}
-								profilesById={profilesById}
-								submitting={submitting}
-								onDone={onEndSpecialBuild}
-								onHonk={onHonk}
-							/>
-						)}
-					</>
-				)}
 
-			{gameState && (
-				<PlayerDetailOverlay
-					playerIdx={openPlayerIdx}
-					playerOrder={game.player_order}
-					meIdx={meIdx}
-					profilesById={profilesById}
-					gameState={gameState}
-					pointsByPlayer={displayVP}
-					publicByPlayer={publicVP}
-					onClose={() => setOpenPlayerIdx(null)}
-				/>
-			)}
+					{gameState?.phase.kind === 'scout_pick' &&
+						gameState.phase.owner !== meIdx && (
+							<View style={styles.statusWrap}>
+								<Text style={styles.statusLine}>
+									Waiting on{' '}
+									{profilesById[
+										game.player_order[gameState.phase.owner]
+									]?.username ?? 'Player'}{' '}
+									to choose 1 of 3 peeked dev cards…
+								</Text>
+							</View>
+						)}
 
-			{inPostPlacement &&
-				gameState &&
-				gameState.phase.kind === 'post_placement' &&
-				(() => {
-					const phase = gameState.phase
-					const specialistPending = phase.pending.specialist
-					const explorer = phase.pending.explorer ?? {}
-					const waitingSpecialist = specialistPending
-						.filter((i) => i !== meIdx)
-						.map(
-							(i) =>
+					{gameState?.phase.kind === 'curio_pick' &&
+						!gameState.phase.pending.includes(meIdx) && (
+							<View style={styles.statusWrap}>
+								<Text style={styles.statusLine}>
+									Waiting on{' '}
+									{gameState.phase.pending
+										.map(
+											(i) =>
+												profilesById[
+													game.player_order[i]
+												]?.username ?? 'Player'
+										)
+										.join(', ')}{' '}
+									to claim 3 resources…
+								</Text>
+							</View>
+						)}
+
+					{!inPlacement &&
+						!inGameOver &&
+						!inBonusSelection &&
+						!isSpectator &&
+						gameState && (
+							<>
+								{!inRoadBuilding && (
+									<BuildTradeBar
+										active={buildTool}
+										enabled={buildEnabled}
+										curseHints={buildCurseHints}
+										meIdx={meIdx}
+										tradeEnabled={tradeButtonEnabled}
+										tradeActive={tradeButtonActive}
+										devCardsEnabled={
+											!!gameState?.config.devCards
+										}
+										carpenterEnabled={
+											myPlayer?.bonus === 'carpenter'
+												? canBuildThisTurn &&
+													!myPlayer.boughtCarpenterVPThisTurn &&
+													myPlayer.resources.wood >= 4
+												: undefined
+										}
+										superCityEnabled={
+											myPlayer?.bonus === 'metropolitan'
+												? superCityEnabled
+												: undefined
+										}
+										superCityActive={
+											buildTool === 'super_city'
+										}
+										accountantEnabled={
+											myPlayer?.bonus === 'accountant'
+												? accountantEnabled
+												: undefined
+										}
+										investorEnabled={
+											myPlayer?.bonus === 'investor'
+												? canBuildThisTurn &&
+													RESOURCES.some((r) =>
+														canInvest(
+															myPlayer,
+															r,
+															selfVP[meIdx]
+														)
+													)
+												: undefined
+										}
+										onSelect={onBuildToolSelect}
+										onTradePress={onTradePress}
+										onBuyDevCard={onBuyDevCard}
+										onBuyCarpenterVP={onBuyCarpenterVP}
+										onSelectSuperCity={() =>
+											onBuildToolSelect('super_city')
+										}
+										onAccountant={() =>
+											setAccountantOpen(true)
+										}
+										onInvest={() => setInvestOpen(true)}
+									/>
+								)}
+								{inRoadBuilding && (
+									<RoadBuildingStatus
+										game={game}
+										gameState={gameState}
+										meIdx={meIdx}
+										profilesById={profilesById}
+									/>
+								)}
+								{inRobberFlow && (
+									<RobberStatus
+										game={game}
+										gameState={gameState}
+										meIdx={meIdx}
+										profilesById={profilesById}
+									/>
+								)}
+								{gameState.phase.kind === 'discard' &&
+									meIdx >= 0 &&
+									gameState.phase.pending[meIdx] !==
+										undefined && (
+										<DiscardBar
+											hand={
+												gameState.players[meIdx]
+													.resources
+											}
+											required={
+												gameState.phase.pending[meIdx]!
+											}
+											submitting={submitting}
+											isShepherd={
+												gameState.players[meIdx]
+													?.bonus === 'shepherd'
+											}
+											onSubmit={onDiscard}
+										/>
+									)}
+								{gameState.phase.kind === 'special_build' && (
+									<SpecialBuildBar
+										game={game}
+										gameState={gameState}
+										meIdx={meIdx}
+										profilesById={profilesById}
+										submitting={submitting}
+										onDone={onEndSpecialBuild}
+										onHonk={onHonk}
+									/>
+								)}
+							</>
+						)}
+
+					{inPostPlacement &&
+						gameState &&
+						gameState.phase.kind === 'post_placement' &&
+						(() => {
+							const phase = gameState.phase
+							const specialistPending = phase.pending.specialist
+							const explorer = phase.pending.explorer ?? {}
+							const waitingSpecialist = specialistPending
+								.filter((i) => i !== meIdx)
+								.map(
+									(i) =>
+										profilesById[game.player_order[i]]
+											?.username ?? 'Player'
+								)
+							if (specialistPending.includes(meIdx)) {
+								return (
+									<SpecialistDeclareOverlay
+										waitingOn={waitingSpecialist}
+										submitting={submitting}
+										onConfirm={onSetSpecialistResource}
+									/>
+								)
+							}
+							// Specialist still pending for someone else: the top status
+							// line handles the "waiting" message; don't fall through to
+							// the explorer/fencer/haunt banners until it resolves.
+							if (waitingSpecialist.length > 0) return null
+							// Specialist done — explorer placements happen inline on
+							// the board; surface a status banner so the player sees
+							// the count.
+							const fencer = phase.pending.fencer ?? {}
+							const haunt = phase.pending.haunt ?? []
+							const nameOf = (i: number) =>
 								profilesById[game.player_order[i]]?.username ??
 								'Player'
-						)
-					if (specialistPending.includes(meIdx)) {
-						return (
-							<SpecialistDeclareOverlay
-								waitingOn={waitingSpecialist}
-								submitting={submitting}
-								onConfirm={onSetSpecialistResource}
-							/>
-						)
-					}
-					// Specialist still pending for someone else: the top status
-					// line handles the "waiting" message; don't fall through to
-					// the explorer/fencer/haunt banners until it resolves.
-					if (waitingSpecialist.length > 0) return null
-					// Specialist done — explorer placements happen inline on
-					// the board; surface a status banner so the player sees
-					// the count.
-					const fencer = phase.pending.fencer ?? {}
-					const haunt = phase.pending.haunt ?? []
-					const nameOf = (i: number) =>
-						profilesById[game.player_order[i]]?.username ?? 'Player'
-					const explorerRemaining = explorer[meIdx] ?? 0
-					const fencerRemaining = fencer[meIdx] ?? 0
-					const amHauntPending = haunt.includes(meIdx)
-					const othersWaiting = Array.from(
-						new Set<number>([
-							...Object.entries(explorer)
-								.filter(
-									([i, n]) =>
-										Number(i) !== meIdx && (n ?? 0) > 0
-								)
-								.map(([i]) => Number(i)),
-							...Object.entries(fencer)
-								.filter(
-									([i, n]) =>
-										Number(i) !== meIdx && (n ?? 0) > 0
-								)
-								.map(([i]) => Number(i)),
-							...haunt.filter((i) => i !== meIdx),
-						])
-					).map(nameOf)
+							const explorerRemaining = explorer[meIdx] ?? 0
+							const fencerRemaining = fencer[meIdx] ?? 0
+							const amHauntPending = haunt.includes(meIdx)
+							const othersWaiting = Array.from(
+								new Set<number>([
+									...Object.entries(explorer)
+										.filter(
+											([i, n]) =>
+												Number(i) !== meIdx &&
+												(n ?? 0) > 0
+										)
+										.map(([i]) => Number(i)),
+									...Object.entries(fencer)
+										.filter(
+											([i, n]) =>
+												Number(i) !== meIdx &&
+												(n ?? 0) > 0
+										)
+										.map(([i]) => Number(i)),
+									...haunt.filter((i) => i !== meIdx),
+								])
+							).map(nameOf)
 
-					if (explorerRemaining > 0) {
-						return (
-							<ExplorerStatusBanner
-								remaining={explorerRemaining}
-								waitingOn={othersWaiting}
-							/>
-						)
-					}
-					if (fencerRemaining > 0) {
-						return (
-							<FenceStatusBanner
-								remaining={fencerRemaining}
-								waitingOn={othersWaiting}
-							/>
-						)
-					}
-					if (amHauntPending) {
-						return (
-							<HauntStatusBanner
-								picked={hauntPicks.length}
-								waitingOn={othersWaiting}
-								submitting={submitting}
-								onConfirm={() => {
-									if (hauntPicks.length === 2) {
-										onSetHauntSpots([
-											hauntPicks[0],
-											hauntPicks[1],
-										])
-									}
-								}}
-							/>
-						)
-					}
-					if (othersWaiting.length > 0) {
-						return (
-							<ExplorerStatusBanner
-								remaining={0}
-								waitingOn={othersWaiting}
-							/>
-						)
-					}
-					return null
-				})()}
+							if (explorerRemaining > 0) {
+								return (
+									<ExplorerStatusBanner
+										remaining={explorerRemaining}
+										waitingOn={othersWaiting}
+									/>
+								)
+							}
+							if (fencerRemaining > 0) {
+								return (
+									<FenceStatusBanner
+										remaining={fencerRemaining}
+										waitingOn={othersWaiting}
+									/>
+								)
+							}
+							if (amHauntPending) {
+								return (
+									<HauntStatusBanner
+										picked={hauntPicks.length}
+										waitingOn={othersWaiting}
+										submitting={submitting}
+										onConfirm={() => {
+											if (hauntPicks.length === 2) {
+												onSetHauntSpots([
+													hauntPicks[0],
+													hauntPicks[1],
+												])
+											}
+										}}
+									/>
+								)
+							}
+							if (othersWaiting.length > 0) {
+								return (
+									<ExplorerStatusBanner
+										remaining={0}
+										waitingOn={othersWaiting}
+									/>
+								)
+							}
+							return null
+						})()}
+				</GameSlide>
+			</View>
 
 			{gameState &&
 				gameState.phase.kind === 'scout_pick' &&
@@ -1713,263 +1737,300 @@ function GameBody() {
 				/>
 			)}
 
+			{/* Game area — the water background is the fixed frame; the board
+			    and its floating buttons slide inside it. */}
 			<Animated.View
-				style={styles.boardContainer}
+				style={styles.gameArea}
 				layout={BOARD_RESIZE}
-				// The chat panel is mounted at bodyRoot (so it can cover the
-				// action bars) but has to line up with the floating buttons
-				// inside this container. Its offset from bodyRoot shifts with
+				// The chat panel is mounted at the screen root (so it can cover
+				// the action bars) but has to line up with the floating buttons
+				// inside this container. Its offset from the root shifts with
 				// the PlayerStrip and placement header, so it's measured.
 				onLayout={(e) => setBoardTop(e.nativeEvent.layout.y)}
 			>
-				{liveOffer && !isSpectator && (
-					<TradeBanner
-						offer={liveOffer}
-						meIdx={meIdx}
-						myHand={myHand}
-						players={gameState?.players ?? []}
-						playerOrder={game.player_order}
-						profilesById={profilesById}
-						submitting={submitting}
-						onAccept={onAcceptTrade}
-						onConfirm={onConfirmTrade}
-						onCancel={onCancelTrade}
-						onReject={onRejectTrade}
-					/>
-				)}
-				{gameState ? (
-					<BoardView
-						state={gameState}
-						robberDormant={robberIsDormant(
-							gameState.players,
-							(game.events ?? []) as GameEvent[]
-						)}
-						interaction={
-							inPlacement && isMyPlacementTurn
-								? {
-										meIdx,
-										selection,
-										onSelect: setSelection,
-									}
-								: undefined
-						}
-						build={
-							buildTool &&
-							(isMyActiveTurn || isMySpecialBuild) &&
-							!tradePanelOpen
-								? {
-										meIdx,
-										tool: buildTool,
-										onSelect: onBuildSpotSelect,
-										pending: pendingConfirm?.preview,
-									}
-								: inRoadBuilding && isCurrentPlayer
+				<GameSlide style={styles.gameAreaContent}>
+					{liveOffer && !isSpectator && (
+						<TradeBanner
+							offer={liveOffer}
+							meIdx={meIdx}
+							myHand={myHand}
+							players={gameState?.players ?? []}
+							playerOrder={game.player_order}
+							profilesById={profilesById}
+							submitting={submitting}
+							onAccept={onAcceptTrade}
+							onConfirm={onConfirmTrade}
+							onCancel={onCancelTrade}
+							onReject={onRejectTrade}
+						/>
+					)}
+					{gameState ? (
+						<BoardView
+							state={gameState}
+							robberDormant={robberIsDormant(
+								gameState.players,
+								(game.events ?? []) as GameEvent[]
+							)}
+							interaction={
+								inPlacement && isMyPlacementTurn
 									? {
 											meIdx,
-											tool: 'road',
+											selection,
+											onSelect: setSelection,
+										}
+									: undefined
+							}
+							build={
+								buildTool &&
+								(isMyActiveTurn || isMySpecialBuild) &&
+								!tradePanelOpen
+									? {
+											meIdx,
+											tool: buildTool,
 											onSelect: onBuildSpotSelect,
 											pending: pendingConfirm?.preview,
 										}
-									: postPlacementTool
+									: inRoadBuilding && isCurrentPlayer
 										? {
 												meIdx,
-												tool: postPlacementTool,
+												tool: 'road',
 												onSelect: onBuildSpotSelect,
-												selected:
-													postPlacementTool ===
-													'haunt_spot'
-														? (hauntPicks as Vertex[])
-														: undefined,
+												pending:
+													pendingConfirm?.preview,
 											}
-										: undefined
-						}
-						robber={
-							isMyActiveTurn &&
-							(gameState.phase.kind === 'move_robber' ||
-								gameState.phase.kind === 'steal')
-								? {
-										meIdx,
-										onMoveRobber: onMoveRobberRequest,
-										onSteal: onStealRequest,
-									}
-								: undefined
-						}
-					/>
-				) : (
-					<View style={styles.loadingFill}>
-						<ActivityIndicator color={colors.brand} />
-					</View>
-				)}
+										: postPlacementTool
+											? {
+													meIdx,
+													tool: postPlacementTool,
+													onSelect: onBuildSpotSelect,
+													selected:
+														postPlacementTool ===
+														'haunt_spot'
+															? (hauntPicks as Vertex[])
+															: undefined,
+												}
+											: undefined
+							}
+							robber={
+								isMyActiveTurn &&
+								(gameState.phase.kind === 'move_robber' ||
+									gameState.phase.kind === 'steal')
+									? {
+											meIdx,
+											onMoveRobber: onMoveRobberRequest,
+											onSteal: onStealRequest,
+										}
+									: undefined
+							}
+						/>
+					) : (
+						<View style={styles.loadingFill}>
+							<ActivityIndicator color={colors.brand} />
+						</View>
+					)}
+					{gameState && (!inBonusSelection || isSpectator) && (
+						<BoardLegend
+							devCardsEnabled={!!gameState.config.devCards}
+						/>
+					)}
+					{gameState && (!inBonusSelection || isSpectator) && (
+						<ActionLog
+							events={(game.events ?? []) as GameEvent[]}
+							playerOrder={game.player_order}
+							profilesById={profilesById}
+							meIdx={meIdx}
+						/>
+					)}
+					{gameState && (!inBonusSelection || isSpectator) && (
+						<ChatButton />
+					)}
+					{gameState && (!inBonusSelection || isSpectator) && (
+						<WatcherButton />
+					)}
+					{pendingConfirm && (
+						<ConfirmBar
+							title={pendingConfirm.title}
+							submitting={submitting}
+							onConfirm={runPendingConfirm}
+							onCancel={() => setPendingConfirm(null)}
+						/>
+					)}
+					{bonusSelectionData && !isSpectator && (
+						<View style={styles.bonusPaneFloat}>
+							<BonusSelection
+								hand={bonusSelectionData.myHand}
+								waitingOn={bonusSelectionData.waitingOn}
+								submitting={submitting}
+								collapsed={bonusPaneCollapsed}
+								onToggleCollapsed={() =>
+									setBonusPaneCollapsed((prev) => !prev)
+								}
+								onPick={onPickBonus}
+								playerOrder={game.player_order}
+								meIdx={meIdx}
+								profilesById={profilesById}
+								phaseHands={bonusSelectionData.phaseHands}
+							/>
+						</View>
+					)}
+				</GameSlide>
+				{/* Part of the fixed frame, not the board — the water's edge
+				    shadow stays put while the board slides under it. */}
 				<View pointerEvents="none" style={styles.boardInsetTop} />
 				<View pointerEvents="none" style={styles.boardInsetBottom} />
-				{gameState && (!inBonusSelection || isSpectator) && (
-					<BoardLegend
-						devCardsEnabled={!!gameState.config.devCards}
-					/>
-				)}
-				{gameState && (!inBonusSelection || isSpectator) && (
-					<ActionLog
-						events={(game.events ?? []) as GameEvent[]}
-						playerOrder={game.player_order}
-						profilesById={profilesById}
-						meIdx={meIdx}
-					/>
-				)}
-				{gameState && (!inBonusSelection || isSpectator) && (
-					<ChatButton />
-				)}
-				{gameState && (!inBonusSelection || isSpectator) && (
-					<WatcherButton />
-				)}
-				{pendingConfirm && (
-					<ConfirmBar
-						title={pendingConfirm.title}
-						submitting={submitting}
-						onConfirm={runPendingConfirm}
-						onCancel={() => setPendingConfirm(null)}
-					/>
-				)}
-				{bonusSelectionData && !isSpectator && (
-					<View style={styles.bonusPaneFloat}>
-						<BonusSelection
-							hand={bonusSelectionData.myHand}
-							waitingOn={bonusSelectionData.waitingOn}
-							submitting={submitting}
-							collapsed={bonusPaneCollapsed}
-							onToggleCollapsed={() =>
-								setBonusPaneCollapsed((prev) => !prev)
-							}
-							onPick={onPickBonus}
-							playerOrder={game.player_order}
-							meIdx={meIdx}
-							profilesById={profilesById}
-							phaseHands={bonusSelectionData.phaseHands}
-						/>
-					</View>
-				)}
 			</Animated.View>
 
-			{inPlacement && isMyPlacementTurn && (
-				<View style={styles.actionBar}>
-					<Button
-						onPress={onConfirm}
-						disabled={!selection}
-						loading={submitting}
-					>
-						{confirmLabel(gameState, selection)}
-					</Button>
-				</View>
-			)}
+			{/* Bottom menu — fixed background, sliding content. */}
+			<View style={styles.bottomMenu}>
+				<GameSlide>
+					{inPlacement && isMyPlacementTurn && (
+						<View style={styles.actionBar}>
+							<Button
+								onPress={onConfirm}
+								disabled={!selection}
+								loading={submitting}
+							>
+								{confirmLabel(gameState, selection)}
+							</Button>
+						</View>
+					)}
 
-			{inMainLoop &&
-				!inGameOver &&
-				!isSpectator &&
-				gameState &&
-				!tradePanelOpen && (
-					<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
-						<MainLoopBar
-							game={game}
-							gameState={gameState}
-							meIdx={meIdx}
-							isMyTurn={isMyActiveTurn}
-							profilesById={profilesById}
-							submitting={submitting}
-							onRoll={onRoll}
-							onConfirmRoll={onConfirmRoll}
-							onRerollDice={onRerollDice}
-							onEndTurn={onEndTurn}
-							onHonk={onHonk}
-							onRitualPress={
-								isMyActiveTurn &&
-								gameState.phase.kind === 'roll' &&
-								!gameState.phase.pending?.dice &&
-								myPlayer?.bonus === 'ritualist' &&
-								!myPlayer?.ritualWasUsedThisTurn
-									? () => setRitualOpen(true)
-									: undefined
-							}
-							onShepherdPress={
-								isMyActiveTurn &&
-								gameState.phase.kind === 'roll' &&
-								!gameState.phase.pending?.dice &&
-								myPlayer &&
-								canShepherdSwap(myPlayer)
-									? () => setShepherdOpen(true)
-									: undefined
-							}
-							onForgerMovePress={
-								isMyActiveTurn &&
-								gameState.phase.kind === 'roll' &&
-								!gameState.phase.pending?.dice &&
-								myPlayer &&
-								forgerActive(myPlayer) &&
-								!myPlayer.forgerMovedThisTurn
-									? () => setForgerMoveOpen(true)
-									: undefined
-							}
-						/>
-					</Animated.View>
-				)}
-
-			{tradePanelOpen && myHand && gameState && (
-				<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
-					<TradePanel
-						meIdx={meIdx}
-						myHand={myHand}
-						state={gameState}
-						playerOrder={game.player_order}
-						profilesById={profilesById}
-						submitting={submitting}
-						onSend={onProposeTrade}
-						onSendBank={onBankTrade}
-						onCancel={() => setTradePanelOpen(false)}
-					/>
-				</Animated.View>
-			)}
-
-			{!inPlacement &&
-				!inGameOver &&
-				!inBonusSelection &&
-				!tradePanelOpen &&
-				gameState &&
-				meIdx >= 0 &&
-				gameState.players[meIdx] && (
-					<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
-						<ResourceHand
-							hand={gameState.players[meIdx].resources}
-						/>
-						{gameState.config.devCards && (
-							<DevCardHand
-								entries={gameState.players[meIdx].devCards}
-								round={gameState.round}
-								myTurn={isMyActiveTurn}
-								phaseKind={gameState.phase.kind}
-								playedDevThisTurn={
-									gameState.players[meIdx].playedDevThisTurn
-								}
-								monopolyPerPlayerCap={
-									gameState.config.limitMonopoly
-										? monopolyCap(gameState.players.length)
-										: null
-								}
-								onPlay={onPlayDevCard}
-							/>
+					{inMainLoop &&
+						!inGameOver &&
+						!isSpectator &&
+						gameState &&
+						!tradePanelOpen && (
+							<Animated.View
+								entering={PANEL_IN}
+								exiting={PANEL_OUT}
+							>
+								<MainLoopBar
+									game={game}
+									gameState={gameState}
+									meIdx={meIdx}
+									isMyTurn={isMyActiveTurn}
+									profilesById={profilesById}
+									submitting={submitting}
+									onRoll={onRoll}
+									onConfirmRoll={onConfirmRoll}
+									onRerollDice={onRerollDice}
+									onEndTurn={onEndTurn}
+									onHonk={onHonk}
+									onRitualPress={
+										isMyActiveTurn &&
+										gameState.phase.kind === 'roll' &&
+										!gameState.phase.pending?.dice &&
+										myPlayer?.bonus === 'ritualist' &&
+										!myPlayer?.ritualWasUsedThisTurn
+											? () => setRitualOpen(true)
+											: undefined
+									}
+									onShepherdPress={
+										isMyActiveTurn &&
+										gameState.phase.kind === 'roll' &&
+										!gameState.phase.pending?.dice &&
+										myPlayer &&
+										canShepherdSwap(myPlayer)
+											? () => setShepherdOpen(true)
+											: undefined
+									}
+									onForgerMovePress={
+										isMyActiveTurn &&
+										gameState.phase.kind === 'roll' &&
+										!gameState.phase.pending?.dice &&
+										myPlayer &&
+										forgerActive(myPlayer) &&
+										!myPlayer.forgerMovedThisTurn
+											? () => setForgerMoveOpen(true)
+											: undefined
+									}
+								/>
+							</Animated.View>
 						)}
-						{myPlayer?.bonus === 'veteran' && (
-							<KnightTapBar
-								untappedKnights={
-									(myPlayer.devCardsPlayed.knight ?? 0) -
-									(myPlayer.tappedKnights ?? 0)
-								}
-								enabled={
-									isMyActiveTurn &&
-									gameState.phase.kind === 'main'
-								}
-								onTap={onTapKnight}
+
+					{tradePanelOpen && myHand && gameState && (
+						<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
+							<TradePanel
+								meIdx={meIdx}
+								myHand={myHand}
+								state={gameState}
+								playerOrder={game.player_order}
+								profilesById={profilesById}
+								submitting={submitting}
+								onSend={onProposeTrade}
+								onSendBank={onBankTrade}
+								onCancel={() => setTradePanelOpen(false)}
 							/>
+						</Animated.View>
+					)}
+
+					{!inPlacement &&
+						!inGameOver &&
+						!inBonusSelection &&
+						!tradePanelOpen &&
+						gameState &&
+						meIdx >= 0 &&
+						gameState.players[meIdx] && (
+							<Animated.View
+								entering={PANEL_IN}
+								exiting={PANEL_OUT}
+							>
+								<ResourceHand
+									hand={gameState.players[meIdx].resources}
+								/>
+								{gameState.config.devCards && (
+									<DevCardHand
+										entries={
+											gameState.players[meIdx].devCards
+										}
+										round={gameState.round}
+										myTurn={isMyActiveTurn}
+										phaseKind={gameState.phase.kind}
+										playedDevThisTurn={
+											gameState.players[meIdx]
+												.playedDevThisTurn
+										}
+										monopolyPerPlayerCap={
+											gameState.config.limitMonopoly
+												? monopolyCap(
+														gameState.players.length
+													)
+												: null
+										}
+										onPlay={onPlayDevCard}
+									/>
+								)}
+								{myPlayer?.bonus === 'veteran' && (
+									<KnightTapBar
+										untappedKnights={
+											(myPlayer.devCardsPlayed.knight ??
+												0) -
+											(myPlayer.tappedKnights ?? 0)
+										}
+										enabled={
+											isMyActiveTurn &&
+											gameState.phase.kind === 'main'
+										}
+										onTap={onTapKnight}
+									/>
+								)}
+							</Animated.View>
 						)}
-					</Animated.View>
-				)}
+				</GameSlide>
+			</View>
+
+			{gameState && (
+				<PlayerDetailOverlay
+					playerIdx={openPlayerIdx}
+					playerOrder={game.player_order}
+					meIdx={meIdx}
+					profilesById={profilesById}
+					gameState={gameState}
+					pointsByPlayer={displayVP}
+					publicByPlayer={publicVP}
+					onClose={() => setOpenPlayerIdx(null)}
+				/>
+			)}
 
 			{inGameOver && gameState && (
 				<GameOverOverlay
@@ -2608,8 +2669,18 @@ const styles = StyleSheet.create({
 		color: colors.textMuted,
 		textAlign: 'center',
 	},
-	bodyRoot: {
+	root: {
 		flex: 1,
+	},
+	// The two menu frames. Each holds the background its contents slide
+	// against; both span the full width, so the screen's edges do the clipping
+	// and neither needs `overflow: 'hidden'` (which would cut the build bar's
+	// tooltips and badges).
+	topMenu: {
+		backgroundColor: colors.background,
+	},
+	bottomMenu: {
+		backgroundColor: colors.background,
 	},
 	statusWrap: {
 		paddingHorizontal: spacing.md,
@@ -2623,12 +2694,19 @@ const styles = StyleSheet.create({
 		color: colors.text,
 		fontWeight: '600',
 	},
-	boardContainer: {
+	// The fixed frame: water background plus the edge shadows. Only its
+	// contents move between games.
+	gameArea: {
 		flex: 1,
 		backgroundColor: waterColor,
 		// Above the player strip and the action bars, which are siblings, so the
 		// panels floating inside it can overhang them rather than slide under.
 		zIndex: z.playArea,
+	},
+	// Fills the frame so the board's floating panels keep positioning against
+	// the water's edges rather than against their own content.
+	gameAreaContent: {
+		flex: 1,
 	},
 	boardInsetTop: {
 		position: 'absolute',

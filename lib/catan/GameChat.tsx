@@ -4,7 +4,7 @@
 //
 // - `ChatButton` — the floating affordance, third slot below BoardLegend and
 //   ActionLog, so it lives inside the board container with them.
-// - `ChatPanel` — the conversation. Mounted at the play-area root (`bodyRoot`)
+// - `ChatPanel` — the conversation. Mounted at the screen root (`styles.root`)
 //   rather than inside the board container, so it covers the action bars too
 //   but stops short of the screen header. It is an absolutely-positioned view
 //   rather than a Modal precisely so it stays inside the play area — a Modal
@@ -84,7 +84,7 @@ export function ChatPanel({
 	profilesById,
 	meId,
 }: {
-	// Board container's y within bodyRoot, measured by the game screen. The
+	// Game area's y within the screen root, measured by the game screen. The
 	// panel's top edge lands on the same line as the floating buttons, which
 	// sit at `spacing.sm` inside that container.
 	topOffset: number
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		color: colors.white,
 	},
-	// Covers the play area only — mounted in bodyRoot, so the screen header
+	// Covers the play area only — mounted at the screen root, so the header
 	// stays visible and tappable above it.
 	scrim: {
 		position: 'absolute',
