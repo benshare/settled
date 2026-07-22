@@ -9,9 +9,10 @@ import { useGamesStore, type Game } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
 import { colors, font, radius, spacing } from '@/lib/theme'
 import { useRouter } from 'expo-router'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useGame } from './gameContext'
+import { useSwitchableGames } from './switchableGames'
 
 const AVATAR_SIZE = 26
 // How many faces a tab shows before collapsing the rest into a "+N".
@@ -19,17 +20,10 @@ const MAX_FACES = 3
 const TURN_BADGE_SIZE = 10
 
 export function GameTitle({ gameId }: { gameId: string }) {
-	const activeGames = useGamesStore((s) => s.activeGames)
-	const spectatableGames = useGamesStore((s) => s.spectatableGames)
+	const games = useSwitchableGames()
 
-	// Games I'm seated at plus the friends' games I'm allowed to watch, oldest
-	// first. Completed games aren't switchable — one opened from History has no
-	// tab of its own, so it falls back to the plain title.
-	const games = useMemo(() => {
-		const all = [...(activeGames ?? []), ...(spectatableGames ?? [])]
-		return all.sort((a, b) => a.created_at.localeCompare(b.created_at))
-	}, [activeGames, spectatableGames])
-
+	// A game with no tab of its own — a completed one opened from History —
+	// falls back to the plain title.
 	if (games.length < 2 || !games.some((g) => g.id === gameId)) {
 		return <CurrentGameTitle />
 	}

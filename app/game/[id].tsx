@@ -66,6 +66,7 @@ import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { FinalScoreButton, GameOverOverlay } from '@/lib/catan/GameOverOverlay'
 import { GameProvider, useGame } from '@/lib/catan/gameContext'
+import { GameSwitchTransition } from '@/lib/catan/GameSwitchTransition'
 import { GameTitle } from '@/lib/catan/GameTitle'
 import { waterColor } from '@/lib/catan/palette'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
@@ -207,7 +208,9 @@ export default function GameDetailScreen() {
 					meId={user?.id}
 					requestOpen={chat === '1'}
 				>
-					<GameBody />
+					<GameSwitchTransition gameId={id}>
+						<GameBody />
+					</GameSwitchTransition>
 				</ChatProvider>
 			</GameProvider>
 		</SafeAreaView>
