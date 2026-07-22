@@ -63,20 +63,26 @@ export function useChat(): ChatContextValue {
 export function ChatProvider({
 	gameId,
 	meId,
-	initiallyOpen = false,
+	requestOpen = false,
 	children,
 }: {
 	gameId: string
 	meId: string | undefined
-	initiallyOpen?: boolean
+	requestOpen?: boolean
 	children: ReactNode
 }) {
 	const sendMessage = useGamesStore((s) => s.sendMessage)
 
 	const [messages, setMessages] = useState<ChatMessage[] | undefined>()
-	const [open, setOpen] = useState(initiallyOpen)
+	const [open, setOpen] = useState(requestOpen)
 	const [sending, setSending] = useState(false)
 	const [lastReadAt, setLastReadAt] = useState<string | null>(null)
+
+	// A chat notification tapped while this screen is already open reuses the
+	// screen, so the request arrives as a prop change rather than a mount.
+	useEffect(() => {
+		if (requestOpen) setOpen(true)
+	}, [requestOpen])
 
 	// Nothing emitted while the app was backgrounded reached this channel, so a
 	// foreground has to re-fetch and re-subscribe. Matches GameProvider.

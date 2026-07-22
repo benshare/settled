@@ -34,7 +34,10 @@ export default function AppLayout() {
 				const link = resolveNotificationLink(
 					resp.notification.request.content.data
 				)
-				if (link) router.push(link)
+				// `navigate`, not `push`: when the game screen is already on
+				// top, this updates its params in place instead of stacking a
+				// second copy of the same game behind the back chevron.
+				if (link) router.navigate(link)
 			}
 		)
 		// Cold-start case: the app was launched by tapping a notification.

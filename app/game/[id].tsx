@@ -167,6 +167,14 @@ export default function GameDetailScreen() {
 	const router = useRouter()
 	const { user } = useAuth()
 
+	// The flag is a one-shot request, not screen state: drop it once the panel
+	// has been told to open, or dismissing chat and tapping a second
+	// notification for this same game would leave the param unchanged (and so
+	// nothing to react to).
+	useEffect(() => {
+		if (chat === '1') router.setParams({ chat: undefined })
+	}, [chat, router])
+
 	return (
 		<SafeAreaView style={styles.safe}>
 			<View style={styles.header}>
@@ -190,11 +198,12 @@ export default function GameDetailScreen() {
 
 			<GameProvider gameId={id}>
 				{/* `chat=1` arrives from a chat notification tap, so the
-				    conversation is open on landing. */}
+				    conversation is open on landing. Consumed immediately (see
+				    below) so a second tap re-opens it. */}
 				<ChatProvider
 					gameId={id}
 					meId={user?.id}
-					initiallyOpen={chat === '1'}
+					requestOpen={chat === '1'}
 				>
 					<GameBody />
 				</ChatProvider>
