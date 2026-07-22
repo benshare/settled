@@ -10,6 +10,8 @@ Loaded explicitly by routes that need the result before they can proceed — e.g
 
 Registered in `index.ts`. Loaded once when a user enters `(app)`, cleared on sign out. Use this for any store whose data is scoped to a signed-in user and whose load can be fire-and-forget — failure is non-fatal, and the screen using the data is responsible for its own empty/loading state.
 
+`useStatsStore` is the plainest example: it selects the caller's `game_results` rows (per-game summaries the edge function writes on completion — see `.claude/specs/stats.md`) and deliberately keeps **no realtime channel**. Rows only appear when a game ends, and the foreground resync below already refetches on every return to the app, which is also the path back from a game that just finished.
+
 A single store can serve both roles: `useProfileStore` registers in `autoLoadedStores` for in-(app) screens (so `state.profile` is always populated on cold start) _and_ exposes `loadProfile` for the pre-(app) routes that need to await it.
 
 ### Adding an auto-loaded store

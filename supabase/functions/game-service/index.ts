@@ -2956,7 +2956,10 @@ async function commitActionWrite(
 	game: GameRow,
 	stateUpdate: Record<string, unknown>,
 	events: unknown[],
-	winner: number | null
+	winner: number | null,
+	// The post-action state, passed only so a completing game can be summarized
+	// into game_results. Omitted by callers that can't finish a game.
+	nextState?: GameState
 ): Promise<Response | null> {
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -2976,7 +2979,77 @@ async function commitActionWrite(
 		.update(gameUpdate)
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
+
+	if (winner !== null && nextState) {
+		// `applyEndOfActionChecks` may have moved Longest Road after the caller
+		// built `nextState`, and that's worth 2 VP — read the change back off
+		// the state update rather than scoring a stale holder.
+		const finalState: GameState =
+			'longest_road' in stateUpdate
+				? {
+						...nextState,
+						longestRoad: stateUpdate.longest_road as number | null,
+					}
+				: nextState
+		await writeGameResults(admin, game, finalState, winner, events)
+	}
 	return null
+}
+
+// Per-player summary of a finished game, backing the Stats tab (final scores
+// are otherwise unrecoverable — game_states stays live-shaped, not archival).
+//
+// Best-effort: the game is already over and the caller is owed its 200, so a
+// failure here only logs. `dev/backfill-game-results.ts` can rebuild any row.
+async function writeGameResults(
+	admin: SupabaseClient,
+	game: GameRow,
+	state: GameState,
+	winner: number,
+	newEvents: unknown[]
+): Promise<void> {
+	const points = state.players.map((_, i) => totalVP(state, i))
+	const offered = offeredBonusesByPlayer([
+		...(game.events ?? []),
+		...newEvents,
+	])
+	const completedAt = new Date().toISOString()
+	const rows = game.player_order.map((userId, i) => ({
+		game_id: game.id,
+		user_id: userId,
+		player_index: i,
+		points: points[i],
+		// Ties share the better rank. The winner crossed the threshold, so
+		// nobody is above them and this always yields 1 for them.
+		placement: 1 + points.filter((p) => p > points[i]).length,
+		won: i === winner,
+		turns: state.round,
+		player_count: game.player_order.length,
+		bonus: bonusOf(state, i) ?? null,
+		curse: curseOf(state, i) ?? null,
+		offered_bonuses: offered[i] ?? null,
+		completed_at: completedAt,
+	}))
+	const { error } = await admin
+		.from('game_results')
+		.upsert(rows, { onConflict: 'game_id,user_id' })
+	if (error) console.error('[game_results] write failed', error.message)
+}
+
+// The bonus pair each seat was dealt, recovered from the `bonus_chosen` events.
+// Absent for games that finished (or started) before `offered` was logged.
+function offeredBonusesByPlayer(
+	events: unknown[]
+): Record<number, string[] | undefined> {
+	const out: Record<number, string[] | undefined> = {}
+	for (const e of events) {
+		const ev = e as { kind?: string; player?: number; offered?: string[] }
+		if (ev?.kind !== 'bonus_chosen') continue
+		if (typeof ev.player !== 'number' || !Array.isArray(ev.offered))
+			continue
+		out[ev.player] = ev.offered
+	}
+	return out
 }
 
 // --- Trade rules (must match lib/catan/trade) ------------------------------
@@ -3733,11 +3806,15 @@ async function handlePickBonus(
 	// from that point on (the player strip shows them).
 	if (allChosen) {
 		const at = new Date().toISOString()
+		// `offered` is the only surviving record of the pair a player turned
+		// down — the hands live in `phase`, which is replaced right here by
+		// initial_placement. Stats reads it back for pick rate.
 		const events = nextPlayers.map((p, i) => ({
 			kind: 'bonus_chosen',
 			player: i,
 			bonus: p.bonus,
 			curse: p.curse,
+			offered: nextHands[i]!.offered,
 			at,
 		}))
 		const { error: gameErr } = await admin
@@ -5127,7 +5204,8 @@ async function handleBuildRoad(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 
@@ -5214,7 +5292,8 @@ async function handleBuildSettlement(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 
@@ -5301,7 +5380,8 @@ async function handleBuildCity(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 
@@ -6340,7 +6420,8 @@ async function handleBuyDevCard(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 
@@ -6401,7 +6482,8 @@ async function handleConfirmScoutCard(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 	return json({ ok: true })
@@ -6480,7 +6562,8 @@ async function handleBuildSuperCity(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 	return json({ ok: true })
@@ -6694,7 +6777,8 @@ async function handleLiquidate(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 	return json({ ok: true })
@@ -7278,7 +7362,8 @@ async function handleBuyCarpenterVP(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 	return json({ ok: true })
@@ -7801,7 +7886,8 @@ async function handlePlayDevCard(
 		game,
 		update,
 		events,
-		winner
+		winner,
+		nextState
 	)
 	if (commitErr) return commitErr
 

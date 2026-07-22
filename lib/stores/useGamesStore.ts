@@ -172,6 +172,10 @@ export type GameEvent =
 			player: number
 			bonus: BonusId
 			curse?: CurseId
+			// The pair this seat was dealt — the only record of the bonus they
+			// turned down, and what pick rate on the Stats tab is measured
+			// against. Absent on games that started before it was logged.
+			offered?: [BonusId, BonusId]
 			at: string
 	  }
 	| { kind: 'specialist_set'; player: number; resource: Resource; at: string }
