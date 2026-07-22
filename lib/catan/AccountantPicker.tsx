@@ -6,7 +6,7 @@
 
 import { useMemo } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { Modal } from '../modules/Modal'
+import { MinimizableModal } from '../modules/MinimizableModal'
 import { type Edge, RESOURCES, type Vertex } from './board'
 import {
 	CITY_REFUND,
@@ -50,8 +50,11 @@ export function AccountantPicker({
 	)
 
 	return (
-		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
-			<Text style={styles.title}>Accountant: liquidate a piece</Text>
+		<MinimizableModal
+			title="Accountant: liquidate a piece"
+			onDismiss={onCancel}
+			contentStyle={styles.sheet}
+		>
 			<Text style={styles.subtitle}>
 				Refunds the full original cost. Pieces placed this turn and
 				roads that would disconnect your network are not listed.
@@ -89,7 +92,7 @@ export function AccountantPicker({
 			>
 				<Text style={styles.cancelText}>Close</Text>
 			</Pressable>
-		</Modal>
+		</MinimizableModal>
 	)
 }
 
@@ -185,18 +188,8 @@ function RefundChips({
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
 		sheet: {
-			width: '100%',
 			maxWidth: 460,
 			maxHeight: '85%',
-			backgroundColor: colors.card,
-			borderRadius: radius.md,
-			padding: spacing.lg,
-			gap: spacing.md,
-		},
-		title: {
-			fontSize: font.lg,
-			fontWeight: '700',
-			color: colors.text,
 		},
 		subtitle: {
 			fontSize: font.sm,

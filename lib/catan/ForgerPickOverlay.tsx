@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { Modal } from '../modules/Modal'
+import { MinimizableModal } from '../modules/MinimizableModal'
 import { Button } from '../modules/Button'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
@@ -31,12 +31,11 @@ export function ForgerPickOverlay({
 	const candidates = Object.keys(gainsByCandidate).map(Number)
 
 	return (
-		<Modal
-			visible
+		<MinimizableModal
+			title="Forger: copy from a player"
 			dismissOnBackdropPress={false}
 			contentStyle={styles.sheet}
 		>
-			<Text style={styles.title}>Forger: copy from a player</Text>
 			<Text style={styles.subtitle}>
 				Your token at hex {hex} produced. Pick one player to copy what
 				THEY gained from that hex on this roll.
@@ -61,7 +60,7 @@ export function ForgerPickOverlay({
 			>
 				Copy
 			</Button>
-		</Modal>
+		</MinimizableModal>
 	)
 }
 
@@ -112,17 +111,7 @@ function CandidateRow({
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
 		sheet: {
-			width: '100%',
 			maxWidth: 460,
-			backgroundColor: colors.card,
-			borderRadius: radius.md,
-			padding: spacing.lg,
-			gap: spacing.md,
-		},
-		title: {
-			fontSize: font.lg,
-			fontWeight: '700',
-			color: colors.text,
 		},
 		subtitle: {
 			fontSize: font.sm,

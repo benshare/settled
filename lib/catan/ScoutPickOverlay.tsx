@@ -58,24 +58,6 @@ export function ScoutPickOverlay({
 	)
 }
 
-// Spectator/owner-other view while a scout pick is pending.
-export function ScoutWaitOverlay({ ownerName }: { ownerName: string }) {
-	const { colors } = useTheme()
-	const styles = useMemo(() => makeStyles(colors), [colors])
-	return (
-		<Modal
-			visible
-			dismissOnBackdropPress={false}
-			contentStyle={styles.sheet}
-		>
-			<Text style={styles.title}>Scout pick</Text>
-			<Text style={styles.subtitle}>
-				Waiting on {ownerName} to choose 1 of 3 peeked dev cards.
-			</Text>
-		</Modal>
-	)
-}
-
 function ScoutCard({
 	id,
 	picked,

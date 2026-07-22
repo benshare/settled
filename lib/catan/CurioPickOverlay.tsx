@@ -117,24 +117,6 @@ export function CurioPickOverlay({
 	)
 }
 
-// Spectator view: someone else's curio pick is pending.
-export function CurioWaitOverlay({ waitingOn }: { waitingOn: string[] }) {
-	const { colors } = useTheme()
-	const styles = useMemo(() => makeStyles(colors), [colors])
-	return (
-		<Modal
-			visible
-			dismissOnBackdropPress={false}
-			contentStyle={styles.sheet}
-		>
-			<Text style={styles.title}>Curio Collector pick</Text>
-			<Text style={styles.subtitle}>
-				Waiting on {waitingOn.join(', ')} to claim 3 resources.
-			</Text>
-		</Modal>
-	)
-}
-
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
 		sheet: {

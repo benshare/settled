@@ -7,18 +7,9 @@
 import { Button } from '@/lib/modules/Button'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
-import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { Modal } from '@/lib/modules/Modal'
-import Animated, {
-	FadeIn,
-	FadeOut,
-	LinearTransition,
-	useAnimatedStyle,
-	withTiming,
-} from 'react-native-reanimated'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { MinimizableModal } from '@/lib/modules/MinimizableModal'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor } from './palette'
 
@@ -40,100 +31,52 @@ export function SpecialistDeclareOverlay({
 	onConfirm: (resource: Resource) => void
 }) {
 	const { colors } = useTheme()
-	const insets = useSafeAreaInsets()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const [pick, setPick] = useState<Resource | null>(null)
-	const [minimized, setMinimized] = useState(false)
 
-	// Single chevron that flips by mirroring on the Y axis (scaleY 1 → -1);
-	// animating through 0 reads as a vertical flip rather than a swap. Driven
-	// straight off `minimized` — the worklet re-runs when it changes and
-	// withTiming animates to the new target.
-	const chevronStyle = useAnimatedStyle(() => ({
-		transform: [
-			{ scaleY: withTiming(minimized ? -1 : 1, { duration: 220 }) },
-		],
-	}))
-	function toggleMinimized() {
-		setMinimized((m) => !m)
-	}
-
-	// Anchored to the top (via backdropStyle) rather than centered so the header
-	// stays put as the body collapses — minimizing just shrinks the sheet upward,
-	// keeping the board visible below. The sheet's resize is animated via the
-	// Modal's `layout` transition; the body's grow/shrink also fades in/out.
 	return (
-		<Modal
-			visible
+		<MinimizableModal
+			title="Declare your specialty"
 			dismissOnBackdropPress={false}
 			contentStyle={styles.sheet}
-			backdropStyle={[
-				styles.backdrop,
-				{ paddingTop: insets.top + spacing.lg },
-			]}
-			layout={LinearTransition.duration(220)}
 		>
-			<View style={styles.titleRow}>
-				<Text style={styles.title}>Declare your specialty</Text>
-				<Pressable
-					onPress={toggleMinimized}
-					hitSlop={8}
-					style={({ pressed }) => pressed && styles.pressed}
-				>
-					<Animated.View style={chevronStyle}>
-						<Ionicons
-							name="chevron-down"
-							size={22}
-							color={colors.textSecondary}
-						/>
-					</Animated.View>
-				</Pressable>
-			</View>
-			{!minimized && (
-				<Animated.View
-					entering={FadeIn.duration(180)}
-					exiting={FadeOut.duration(160)}
-					style={styles.body}
-				>
-					<Text style={styles.subtitle}>
-						Pick the resource you'll specialize in. Any port trade
-						that takes this resource as input costs 1 fewer for you.
-					</Text>
-					<View style={styles.grid}>
-						{RESOURCES.map((r) => (
-							<Pressable
-								key={r}
-								onPress={() => setPick(r)}
-								style={({ pressed }) => [
-									styles.card,
-									{
-										backgroundColor: resourceColor[r],
-									},
-									pick === r && styles.cardPicked,
-									pressed && styles.pressed,
-								]}
-							>
-								<Text style={styles.cardLabel}>
-									{RESOURCE_LABELS[r]}
-								</Text>
-							</Pressable>
-						))}
-					</View>
-					{waitingOn.length > 0 && (
-						<Text style={styles.waiting}>
-							Waiting on {waitingOn.join(', ')}…
-						</Text>
-					)}
-					<Button
-						onPress={() => pick && onConfirm(pick)}
-						disabled={pick === null}
-						loading={submitting}
+			<Text style={styles.subtitle}>
+				Pick the resource you'll specialize in. Any port trade that
+				takes this resource as input costs 1 fewer for you.
+			</Text>
+			<View style={styles.grid}>
+				{RESOURCES.map((r) => (
+					<Pressable
+						key={r}
+						onPress={() => setPick(r)}
+						style={({ pressed }) => [
+							styles.card,
+							{
+								backgroundColor: resourceColor[r],
+							},
+							pick === r && styles.cardPicked,
+							pressed && styles.pressed,
+						]}
 					>
-						Confirm
-					</Button>
-				</Animated.View>
+						<Text style={styles.cardLabel}>
+							{RESOURCE_LABELS[r]}
+						</Text>
+					</Pressable>
+				))}
+			</View>
+			{waitingOn.length > 0 && (
+				<Text style={styles.waiting}>
+					Waiting on {waitingOn.join(', ')}…
+				</Text>
 			)}
-		</Modal>
+			<Button
+				onPress={() => pick && onConfirm(pick)}
+				disabled={pick === null}
+				loading={submitting}
+			>
+				Confirm
+			</Button>
+		</MinimizableModal>
 	)
 }
 
@@ -247,36 +190,8 @@ export function HauntStatusBanner({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		backdrop: {
-			flex: 1,
-			backgroundColor: 'rgba(0,0,0,0.55)',
-			alignItems: 'center',
-			justifyContent: 'flex-start',
-			paddingHorizontal: spacing.lg,
-			paddingBottom: spacing.lg,
-		},
 		sheet: {
-			width: '100%',
 			maxWidth: 420,
-			backgroundColor: colors.card,
-			borderRadius: radius.md,
-			padding: spacing.lg,
-			gap: spacing.md,
-			overflow: 'hidden',
-		},
-		body: {
-			gap: spacing.md,
-		},
-		titleRow: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			justifyContent: 'space-between',
-			gap: spacing.sm,
-		},
-		title: {
-			fontSize: font.lg,
-			fontWeight: '700',
-			color: colors.text,
 		},
 		subtitle: {
 			fontSize: font.sm,

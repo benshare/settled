@@ -27,10 +27,7 @@ import {
 	AccountantPicker,
 	type LiquidationTarget,
 } from '@/lib/catan/AccountantPicker'
-import {
-	CurioPickOverlay,
-	CurioWaitOverlay,
-} from '@/lib/catan/CurioPickOverlay'
+import { CurioPickOverlay } from '@/lib/catan/CurioPickOverlay'
 import { ForgerMovePicker } from '@/lib/catan/ForgerMovePicker'
 import { ForgerPickOverlay } from '@/lib/catan/ForgerPickOverlay'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
@@ -44,10 +41,7 @@ import {
 } from '@/lib/catan/PostPlacementOverlay'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
 import { ScoutCostPicker } from '@/lib/catan/ScoutCostPicker'
-import {
-	ScoutPickOverlay,
-	ScoutWaitOverlay,
-} from '@/lib/catan/ScoutPickOverlay'
+import { ScoutPickOverlay } from '@/lib/catan/ScoutPickOverlay'
 import { ShepherdSwapPicker } from '@/lib/catan/ShepherdSwapPicker'
 import {
 	canAffordPurchase,
@@ -1309,6 +1303,36 @@ function GameBody() {
 					</View>
 				)}
 
+			{gameState?.phase.kind === 'scout_pick' &&
+				gameState.phase.owner !== meIdx && (
+					<View style={styles.statusWrap}>
+						<Text style={styles.statusLine}>
+							Waiting on{' '}
+							{profilesById[
+								game.player_order[gameState.phase.owner]
+							]?.username ?? 'Player'}{' '}
+							to choose 1 of 3 peeked dev cards…
+						</Text>
+					</View>
+				)}
+
+			{gameState?.phase.kind === 'curio_pick' &&
+				!gameState.phase.pending.includes(meIdx) && (
+					<View style={styles.statusWrap}>
+						<Text style={styles.statusLine}>
+							Waiting on{' '}
+							{gameState.phase.pending
+								.map(
+									(i) =>
+										profilesById[game.player_order[i]]
+											?.username ?? 'Player'
+								)
+								.join(', ')}{' '}
+							to claim 3 resources…
+						</Text>
+					</View>
+				)}
+
 			{!inPlacement && !inGameOver && !inBonusSelection && gameState && (
 				<>
 					{!inRoadBuilding && (
@@ -1517,44 +1541,24 @@ function GameBody() {
 					return null
 				})()}
 
-			{gameState && gameState.phase.kind === 'scout_pick' && (
-				<>
-					{gameState.phase.owner === meIdx ? (
-						<ScoutPickOverlay
-							cards={gameState.phase.cards}
-							submitting={submitting}
-							onConfirm={onConfirmScoutCard}
-						/>
-					) : (
-						<ScoutWaitOverlay
-							ownerName={
-								profilesById[
-									game.player_order[gameState.phase.owner]
-								]?.username ?? 'Player'
-							}
-						/>
-					)}
-				</>
-			)}
+			{gameState &&
+				gameState.phase.kind === 'scout_pick' &&
+				gameState.phase.owner === meIdx && (
+					<ScoutPickOverlay
+						cards={gameState.phase.cards}
+						submitting={submitting}
+						onConfirm={onConfirmScoutCard}
+					/>
+				)}
 
-			{gameState && gameState.phase.kind === 'curio_pick' && (
-				<>
-					{gameState.phase.pending.includes(meIdx) ? (
-						<CurioPickOverlay
-							submitting={submitting}
-							onConfirm={onClaimCurio}
-						/>
-					) : (
-						<CurioWaitOverlay
-							waitingOn={gameState.phase.pending.map(
-								(i) =>
-									profilesById[game.player_order[i]]
-										?.username ?? 'Player'
-							)}
-						/>
-					)}
-				</>
-			)}
+			{gameState &&
+				gameState.phase.kind === 'curio_pick' &&
+				gameState.phase.pending.includes(meIdx) && (
+					<CurioPickOverlay
+						submitting={submitting}
+						onConfirm={onClaimCurio}
+					/>
+				)}
 
 			{gameState &&
 				gameState.phase.kind === 'forger_pick' &&
