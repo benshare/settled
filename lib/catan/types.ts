@@ -89,9 +89,9 @@ export type GameConfig = {
 	limitMonopoly: boolean
 	// How player-to-player trades resolve. See TradeMode.
 	tradeMode: TradeMode
-	// Whether friends of any player may watch this game. Access control reads
-	// the denormalized `games.spectators` column, not this field — see
-	// .claude/specs/spectating.md.
+	// Whether friends of any player may watch this game. The spectator RLS
+	// policies read this field straight off `games.config`, so it is the
+	// authority for access — see .claude/specs/spectating.md.
 	spectators: boolean
 	// See ExtraBuildConfig. Only affects games with >4 players; ignored
 	// otherwise.
@@ -117,7 +117,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 }
 
 // Defensive JSON reader. `raw` comes off `game_requests.config` /
-// `game_states.config` as `Json`; any missing fields fall back to the
+// `games.config` as `Json`; any missing fields fall back to the
 // global defaults so a partially-written row still renders sanely.
 export function parseGameConfig(raw: unknown): GameConfig {
 	if (!raw || typeof raw !== 'object') return DEFAULT_CONFIG
@@ -153,9 +153,10 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			src.tradeMode === 'confirm' || src.tradeMode === 'automatic'
 				? src.tradeMode
 				: DEFAULT_CONFIG.tradeMode,
-		// A legacy row has no key and so reads as allowed, while its
-		// `games.spectators` column stays false — the column is the only
-		// authority for access, this value only feeds the settings summary.
+		// Every stored row carries the key — the migration that moved config
+		// onto `games` pinned any that didn't to false, and the policies read
+		// it as a plain boolean. This default is for configs built in memory
+		// (a new game's form state), where watchable is the product default.
 		spectators:
 			typeof src.spectators === 'boolean'
 				? src.spectators

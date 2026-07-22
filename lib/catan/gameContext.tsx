@@ -19,7 +19,11 @@ import {
 	type ReactNode,
 } from 'react'
 import { totalVP } from './dev'
-import type { GameState } from './types'
+import { parseGameConfig, type GameState } from './types'
+
+// What the game_states row carries. `config` lives on the games row, so a
+// GameState is only complete once the two are joined — see `gameState` below.
+type BoardState = Omit<GameState, 'config'>
 
 export type GameContextValue = {
 	game: Game | undefined
@@ -92,7 +96,7 @@ export function GameProvider({
 	const [resyncNonce, setResyncNonce] = useState(0)
 	useAppForeground(() => setResyncNonce((n) => n + 1))
 
-	const [gameState, setGameState] = useState<GameState | undefined>()
+	const [boardState, setBoardState] = useState<BoardState | undefined>()
 	const [stateLoaded, setStateLoaded] = useState(false)
 
 	// A fetch in flight when the game changes must not land on the new game.
@@ -133,7 +137,7 @@ export function GameProvider({
 			.eq('game_id', gameId)
 			.maybeSingle()
 		if (currentId.current !== gameId || seq !== stateSeq.current) return
-		setGameState(data ? rowToState(data) : undefined)
+		setBoardState(data ? rowToState(data) : undefined)
 		setStateLoaded(true)
 	}, [gameId])
 
@@ -181,7 +185,7 @@ export function GameProvider({
 	// Only a change of game empties the board. A resync re-fetches in place, so
 	// foregrounding doesn't flash back to the loading state.
 	useEffect(() => {
-		setGameState(undefined)
+		setBoardState(undefined)
 		setStateLoaded(false)
 	}, [gameId])
 
@@ -202,7 +206,7 @@ export function GameProvider({
 					// retire those responses before applying it.
 					stateSeq.current += 1
 					if (payload.eventType === 'DELETE') {
-						setGameState(undefined)
+						setBoardState(undefined)
 						return
 					}
 					// Postgres logical replication omits unchanged TOASTed
@@ -217,7 +221,7 @@ export function GameProvider({
 						fetchState()
 						return
 					}
-					setGameState(rowToState(payload.new))
+					setBoardState(rowToState(payload.new))
 				}
 			)
 			.subscribe((status) => {
@@ -232,6 +236,18 @@ export function GameProvider({
 	const game = liveGame ?? storeGame
 	const meId = user?.id
 	const isSpectator = !!game && !!meId && !game.participants.includes(meId)
+
+	// The two rows are fetched independently and land in either order, so the
+	// board is only a usable GameState once both are in. Everything downstream
+	// reads `state.config`, so publishing the board without it would hand
+	// consumers a half-built object during the gap.
+	const gameState = useMemo<GameState | undefined>(
+		() =>
+			boardState && game
+				? { ...boardState, config: parseGameConfig(game.config) }
+				: undefined,
+		[boardState, game]
+	)
 
 	// --- Watcher presence --------------------------------------------------
 	// Ephemeral, so there's no table and nothing to clean up: a watcher who
@@ -315,7 +331,7 @@ function isPartialStateRow(row: Record<string, unknown>): boolean {
 	)
 }
 
-function rowToState(row: Record<string, unknown>): GameState {
+function rowToState(row: Record<string, unknown>): BoardState {
 	return {
 		variant: row.variant as GameState['variant'],
 		hexes: row.hexes as GameState['hexes'],
@@ -337,7 +353,6 @@ function rowToState(row: Record<string, unknown>): GameState {
 		ports: (row.ports as GameState['ports']) ?? [],
 		fenceTokens:
 			(row.fence_tokens as GameState['fenceTokens']) ?? undefined,
-		config: row.config as GameState['config'],
 		devDeck: (row.dev_deck as GameState['devDeck']) ?? [],
 		largestArmy: (row.largest_army as GameState['largestArmy']) ?? null,
 		longestRoad: (row.longest_road as GameState['longestRoad']) ?? null,

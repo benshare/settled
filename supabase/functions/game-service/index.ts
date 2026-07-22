@@ -1360,8 +1360,8 @@ type GameConfig = {
 	// 'automatic' (today's immediate-swap behaviour).
 	tradeMode?: TradeMode
 	// Whether friends of any player may watch. Absent on legacy rows — read
-	// defensively (`=== true`). Denormalized onto `games.spectators` at game
-	// creation, which is the only authority for access control.
+	// defensively (`=== true`). The spectator RLS policies read this same field
+	// off `games.config`, so this is the authority for access control.
 	spectators?: boolean
 	extraBuild: ExtraBuildConfig
 }
@@ -3520,7 +3520,7 @@ async function loadGame(
 		fenceTokens:
 			(stateRow.fence_tokens as Partial<Record<Edge, number>> | null) ??
 			undefined,
-		config: stateRow.config as GameConfig,
+		config: game.config as GameConfig,
 		devDeck: (stateRow.dev_deck as DevCardId[] | null) ?? [],
 		largestArmy: (stateRow.largest_army as number | null) ?? null,
 		longestRoad: (stateRow.longest_road as number | null) ?? null,
@@ -3537,6 +3537,7 @@ type GameRow = {
 	status: 'placement' | 'active' | 'complete'
 	winner: number | null
 	events: unknown[]
+	config: GameConfig
 }
 
 function currentPlayerIndex(game: GameRow, me: string): number | null {
@@ -3643,10 +3644,9 @@ async function handleRespond(
 				// the phase resolves to initial_placement in handlePickBonus.
 				current_turn: config.bonuses ? null : 0,
 				status: 'placement',
-				// Denormalized off the config so RLS can gate the row without
-				// reaching into game_states. Written once, never mutated —
-				// a game's openness is fixed when it starts.
-				spectators: config.spectators === true,
+				// Passed through whole rather than re-derived field by field —
+				// the spectator policies read config.spectators off this row.
+				config,
 			})
 			.select('id')
 			.single()
@@ -3682,7 +3682,6 @@ async function handleRespond(
 			phase: initialPhase,
 			robber: desert,
 			ports: generatePorts(variant),
-			config,
 			dev_deck: config.devCards ? buildInitialDevDeck() : [],
 			largest_army: null,
 			longest_road: null,
@@ -4774,7 +4773,7 @@ async function handleSendMessage(
 	// completed games, so there is no status precondition to check.
 	const { data: game, error: gameErr } = await admin
 		.from('games')
-		.select('id, participants, spectators')
+		.select('id, participants, config')
 		.eq('id', body.game_id)
 		.maybeSingle()
 	if (gameErr) return err(500, gameErr.message)
@@ -4783,7 +4782,12 @@ async function handleSendMessage(
 	const participants = (game.participants ?? []) as string[]
 	if (
 		!participants.includes(me) &&
-		!(await isGameSpectator(admin, participants, !!game.spectators, me))
+		!(await isGameSpectator(
+			admin,
+			participants,
+			(game.config as GameConfig | null)?.spectators === true,
+			me
+		))
 	) {
 		return err(403, 'not a participant')
 	}

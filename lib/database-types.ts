@@ -255,7 +255,6 @@ export type Database = {
       }
       game_states: {
         Row: {
-          config: Json
           dev_deck: Json
           edges: Json
           fence_tokens: Json | null
@@ -273,7 +272,6 @@ export type Database = {
           vertices: Json
         }
         Insert: {
-          config: Json
           dev_deck: Json
           edges?: Json
           fence_tokens?: Json | null
@@ -291,7 +289,6 @@ export type Database = {
           vertices?: Json
         }
         Update: {
-          config?: Json
           dev_deck?: Json
           edges?: Json
           fence_tokens?: Json | null
@@ -320,35 +317,35 @@ export type Database = {
       }
       games: {
         Row: {
+          config: Json
           created_at: string
           current_turn: number | null
           events: Json[]
           id: string
           participants: string[]
           player_order: string[]
-          spectators: boolean
           status: string
           winner: number | null
         }
         Insert: {
+          config: Json
           created_at?: string
           current_turn?: number | null
           events?: Json[]
           id?: string
           participants: string[]
           player_order?: string[]
-          spectators?: boolean
           status?: string
           winner?: number | null
         }
         Update: {
+          config?: Json
           created_at?: string
           current_turn?: number | null
           events?: Json[]
           id?: string
           participants?: string[]
           player_order?: string[]
-          spectators?: boolean
           status?: string
           winner?: number | null
         }

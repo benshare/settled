@@ -28,13 +28,10 @@ Added to `lib/catan/types.ts`:
 - `summarizeGameConfig`: surfaces `'Spectators disabled'` when it differs from
   the default (i.e. when false).
 
-One cosmetic seam, called out so it isn't mistaken for a bug: a legacy game row
-has no `spectators` key, so `parseGameConfig` reads it as `true` and its
-settings summary stays silent — while `games.spectators` (the column, defaulted
-`false`, §"`games.spectators` column") keeps it genuinely unwatchable. The
-column is the only authority for access; the config value only ever feeds the
-summary and the create-game form. Backfilling old rows to `false` would fix the
-summary but is not worth a migration write over finished and in-flight games.
+`parseGameConfig`'s `true` default applies only to configs built in memory (the
+create-game form). Every stored row carries the key: the migration that moved
+`config` onto `games` pinned any row that lacked it to `false`, so a game that
+never opted in is not watchable and its summary says so.
 
 ### Create-game UI
 
@@ -51,26 +48,34 @@ comparison, in the `config` object sent to `createRequest`, and in the saved
 game-defaults payload. The server-side default on `profiles.game_defaults`
 (migration `20260423130000_profile_game_defaults.sql` shape) gets the same key.
 
-### `games.spectators` column
+### `games.config`
 
-`GameConfig` lives on `game_states.config`, but the RLS policy that gates the
-`games` row cannot depend on `game_states` (the state row is written after the
-game row, and a policy that joins the other way round is both slower and
-circular). So the flag is denormalized:
+`GameConfig` is immutable game metadata — written once when the game is created,
+never mutated — so it lives on the `games` row beside `participants` and
+`status`, not on the board-state row.
+
+It started out on `game_states.config`, which forced a denormalized
+`games.spectators` boolean: a policy on `games` cannot subquery `game_states`,
+whose own select policy subqueries `games`, and PostgreSQL rejects that pair as
+infinitely recursive. Migration `20260724120000_game_config_on_games.sql` moved
+the column and dropped the boolean.
 
 ```sql
 alter table public.games
-    add column spectators boolean not null default false;
+    add column config jsonb not null default '{}'::jsonb;
 
-create index games_spectators_idx
-    on public.games (status) where spectators;
+create index games_spectators_status_idx
+    on public.games (status) where (config ->> 'spectators')::boolean;
 ```
 
-Written once, at game creation, by `handleRespond` in `game-service` from
-`config.spectators`. Never mutated afterwards — a game's openness is fixed when
-it starts. `games.spectators` is the authority for access control;
-`game_states.config.spectators` is the record of what was chosen. They cannot
-diverge because nothing writes either after creation.
+Both jsonb operators are immutable, so the partial index predicate is legal.
+
+Written once, by `handleRespond` in `game-service`, which passes the request's
+config through whole rather than re-deriving fields from it. That matters: while
+the flag was denormalized it had to be copied field-by-field at insert time, and
+a stale edge deploy silently dropped the copy — every game created in that
+window had `config.spectators` true and the column false, so nothing was
+watchable. One source of truth removes the failure mode rather than guarding it.
 
 ---
 
@@ -365,9 +370,11 @@ rather than an oversight.
 
 ## 7. Files touched
 
-**Migration** — `supabase/migrations/<ts>_spectating.sql`
-`games.spectators` column + index; the three spectator select policies; the
-`profiles.game_defaults` default updated with `spectators: true`.
+**Migrations** — `<ts>_spectating.sql` added the three spectator select policies
+and updated the `profiles.game_defaults` default with `spectators: true`.
+`20260724120000_game_config_on_games.sql` then moved `config` from
+`game_states` to `games`, rebuilt the policies against `games.config`, and
+dropped the `games.spectators` column it had needed.
 
 **Rules / types**
 
