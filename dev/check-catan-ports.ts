@@ -107,6 +107,7 @@ function checkGenerate() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
@@ -125,6 +126,7 @@ function stateWithSettlement(vertex: string, portKind: string): GameState {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
@@ -185,6 +187,7 @@ function checkAvailableOptions() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,

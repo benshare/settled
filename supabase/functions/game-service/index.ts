@@ -1319,10 +1319,20 @@ type GameConfig = {
 	// skips the whole robber chain — no discards, no move, no steal. Nomad
 	// desert production still applies. Mirrors GameConfig in lib/catan/types.ts.
 	friendlyRobber: boolean
+	// When true, a Monopoly play takes at most `monopolyCap(playerCount)` of
+	// the named resource from any single opponent; the aggregate is uncapped.
+	// Absent on rows created before the option shipped — read defensively.
+	limitMonopoly?: boolean
 	// Absent on legacy rows — read defensively (`=== 'confirm'`), defaulting to
 	// 'automatic' (today's immediate-swap behaviour).
 	tradeMode?: TradeMode
 	extraBuild: ExtraBuildConfig
+}
+
+// Per-opponent ceiling on a Monopoly haul when `config.limitMonopoly` is on.
+// Mirror of monopolyCap in lib/catan/types.ts.
+function monopolyCap(playerCount: number): number {
+	return playerCount > 4 ? 2 : 3
 }
 
 type ResumePhase =
@@ -7653,11 +7663,23 @@ async function handlePlayDevCard(
 			const payload = body.payload as { resource?: unknown } | null
 			const resource = payload ? parseResource(payload.resource) : null
 			if (!resource) return err(400, 'invalid monopoly payload')
+			// `limitMonopoly` caps what any single opponent loses; the total
+			// haul across the table stays uncapped.
+			const perPlayerCap = state.config.limitMonopoly
+				? monopolyCap(nextPlayers.length)
+				: Infinity
 			let stolen = 0
 			nextPlayers = nextPlayers.map((p, i) => {
 				if (i === meIdx) return p
-				stolen += p.resources[resource]
-				return { ...p, resources: { ...p.resources, [resource]: 0 } }
+				const take = Math.min(p.resources[resource], perPlayerCap)
+				stolen += take
+				return {
+					...p,
+					resources: {
+						...p.resources,
+						[resource]: p.resources[resource] - take,
+					},
+				}
 			})
 			nextPlayers = nextPlayers.map((p, i) =>
 				i === meIdx

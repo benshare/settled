@@ -62,6 +62,7 @@ function testRolledSevenYieldsNothing() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
@@ -81,6 +82,7 @@ function testSettlementGetsOne() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
@@ -106,6 +108,7 @@ function testCityGetsTwo() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
@@ -130,6 +133,7 @@ function testMismatchedRollPaysNothing() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,

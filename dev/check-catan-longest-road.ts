@@ -23,6 +23,7 @@ function fresh(players = 3): GameState {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,

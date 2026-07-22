@@ -56,6 +56,7 @@ function baseState(): GameState {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,

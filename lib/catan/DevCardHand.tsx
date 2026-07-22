@@ -60,6 +60,7 @@ export function DevCardHand({
 	myTurn,
 	phaseKind,
 	playedDevThisTurn,
+	monopolyPerPlayerCap,
 	onPlay,
 }: {
 	entries: DevCardEntry[]
@@ -67,6 +68,8 @@ export function DevCardHand({
 	myTurn: boolean
 	phaseKind: string
 	playedDevThisTurn: boolean
+	// Per-opponent Monopoly ceiling, or null when the haul is uncapped.
+	monopolyPerPlayerCap: number | null
 	onPlay: (p: DevPlayPayload) => void
 }) {
 	const groups = useMemo(() => groupHand(entries), [entries])
@@ -179,6 +182,7 @@ export function DevCardHand({
 
 			{pickerFor === 'monopoly' && (
 				<MonopolyPicker
+					perPlayerCap={monopolyPerPlayerCap}
 					onCancel={() => setPickerFor(null)}
 					onConfirm={(resource) => {
 						setPickerFor(null)

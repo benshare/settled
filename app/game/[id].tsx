@@ -76,6 +76,7 @@ import { StealAnimation } from '@/lib/catan/StealAnimation'
 import { TradeBanner, visibleOfferFor } from '@/lib/catan/TradeBanner'
 import { TradePanel } from '@/lib/catan/TradePanel'
 import { isOfferRejectedByAll } from '@/lib/catan/trade'
+import { monopolyCap } from '@/lib/catan/types'
 import type {
 	Phase,
 	PlayerState,
@@ -1911,6 +1912,11 @@ function GameBody() {
 								phaseKind={gameState.phase.kind}
 								playedDevThisTurn={
 									gameState.players[meIdx].playedDevThisTurn
+								}
+								monopolyPerPlayerCap={
+									gameState.config.limitMonopoly
+										? monopolyCap(gameState.players.length)
+										: null
 								}
 								onPlay={onPlayDevCard}
 							/>

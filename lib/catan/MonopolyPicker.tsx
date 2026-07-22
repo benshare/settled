@@ -16,9 +16,12 @@ const RESOURCE_LABELS: Record<Resource, string> = {
 }
 
 export function MonopolyPicker({
+	perPlayerCap,
 	onCancel,
 	onConfirm,
 }: {
+	// Most cards a single opponent can lose, or null when uncapped.
+	perPlayerCap: number | null
 	onCancel: () => void
 	onConfirm: (resource: Resource) => void
 }) {
@@ -26,7 +29,9 @@ export function MonopolyPicker({
 		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
 			<Text style={styles.title}>Name a resource</Text>
 			<Text style={styles.subtitle}>
-				Every opponent will give you all of their cards of that type.
+				{perPlayerCap === null
+					? 'Every opponent will give you all of their cards of that type.'
+					: `Every opponent will give you up to ${perPlayerCap} of their cards of that type.`}
 			</Text>
 			<View style={styles.grid}>
 				{RESOURCES.map((r) => (

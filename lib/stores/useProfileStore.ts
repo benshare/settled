@@ -20,6 +20,7 @@ export type GameDefaults = {
 		numberLayout: NumberLayout
 		honk: boolean
 		friendlyRobber: boolean
+		limitMonopoly: boolean
 		tradeMode: TradeMode
 		extraBuild: ExtraBuildConfig
 	}
@@ -36,6 +37,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 		numberLayout: 'spiral',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: true,
@@ -71,6 +73,10 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				typeof settings?.friendlyRobber === 'boolean'
 					? settings.friendlyRobber
 					: DEFAULT_GAME_DEFAULTS.settings.friendlyRobber,
+			limitMonopoly:
+				typeof settings?.limitMonopoly === 'boolean'
+					? settings.limitMonopoly
+					: DEFAULT_GAME_DEFAULTS.settings.limitMonopoly,
 			tradeMode:
 				settings?.tradeMode === 'confirm' ||
 				settings?.tradeMode === 'automatic'

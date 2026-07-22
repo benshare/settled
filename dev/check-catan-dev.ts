@@ -85,6 +85,7 @@ function testCanBuyDevCard() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
@@ -145,6 +146,7 @@ function testCanBuyDevCard() {
 			numberLayout: 'random',
 			honk: true,
 			friendlyRobber: false,
+			limitMonopoly: false,
 			tradeMode: 'automatic',
 			extraBuild: {
 				enabled: false,
@@ -191,6 +193,7 @@ function testLargestArmyStrictOvertake() {
 			numberLayout: 'random',
 			honk: true,
 			friendlyRobber: false,
+			limitMonopoly: false,
 			tradeMode: 'automatic',
 			extraBuild: {
 				enabled: false,
@@ -231,6 +234,7 @@ function testTotalVP() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
@@ -305,6 +309,7 @@ function testInitialGameStateSeedsDevState() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,
@@ -327,6 +332,7 @@ function testInitialGameStateSeedsDevState() {
 		numberLayout: 'random',
 		honk: true,
 		friendlyRobber: false,
+		limitMonopoly: false,
 		tradeMode: 'automatic',
 		extraBuild: {
 			enabled: false,

@@ -80,6 +80,9 @@ export type GameConfig = {
 	// discards, no move, no steal. The 7 is still rolled and nomads still
 	// collect their desert d5; only the robber is held back.
 	friendlyRobber: boolean
+	// When true, Monopoly takes at most `monopolyCap(playerCount)` of the named
+	// resource from any single opponent (the aggregate haul is uncapped).
+	limitMonopoly: boolean
 	// How player-to-player trades resolve. See TradeMode.
 	tradeMode: TradeMode
 	// See ExtraBuildConfig. Only affects games with >4 players; ignored
@@ -98,6 +101,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	numberLayout: 'spiral',
 	honk: true,
 	friendlyRobber: false,
+	limitMonopoly: false,
 	tradeMode: 'automatic',
 	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
 }
@@ -127,6 +131,10 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			typeof src.friendlyRobber === 'boolean'
 				? src.friendlyRobber
 				: DEFAULT_CONFIG.friendlyRobber,
+		limitMonopoly:
+			typeof src.limitMonopoly === 'boolean'
+				? src.limitMonopoly
+				: DEFAULT_CONFIG.limitMonopoly,
 		tradeMode:
 			src.tradeMode === 'confirm' || src.tradeMode === 'automatic'
 				? src.tradeMode
@@ -160,6 +168,12 @@ export function parseExtraBuild(
 				? src.moreThanSeven
 				: fallback.moreThanSeven,
 	}
+}
+
+// Per-opponent ceiling on a Monopoly haul when `config.limitMonopoly` is on.
+// Tighter at a bigger table, where more opponents already mean a bigger total.
+export function monopolyCap(playerCount: number): number {
+	return playerCount > 4 ? 2 : 3
 }
 
 // Human-readable one-liner for a game's config relative to DEFAULT_CONFIG.
@@ -203,6 +217,13 @@ export function summarizeGameConfig(
 	if (config.friendlyRobber !== DEFAULT_CONFIG.friendlyRobber) {
 		parts.push(
 			config.friendlyRobber ? 'Friendly robber' : 'Standard robber'
+		)
+	}
+	if (config.limitMonopoly !== DEFAULT_CONFIG.limitMonopoly) {
+		parts.push(
+			config.limitMonopoly
+				? `Monopoly capped (${monopolyCap(playerCount)} per player)`
+				: 'Uncapped monopoly'
 		)
 	}
 	if (config.tradeMode !== DEFAULT_CONFIG.tradeMode) {

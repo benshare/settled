@@ -1,6 +1,7 @@
 import { useAuth } from '@/lib/auth'
 import {
 	MAX_PLAYERS,
+	monopolyCap,
 	sameStringSet,
 	type BuildPhaseFrequency,
 	type NumberLayout,
@@ -64,6 +65,9 @@ export default function CreateGameScreen() {
 	const [friendlyRobber, setFriendlyRobber] = useState(
 		savedDefaults.settings.friendlyRobber
 	)
+	const [limitMonopoly, setLimitMonopoly] = useState(
+		savedDefaults.settings.limitMonopoly
+	)
 	const [tradeMode, setTradeMode] = useState<TradeMode>(
 		savedDefaults.settings.tradeMode
 	)
@@ -92,6 +96,7 @@ export default function CreateGameScreen() {
 	const savedNumberLayout = savedDefaults.settings.numberLayout
 	const savedHonk = savedDefaults.settings.honk
 	const savedFriendlyRobber = savedDefaults.settings.friendlyRobber
+	const savedLimitMonopoly = savedDefaults.settings.limitMonopoly
 	const savedTradeMode = savedDefaults.settings.tradeMode
 	const savedExtraBuild = savedDefaults.settings.extraBuild
 	useEffect(() => {
@@ -102,6 +107,7 @@ export default function CreateGameScreen() {
 		setNumberLayout(savedNumberLayout)
 		setHonk(savedHonk)
 		setFriendlyRobber(savedFriendlyRobber)
+		setLimitMonopoly(savedLimitMonopoly)
 		setTradeMode(savedTradeMode)
 		setExtraBuildEnabled(savedExtraBuild.enabled)
 		setBuildPhases(savedExtraBuild.buildPhases)
@@ -113,6 +119,7 @@ export default function CreateGameScreen() {
 		savedNumberLayout,
 		savedHonk,
 		savedFriendlyRobber,
+		savedLimitMonopoly,
 		savedTradeMode,
 		savedExtraBuild,
 		touched,
@@ -124,6 +131,7 @@ export default function CreateGameScreen() {
 			numberLayout,
 			honk,
 			friendlyRobber,
+			limitMonopoly,
 			tradeMode,
 			extraBuild: {
 				enabled: extraBuildEnabled,
@@ -140,6 +148,8 @@ export default function CreateGameScreen() {
 		currentDefaults.settings.honk !== savedDefaults.settings.honk ||
 		currentDefaults.settings.friendlyRobber !==
 			savedDefaults.settings.friendlyRobber ||
+		currentDefaults.settings.limitMonopoly !==
+			savedDefaults.settings.limitMonopoly ||
 		currentDefaults.settings.tradeMode !==
 			savedDefaults.settings.tradeMode ||
 		currentDefaults.settings.extraBuild.enabled !==
@@ -191,6 +201,7 @@ export default function CreateGameScreen() {
 			numberLayout,
 			honk,
 			friendlyRobber,
+			limitMonopoly,
 			tradeMode,
 			extraBuild: {
 				enabled: extraBuildEnabled,
@@ -367,6 +378,18 @@ export default function CreateGameScreen() {
 											setTouched(true)
 										}}
 									/>
+									{devCards && (
+										<CompactToggleRow
+											icon="flash"
+											title="Limit monopoly"
+											description={`Monopoly takes at most ${monopolyCap(playerCount)} cards from any one player.`}
+											value={limitMonopoly}
+											onToggle={() => {
+												setLimitMonopoly((v) => !v)
+												setTouched(true)
+											}}
+										/>
+									)}
 									<SegmentedRow
 										label="Trades"
 										description="Confirm: you approve each acceptance before the swap. Automatic: the first accepter trades instantly."
