@@ -1,5 +1,11 @@
 import { useAuth } from '@/lib/auth'
-import { bonusById } from '@/lib/catan/bonuses'
+import {
+	BONUS_POOL,
+	bonusById,
+	CURSE_POOL,
+	type Bonus,
+	type Curse,
+} from '@/lib/catan/bonuses'
 import { Avatar } from '@/lib/modules/Avatar'
 import { computeStats, type BonusRate } from '@/lib/stats'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
@@ -8,15 +14,33 @@ import { useStatsStore } from '@/lib/stores/useStatsStore'
 import { useTheme } from '@/lib/ThemeContext'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
 	ActivityIndicator,
+	Pressable,
 	ScrollView,
 	StyleSheet,
 	Text,
 	View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+
+type TabKey = 'stats' | 'catalog'
+
+const TABS: { key: TabKey; label: string }[] = [
+	{ key: 'stats', label: 'Stats' },
+	{ key: 'catalog', label: 'Bonuses & curses' },
+]
+
+const BONUS_SETS: { set: Bonus['set']; label: string }[] = [
+	{ set: '1', label: 'Set 1' },
+	{ set: '2', label: 'Set 2' },
+	{ set: '3', label: 'Set 3' },
+]
+
+// Grid width at or above which the catalog uses 3 columns; narrower (phones in
+// portrait) drops to 2.
+const CATALOG_THREE_COL_MIN = 480
 
 export default function StatsScreen() {
 	const { user } = useAuth()
@@ -26,6 +50,7 @@ export default function StatsScreen() {
 	const error = useStatsStore((s) => s.error)
 	const completeGames = useGamesStore((s) => s.completeGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
+	const [tab, setTab] = useState<TabKey>('stats')
 
 	const loaded = results !== undefined && completeGames !== undefined
 	const stats = useMemo(
@@ -35,103 +60,232 @@ export default function StatsScreen() {
 
 	return (
 		<SafeAreaView style={styles.safe}>
+			<TabBar tab={tab} onTab={setTab} />
 			<ScrollView contentContainerStyle={styles.container}>
-				<Text style={styles.title}>Stats</Text>
-
-				{!loaded && <ActivityIndicator color={colors.textMuted} />}
-
-				{loaded && error && <Text style={styles.error}>{error}</Text>}
-
-				{loaded && !error && stats.gamesPlayed === 0 && (
-					<Text style={styles.emptyText}>
-						Play a game to see your stats.
-					</Text>
-				)}
-
-				{loaded && !error && stats.gamesPlayed > 0 && (
-					<>
-						<View style={styles.section}>
-							<Text style={styles.sectionHeading}>Games</Text>
-							<View style={styles.grid}>
-								<StatTile
-									label="Win rate"
-									value={percent(stats.winRate)}
-									sub={`${stats.wins} of ${stats.gamesPlayed} games`}
-								/>
-								<StatTile
-									label="Avg points"
-									value={oneDecimal(stats.avgPoints)}
-								/>
-								<StatTile
-									label="Avg place"
-									value={oneDecimal(stats.avgPlacement)}
-									sub={`of ${oneDecimal(stats.avgPlayers)}`}
-								/>
-								<StatTile
-									label="Avg rounds"
-									value={oneDecimal(stats.avgRounds)}
-								/>
-								<StatTile
-									label="Avg players"
-									value={oneDecimal(stats.avgPlayers)}
-								/>
-							</View>
-						</View>
-
-						<View style={styles.section}>
-							<Text style={styles.sectionHeading}>Friends</Text>
-							<View style={styles.grid}>
-								<StatTile
-									label="People played with"
-									value={String(stats.distinctOpponents)}
-								/>
-							</View>
-							{stats.topOpponents.map((o) => (
-								<OpponentRow
-									key={o.userId}
-									profile={profilesById[o.userId]}
-									games={o.games}
-								/>
-							))}
-						</View>
-
-						{stats.bonusGames > 0 && (
-							<View style={styles.section}>
-								<Text style={styles.sectionHeading}>
-									Bonuses
-								</Text>
-								<View style={styles.grid}>
-									<StatTile
-										label="Bonuses played"
-										value={String(stats.bonusesPlayed)}
-										sub={`of ${stats.bonusPoolSize}`}
-									/>
-									<StatTile
-										label="Curses played"
-										value={String(stats.cursesPlayed)}
-										sub={`of ${stats.cursePoolSize}`}
-									/>
-								</View>
-								{stats.topPickRate && (
-									<BonusRateRow
-										label="Most picked"
-										rate={stats.topPickRate}
-										unit="offers"
-									/>
-								)}
-								{stats.topWinRate && (
-									<BonusRateRow
-										label="Best win rate"
-										rate={stats.topWinRate}
-										unit="games"
-									/>
-								)}
-							</View>
-						)}
-					</>
+				{tab === 'stats' ? (
+					<StatsTab
+						loaded={loaded}
+						error={error}
+						stats={stats}
+						profilesById={profilesById}
+					/>
+				) : (
+					<CatalogTab />
 				)}
 			</ScrollView>
 		</SafeAreaView>
+	)
+}
+
+function TabBar({ tab, onTab }: { tab: TabKey; onTab: (t: TabKey) => void }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View style={styles.tabBar}>
+			{TABS.map((t) => {
+				const active = t.key === tab
+				return (
+					<Pressable
+						key={t.key}
+						style={[styles.tab, active && styles.tabActive]}
+						onPress={() => onTab(t.key)}
+					>
+						<Text
+							style={[
+								styles.tabLabel,
+								active && styles.tabLabelActive,
+							]}
+						>
+							{t.label}
+						</Text>
+					</Pressable>
+				)
+			})}
+		</View>
+	)
+}
+
+function StatsTab({
+	loaded,
+	error,
+	stats,
+	profilesById,
+}: {
+	loaded: boolean
+	error: string | null
+	stats: ReturnType<typeof computeStats>
+	profilesById: Record<string, Profile>
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+
+	if (!loaded) return <ActivityIndicator color={colors.textMuted} />
+	if (error) return <Text style={styles.error}>{error}</Text>
+	if (stats.gamesPlayed === 0) {
+		return (
+			<Text style={styles.emptyText}>Play a game to see your stats.</Text>
+		)
+	}
+
+	return (
+		<>
+			<View style={styles.section}>
+				<Text style={styles.sectionHeading}>Games</Text>
+				<View style={styles.grid}>
+					<StatTile
+						label="Win rate"
+						value={percent(stats.winRate)}
+						sub={`${stats.wins} of ${stats.gamesPlayed} games`}
+					/>
+					<StatTile
+						label="Avg points"
+						value={oneDecimal(stats.avgPoints)}
+					/>
+					<StatTile
+						label="Avg place"
+						value={oneDecimal(stats.avgPlacement)}
+						sub={`of ${oneDecimal(stats.avgPlayers)}`}
+					/>
+					<StatTile
+						label="Avg rounds"
+						value={oneDecimal(stats.avgRounds)}
+					/>
+					<StatTile
+						label="Avg players"
+						value={oneDecimal(stats.avgPlayers)}
+					/>
+				</View>
+			</View>
+
+			<View style={styles.section}>
+				<Text style={styles.sectionHeading}>Friends</Text>
+				<View style={styles.grid}>
+					<StatTile
+						label="People played with"
+						value={String(stats.distinctOpponents)}
+					/>
+				</View>
+				{stats.topOpponents.map((o) => (
+					<OpponentRow
+						key={o.userId}
+						profile={profilesById[o.userId]}
+						games={o.games}
+					/>
+				))}
+			</View>
+
+			{stats.bonusGames > 0 && (
+				<View style={styles.section}>
+					<Text style={styles.sectionHeading}>Bonuses</Text>
+					<View style={styles.grid}>
+						<StatTile
+							label="Bonuses played"
+							value={String(stats.bonusesPlayed)}
+							sub={`of ${stats.bonusPoolSize}`}
+						/>
+						<StatTile
+							label="Curses played"
+							value={String(stats.cursesPlayed)}
+							sub={`of ${stats.cursePoolSize}`}
+						/>
+					</View>
+					{stats.topPickRate && (
+						<BonusRateRow
+							label="Most picked"
+							rate={stats.topPickRate}
+							unit="offers"
+						/>
+					)}
+					{stats.topWinRate && (
+						<BonusRateRow
+							label="Best win rate"
+							rate={stats.topWinRate}
+							unit="games"
+						/>
+					)}
+				</View>
+			)}
+		</>
+	)
+}
+
+function CatalogTab() {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	// Measure the grid's real width rather than deriving it from the window —
+	// safe-area insets / max-width can leave the content narrower than the
+	// screen, which would misjudge how many columns fit.
+	const [gridWidth, setGridWidth] = useState(0)
+	const columns = gridWidth >= CATALOG_THREE_COL_MIN ? 3 : 2
+	// Fixed column width so full rows are even and a short final row keeps its
+	// column widths instead of stretching to fill.
+	const cardWidth =
+		gridWidth > 0
+			? Math.floor((gridWidth - (columns - 1) * spacing.sm) / columns)
+			: 0
+	return (
+		<View
+			style={styles.catalog}
+			onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+		>
+			{cardWidth > 0 && (
+				<>
+					{BONUS_SETS.map(({ set, label }) => (
+						<View key={set} style={styles.section}>
+							<Text style={styles.sectionHeading}>{label}</Text>
+							<View style={styles.cardGrid}>
+								{BONUS_POOL.filter((b) => b.set === set).map(
+									(b) => (
+										<CardCell
+											key={b.id}
+											card={b}
+											tint={colors.success}
+											width={cardWidth}
+										/>
+									)
+								)}
+							</View>
+						</View>
+					))}
+
+					<View style={styles.section}>
+						<Text style={styles.sectionHeading}>Curses</Text>
+						<View style={styles.cardGrid}>
+							{CURSE_POOL.map((c) => (
+								<CardCell
+									key={c.id}
+									card={c}
+									tint={colors.error}
+									width={cardWidth}
+								/>
+							))}
+						</View>
+					</View>
+				</>
+			)}
+		</View>
+	)
+}
+
+function CardCell({
+	card,
+	tint,
+	width,
+}: {
+	card: Bonus | Curse
+	tint: string
+	width: number
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View style={[styles.cardCell, { width }]}>
+			<View style={styles.cardIcon}>
+				<Ionicons name={card.icon} size={22} color={tint} />
+			</View>
+			<Text style={styles.cardTitle}>{card.title}</Text>
+			<Text style={styles.cardDescription}>{card.description}</Text>
+		</View>
 	)
 }
 
@@ -231,10 +385,30 @@ function makeStyles(colors: ColorScheme) {
 			padding: spacing.lg,
 			gap: spacing.lg,
 		},
-		title: {
-			fontSize: font.xl,
+		tabBar: {
+			flexDirection: 'row',
+			alignItems: 'baseline',
+			gap: spacing.xl,
+			paddingHorizontal: spacing.lg,
+			paddingTop: spacing.lg,
+			paddingBottom: spacing.sm,
+		},
+		tab: {
+			// Layout only; the header look lives on the label.
+		},
+		tabActive: {},
+		tabLabel: {
+			// Unselected: faded and 5% smaller than the active header.
+			fontSize: font.xl * 0.95,
 			fontWeight: '700',
+			color: colors.textMuted,
+		},
+		tabLabelActive: {
+			fontSize: font.xl,
 			color: colors.text,
+		},
+		catalog: {
+			gap: spacing.lg,
 		},
 		section: {
 			gap: spacing.sm,
@@ -315,6 +489,44 @@ function makeStyles(colors: ColorScheme) {
 		rowSecondary: {
 			fontSize: font.sm,
 			color: colors.textMuted,
+		},
+		cardGrid: {
+			flexDirection: 'row',
+			flexWrap: 'wrap',
+			gap: spacing.sm,
+		},
+		cardCell: {
+			// Width is set inline (fixed column width). No fixed height: the
+			// grid's default cross-axis stretch makes every card in a row match
+			// the tallest one, so rows stay even without truncating text.
+			alignItems: 'center',
+			gap: spacing.xs,
+			padding: spacing.md,
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.card,
+			borderRadius: radius.md,
+		},
+		cardIcon: {
+			width: 40,
+			height: 40,
+			borderRadius: radius.full,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: colors.background,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		cardTitle: {
+			fontSize: font.base,
+			fontWeight: '700',
+			color: colors.text,
+			textAlign: 'center',
+		},
+		cardDescription: {
+			fontSize: font.xs,
+			color: colors.textSecondary,
+			textAlign: 'center',
 		},
 		emptyText: {
 			fontSize: font.base,
