@@ -7,11 +7,13 @@
 // as it did before this feature.
 
 import { Ionicons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { Avatar } from '../modules/Avatar'
 import { Modal } from '../modules/Modal'
 import { useGamesStore } from '../stores/useGamesStore'
+import { useProfileStore } from '../stores/useProfileStore'
 import { colors, font, spacing, z } from '../theme'
 import { useGame } from './gameContext'
 
@@ -82,6 +84,36 @@ export function WatcherButton() {
 	)
 }
 
+// A spectator's way out: stop watching, which drops the game from
+// `profiles.spectating` and so removes its header tab. Since the tab is gone,
+// it navigates back to the games list rather than to a tab that no longer
+// exists. Spectator-only — a seated player has no such affordance.
+export function StopWatchingButton() {
+	const { game, isSpectator } = useGame()
+	const router = useRouter()
+	const stopSpectating = useProfileStore((s) => s.stopSpectating)
+
+	if (!isSpectator || !game) return null
+
+	return (
+		<Pressable
+			onPress={() => {
+				stopSpectating(game.id)
+				router.replace('/games')
+			}}
+			style={({ pressed }) => [
+				styles.button,
+				styles.stopButton,
+				pressed && styles.pressed,
+			]}
+			hitSlop={6}
+			accessibilityLabel="Stop watching"
+		>
+			<Ionicons name="eye-off-outline" size={20} color={colors.text} />
+		</Pressable>
+	)
+}
+
 const styles = StyleSheet.create({
 	button: {
 		position: 'absolute',
@@ -101,6 +133,9 @@ const styles = StyleSheet.create({
 		shadowRadius: 6,
 		elevation: 3,
 		zIndex: z.floatingButton,
+	},
+	stopButton: {
+		top: BUTTON_INSET + 4 * SLOT,
 	},
 	pressed: {
 		opacity: 0.7,

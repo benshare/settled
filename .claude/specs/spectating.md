@@ -368,6 +368,57 @@ rather than an oversight.
 
 ---
 
+## 6b. Actively-spectating tabs
+
+The header tab strip (`useSwitchableGames`) originally toggled between _every_
+game the viewer could watch. That's wrong: the Watch list surfaces every
+friend-of-a-friend game, and a viewer who has opened one of them doesn't want
+all the others sitting as tabs. So the strip shows only the games the viewer is
+**actively** spectating — the subset they've actually opened.
+
+### Storage — `profiles.spectating uuid[]`
+
+A per-user array of game ids on the viewer's own profile row
+(`20260725120000_profile_spectating.sql`). It lives on `profiles`, not `games`,
+so the existing self-scoped profile policies cover both read and write — no
+non-participant `update` policy on `games` is needed. Added to `PROFILE_COLS`
+and the `Profile` type.
+
+`useProfileStore` gains three optimistic actions (set immediately, persist,
+revert on error):
+
+- `startSpectating(gameId)` — append if absent.
+- `stopSpectating(gameId)` — remove.
+- `pruneSpectating(validIds)` — intersect with the currently-watchable set,
+  dropping stale ids (a game that ended while the app was closed, or a friend
+  who unfriended). Only writes when the array actually changes.
+
+### Start — opening from Watch
+
+`GameProvider` fires `startSpectating(gameId)` from an effect the moment
+`isSpectator` becomes true and the id isn't already recorded. Opening a Watch
+row (or landing on `/game/{id}` as a spectator) is the whole gesture — no
+explicit "Watch" button.
+
+### Stop — button + auto-drop
+
+- **Manual**: `StopWatchingButton` (in `Watchers.tsx`), a fifth floating
+  affordance below `WatcherButton` (`top: BUTTON_INSET + 4 * SLOT`), spectator-
+  only. Calls `stopSpectating(gameId)` and `router.replace('/games')` — the tab
+  is gone, so it navigates back to the list rather than to a now-missing tab.
+- **Auto**: a spectated game that ends is pruned. `handleGameChange` calls
+  `stopSpectating` when a watched game transitions to `complete` or is deleted;
+  `pruneSpectating(spectatableGame ids)` runs at the end of the games store's
+  `loadForUser` to catch games that ended while the app was closed. The tab
+  itself disappears for free either way — `useSwitchableGames` intersects
+  `spectating` with `spectatableGames`, which already drops completed games.
+
+### The strip — `useSwitchableGames`
+
+`[...activeGames, ...spectatableGames.filter((g) => spectating.includes(g.id))]`,
+still sorted oldest-created first. `spectating` comes from
+`useProfileStore.profile?.spectating`.
+
 ## 7. Files touched
 
 **Migrations** — `<ts>_spectating.sql` added the three spectator select policies

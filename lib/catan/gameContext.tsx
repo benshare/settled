@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth'
 import { onGameMutated } from '@/lib/gameSync'
 import { uniqueTopic } from '@/lib/realtime'
 import { useGamesStore, type Game } from '@/lib/stores/useGamesStore'
+import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
 import {
 	createContext,
@@ -236,6 +237,14 @@ export function GameProvider({
 	const game = liveGame ?? storeGame
 	const meId = user?.id
 	const isSpectator = !!game && !!meId && !game.participants.includes(meId)
+
+	// Opening a game as a spectator is the whole gesture that starts watching:
+	// it records the game in `profiles.spectating`, which is what gives it a
+	// header tab. Idempotent — `startSpectating` no-ops if it's already there.
+	const startSpectating = useProfileStore((s) => s.startSpectating)
+	useEffect(() => {
+		if (isSpectator) startSpectating(gameId)
+	}, [isSpectator, gameId, startSpectating])
 
 	// The two rows are fetched independently and land in either order, so the
 	// board is only a usable GameState once both are in. Everything downstream

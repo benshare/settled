@@ -359,6 +359,7 @@ export type Database = {
           game_defaults: Json
           id: string
           notification_prefs: Json
+          spectating: string[]
           updated_at: string
           username: string
         }
@@ -369,6 +370,7 @@ export type Database = {
           game_defaults?: Json
           id: string
           notification_prefs?: Json
+          spectating?: string[]
           updated_at?: string
           username: string
         }
@@ -379,6 +381,7 @@ export type Database = {
           game_defaults?: Json
           id?: string
           notification_prefs?: Json
+          spectating?: string[]
           updated_at?: string
           username?: string
         }

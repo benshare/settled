@@ -9,7 +9,7 @@ import { BoardLegend } from '@/lib/catan/BoardLegend'
 import { ActionLog } from '@/lib/catan/ActionLog'
 import { ChatProvider } from '@/lib/catan/chatContext'
 import { ChatButton, ChatPanel } from '@/lib/catan/GameChat'
-import { WatcherButton } from '@/lib/catan/Watchers'
+import { StopWatchingButton, WatcherButton } from '@/lib/catan/Watchers'
 import { BoardView } from '@/lib/catan/BoardView'
 import type { BonusId } from '@/lib/catan/bonuses'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
@@ -1846,6 +1846,9 @@ function GameBody({ gameId }: { gameId: string }) {
 					)}
 					{gameState && (!inBonusSelection || isSpectator) && (
 						<WatcherButton />
+					)}
+					{gameState && (!inBonusSelection || isSpectator) && (
+						<StopWatchingButton />
 					)}
 					{pendingConfirm && (
 						<ConfirmBar

@@ -10,13 +10,13 @@ import { emitGameMutated } from '../gameSync'
 import { uniqueTopic } from '../realtime'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
-import type { Profile } from './useProfileStore'
+import { useProfileStore, type Profile } from './useProfileStore'
 
 type GameRow = Database['public']['Tables']['games']['Row']
 type GameRequestRow = Database['public']['Tables']['game_requests']['Row']
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating'
 
 let requestsChannel: RealtimeChannel | null = null
 let gamesChannel: RealtimeChannel | null = null
@@ -677,6 +677,14 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			loading: false,
 		})
 
+		// Drop any actively-spectated game that's no longer watchable — one that
+		// ended (or whose host unfriended the viewer) while the app was closed,
+		// which never reached `handleGameChange`. Best-effort: no-ops until the
+		// profile has loaded, and the next foreground resync catches up.
+		useProfileStore
+			.getState()
+			.pruneSpectating(spectatableGames.map((g) => g.id))
+
 		// Subscribe to game_requests and games changes for live updates.
 		if (requestsChannel) supabase.removeChannel(requestsChannel)
 		requestsChannel = supabase
@@ -1149,6 +1157,8 @@ function handleGameChange(
 	if (payload.eventType === 'DELETE') {
 		const oldId = (payload.old as { id?: string }).id
 		if (!oldId) return
+		// A deleted game is no longer watchable, so it can't stay a tab.
+		useProfileStore.getState().stopSpectating(oldId)
 		set({
 			activeGames: active.filter((g) => g.id !== oldId),
 			spectatableGames: spectatable.filter((g) => g.id !== oldId),
@@ -1178,6 +1188,11 @@ function handleGameChange(
 	// UPDATE — game may have moved from in-progress to complete.
 	if (payload.eventType === 'UPDATE') {
 		if (game.status === 'complete') {
+			// A game that ends stops being watchable; drop it from the viewer's
+			// actively-spectating set so it doesn't linger as a stale tab. The
+			// viewer already on the screen still sees the recap (the RLS policy
+			// is status-agnostic), the tab just goes away.
+			if (!mine) useProfileStore.getState().stopSpectating(game.id)
 			set({
 				activeGames: active.filter((g) => g.id !== game.id),
 				// A game that ends stops being watchable; the spectator keeps

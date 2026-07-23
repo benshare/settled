@@ -91,6 +91,8 @@ Two consequences that are easy to get wrong:
 - **The completed-games query needs `.contains('participants', [userId])`.** Without it, every finished game the user only watched lands in their History.
 - **`spectatableGames` is a first-contact surface** — it shows a friend's co-players, who the viewer may never have met — so it filters dev profiles in production per the rule below. Games the user is seated at are never filtered.
 
+`spectatableGames` is everything the viewer _may_ watch; the header tab strip shows only games they're _actively_ watching, kept in `profiles.spectating` (a `uuid[]` on the profile row, owned by `useProfileStore` — `startSpectating` / `stopSpectating` / `pruneSpectating`, all optimistic). `useGamesStore` cross-references it in two places so a spectated game that ends can't linger as a stale tab: `handleGameChange` calls `stopSpectating` when a watched game goes `complete`/is deleted, and `loadForUser` calls `pruneSpectating(spectatableGame ids)` to catch games that ended while the app was closed. Both are best-effort — the tab disappears for free regardless, since `useSwitchableGames` intersects `spectating` with `spectatableGames` (which already drops completed games).
+
 ## Dev-flagged profiles
 
 `profiles.dev` is a boolean column (default `false`) used to mark users that only exist for local/dev testing — see `dev/seed-test-users.mjs`, which sets it to `true`. **In production builds, every user-facing query that returns or searches profiles must filter these out.** Non-`__DEV__` clients should never show a dev user to a real user.

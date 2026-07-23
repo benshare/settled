@@ -112,7 +112,7 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 }
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating'
 
 type UpdateResult = { error: string | null }
 
@@ -125,6 +125,14 @@ type ProfileStore = {
 	updateAvatarPath: (path: string | null) => Promise<UpdateResult>
 	updateGameDefaults: (defaults: GameDefaults) => Promise<UpdateResult>
 	updateNotificationPrefs: (prefs: NotificationPrefs) => Promise<UpdateResult>
+	// Games the viewer is actively spectating — the subset of watchable games
+	// that get a header tab. Optimistic: the tab appears/disappears at once and
+	// the write reverts the array on failure. See `.claude/specs/spectating.md`.
+	startSpectating: (gameId: string) => void
+	stopSpectating: (gameId: string) => void
+	// Drop any recorded id no longer in the watchable set (a game that ended
+	// while the app was closed, an unfriended host). Writes only on a change.
+	pruneSpectating: (validIds: string[]) => void
 }
 
 export const useProfileStore = create<ProfileStore>((set, get) => ({
@@ -232,7 +240,57 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 		set({ profile: data as Profile })
 		return { error: null }
 	},
+
+	startSpectating(gameId) {
+		const current = get().profile
+		if (!current || current.spectating.includes(gameId)) return
+		setSpectating(get, set, [...current.spectating, gameId])
+	},
+
+	stopSpectating(gameId) {
+		const current = get().profile
+		if (!current || !current.spectating.includes(gameId)) return
+		setSpectating(
+			get,
+			set,
+			current.spectating.filter((id) => id !== gameId)
+		)
+	},
+
+	pruneSpectating(validIds) {
+		const current = get().profile
+		if (!current) return
+		const valid = new Set(validIds)
+		const next = current.spectating.filter((id) => valid.has(id))
+		if (next.length === current.spectating.length) return
+		setSpectating(get, set, next)
+	},
 }))
+
+// Optimistically swap in the new `spectating` array, persist it, and roll back
+// to the previous value if the write fails. No UI surfaces this, so a revert is
+// the only way a failure stays honest.
+function setSpectating(
+	get: () => ProfileStore,
+	set: (partial: Partial<ProfileStore>) => void,
+	next: string[]
+) {
+	const current = get().profile
+	if (!current) return
+	const previous = current.spectating
+	set({ profile: { ...current, spectating: next } })
+	void supabase
+		.from('profiles')
+		.update({ spectating: next })
+		.eq('id', current.id)
+		.then(({ error }) => {
+			if (!error) return
+			const latest = get().profile
+			// Only roll back if nothing newer has landed in the meantime.
+			if (latest && latest.spectating === next)
+				set({ profile: { ...latest, spectating: previous } })
+		})
+}
 
 // Auto-load registration. Inside `(app)` the profile is loaded on mount and
 // cleared on sign-out. Pre-(app) routes (login/verify/set-username) still
