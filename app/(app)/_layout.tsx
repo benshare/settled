@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Notifications from 'expo-notifications'
 import { Tabs, useRouter } from 'expo-router'
 import { useEffect } from 'react'
-import { Platform } from 'react-native'
+import { type ColorValue, Platform } from 'react-native'
 
 export const unstable_settings = {
 	initialRouteName: 'games',
@@ -112,7 +112,7 @@ export default function AppLayout() {
 	)
 }
 
-function FriendsTabIcon({ color, size }: { color: string; size: number }) {
+function FriendsTabIcon({ color, size }: { color: ColorValue; size: number }) {
 	const incomingCount = useFriendsStore((s) => s.pendingIncoming.length)
 	return (
 		<TabBarIcon
@@ -124,7 +124,7 @@ function FriendsTabIcon({ color, size }: { color: string; size: number }) {
 	)
 }
 
-function GamesTabIcon({ color, size }: { color: string; size: number }) {
+function GamesTabIcon({ color, size }: { color: ColorValue; size: number }) {
 	const { user } = useAuth()
 	const meId = user?.id
 	const showDot = useGamesStore((s) => {

@@ -616,7 +616,7 @@ function makeStyles(colors: ColorScheme) {
 			marginTop: spacing.lg,
 		},
 		avatarOverlay: {
-			...StyleSheet.absoluteFillObject,
+			...StyleSheet.absoluteFill,
 			borderRadius: 999,
 			backgroundColor: 'rgba(0,0,0,0.45)',
 			alignItems: 'center',

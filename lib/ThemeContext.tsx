@@ -68,7 +68,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 	}, [])
 
 	const resolved: 'light' | 'dark' =
-		mode === 'system' ? (systemScheme ?? 'light') : mode
+		mode === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : mode
 	const colors = resolved === 'dark' ? darkColors : lightColors
 
 	const value = useMemo<ThemeContextValue>(

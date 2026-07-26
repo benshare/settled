@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons'
 import React from 'react'
-import { View } from 'react-native'
+import { type ColorValue, View } from 'react-native'
 import { useTheme } from '../ThemeContext'
 
 interface TabBarIconProps {
 	name: React.ComponentProps<typeof Ionicons>['name']
-	color: string
+	color: ColorValue
 	size: number
 	showDot?: boolean
 }
