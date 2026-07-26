@@ -727,8 +727,9 @@ export function smithPortResourceOk(
 // --- Investor ---------------------------------------------------------------
 //
 // Once total VP ≥ 3, set aside 3 of a resource for an investment token (max 6
-// tokens / 18 cards). Each token pays 1 of its resource at the start of the
-// investor's turn. Set-aside cards live in `player.investments`, immune to
+// tokens / 18 cards). Each token pays 1 of its resource once the investor's
+// roll resolves — after any owed discard, so the payout can't push them over
+// the 7-card limit. Set-aside cards live in `player.investments`, immune to
 // steal and excluded from the 7-discard hand size.
 export const INVESTOR_ACTIVATE_VP = 3
 export const INVESTOR_MAX_TOKENS = 6

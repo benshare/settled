@@ -2806,6 +2806,42 @@ function investorPayout(p: PlayerState): ResourceHand {
 	return out
 }
 
+// Pay one card per investment token to `idx`. Applied once their roll has
+// resolved — on a 7 that means after every owed discard is in — so the payout
+// can never push the investor over the discard threshold (mirrors the nomad
+// deferral in applyNomadProduce / handleDiscard).
+function applyInvestorPayout(
+	state: GameState,
+	idx: number
+): { players: PlayerState[]; events: unknown[] } {
+	const p = state.players[idx]
+	if (
+		p?.bonus !== 'investor' ||
+		investorTokenCount(p) === 0 ||
+		totalVP(state, idx) < INVESTOR_ACTIVATE_VP
+	) {
+		return { players: state.players, events: [] }
+	}
+	const payout = investorPayout(p)
+	const players = state.players.map((pp, i) => {
+		if (i !== idx) return pp
+		const next = { ...pp.resources }
+		for (const r of RESOURCES) next[r] += payout[r]
+		return { ...pp, resources: next }
+	})
+	return {
+		players,
+		events: [
+			{
+				kind: 'investor_payout',
+				player: idx,
+				gain: payout,
+				at: new Date().toISOString(),
+			},
+		],
+	}
+}
+
 // Magician.
 function isValidMagicTarget(actualTotal: number, target: number): boolean {
 	if (!Number.isInteger(target)) return false
@@ -4142,16 +4178,21 @@ async function applyRollOutcome(
 			state.round < game.player_order.length
 		) {
 			const nomadResult = applyNomadProduce(state)
+			const investorResult = applyInvestorPayout(
+				{ ...state, players: nomadResult.players },
+				activeIdx
+			)
+			const rollEvents = [...nomadResult.events, ...investorResult.events]
 			const mainPhase: Phase = { kind: 'main', roll: dice, trade: null }
 			const nextPhase = wrapMagicianWindow(
 				mainPhase,
-				nomadResult.players,
+				investorResult.players,
 				activeIdx,
 				dice
 			)
 			const stateUpdate: Record<string, unknown> = { phase: nextPhase }
-			if (nomadResult.events.length > 0) {
-				stateUpdate.players = nomadResult.players
+			if (rollEvents.length > 0) {
+				stateUpdate.players = investorResult.players
 			}
 			const { error: stateErr } = await admin
 				.from('game_states')
@@ -4161,7 +4202,7 @@ async function applyRollOutcome(
 
 			const { error: gameErr } = await admin
 				.from('games')
-				.update({ events: [...existingEvents, ...nomadResult.events] })
+				.update({ events: [...existingEvents, ...rollEvents] })
 				.eq('id', game.id)
 			if (gameErr) return err(500, 'could not log event')
 
@@ -4171,7 +4212,8 @@ async function applyRollOutcome(
 		// Discards are computed from the pre-nomad hands, so a nomad's own
 		// desert production can never push them into discard range. Nomad
 		// production is applied once every owed discard has been submitted
-		// (see handleDiscard), or immediately when nobody owes one.
+		// (see handleDiscard), or immediately when nobody owes one. The
+		// investor's token payout rides the same deferral.
 		const pending = requiredDiscards(state.players)
 		const hoarderEvents = hoarderKeptEvents(state.players)
 		const resume: ResumePhase = { kind: 'main', roll: dice, trade: null }
@@ -4179,13 +4221,20 @@ async function applyRollOutcome(
 		const nomadResult = hasDiscards
 			? { players: state.players, events: [] as unknown[] }
 			: applyNomadProduce(state)
+		const investorResult = hasDiscards
+			? { players: nomadResult.players, events: [] as unknown[] }
+			: applyInvestorPayout(
+					{ ...state, players: nomadResult.players },
+					activeIdx
+				)
+		const rollEvents = [...nomadResult.events, ...investorResult.events]
 		const nextPhase: Phase = hasDiscards
 			? { kind: 'discard', resume, pending, from7: true }
 			: { kind: 'move_robber', resume, from7: true }
 
 		const stateUpdate: Record<string, unknown> = { phase: nextPhase }
-		if (nomadResult.events.length > 0) {
-			stateUpdate.players = nomadResult.players
+		if (rollEvents.length > 0) {
+			stateUpdate.players = investorResult.players
 		}
 		const { error: stateErr } = await admin
 			.from('game_states')
@@ -4196,11 +4245,7 @@ async function applyRollOutcome(
 		const { error: gameErr } = await admin
 			.from('games')
 			.update({
-				events: [
-					...existingEvents,
-					...hoarderEvents,
-					...nomadResult.events,
-				],
+				events: [...existingEvents, ...hoarderEvents, ...rollEvents],
 			})
 			.eq('id', game.id)
 		if (gameErr) return err(500, 'could not log event')
@@ -4273,6 +4318,16 @@ async function applyRollOutcome(
 	})
 	let stateAfter: GameState = { ...state, players: nextPlayers }
 	const events: unknown[] = [...existingEvents]
+
+	// Investor: the roller collects 1 resource per investment token with the
+	// roll rather than at the top of the turn, so the payout lands after the
+	// 7-chain's discard check (which returns above) can ever see it.
+	const investorResult = applyInvestorPayout(stateAfter, activeIdx)
+	if (investorResult.events.length > 0) {
+		nextPlayers = investorResult.players
+		stateAfter = { ...stateAfter, players: nextPlayers }
+		events.push(...investorResult.events)
+	}
 
 	// Curio collector: queue picks for any curio_collector who gained ≥ 1
 	// card from this 2/12 original roll. Skipped on bonus rolls
@@ -4884,41 +4939,19 @@ async function handleEndTurn(
 	})
 	const nextRound = state.round + 1
 
-	// Investor: the incoming player collects 1 resource per investment token
-	// at the start of their turn (once their total VP ≥ 3). Applied before the
-	// special-build queue is drained so the payout is reflected in the incoming
-	// player's hand for the `moreThanSeven` gate.
+	// The investor's token payout is not applied here: it lands once the
+	// incoming player's roll has resolved (see applyInvestorPayout) so the
+	// gained cards can't count towards their 7-card discard.
 	const events: unknown[] = [
 		{ kind: 'turn_ended', player: meIdx, at: new Date().toISOString() },
 	]
-	let playersFinal = nextPlayers
-	const incoming = nextPlayers[nextTurn]
-	if (
-		incoming?.bonus === 'investor' &&
-		investorTokenCount(incoming) > 0 &&
-		totalVP(state, nextTurn) >= INVESTOR_ACTIVATE_VP
-	) {
-		const payout = investorPayout(incoming)
-		playersFinal = nextPlayers.map((p, i) => {
-			if (i !== nextTurn) return p
-			const next = { ...p.resources }
-			for (const r of RESOURCES) next[r] += payout[r]
-			return { ...p, resources: next }
-		})
-		events.push({
-			kind: 'investor_payout',
-			player: nextTurn,
-			gain: payout,
-			at: new Date().toISOString(),
-		})
-	}
 
 	// A 5-6 player game may insert a special build phase between this turn and
 	// the next player's roll (config.extraBuild). Build the queue from the seat
 	// that just finished, then drop leading players who can't act.
 	const sbState: GameState = {
 		...state,
-		players: playersFinal,
+		players: nextPlayers,
 		round: nextRound,
 	}
 	// Games created before this feature have no `extraBuild` in their stored
@@ -4941,7 +4974,7 @@ async function handleEndTurn(
 		.from('game_states')
 		.update({
 			phase: nextPhase,
-			players: playersFinal,
+			players: nextPlayers,
 			round: nextRound,
 		})
 		.eq('game_id', game.id)
@@ -5461,16 +5494,23 @@ async function handleDiscard(
 				from7: state.phase.from7,
 			}
 
-	// Nomad production is deferred until every owed discard is in, so the
-	// desert gain can't be discarded away (or force a bigger discard).
-	const nomadResult =
-		!discardsRemain && state.phase.from7
-			? applyNomadProduce({ ...state, players: nextPlayers })
-			: { players: nextPlayers, events: [] as unknown[] }
+	// Nomad production and the investor's token payout are deferred until every
+	// owed discard is in, so neither gain can be discarded away (or force a
+	// bigger discard).
+	const settled = !discardsRemain && state.phase.from7
+	const nomadResult = settled
+		? applyNomadProduce({ ...state, players: nextPlayers })
+		: { players: nextPlayers, events: [] as unknown[] }
+	const investorResult = settled
+		? applyInvestorPayout(
+				{ ...state, players: nomadResult.players },
+				game.current_turn ?? 0
+			)
+		: { players: nomadResult.players, events: [] as unknown[] }
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ players: nomadResult.players, phase: nextPhase })
+		.update({ players: investorResult.players, phase: nextPhase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -5489,7 +5529,12 @@ async function handleDiscard(
 	const { error: gameErr } = await admin
 		.from('games')
 		.update({
-			events: [...(game.events ?? []), event, ...nomadResult.events],
+			events: [
+				...(game.events ?? []),
+				event,
+				...nomadResult.events,
+				...investorResult.events,
+			],
 		})
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')

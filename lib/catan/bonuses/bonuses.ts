@@ -155,7 +155,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'investor',
 		title: 'Investor',
 		description:
-			'At any time during your turn you may set aside three of the same resource card to receive an "investment token" for that resource. At the start of every turn, you receive one resource card from every investment token you have. Activates once you reach 3 points. Cards in investment cannot be stolen. Max 18 cards (6 trios) invested at once.',
+			'At any time during your turn you may set aside three of the same resource card to receive an "investment token" for that resource. Once your roll resolves, you receive one resource card from every investment token you have — so the payout never counts towards the seven-card limit on a 7. Activates once you reach 3 points. Cards in investment cannot be stolen. Max 18 cards (6 trios) invested at once.',
 		icon: 'trending-up-outline',
 		set: '3',
 	},

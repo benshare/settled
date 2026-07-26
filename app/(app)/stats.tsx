@@ -7,6 +7,7 @@ import {
 	type Curse,
 } from '@/lib/catan/bonuses'
 import { Avatar } from '@/lib/modules/Avatar'
+import { SlidingArea } from '@/lib/modules/SlidingArea'
 import { computeStats, type BonusRate } from '@/lib/stats'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
@@ -51,6 +52,7 @@ export default function StatsScreen() {
 	const completeGames = useGamesStore((s) => s.completeGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const [tab, setTab] = useState<TabKey>('stats')
+	const activeIndex = TABS.findIndex((t) => t.key === tab)
 
 	const loaded = results !== undefined && completeGames !== undefined
 	const stats = useMemo(
@@ -62,16 +64,15 @@ export default function StatsScreen() {
 		<SafeAreaView style={styles.safe}>
 			<TabBar tab={tab} onTab={setTab} />
 			<ScrollView contentContainerStyle={styles.container}>
-				{tab === 'stats' ? (
+				<SlidingArea index={activeIndex}>
 					<StatsTab
 						loaded={loaded}
 						error={error}
 						stats={stats}
 						profilesById={profilesById}
 					/>
-				) : (
 					<CatalogTab />
-				)}
+				</SlidingArea>
 			</ScrollView>
 		</SafeAreaView>
 	)
@@ -128,7 +129,7 @@ function StatsTab({
 	}
 
 	return (
-		<>
+		<View style={styles.pane}>
 			<View style={styles.section}>
 				<Text style={styles.sectionHeading}>Games</Text>
 				<View style={styles.grid}>
@@ -205,7 +206,7 @@ function StatsTab({
 					)}
 				</View>
 			)}
-		</>
+		</View>
 	)
 }
 
@@ -225,7 +226,7 @@ function CatalogTab() {
 			: 0
 	return (
 		<View
-			style={styles.catalog}
+			style={styles.pane}
 			onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
 		>
 			{cardWidth > 0 && (
@@ -407,7 +408,7 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.xl,
 			color: colors.text,
 		},
-		catalog: {
+		pane: {
 			gap: spacing.lg,
 		},
 		section: {

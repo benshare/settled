@@ -1,6 +1,6 @@
 // Investor picker: set aside 3 of one resource for an investment token. Only
-// resources the player holds ≥3 of are selectable; each token pays 1 back at
-// the start of the investor's turn.
+// resources the player holds ≥3 of are selectable; each token pays 1 back once
+// the investor's roll resolves.
 
 import { useMemo } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -39,9 +39,9 @@ export function InvestPicker({
 		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
 			<Text style={styles.title}>Invest</Text>
 			<Text style={styles.subtitle}>
-				Set aside {INVEST_TRIO} of a resource. Each token pays 1 back at
-				the start of your turn — {tokenCount}/{INVESTOR_MAX_TOKENS}{' '}
-				tokens used. Set-aside cards can't be stolen.
+				Set aside {INVEST_TRIO} of a resource. Each token pays 1 back
+				after you roll — {tokenCount}/{INVESTOR_MAX_TOKENS} tokens used.
+				Set-aside cards can't be stolen.
 			</Text>
 			<View style={styles.grid}>
 				{RESOURCES.map((r) => {
