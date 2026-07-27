@@ -1,4 +1,4 @@
-import Constants from 'expo-constants'
+import Constants, { ExecutionEnvironment } from 'expo-constants'
 import * as Device from 'expo-device'
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
@@ -18,6 +18,11 @@ Notifications.setNotificationHandler({
 // Tracked module-level so we don't ask twice in a single session.
 let permissionAsked = false
 
+// Expo Go has no aps-environment entitlement for our project, so
+// getExpoPushTokenAsync throws natively there. Push only works in a dev build.
+const isExpoGo =
+	Constants.executionEnvironment === ExecutionEnvironment.StoreClient
+
 function projectId(): string | undefined {
 	return (
 		Constants.expoConfig?.extra?.eas?.projectId ??
@@ -36,6 +41,7 @@ export async function ensurePermissionAndRegister(
 ): Promise<void> {
 	if (Platform.OS === 'web') return
 	if (!Device.isDevice) return
+	if (isExpoGo) return
 
 	let status: Notifications.PermissionStatus = (
 		await Notifications.getPermissionsAsync()
@@ -77,6 +83,7 @@ export async function ensurePermissionAndRegister(
 export async function deregisterCurrentToken(): Promise<void> {
 	if (Platform.OS === 'web') return
 	if (!Device.isDevice) return
+	if (isExpoGo) return
 	try {
 		const id = projectId()
 		if (!id) return
