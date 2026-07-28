@@ -21,6 +21,14 @@ Deno runtime, deployed with `supabase functions deploy <name>`. These run server
 
 A target with no `gate` is ungated and always sends (the honk).
 
+## The app-icon badge
+
+Every push carries a `badge`, and it is **not** a notification count — it's the recipient's number of in-progress games whose `current_turn` names them, the same "your turn" signal the Games list shows as a per-row dot (`isMyTurn` in `lib/stores/useGamesStore.ts`; `badgeCounts` is the server mirror, and inherits the same `null`-during-bonus-selection and lags-during-special-build approximations). It rides every kind, not just `your_turn`, so a chat message or friend request also corrects a badge that drifted while the app was closed — and a user with nothing waiting gets an explicit `0`, which is what clears the icon.
+
+This only works because every `sendNotifications` call sits after its write has committed (inside `EdgeRuntime.waitUntil`), so the `games` rows it counts already reflect the action the push is announcing. A caller that ever notifies _before_ committing would badge the pre-action count.
+
+The client sets the same number from `useGamesStore` while the app is running (`useAppBadge`, mounted in the `(app)` layout), which is what clears the badge the moment you take your turn without waiting for a push.
+
 ## Env
 
 Deno reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_ANON_KEY` from the function's environment (Supabase auto-provides these at deploy time).

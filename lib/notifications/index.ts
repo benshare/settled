@@ -1,4 +1,5 @@
 export { ensurePermissionAndRegister, deregisterCurrentToken } from './push'
+export { setAppBadge, useAppBadge } from './badge'
 export {
 	resolveNotificationLink,
 	type NotificationKind,

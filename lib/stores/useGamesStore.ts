@@ -1260,6 +1260,23 @@ async function handleRequestChange(
 	}
 }
 
+/**
+ * Whether an in-progress game is waiting on `meId` — the "your turn" signal
+ * behind the Games list dot, the game header's tab badge, and the app-icon
+ * badge count.
+ *
+ * `games.current_turn` is the only turn field readable across games without
+ * fetching each one's `game_states` row, which makes this approximate in two
+ * known ways: during a special build phase `current_turn` has already advanced
+ * to the next roller while the acting builder is the head of the phase queue,
+ * and it is held `null` for the whole (simultaneous) bonus-selection phase, so
+ * nobody reads as waiting there. Mirrored in `_notify`'s badge query.
+ */
+export function isMyTurn(game: Game, meId: string | undefined): boolean {
+	if (!meId || game.current_turn === null) return false
+	return game.player_order[game.current_turn] === meId
+}
+
 export function describePendingRequest(
 	request: GameRequest,
 	meId: string | undefined,

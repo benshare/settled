@@ -2,6 +2,7 @@ import { useAuth } from '@/lib/auth'
 import { Avatar } from '@/lib/modules/Avatar'
 import {
 	describePendingRequest,
+	isMyTurn,
 	useGamesStore,
 	type Game,
 	type GameRequest,
@@ -232,12 +233,7 @@ function GameRow({
 		})
 		.join(', ')
 
-	// Same approximation as the game header's tab badge (see
-	// `lib/catan/GameTitle.tsx`): `games.current_turn` is the only turn field
-	// readable without each game's `game_states` row, so it lags during a
-	// special build phase and is `null` for the whole bonus-selection phase.
-	const myIdx = meId ? game.player_order.indexOf(meId) : -1
-	const myTurn = myIdx >= 0 && game.current_turn === myIdx
+	const myTurn = isMyTurn(game, meId)
 
 	return (
 		<Pressable

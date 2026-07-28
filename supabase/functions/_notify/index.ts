@@ -54,6 +54,8 @@ type ExpoMessage = {
 	data?: Record<string, unknown>
 	sound?: 'default' | null
 	priority?: 'default' | 'normal' | 'high'
+	// iOS app-icon badge. Not a notification count — see `badgeCounts`.
+	badge?: number
 }
 
 /**
@@ -76,7 +78,7 @@ export async function sendNotifications(
 		)
 	)
 
-	const [profilesRes, tokensRes, namesRes] = await Promise.all([
+	const [profilesRes, tokensRes, namesRes, badges] = await Promise.all([
 		admin
 			.from('profiles')
 			.select('id, notification_prefs')
@@ -88,6 +90,7 @@ export async function sendNotifications(
 		senderIds.length > 0
 			? admin.from('profiles').select('id, username').in('id', senderIds)
 			: Promise.resolve({ data: [], error: null }),
+		badgeCounts(admin, userIds),
 	])
 
 	if (profilesRes.error || tokensRes.error) {
@@ -143,6 +146,7 @@ export async function sendNotifications(
 				body,
 				data,
 				priority: 'high',
+				badge: badges.get(t.userId),
 			})
 		}
 	}
@@ -162,6 +166,53 @@ export async function sendNotifications(
 	} catch (e) {
 		console.warn('[notify] push send failed', e)
 	}
+}
+
+/**
+ * The app-icon badge is "in-progress games waiting on you", not "unread
+ * notifications" — the count behind the Games list's per-row dot (`isMyTurn` in
+ * `lib/stores/useGamesStore.ts`, mirrored here). It rides *every* push, whatever
+ * the kind, so a chat message or a friend request also corrects a badge that
+ * drifted while the app was closed.
+ *
+ * Safe to read here: every caller runs this after its write has committed, so
+ * `current_turn` already names the seat the push is about. A user with no
+ * matching games gets an explicit 0, which is what clears the icon.
+ *
+ * Failure returns an empty map rather than throwing — the badge is decoration
+ * and the notification itself is the point.
+ */
+async function badgeCounts(
+	admin: SupabaseClient,
+	userIds: string[]
+): Promise<Map<string, number>> {
+	const counts = new Map<string, number>()
+	for (const id of userIds) counts.set(id, 0)
+
+	const { data, error } = await admin
+		.from('games')
+		.select('player_order, current_turn')
+		.in('status', ['placement', 'active'])
+		.overlaps('participants', userIds)
+
+	if (error) {
+		console.warn('[notify] badge count failed', error)
+		return new Map()
+	}
+
+	for (const row of (data ?? []) as {
+		player_order: string[] | null
+		current_turn: number | null
+	}[]) {
+		// `null` through the whole (simultaneous) bonus-selection phase.
+		if (row.current_turn === null) continue
+		const uid = (row.player_order ?? [])[row.current_turn]
+		const prev = uid === undefined ? undefined : counts.get(uid)
+		// Only seats we were asked about; the query returns whole games, so
+		// most rows name somebody else.
+		if (prev !== undefined) counts.set(uid, prev + 1)
+	}
+	return counts
 }
 
 function renderBody(t: NotifyTarget, sender: string | undefined): string {

@@ -5,7 +5,9 @@ import { Platform } from 'react-native'
 import { supabase } from '../supabase'
 
 // Foreground delivery: let the OS banner render so we don't need an in-app
-// toast component. No sound or badge.
+// toast component. No sound. `shouldSetBadge` stays false even though pushes
+// now carry one — with the app open, `useAppBadge` is already syncing the count
+// from the store, and it's the fresher of the two.
 Notifications.setNotificationHandler({
 	handleNotification: async () => ({
 		shouldShowBanner: true,

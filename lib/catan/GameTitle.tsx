@@ -5,7 +5,7 @@
 
 import { useAuth } from '@/lib/auth'
 import { Avatar } from '@/lib/modules/Avatar'
-import { useGamesStore, type Game } from '@/lib/stores/useGamesStore'
+import { isMyTurn, useGamesStore, type Game } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
 import { colors, font, radius, spacing } from '@/lib/theme'
 import { useRouter } from 'expo-router'
@@ -120,13 +120,7 @@ function GameTab({
 	const faces = others.slice(0, MAX_FACES)
 	const overflow = others.length - faces.length
 
-	// `games.current_turn` is the only turn field readable across games without
-	// each one's `game_states` row, so the badge tracks it rather than the
-	// phase. That makes it approximate in the one case where the two diverge —
-	// during a special build phase `current_turn` has already advanced to the
-	// next roller while the acting builder is the head of the phase queue.
-	const myIdx = meId ? game.player_order.indexOf(meId) : -1
-	const myTurn = myIdx >= 0 && game.current_turn === myIdx
+	const myTurn = isMyTurn(game, meId)
 
 	return (
 		<Pressable

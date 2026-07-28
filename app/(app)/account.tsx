@@ -6,6 +6,7 @@ import {
 	DEFAULT_NOTIFICATION_PREFS,
 	deregisterCurrentToken,
 	parseNotificationPrefs,
+	setAppBadge,
 	type NotificationPrefs,
 } from '@/lib/notifications'
 import { clearAllUserStores } from '@/lib/stores'
@@ -186,6 +187,9 @@ export default function AccountScreen() {
 
 	async function handleSignOut() {
 		await deregisterCurrentToken()
+		// The store clears to `undefined`, which `useAppBadge` deliberately
+		// ignores — so a signed-out icon would keep the last player's count.
+		await setAppBadge(0)
 		clearProfile()
 		clearAllUserStores()
 		await signOut()
