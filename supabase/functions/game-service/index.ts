@@ -79,7 +79,9 @@ type PlaceRoadBody = {
 	game_id: string
 	edge: string
 }
-type RollBody = { action: 'roll'; game_id: string }
+// `total` is the admin-testing roll override — honoured only for a seat whose
+// player row carries `dev: true`. Absent on every normal roll.
+type RollBody = { action: 'roll'; game_id: string; total?: unknown }
 type ConfirmRollBody = { action: 'confirm_roll'; game_id: string }
 type RerollDiceBody = { action: 'reroll_dice'; game_id: string }
 type EndTurnBody = { action: 'end_turn'; game_id: string }
@@ -90,6 +92,7 @@ type SendMessageBody = {
 	body: string
 }
 type EndSpecialBuildBody = { action: 'end_special_build'; game_id: string }
+type UndoBody = { action: 'undo'; game_id: string }
 type BuildRoadBody = {
 	action: 'build_road'
 	game_id: string
@@ -312,6 +315,7 @@ type Body =
 	| InvestBody
 	| CastMagicBody
 	| SkipMagicBody
+	| UndoBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -674,6 +678,9 @@ type PlayerState = {
 	// Set 3.
 	investments?: Partial<Record<Resource, number>>
 	hauntSpots?: Vertex[]
+	// Admin testing flag, set by hand in the row. Lets this seat name its own
+	// dice total on `roll` (see handleRoll).
+	dev?: boolean
 }
 
 type DieFace = 1 | 2 | 3 | 4 | 5 | 6
@@ -1859,10 +1866,12 @@ function underdogMultiplierFor(
 	return 1
 }
 
-// Kept for parity with lib/catan/roll.distributeResources. The edge
-// function now uses `distributeResourcesByHex` everywhere; this helper is
-// referenced indirectly through the parity check and may return for use
-// when adding non-forger features that don't need per-hex breakdowns.
+// Mirror of lib/catan/roll.distributeResources, including its plutocrat bump.
+// Only the magician's phantom production reads it now — the real roll path
+// sums `distributeResourcesByHex` instead, and applies plutocrat itself once
+// the per-hex gains are summed. Any new caller must pick one or the other:
+// summing the per-hex breakdown without the bump is how plutocrat silently
+// stopped applying.
 
 function distributeResources(
 	state: GameState,
@@ -4288,6 +4297,17 @@ async function applyRollOutcome(
 		}
 	}
 
+	// Plutocrat: +50% on every resource the player gained ≥ 2 of. It applies to
+	// the SUMMED roll gain, so it has to land here rather than inside
+	// `distributeResourcesByHex` — the per-hex breakdown feeds the forger,
+	// which copies base production.
+	for (const idxStr of Object.keys(gains)) {
+		const idx = Number(idxStr)
+		if (state.players[idx]?.bonus === 'plutocrat') {
+			gains[idx] = plutocratGain(gains[idx])
+		}
+	}
+
 	// Production is public at the table but nothing else in the log records
 	// it, so hang the per-seat gains off the roll event itself for the action
 	// log to expand. Mutating the caller's event object is safe: it was built
@@ -4544,7 +4564,21 @@ async function handleRoll(
 	if (meIdx === null) return err(403, 'not a participant')
 	if (game.current_turn !== meIdx) return err(403, 'not your turn')
 
-	const dice = rollDice()
+	// Admin testing: a seat flagged `dev: true` (set by hand in the row) may
+	// name its own total. Silently ignored for anyone else, so a forged body
+	// can't force a roll.
+	let dice = rollDice()
+	if (body.total !== undefined && state.players[meIdx]?.dev === true) {
+		const forced = body.total
+		if (
+			typeof forced !== 'number' ||
+			!Number.isInteger(forced) ||
+			forced < 2 ||
+			forced > 12
+		)
+			return err(400, 'invalid total (must be 2..12)')
+		dice = dicePairForTotal(forced)
+	}
 	const total = dice.a + dice.b
 
 	const rollEvent = {
@@ -7952,6 +7986,165 @@ async function handlePlayDevCard(
 	return json({ ok: true })
 }
 
+// --- One-step undo ---------------------------------------------------------
+//
+// Mirror of `UNDOABLE_ACTIONS` in `lib/catan/types.ts`; this copy is the
+// authority. The rule is solo + information-free: rolling, buying or playing a
+// dev card, and anything that involves another player are all excluded, because
+// taking them reveals something and unwinding them would leak it. See
+// `.claude/specs/undo.md`.
+const UNDOABLE_ACTIONS = new Set<string>([
+	'build_road',
+	'build_settlement',
+	'build_city',
+	'build_super_city',
+	'bank_trade',
+	'liquidate',
+	'invest',
+	'buy_carpenter_vp',
+	'tap_knight',
+	'place_fence_token',
+	'place_explorer_road',
+])
+
+// Chat is the one action that invalidates nothing — it writes neither
+// `game_states` nor `games.events`. `honk` deliberately isn't here: it appends
+// to `games.events`, which undo truncates by length, so a surviving honk would
+// be truncated away.
+const UNDO_NEUTRAL_ACTIONS = new Set<string>(['send_message'])
+
+// The mutable `game_states` columns. `hexes`/`variant` are omitted (nothing
+// mutates them) and so is `games.current_turn` — no undoable action writes it.
+// If one ever does, the snapshot has to grow to cover it.
+const UNDO_COLUMNS =
+	'vertices, edges, players, phase, robber, ports, fence_tokens, dev_deck, largest_army, longest_road, round'
+
+type UndoSnapshot = {
+	action: string
+	player: number
+	at: string
+	eventsLen: number
+	state: Record<string, unknown>
+}
+
+// Read what an undoable action is about to overwrite. Returns null (rather than
+// failing the request) whenever the snapshot can't be built — undo is a
+// convenience, and no part of it should be able to block a legal move.
+async function readUndoBaseline(
+	admin: SupabaseClient,
+	gameId: string,
+	me: string
+): Promise<Omit<UndoSnapshot, 'action' | 'at'> | null> {
+	const { data: stateRow } = await admin
+		.from('game_states')
+		.select(UNDO_COLUMNS)
+		.eq('game_id', gameId)
+		.maybeSingle()
+	if (!stateRow) return null
+
+	const { data: gameRow } = await admin
+		.from('games')
+		.select('events, player_order')
+		.eq('id', gameId)
+		.maybeSingle()
+	if (!gameRow) return null
+
+	const row = gameRow as { player_order?: string[]; events?: unknown[] }
+	const player = (row.player_order ?? []).indexOf(me)
+	if (player < 0) return null
+
+	return {
+		player,
+		eventsLen: (row.events ?? []).length,
+		state: stateRow as unknown as Record<string, unknown>,
+	}
+}
+
+// Maintains `game_states.undo` around a dispatched action, so no handler has to
+// know undo exists. The clear is guarded on `undo is not null` so the common
+// case matches zero rows — no row version, no realtime event.
+async function trackUndo(
+	admin: SupabaseClient,
+	gameId: string,
+	action: string,
+	baseline: Omit<UndoSnapshot, 'action' | 'at'> | null
+): Promise<void> {
+	if (UNDO_NEUTRAL_ACTIONS.has(action)) return
+
+	if (UNDOABLE_ACTIONS.has(action)) {
+		if (!baseline) return
+		const undo: UndoSnapshot = {
+			...baseline,
+			action,
+			at: new Date().toISOString(),
+		}
+		await admin.from('game_states').update({ undo }).eq('game_id', gameId)
+		return
+	}
+
+	await admin
+		.from('game_states')
+		.update({ undo: null })
+		.eq('game_id', gameId)
+		.not('undo', 'is', null)
+}
+
+// Restores the snapshot wholesale rather than computing an inverse — a single
+// road build can move Longest Road, consume a fence token, and apply a
+// smith/bricklayer cost substitution, and an inverse would have to keep up with
+// every bonus we add.
+async function handleUndo(
+	admin: SupabaseClient,
+	me: string,
+	body: UndoBody
+): Promise<Response> {
+	const { data: gameRow, error: gErr } = await admin
+		.from('games')
+		.select('id, player_order, status, events')
+		.eq('id', body.game_id)
+		.maybeSingle()
+	if (gErr) return err(500, 'load game failed')
+	if (!gameRow) return err(404, 'game not found')
+	const game = gameRow as {
+		player_order: string[]
+		status: string
+		events: unknown[] | null
+	}
+	// A game-winning build isn't undoable: the win is already written to
+	// `games.status` and `game_results`, and the snapshot covers neither.
+	if (game.status !== 'active') return err(400, 'not active')
+
+	const meIdx = game.player_order.indexOf(me)
+	if (meIdx < 0) return err(403, 'not a participant')
+
+	const { data: stateRow, error: sErr } = await admin
+		.from('game_states')
+		.select('undo')
+		.eq('game_id', body.game_id)
+		.maybeSingle()
+	if (sErr) return err(500, 'load state failed')
+
+	const snapshot = (stateRow as { undo?: UndoSnapshot | null } | null)?.undo
+	if (!snapshot) return err(400, 'nothing to undo')
+	if (snapshot.player !== meIdx) return err(403, 'not your action to undo')
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ ...snapshot.state, undo: null })
+		.eq('game_id', body.game_id)
+	if (stateErr) return err(500, 'could not restore state')
+
+	// Truncating drops the undone action's log entry entirely — the road never
+	// existed. Nothing is logged in its place.
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: (game.events ?? []).slice(0, snapshot.eventsLen) })
+		.eq('id', body.game_id)
+	if (gameErr) return err(500, 'could not restore log')
+
+	return json({ ok: true })
+}
+
 serve(async (req) => {
 	if (req.method === 'OPTIONS') {
 		return new Response('ok', { headers: CORS_HEADERS })
@@ -7970,6 +8163,25 @@ serve(async (req) => {
 
 	const admin = adminClient()
 
+	// `game_states.undo` is maintained here rather than inside the handlers, so
+	// an action opts into undo by joining `UNDOABLE_ACTIONS` and nothing else.
+	// The baseline has to be read before the handler overwrites the row.
+	const gameId = 'game_id' in body ? body.game_id : null
+	const baseline =
+		gameId && UNDOABLE_ACTIONS.has(body.action)
+			? await readUndoBaseline(admin, gameId, me)
+			: null
+
+	const res = await dispatch(admin, me, body)
+	if (gameId && res.ok) await trackUndo(admin, gameId, body.action, baseline)
+	return res
+})
+
+function dispatch(
+	admin: SupabaseClient,
+	me: string,
+	body: Body
+): Promise<Response> {
 	switch (body.action) {
 		case 'propose_game':
 			return handleProposeGame(admin, me, body)
@@ -8059,7 +8271,9 @@ serve(async (req) => {
 			return handleCastMagic(admin, me, body)
 		case 'skip_magic':
 			return handleSkipMagic(admin, me, body)
+		case 'undo':
+			return handleUndo(admin, me, body)
 		default:
-			return err(400, 'unknown action')
+			return Promise.resolve(err(400, 'unknown action'))
 	}
-})
+}

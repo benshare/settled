@@ -267,6 +267,7 @@ export type Database = {
           ports: Json | null
           robber: string
           round: number
+          undo: Json | null
           updated_at: string
           variant: string
           vertices: Json
@@ -284,6 +285,7 @@ export type Database = {
           ports?: Json | null
           robber: string
           round: number
+          undo?: Json | null
           updated_at?: string
           variant: string
           vertices?: Json
@@ -301,6 +303,7 @@ export type Database = {
           ports?: Json | null
           robber?: string
           round?: number
+          undo?: Json | null
           updated_at?: string
           variant?: string
           vertices?: Json
