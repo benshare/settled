@@ -168,6 +168,10 @@ function Game() {
 					events={(game.events ?? []) as GameEvent[]}
 					pointsByPlayer={displayVP}
 					publicByPlayer={publicVP}
+					canceled={game.status === 'canceled'}
+					wonByForfeit={wonByForfeit(
+						(game.events ?? []) as GameEvent[]
+					)}
 					onDismiss={() => setGameOverOpen(false)}
 					onBackToGames={() => router.replace('/games')}
 					// Straight into the create-game form, prefilled with this
@@ -239,6 +243,16 @@ function Game() {
 				meId={meId}
 			/>
 		</>
+	)
+}
+
+// Whether the winner won because every other seat forfeited. It's a flag on the
+// terminal `game_complete` event rather than a games column: only the recap
+// cares, and the event log is already loaded here.
+function wonByForfeit(events: GameEvent[]): boolean {
+	// The legacy `winner_index` shape of the event predates the flag entirely.
+	return events.some(
+		(e) => e.kind === 'game_complete' && 'by_forfeit' in e && !!e.by_forfeit
 	)
 }
 

@@ -174,6 +174,19 @@ function StatsTab({
 						value={oneDecimal(stats.avgPlayers)}
 					/>
 				</View>
+				{/* Win rate counts every game; the averages only count the ones
+				    played out. Without this the two denominators look like a
+				    mistake. */}
+				{stats.playedGames < stats.gamesPlayed && (
+					<Text style={styles.footnote}>
+						Averages exclude {stats.gamesPlayed - stats.playedGames}{' '}
+						forfeited{' '}
+						{stats.gamesPlayed - stats.playedGames === 1
+							? 'game'
+							: 'games'}
+						.
+					</Text>
+				)}
 			</View>
 
 			<View style={styles.section}>
@@ -507,6 +520,10 @@ function makeStyles(colors: ColorScheme) {
 		},
 		section: {
 			gap: spacing.sm,
+		},
+		footnote: {
+			fontSize: font.xs,
+			color: colors.textMuted,
 		},
 		sectionHeading: {
 			fontSize: font.sm,

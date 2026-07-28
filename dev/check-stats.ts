@@ -30,11 +30,12 @@ const result = (over: Partial<GameResult> = {}): GameResult => ({
 	curse: null,
 	offered_bonuses: null,
 	completed_at: '2026-07-01T00:00:00.000Z',
+	forfeit: false,
 	...over,
 })
 
-const game = (id: string, participants: string[]): Game =>
-	({ id, participants }) as Game
+const game = (id: string, participants: string[], status = 'complete'): Game =>
+	({ id, participants, status }) as Game
 
 // --- Empty input -----------------------------------------------------------
 
@@ -185,6 +186,81 @@ const tie = computeStats(
 assert(
 	tie.topPickRate?.bonus === 'scout' && tie.topPickRate.total === 2,
 	'pick rate: tie broken by sample size'
+)
+
+// --- Forfeited games -------------------------------------------------------
+// A game that ended because everyone else forfeited counts toward games played
+// and win rate, and nothing else. See lib/stats.ts.
+
+const allForfeit = computeStats(
+	[
+		result({ forfeit: true, won: true, points: 4, placement: 1 }),
+		result({ forfeit: true, won: false, points: 2, placement: 2 }),
+	],
+	[],
+	ME
+)
+assert(allForfeit.gamesPlayed === 2, 'forfeit: counted in games played')
+assert(allForfeit.playedGames === 0, 'forfeit: none played out')
+close(allForfeit.winRate, 0.5, 'forfeit: win rate is real')
+close(allForfeit.avgPoints, 0, 'forfeit: no points sample, not NaN')
+close(allForfeit.avgPlacement, 0, 'forfeit: no placement sample')
+close(allForfeit.avgRounds, 0, 'forfeit: no rounds sample')
+
+const mixed = computeStats(
+	[
+		result({ points: 10, placement: 1, won: true, player_count: 4 }),
+		result({ points: 6, placement: 3, won: false, player_count: 4 }),
+		// Would drag every average down if it were counted.
+		result({
+			forfeit: true,
+			points: 2,
+			placement: 4,
+			won: true,
+			player_count: 4,
+		}),
+	],
+	[],
+	ME
+)
+assert(mixed.gamesPlayed === 3, 'mixed: win rate over all three')
+assert(mixed.playedGames === 2, 'mixed: averages over two')
+close(mixed.winRate, 2 / 3, 'mixed: forfeit win counts')
+close(mixed.avgPoints, 8, 'mixed: avg points skips the forfeit')
+close(mixed.avgPlacement, 2, 'mixed: avg placement skips the forfeit')
+
+// Bonus stats follow the same rule — a bonus you never got to play shouldn't
+// count against its win rate.
+const forfeitBonus = computeStats(
+	[b('gambler', { won: true }), b('scout', { forfeit: true, won: false })],
+	[],
+	ME
+)
+assert(forfeitBonus.bonusGames === 1, 'forfeit: bonus games skip forfeits')
+assert(forfeitBonus.bonusesPlayed === 1, 'forfeit: distinct bonuses skip too')
+assert(
+	forfeitBonus.topWinRate?.bonus === 'gambler',
+	'forfeit: scout never entered the win-rate sample'
+)
+
+// --- Canceled games --------------------------------------------------------
+// They write no game_results rows at all, so they can only reach stats through
+// the games list — which shares History between both endings.
+
+const canceled = computeStats(
+	[result()],
+	[
+		game('a', [ME, 'x']),
+		game('b', [ME, 'y'], 'canceled'),
+		game('c', [ME, 'x'], 'canceled'),
+	],
+	ME
+)
+assert(canceled.distinctOpponents === 1, 'canceled: y never played with')
+assert(
+	canceled.topOpponents[0]?.userId === 'x' &&
+		canceled.topOpponents[0].games === 1,
+	"canceled: x's second game does not count"
 )
 
 console.log('check-stats: all checks passed')

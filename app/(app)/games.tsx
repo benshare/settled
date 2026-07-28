@@ -335,6 +335,7 @@ function GameHistoryRow({
 				</Text>
 				<Text style={styles.rowSecondary}>
 					{formatDate(game.created_at)}
+					{game.status === 'canceled' && ' · Canceled'}
 				</Text>
 			</View>
 			<Ionicons

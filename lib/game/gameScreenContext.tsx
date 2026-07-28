@@ -45,7 +45,11 @@ import {
 	type PlayerState,
 	type ResourceHand as ResourceHandType,
 } from '@/lib/catan/types'
-import { useGamesStore, type GameEvent } from '@/lib/stores/useGamesStore'
+import {
+	isFinished,
+	useGamesStore,
+	type GameEvent,
+} from '@/lib/stores/useGamesStore'
 import {
 	createContext,
 	useContext,
@@ -139,6 +143,8 @@ function useGameScreenState(gameId: string) {
 	const castMagic = useGamesStore((s) => s.castMagic)
 	const skipMagic = useGamesStore((s) => s.skipMagic)
 	const undo = useGamesStore((s) => s.undo)
+	const setForfeit = useGamesStore((s) => s.setForfeit)
+	const setEndVote = useGamesStore((s) => s.setEndVote)
 
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
@@ -221,7 +227,7 @@ function useGameScreenState(gameId: string) {
 	// During active play opponents see publicVP (no hidden VP cards) and the
 	// viewer sees their own selfVP. On game-over everyone is fully revealed.
 	const displayVP = useMemo(() => {
-		if (game?.status === 'complete') return selfVP
+		if (isFinished(game?.status ?? '')) return selfVP
 		return publicVP.map((pub, i) => (i === meIdx ? selfVP[i] : pub))
 	}, [game?.status, publicVP, selfVP, meIdx])
 
@@ -539,7 +545,9 @@ function useGameScreenState(gameId: string) {
 			phaseKind === 'steal')
 	const inRoadBuilding =
 		game?.status === 'active' && phaseKind === 'road_building'
-	const inGameOver = game?.status === 'complete'
+	// Both endings, so a canceled game stops the board and shows the overlay
+	// exactly as a completed one does.
+	const inGameOver = isFinished(game?.status ?? '')
 
 	// Undo availability is read straight off the snapshot the edge function
 	// stashed before the last undoable action — deriving it from the event log
@@ -557,6 +565,16 @@ function useGameScreenState(gameId: string) {
 			: phaseKind === 'special_build'
 				? isMySpecialBuild
 				: inPostPlacement)
+
+	// Forfeiting / ending. Both are plain user-id arrays on the games row with
+	// no mechanical effect — see `.claude/specs/forfeit-and-end-game.md`. The
+	// menu lives in the nav (`GameMenu`), which is why these hang off the
+	// screen context rather than a zone.
+	const forfeitedIds = game?.forfeits ?? []
+	const endVoteIds = game?.end_votes ?? []
+	const myForfeit = !!user && forfeitedIds.includes(user.id)
+	const myEndVote = !!user && endVoteIds.includes(user.id)
+	const canEndGame = !isSpectator && meIdx >= 0 && !inGameOver
 
 	// Button enablement: only when it's my main-phase turn, I can afford the
 	// cost (standard or bricklayer alt), AND there is at least one valid
@@ -828,6 +846,22 @@ function useGameScreenState(gameId: string) {
 		if (!game) return
 		setSubmitting(true)
 		const res = await endSpecialBuild(game.id)
+		setSubmitting(false)
+		if (res.error) notify(res.error)
+	}
+
+	async function onSetForfeit(on: boolean) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await setForfeit(game.id, on)
+		setSubmitting(false)
+		if (res.error) notify(res.error)
+	}
+
+	async function onSetEndVote(on: boolean) {
+		if (!game) return
+		setSubmitting(true)
+		const res = await setEndVote(game.id, on)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
 	}
@@ -1248,6 +1282,14 @@ function useGameScreenState(gameId: string) {
 		inRobberFlow,
 		inRoadBuilding,
 		inGameOver,
+
+		// --- Forfeiting / ending ---------------------------------------
+		playerCount,
+		forfeitedIds,
+		endVoteIds,
+		myForfeit,
+		myEndVote,
+		canEndGame,
 		canUndo,
 		postPlacementTool,
 		liveOffer,
@@ -1330,6 +1372,8 @@ function useGameScreenState(gameId: string) {
 		onEndTurn,
 		onHonk,
 		onEndSpecialBuild,
+		onSetForfeit,
+		onSetEndVote,
 		onBuyDevCard,
 		submitBuyDevCard,
 		onPlayDevCard,

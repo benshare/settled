@@ -23,6 +23,12 @@ export type NotificationKind =
 	| 'friend_request'
 	| 'honk'
 	| 'chat_message'
+	// Forfeiting / ending. All four are ungated, like the honk: they are rare
+	// and consequential enough not to earn a preference toggle.
+	| 'game_forfeited'
+	| 'end_game_proposed'
+	| 'game_canceled'
+	| 'game_won_by_forfeit'
 
 // A chat message body is arbitrary user text and can run to the column's 500
 // chars. Ship a bounded preview rather than letting the OS clip at an arbitrary
@@ -254,6 +260,16 @@ function renderBody(t: NotifyTarget, sender: string | undefined): string {
 		// switch is exhaustive over NotificationKind.
 		case 'chat_message':
 			return 'Sent you a message.'
+		case 'game_forfeited':
+			return `${sender ?? 'Someone'} forfeited the game.`
+		case 'end_game_proposed':
+			return `${sender ?? 'Someone'} wants to end the game.`
+		// Collective outcome — every player voted for it, so naming one would
+		// be arbitrary.
+		case 'game_canceled':
+			return 'Your game was canceled.'
+		case 'game_won_by_forfeit':
+			return 'Everyone else forfeited — you win.'
 	}
 }
 

@@ -10,6 +10,7 @@ import { isWeb, sharedStyles } from './gameScreenShared'
 
 import { GameTitle } from '@/lib/catan/GameTitle'
 import { Ionicons } from '@expo/vector-icons'
+import { GameMenu } from './GameMenu'
 
 export function Nav() {
 	const { id: gameId } = useLocalSearchParams<{ id: string }>()
@@ -28,8 +29,11 @@ export function Nav() {
 				<Ionicons name="chevron-back" size={26} color={colors.text} />
 			</Pressable>
 			<GameTitle gameId={gameId} />
-			{/* Balances the chevron so the title stays centred. */}
-			<View style={styles.back} />
+			{/* The forfeit / end-game menu — the only thing besides the title
+			    that is about *which game you're on*. It renders a spacer of the
+			    same width when there's nothing to offer (spectator, or a game
+			    that's already over), so the title stays centred either way. */}
+			<GameMenu />
 		</View>
 	)
 }

@@ -626,10 +626,36 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				text: `A ghost appeared on ${possessive(e.player, ctx)} haunted spot`,
 				player: e.player,
 			}
+		case 'forfeit_submitted':
+			return { text: `${who(e.player)} forfeited`, player: e.player }
+		case 'forfeit_withdrawn':
+			return {
+				text: `${who(e.player)} withdrew ${possessive(e.player, ctx)} forfeit`,
+				player: e.player,
+			}
+		case 'end_game_proposed':
+			return {
+				text: `${who(e.player)} wants to end the game`,
+				player: e.player,
+			}
+		case 'end_game_withdrawn':
+			return {
+				text: `${who(e.player)} no longer wants to end the game`,
+				player: e.player,
+			}
+		// No winner and no scoreboard — the whole table voted to stop.
+		case 'game_canceled':
+			return { text: 'Game canceled', player: null }
 		case 'game_complete': {
 			// Two historical shapes carry the winner under different keys.
 			const winner = 'winner' in e ? e.winner : e.winner_index
-			return { text: `${who(winner)} won the game`, player: winner }
+			const byForfeit = 'by_forfeit' in e && e.by_forfeit
+			return {
+				text: byForfeit
+					? `${who(winner)} won — everyone else forfeited`
+					: `${who(winner)} won the game`,
+				player: winner,
+			}
 		}
 		// Ephemeral negotiation + per-turn bookkeeping is intentionally omitted
 		// to keep the log focused on committed, state-changing actions.

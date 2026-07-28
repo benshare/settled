@@ -19,6 +19,10 @@ export type NotificationKind =
 	| 'friend_request'
 	| 'honk'
 	| 'chat_message'
+	| 'game_forfeited'
+	| 'end_game_proposed'
+	| 'game_canceled'
+	| 'game_won_by_forfeit'
 
 export type NotificationData = {
 	kind: NotificationKind
@@ -49,6 +53,12 @@ export function resolveNotificationLink(data: unknown): Href | null {
 		case 'trade_confirmed':
 		case 'trade_rejected_all':
 		case 'honk':
+		// A canceled or forfeit-won game still opens on its board: that's
+		// where the end-of-game overlay is.
+		case 'game_forfeited':
+		case 'end_game_proposed':
+		case 'game_canceled':
+		case 'game_won_by_forfeit':
 			return d.game_id ? (`/game/${d.game_id}` as Href) : '/games'
 		// Land in the conversation, not merely on the board — the message is
 		// what the tap was about.

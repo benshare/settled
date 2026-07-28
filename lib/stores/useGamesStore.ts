@@ -283,13 +283,28 @@ export type GameEvent =
 	// Haunt: the spots themselves stay private, so only the fact is logged.
 	| { kind: 'haunt_spots_set'; player: number; at: string }
 	| { kind: 'ghost_spawned'; player: number; vertex: string; at: string }
-	// Terminal event. Written once per game when a player reaches 10 VP.
-	// `vpCards` reveals each player's previously-hidden VP card count so
-	// clients can render a final scoreboard without a separate read.
+	// --- Forfeiting and ending ---------------------------------------------
+	// Two withdrawable, per-player declarations that a game can end without
+	// anyone reaching the VP threshold. Neither has any mechanical effect —
+	// a player holding a standing forfeit keeps their seat and their turn.
+	// See `.claude/specs/forfeit-and-end-game.md`.
+	| { kind: 'forfeit_submitted'; player: number; at: string }
+	| { kind: 'forfeit_withdrawn'; player: number; at: string }
+	| { kind: 'end_game_proposed'; player: number; at: string }
+	| { kind: 'end_game_withdrawn'; player: number; at: string }
+	// Terminal event, written when every seat voted to end. Deliberately not a
+	// `game_complete`: there is no winner and no scoreboard to announce.
+	| { kind: 'game_canceled'; at: string }
+	// Terminal event. Written once per game when a player reaches 10 VP, or
+	// when every seat but one has forfeited (`by_forfeit`, in which case the
+	// survivor wins regardless of VP). `vpCards` reveals each player's
+	// previously-hidden VP card count so clients can render a final scoreboard
+	// without a separate read.
 	| {
 			kind: 'game_complete'
 			winner: number
 			vpCards: Record<number, number>
+			by_forfeit?: boolean
 			at: string
 	  }
 
@@ -424,6 +439,14 @@ type GamesStore = {
 	// it stashed on `game_states.undo`; availability is read off that column,
 	// never derived here. See `.claude/specs/undo.md`.
 	undo: (gameId: string) => Promise<ActionResult>
+
+	// Submit (`on`) or withdraw (`!on`) a standing forfeit / end-game vote.
+	// Both are idempotent, and neither has any mechanical effect on the game —
+	// only the thresholds read them (all seats but one forfeited → that seat
+	// wins; every seat voting to end → the game is canceled with no winner).
+	// See `.claude/specs/forfeit-and-end-game.md`.
+	setForfeit: (gameId: string, on: boolean) => Promise<ActionResult>
+	setEndVote: (gameId: string, on: boolean) => Promise<ActionResult>
 
 	// `useBricklayer`: pay 4 Brick instead of the standard cost. Ignored by
 	// the edge if the caller doesn't have the bricklayer bonus.
@@ -624,12 +647,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			.in('status', ['placement', 'active'])
 			.order('created_at', { ascending: false })
 
+		// Both ways a game can end share the History list — see `isFinished`.
 		// Scoped to games I actually played in. Without this, the spectator
 		// policy would drop every finished game I merely watched into History.
 		const completePromise = supabase
 			.from('games')
 			.select('*')
-			.eq('status', 'complete')
+			.in('status', ['complete', 'canceled'])
 			.contains('participants', [userId])
 			.order('created_at', { ascending: false })
 
@@ -924,6 +948,20 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
+	async setForfeit(gameId, on) {
+		return callGameService(
+			{ action: 'set_forfeit', game_id: gameId, on },
+			on ? "Couldn't forfeit" : "Couldn't withdraw your forfeit"
+		)
+	},
+
+	async setEndVote(gameId, on) {
+		return callGameService(
+			{ action: 'set_end_vote', game_id: gameId, on },
+			on ? "Couldn't vote to end the game" : "Couldn't withdraw your vote"
+		)
+	},
+
 	async buildRoad(gameId, edge, opts) {
 		return callGameService(
 			{
@@ -1213,7 +1251,7 @@ function handleGameChange(
 	const mine = game.participants.includes(meId)
 
 	if (payload.eventType === 'INSERT') {
-		if (game.status === 'complete') {
+		if (isFinished(game.status)) {
 			// A finished game I only watched never enters History.
 			if (mine) set({ completeGames: [game, ...complete] })
 		} else if (mine) {
@@ -1224,9 +1262,9 @@ function handleGameChange(
 		return
 	}
 
-	// UPDATE — game may have moved from in-progress to complete.
+	// UPDATE — game may have moved from in-progress to finished.
 	if (payload.eventType === 'UPDATE') {
-		if (game.status === 'complete') {
+		if (isFinished(game.status)) {
 			// A game that ends stops being watchable; drop it from the viewer's
 			// actively-spectating set so it doesn't linger as a stale tab. The
 			// viewer already on the screen still sees the recap (the RLS policy
@@ -1297,6 +1335,17 @@ async function handleRequestChange(
 		])
 		set({ pendingRequests: [decoded, ...(get().pendingRequests ?? [])] })
 	}
+}
+
+/**
+ * Whether a game is over, whichever way it ended. A `canceled` game is one the
+ * whole table voted to end: it has no winner, it contributes nothing to stats,
+ * and it accepts no further action — but it shares History and the end-of-game
+ * overlay with a completed one, so almost every status test wants this rather
+ * than an equality check.
+ */
+export function isFinished(status: string): boolean {
+	return status === 'complete' || status === 'canceled'
 }
 
 /**

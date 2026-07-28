@@ -1,4 +1,4 @@
-// Final scoreboard shown when a game ends (`games.status === 'complete'`).
+// Final scoreboard shown when a game ends, either way it ended (`isFinished`).
 // Rendered as a modal on top of the game screen. Reveals every player's
 // hidden VP cards since the game is over. Offers three exits: "Rematch" (into
 // the create-game form, prefilled with this table and its settings), "Back to
@@ -49,6 +49,13 @@ export type GameOverOverlayProps = {
 	// `public (revealed)` so the gap is legible — same convention as
 	// PlayerStrip.
 	publicByPlayer: number[]
+	// The whole table voted to end the game (`games.status === 'canceled'`).
+	// There is no winner and it counts for nothing, but the scores as they
+	// stood are still worth reading — so it's the same sheet with a different
+	// heading, not a separate notice.
+	canceled?: boolean
+	// Every seat but one forfeited, so `winnerIdx` won regardless of VP.
+	wonByForfeit?: boolean
 	onDismiss: () => void
 	onBackToGames: () => void
 	// Start a new game with the same table and settings. Omitted for a
@@ -84,16 +91,19 @@ export function GameOverOverlay({
 	events,
 	pointsByPlayer,
 	publicByPlayer,
+	canceled = false,
+	wonByForfeit = false,
 	onDismiss,
 	onBackToGames,
 	onRematch,
 }: GameOverOverlayProps) {
 	const [tab, setTab] = useState<TabKey>('scores')
 	const { height: windowHeight } = useWindowDimensions()
-	// Winner + scoreboard only render when we actually have a completed game.
-	// `visible` can be false even for a complete game (user dismissed to peek
-	// at the board); that's handled by the Modal itself.
-	if (winnerIdx === null) return null
+	// Winner + scoreboard only render when we actually have a finished game.
+	// A canceled one has no winner by definition, so it's the one case that
+	// renders without one. `visible` can be false even for a finished game
+	// (user dismissed to peek at the board); that's handled by the Modal.
+	if (winnerIdx === null && !canceled) return null
 
 	const nameFor = (i: number) =>
 		i === meIdx
@@ -119,6 +129,8 @@ export function GameOverOverlay({
 				playerOrder={playerOrder}
 				meIdx={meIdx}
 				profilesById={profilesById}
+				canceled={canceled}
+				wonByForfeit={wonByForfeit}
 			/>
 			<TabBar tab={tab} onTab={setTab} />
 			{tab === 'scores' && (
@@ -195,12 +207,28 @@ function Header({
 	playerOrder,
 	meIdx,
 	profilesById,
+	canceled,
+	wonByForfeit,
 }: {
-	winnerIdx: number
+	winnerIdx: number | null
 	playerOrder: string[]
 	meIdx: number
 	profilesById: Record<string, Profile>
+	canceled: boolean
+	wonByForfeit: boolean
 }) {
+	// Nobody won, so there is no seat to colour the header with.
+	if (canceled || winnerIdx === null) {
+		return (
+			<View style={styles.header}>
+				<Text style={styles.title}>Game canceled</Text>
+				<Text style={styles.subtitle}>
+					Everyone agreed to end it. No winner.
+				</Text>
+			</View>
+		)
+	}
+
 	const uid = playerOrder[winnerIdx]
 	const profile = profilesById[uid]
 	const color = playerColors[winnerIdx] ?? playerColors[0]
@@ -212,6 +240,13 @@ function Header({
 			<Text style={styles.subtitle}>
 				{winnerIdx === meIdx ? 'You win!' : `${name} wins!`}
 			</Text>
+			{wonByForfeit && (
+				<Text style={styles.note}>
+					{winnerIdx === meIdx
+						? 'Everyone else forfeited.'
+						: 'Won by forfeit.'}
+				</Text>
+			)}
 		</View>
 	)
 }
@@ -555,6 +590,10 @@ const styles = StyleSheet.create({
 		fontSize: font.xl,
 		fontWeight: '700',
 		color: colors.brand,
+	},
+	note: {
+		fontSize: font.sm,
+		color: colors.textMuted,
 	},
 	tabBar: {
 		flexDirection: 'row',
