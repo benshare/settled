@@ -206,7 +206,7 @@ export function ChatPanel({
 								pressed && styles.pressed,
 							]}
 							accessibilityLabel="Close chat"
-							hitSlop={6}
+							hitSlop={14}
 						>
 							<Ionicons
 								name="close"
@@ -324,6 +324,9 @@ function ChatComposer({
 					pressed && canSend && styles.pressed,
 				]}
 				accessibilityLabel="Send message"
+				// Left is capped at the row's gap so it doesn't eat taps on the
+				// input's right edge.
+				hitSlop={{ top: 14, bottom: 14, left: spacing.sm, right: 14 }}
 			>
 				<Ionicons
 					name="send"
@@ -461,6 +464,7 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: colors.border,
 		overflow: 'hidden',
+		boxShadow: shadow.overlay,
 	},
 	header: {
 		flexDirection: 'row',
@@ -539,6 +543,7 @@ const styles = StyleSheet.create({
 		borderRadius: radius.md,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.xs,
+		boxShadow: shadow.bar,
 	},
 	bubbleMine: {
 		backgroundColor: colors.accent,
@@ -589,11 +594,14 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.brand,
 		alignItems: 'center',
 		justifyContent: 'center',
+		boxShadow: shadow.card,
 	},
 	// No `cursor` override: RN's CursorValue only admits auto|pointer, and the
 	// default arrow is already what a disabled affordance should show.
+	// Sits flat too — a disabled button shouldn't look liftable.
 	sendBtnDisabled: {
 		backgroundColor: colors.cardAlt,
+		boxShadow: 'none',
 	},
 	pressed: {
 		opacity: 0.7,
