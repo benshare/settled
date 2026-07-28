@@ -21,10 +21,17 @@ import {
 	View,
 } from 'react-native'
 import Animated, {
+	Easing,
 	useAnimatedKeyboard,
 	useAnimatedStyle,
+	useSharedValue,
+	withDelay,
+	withRepeat,
+	withSequence,
+	withTiming,
 } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Avatar } from '../modules/Avatar'
 import { useGamesStore } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, shadow, spacing, z } from '../theme'
@@ -48,6 +55,16 @@ const PANEL_GAP = spacing.md
 // inset by `PANEL_GAP - DISMISS_SLOP` and pads the difference back with a
 // transparent, tap-transparent ring, so the visible geometry is unchanged.
 const DISMISS_SLOP = spacing.sm
+
+// Typing row. Faces are capped because the panel is narrow — the same
+// treatment (and the same reason) as GameTitle's tab faces.
+const TYPING_AVATAR_SIZE = 20
+const MAX_TYPING_FACES = 3
+// One full up-and-down per dot, offset per dot so the three read as a wave
+// travelling left to right rather than three synchronised bounces.
+const WAVE_HALF_MS = 300
+const WAVE_STAGGER_MS = 130
+const WAVE_RISE = 3
 
 export function ChatButton() {
 	const { open, setOpen, unreadCount } = useChat()
@@ -92,18 +109,23 @@ export function ChatPanel({
 	profilesById: Record<string, Profile>
 	meId: string | undefined
 }) {
-	const { open, setOpen, messages, send, sending } = useChat()
+	const { open, setOpen, messages, send, sending, typingIds, noteTyping } =
+		useChat()
 	const [draft, setDraft] = useState('')
 	const [error, setError] = useState<string | null>(null)
 
 	// Spectators send into this thread but were never in a participant list, so
 	// their profiles aren't in the store's cache. Without this they'd all
-	// render as 'Player'.
+	// render as 'Player' — and a typing spectator as the '?' fallback avatar.
 	const ensureProfiles = useGamesStore((s) => s.ensureProfiles)
 	useEffect(() => {
 		if (!messages || messages.length === 0) return
 		ensureProfiles(messages.map((m) => m.sender))
 	}, [messages, ensureProfiles])
+	useEffect(() => {
+		if (typingIds.length === 0) return
+		ensureProfiles(typingIds)
+	}, [typingIds, ensureProfiles])
 
 	// The keyboard lifts the whole overlay — scrim included — by one translate,
 	// so nothing about the panel re-lays-out as it moves. The panel's bottom is
@@ -155,10 +177,16 @@ export function ChatPanel({
 		[messages]
 	)
 
+	function onChangeDraft(v: string) {
+		setDraft(v)
+		noteTyping(v.trim().length > 0)
+	}
+
 	async function onSend() {
 		const text = draft.trim()
 		if (!text) return
 		setDraft('')
+		noteTyping(false)
 		setError(null)
 		const res = await send(text)
 		if (res.error) {
@@ -224,11 +252,16 @@ export function ChatPanel({
 						meId={meId}
 					/>
 
+					<TypingRow
+						typingIds={typingIds}
+						profilesById={profilesById}
+					/>
+
 					{error && <Text style={styles.error}>{error}</Text>}
 
 					<ChatComposer
 						draft={draft}
-						setDraft={setDraft}
+						setDraft={onChangeDraft}
 						canSend={canSend}
 						onSend={onSend}
 					/>
@@ -288,6 +321,85 @@ function ChatBody({
 			)}
 		/>
 	)
+}
+
+// Who else is composing right now. Pinned between the list and the composer
+// rather than living inside the list, so it doesn't move when the thread is
+// scrolled back. Absent — not blank — when nobody is typing: the list simply
+// grows back into the space.
+function TypingRow({
+	typingIds,
+	profilesById,
+}: {
+	typingIds: string[]
+	profilesById: Record<string, Profile>
+}) {
+	if (typingIds.length === 0) return null
+
+	const faces = typingIds.slice(0, MAX_TYPING_FACES)
+	const overflow = typingIds.length - faces.length
+
+	return (
+		<View
+			style={styles.typingRow}
+			// One element to a screen reader — the faces and the dots are a
+			// single statement, and neither half means anything alone.
+			accessible
+			accessibilityLabel={
+				typingIds.length === 1
+					? 'Someone is typing'
+					: `${typingIds.length} people are typing`
+			}
+		>
+			{faces.map((uid, i) => (
+				<View key={uid} style={i > 0 && styles.typingFaceStacked}>
+					<Avatar
+						profile={profilesById[uid]}
+						size={TYPING_AVATAR_SIZE}
+					/>
+				</View>
+			))}
+			{overflow > 0 && (
+				<Text style={styles.typingOverflow}>+{overflow}</Text>
+			)}
+			<View style={[styles.bubble, styles.typingBubble]}>
+				<WaveDot index={0} />
+				<WaveDot index={1} />
+				<WaveDot index={2} />
+			</View>
+		</View>
+	)
+}
+
+// One dot of the wave. Its own component so the three shared values aren't
+// built in a loop inside TypingRow's body.
+function WaveDot({ index }: { index: number }) {
+	const rise = useSharedValue(0)
+
+	useEffect(() => {
+		rise.value = withDelay(
+			index * WAVE_STAGGER_MS,
+			withRepeat(
+				withSequence(
+					withTiming(1, {
+						duration: WAVE_HALF_MS,
+						easing: Easing.inOut(Easing.quad),
+					}),
+					withTiming(0, {
+						duration: WAVE_HALF_MS,
+						easing: Easing.inOut(Easing.quad),
+					})
+				),
+				-1
+			)
+		)
+	}, [index, rise])
+
+	const style = useAnimatedStyle(() => ({
+		transform: [{ translateY: -rise.value * WAVE_RISE }],
+	}))
+
+	return <Animated.View style={[styles.typingDot, style]} />
 }
 
 function ChatComposer({
@@ -556,6 +668,39 @@ const styles = StyleSheet.create({
 	bubbleTextMine: {
 		fontSize: font.base,
 		color: colors.white,
+	},
+	// Horizontal padding matches `listBody` so the faces sit in the same column
+	// as the message bubbles above them.
+	typingRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		paddingHorizontal: spacing.md,
+		paddingBottom: spacing.xs,
+	},
+	typingFaceStacked: {
+		marginLeft: -TYPING_AVATAR_SIZE / 3,
+	},
+	typingOverflow: {
+		marginLeft: spacing.xs,
+		fontSize: font.xs,
+		fontWeight: '700',
+		color: colors.textSecondary,
+	},
+	// Reuses the incoming-bubble chrome so it reads as a message being
+	// composed; only the padding differs, since it holds dots rather than text.
+	typingBubble: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 3,
+		marginLeft: spacing.xs,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 6,
+	},
+	typingDot: {
+		width: 4,
+		height: 4,
+		borderRadius: 2,
+		backgroundColor: colors.textMuted,
 	},
 	error: {
 		paddingHorizontal: spacing.md,
