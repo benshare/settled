@@ -542,14 +542,20 @@ function useGameScreenState(gameId: string) {
 
 	// Undo availability is read straight off the snapshot the edge function
 	// stashed before the last undoable action — deriving it from the event log
-	// would drift from the server's own rule. The phase test is what keeps the
-	// arrow out of the special build bar, which this pass doesn't cover.
+	// would drift from the server's own rule. The phase test adds the one thing
+	// the server can't see: whether this seat is the one currently holding the
+	// floor, which is `current_turn` in `main` but the queue head in
+	// `special_build`.
 	const canUndo =
 		!!gameState?.undo &&
 		gameState.undo.player === meIdx &&
 		!isSpectator &&
 		!inGameOver &&
-		(phaseKind === 'main' ? isMyActiveTurn : inPostPlacement)
+		(phaseKind === 'main'
+			? isMyActiveTurn
+			: phaseKind === 'special_build'
+				? isMySpecialBuild
+				: inPostPlacement)
 
 	// Button enablement: only when it's my main-phase turn, I can afford the
 	// cost (standard or bricklayer alt), AND there is at least one valid

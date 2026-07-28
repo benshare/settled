@@ -39,7 +39,7 @@ Three things about the mechanism are load-bearing:
 - **The snapshot is maintained in `serve`, not in the handlers.** An action opts into undo by joining `UNDOABLE_ACTIONS` and doing nothing else. Every other action clears the column on success (guarded on `undo is not null`, so the usual case matches no rows and emits no realtime event); `send_message` is the sole exemption, because chat writes neither `game_states` nor `games.events`. `honk` deliberately is _not_ exempt — it appends to `games.events`, which undo truncates by length.
 - **Undo truncates `games.events` back to its pre-action length**, so the undone action vanishes from `ActionLog` rather than being annotated. Nothing is logged in its place.
 
-`GameState.undo` is what the client reads to decide whether to show the arrow — never a derivation from the event log. Only the acting seat may undo, and a game-winning action can't be undone at all (`games.status` is already `complete` and `game_results` is written). Full design in `.claude/specs/undo.md`.
+`GameState.undo` is what the client reads to decide whether to show the arrow — never a derivation from the event log. Only the acting seat may undo, and a game-winning action can't be undone at all (`games.status` is already `complete` and `game_results` is written; the orphan snapshot such a build leaves behind is inert). The arrow follows whoever holds the floor, which during `special_build` is `phase.queue[0]` rather than `current_turn` — see `lib/game/CLAUDE.md`. Full design in `.claude/specs/undo.md`.
 
 ## Admin testing: forced rolls
 

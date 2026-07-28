@@ -8,8 +8,9 @@ import type { Phase } from '@/lib/catan/types'
 import { Button } from '@/lib/modules/Button'
 import type { GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, font, radius, spacing } from '@/lib/theme'
+import { Ionicons } from '@expo/vector-icons'
 import { useEffect, useState } from 'react'
-import { Platform, StyleSheet, Text, View } from 'react-native'
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 
 // On web we trim chrome around the board a bit so the SVG can breathe.
 export const isWeb = Platform.OS === 'web'
@@ -64,6 +65,34 @@ export function HonkButton({
 	)
 }
 
+// Take back your own last action. Only ever rendered when the screen context
+// says the server would accept it, so it has no disabled state of its own —
+// when there's nothing to undo the button isn't there. Icon-only and square,
+// sized to the row's buttons so the action row stays even.
+export function UndoButton({
+	submitting,
+	onPress,
+}: {
+	submitting: boolean
+	onPress: () => void
+}) {
+	return (
+		<Pressable
+			onPress={onPress}
+			disabled={submitting}
+			accessibilityRole="button"
+			accessibilityLabel="Undo last action"
+			style={({ pressed }) => [
+				styles.undoBtn,
+				submitting && styles.undoBtnBusy,
+				pressed && !submitting && sharedStyles.pressed,
+			]}
+		>
+			<Ionicons name="arrow-undo" size={20} color={colors.text} />
+		</Pressable>
+	)
+}
+
 // Bar chrome shared by the two zones. Anything only one zone uses lives in
 // that zone's own StyleSheet.
 export const sharedStyles = StyleSheet.create({
@@ -110,5 +139,20 @@ const styles = StyleSheet.create({
 		fontSize: font.base,
 		fontWeight: '700',
 		color: colors.text,
+	},
+	// Matches the secondary Button's chrome and the 52pt row height, so the
+	// arrow reads as part of the same row of actions.
+	undoBtn: {
+		width: 52,
+		height: 52,
+		borderRadius: radius.md,
+		backgroundColor: colors.card,
+		borderWidth: 1,
+		borderColor: colors.border,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	undoBtnBusy: {
+		opacity: 0.4,
 	},
 })

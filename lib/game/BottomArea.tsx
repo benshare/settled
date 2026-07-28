@@ -26,9 +26,8 @@ import { monopolyCap, type GameState } from '@/lib/catan/types'
 import { Button } from '@/lib/modules/Button'
 import type { Game, GameEvent } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
-import { colors, radius, spacing } from '@/lib/theme'
-import { Ionicons } from '@expo/vector-icons'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { spacing } from '@/lib/theme'
+import { StyleSheet, Text, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import { useGameScreen } from './gameScreenContext'
 import {
@@ -36,6 +35,7 @@ import {
 	HonkButton,
 	isWeb,
 	sharedStyles,
+	UndoButton,
 } from './gameScreenShared'
 
 const PANEL_IN = FadeIn.duration(160)
@@ -441,34 +441,6 @@ function MainLoopBar({
 	)
 }
 
-// Take back your own last action. Only ever rendered when the screen context
-// says the server would accept it, so it has no disabled state of its own —
-// when there's nothing to undo the button isn't there. Icon-only and square,
-// sized to the row's buttons so the action row stays even.
-function UndoButton({
-	submitting,
-	onPress,
-}: {
-	submitting: boolean
-	onPress: () => void
-}) {
-	return (
-		<Pressable
-			onPress={onPress}
-			disabled={submitting}
-			accessibilityRole="button"
-			accessibilityLabel="Undo last action"
-			style={({ pressed }) => [
-				styles.undoBtn,
-				submitting && styles.undoBtnBusy,
-				pressed && !submitting && sharedStyles.pressed,
-			]}
-		>
-			<Ionicons name="arrow-undo" size={20} color={colors.text} />
-		</Pressable>
-	)
-}
-
 function confirmLabel(
 	gameState: GameState | undefined,
 	selection: PlacementSelection | null
@@ -516,21 +488,6 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: spacing.xs,
-	},
-	// Matches the secondary Button's chrome and the 52pt row height, so the
-	// arrow reads as part of the same row of actions.
-	undoBtn: {
-		width: 52,
-		height: 52,
-		borderRadius: radius.md,
-		backgroundColor: colors.card,
-		borderWidth: 1,
-		borderColor: colors.border,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	undoBtnBusy: {
-		opacity: 0.4,
 	},
 	undoRow: {
 		flexDirection: 'row',

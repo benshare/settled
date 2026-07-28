@@ -127,11 +127,21 @@ canUndo =
 	gameState.undo.player === meIdx &&
 	!isSpectator &&
 	!inGameOver &&
-	(phase.kind === 'main' ? isMyActiveTurn : phase.kind === 'post_placement')
+	(phase.kind === 'main'
+		? isMyActiveTurn
+		: phase.kind === 'special_build'
+			? isMySpecialBuild
+			: phase.kind === 'post_placement')
 onUndo() // useGamesStore.undo(gameId), through the shared `submitting` flag
 ```
 
-Rendered in `BottomArea`:
+The phase branch is asking one question — _does this seat hold the floor right
+now?_ — and the answer isn't `current_turn` in every phase. During
+`special_build` the acting builder is `phase.queue[0]` while `current_turn` has
+already advanced to the next roller, so the test there is `isMySpecialBuild`.
+
+`UndoButton` lives in `gameScreenShared.tsx`, since two of its three placements
+are in `BottomArea` and one is in `TopArea`:
 
 - **`main` phase** — an icon-only 52pt square button (Ionicons `arrow-undo`,
   secondary-Button chrome) immediately left of **End turn** in `MainLoopBar`'s
@@ -139,10 +149,18 @@ Rendered in `BottomArea`:
 - **`post_placement`** — the same button on its own row above the hand, since
   `MainLoopBar` doesn't render outside `roll`/`main`. This is what makes the
   fencer/explorer placements undoable at all.
+- **`special_build`** — immediately left of **Done building** in
+  `SpecialBuildBar`. A build during a special-build slot is otherwise exactly
+  as undoable as a main-phase one: the server already snapshots it, nothing
+  re-drains the queue mid-slot (only `end_turn` and `end_special_build` call
+  `drainSpecialBuildQueue`), so the builder keeps the floor — and the arrow —
+  until they press Done.
 
-Not rendered in `SpecialBuildBar` (TopArea) — special-build undo is out of
-scope for this pass, so a build taken during a special-build slot has no arrow
-even though the server would accept the undo.
+Deliberately still no arrow during `road_building`: the two free roads come
+from a dev card that has already been revealed, so the phase is left alone. The
+snapshot the server writes for the second free road does surface once the phase
+resumes to `main`, which re-enters `road_building` with one road left if used.
+That leaks nothing, so it stands.
 
 ## 4. Files
 
@@ -153,7 +171,9 @@ even though the server would accept the undo.
 | `lib/catan/gameContext.tsx`                        | map `row.undo`                                        |
 | `lib/stores/useGamesStore.ts`                      | `undo(gameId)` action                                 |
 | `lib/game/gameScreenContext.tsx`                   | `canUndo`, `onUndo`                                   |
-| `lib/game/BottomArea.tsx`                          | the arrow, both placements                            |
+| `lib/game/gameScreenShared.tsx`                    | `UndoButton`                                          |
+| `lib/game/BottomArea.tsx`                          | `main` + `post_placement` placements                  |
+| `lib/game/TopArea.tsx`                             | `special_build` placement                             |
 | `supabase/functions/game-service/index.ts`         | `UNDOABLE_ACTIONS`, snapshot in `serve`, `handleUndo` |
 
 Deploy: `npm run migrate` → `npm run types` → `npm run edge`.

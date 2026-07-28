@@ -35,7 +35,9 @@ app/game/[id].tsx
 - `TopArea.tsx` — the top menu zone: `PlayerStrip`, the status lines, the
   build/trade bar, and the phase bars that replace it (`RobberStatus`,
   `RoadBuildingStatus`, `SpecialBuildBar`, `DiscardBar`). Owns
-  `spectatorStatus()` and `PlacementHeader`.
+  `spectatorStatus()` and `PlacementHeader`. `SpecialBuildBar` carries the
+  third `UndoButton` placement, left of **Done building** — a special builder
+  builds out of turn, so their arrow can't hang off `MainLoopBar`.
 - `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus
   the inline `ConfirmBar`.
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and
@@ -44,14 +46,17 @@ app/game/[id].tsx
   `dev`-flagged seat — see the admin-testing section of `lib/catan/CLAUDE.md`.
   It is the one affordance here that takes props rather than reading the
   context directly, because the bar is already prop-driven; `isDev` gates it by
-  passing `onDevRollTotalChange` as `undefined` for everyone else. Also owns
-  `UndoButton` and renders it twice: inside `MainLoopBar` left of **End turn**
-  during `main`, and on its own row during `post_placement` (where
-  `MainLoopBar` doesn't render at all, so the fencer's tokens and the
-  explorer's roads would otherwise have nowhere to hang it). Both are gated on
-  the context's `canUndo` — see the undo rule below.
+  passing `onDevRollTotalChange` as `undefined` for everyone else. Renders
+  `UndoButton` twice: inside `MainLoopBar` left of **End turn** during `main`,
+  and on its own row during `post_placement` (where `MainLoopBar` doesn't
+  render at all, so the fencer's tokens and the explorer's roads would
+  otherwise have nowhere to hang it). Both are gated on the context's
+  `canUndo` — see the undo rule below.
 - `gameScreenShared.tsx` — the few things both menu zones render (`DieFaceView`,
-  `HonkButton`, the bar styles, `isWeb`), so neither has to import the other.
+  `HonkButton`, `UndoButton`, the bar styles, `isWeb`), so neither has to
+  import the other. `UndoButton` lives here rather than with the two bottom-zone
+  placements because `SpecialBuildBar` is in `TopArea` — an undoable action can
+  be taken from either zone.
 - `app/game/request/[id].tsx` — the pending-invite view. Unrelated to the above.
 
 ## Rules
@@ -106,5 +111,10 @@ app/game/[id].tsx
   reconstructing "was my last action a build?" from `games.events` would drift
   from the server's rule the moment an action mutates state without logging an
   event. The context adds only what the server can't see: the viewer's seat,
-  spectator status, and the phase test that keeps the arrow out of the special
-  build bar. See `.claude/specs/undo.md`.
+  spectator status, and a phase test for whether this seat currently holds the
+  floor. That last one is **not** `isMyActiveTurn` everywhere — during
+  `special_build` the acting builder is `phase.queue[0]`, not `current_turn`
+  (which has already advanced to the next roller), so the gate reads
+  `isMySpecialBuild` there. Gating the whole thing on the turn-holder is what
+  made a special builder's road un-undoable while the server was happily
+  snapshotting it. See `.claude/specs/undo.md`.

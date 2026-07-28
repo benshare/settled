@@ -28,7 +28,12 @@ import { Button } from '@/lib/modules/Button'
 import { colors, font, spacing } from '@/lib/theme'
 import { StyleSheet, Text, View } from 'react-native'
 import { useGameScreen } from './gameScreenContext'
-import { HonkButton, DieFaceView, sharedStyles } from './gameScreenShared'
+import {
+	HonkButton,
+	DieFaceView,
+	sharedStyles,
+	UndoButton,
+} from './gameScreenShared'
 
 export function TopArea() {
 	const {
@@ -71,8 +76,10 @@ export function TopArea() {
 		onBuyDevCard,
 		onBuyCarpenterVP,
 		onDiscard,
+		canUndo,
 		onEndSpecialBuild,
 		onHonk,
+		onUndo,
 		onSetSpecialistResource,
 		onSetHauntSpots,
 		onLiquidate,
@@ -271,8 +278,10 @@ export function TopArea() {
 								meIdx={meIdx}
 								profilesById={profilesById}
 								submitting={submitting}
+								canUndo={canUndo}
 								onDone={onEndSpecialBuild}
 								onHonk={onHonk}
+								onUndo={onUndo}
 							/>
 						)}
 					</>
@@ -572,16 +581,22 @@ function SpecialBuildBar({
 	meIdx,
 	profilesById,
 	submitting,
+	canUndo,
 	onDone,
 	onHonk,
+	onUndo,
 }: {
 	game: Game
 	gameState: GameState
 	meIdx: number
 	profilesById: Record<string, Profile>
 	submitting: boolean
+	// Already narrowed to "my special-build slot, on my own last action" by the
+	// screen context — the bar only decides where the arrow sits.
+	canUndo: boolean
 	onDone: () => void
 	onHonk: () => void
+	onUndo: () => void
 }) {
 	const phase = gameState.phase
 	if (phase.kind !== 'special_build') return null
@@ -598,6 +613,9 @@ function SpecialBuildBar({
 						? 'Special build — build or buy a dev card'
 						: `Special build — ${actorName} is building`}
 				</Text>
+				{canUndo && (
+					<UndoButton submitting={submitting} onPress={onUndo} />
+				)}
 				{isMe ? (
 					<Button onPress={onDone} loading={submitting}>
 						Done building
