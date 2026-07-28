@@ -3,7 +3,6 @@ import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import {
 	ensurePermissionAndRegister,
 	resolveNotificationLink,
-	useAppBadge,
 } from '@/lib/notifications'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
@@ -27,8 +26,6 @@ export default function AppLayout() {
 		if (!user?.id) return
 		ensurePermissionAndRegister(user.id)
 	}, [user?.id])
-
-	useAppBadge()
 
 	useEffect(() => {
 		if (Platform.OS === 'web') return

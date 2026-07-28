@@ -12,6 +12,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants'
 import * as Notifications from 'expo-notifications'
 import { useEffect } from 'react'
 import { Platform } from 'react-native'
+import { useAppForeground } from '../appState'
 import { useAuth } from '../auth'
 import { isMyTurn, useGamesStore } from '../stores/useGamesStore'
 
@@ -33,7 +34,10 @@ export async function setAppBadge(count: number): Promise<void> {
 
 /**
  * Keeps the icon badge in step with the games store for as long as the app is
- * running. Mount once, in the `(app)` layout.
+ * running. Mount once, in the **root** layout (`app/_layout.tsx`) — not in
+ * `(app)`. Tapping a push replaces the tab group with `/game/[id]`, so a hook
+ * mounted under `(app)` unmounts for exactly the session where the badge most
+ * needs clearing: launched from a "your turn" push, turn taken, badge stuck.
  */
 export function useAppBadge(): void {
 	const { user } = useAuth()
@@ -50,4 +54,14 @@ export function useAppBadge(): void {
 		if (count === null) return
 		setAppBadge(count)
 	}, [count])
+
+	// A push that lands while we're backgrounded sets the badge itself, from a
+	// count the store never saw. Re-apply on the way back in rather than waiting
+	// for `count` to move — it usually doesn't, and the effect above only fires
+	// on change. Worst case this writes a stale number for the moment before the
+	// foreground resync lands, which the effect then corrects.
+	useAppForeground(() => {
+		if (count === null) return
+		setAppBadge(count)
+	})
 }

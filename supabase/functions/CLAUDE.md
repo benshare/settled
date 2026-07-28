@@ -27,7 +27,7 @@ Every push carries a `badge`, and it is **not** a notification count — it's th
 
 This only works because every `sendNotifications` call sits after its write has committed (inside `EdgeRuntime.waitUntil`), so the `games` rows it counts already reflect the action the push is announcing. A caller that ever notifies _before_ committing would badge the pre-action count.
 
-The client sets the same number from `useGamesStore` while the app is running (`useAppBadge`, mounted in the `(app)` layout), which is what clears the badge the moment you take your turn without waiting for a push.
+The client sets the same number from `useGamesStore` while the app is running (`useAppBadge`, mounted in the **root** layout — see the note in `lib/notifications/badge.ts` about why not `(app)`), which is what clears the badge the moment you take your turn without waiting for a push. It re-applies on every foreground as well as on change, since a push that landed while we were backgrounded set the badge from a count the store never saw.
 
 ## Env
 

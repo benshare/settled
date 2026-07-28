@@ -1,5 +1,6 @@
 import { useAppForeground } from '@/lib/appState'
 import { AuthProvider, useAuth } from '@/lib/auth'
+import { useAppBadge } from '@/lib/notifications'
 import { loadAllUserStores } from '@/lib/stores'
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext'
 import { VERSION_LABEL } from '@/lib/version'
@@ -51,6 +52,10 @@ function RootNav() {
 	useAppForeground(() => {
 		if (user?.id) loadAllUserStores(user.id)
 	})
+
+	// Root, not `(app)`: the tab group unmounts when a push tap replaces it with
+	// a game screen, and that's the session where the badge needs clearing most.
+	useAppBadge()
 
 	useEffect(() => {
 		async function applyUpdate() {
