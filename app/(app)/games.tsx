@@ -22,6 +22,8 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+const TURN_BADGE_SIZE = 10
+
 export default function GamesScreen() {
 	const { user } = useAuth()
 	const router = useRouter()
@@ -229,6 +231,14 @@ function GameRow({
 			return profilesById[id]?.username ?? '…'
 		})
 		.join(', ')
+
+	// Same approximation as the game header's tab badge (see
+	// `lib/catan/GameTitle.tsx`): `games.current_turn` is the only turn field
+	// readable without each game's `game_states` row, so it lags during a
+	// special build phase and is `null` for the whole bonus-selection phase.
+	const myIdx = meId ? game.player_order.indexOf(meId) : -1
+	const myTurn = myIdx >= 0 && game.current_turn === myIdx
+
 	return (
 		<Pressable
 			onPress={onPress}
@@ -243,6 +253,7 @@ function GameRow({
 			<Text style={styles.rowText} numberOfLines={1}>
 				{names}
 			</Text>
+			{myTurn && <View style={styles.turnBadge} />}
 			<Ionicons
 				name="chevron-forward"
 				size={20}
@@ -414,6 +425,12 @@ function makeStyles(colors: ColorScheme) {
 			flex: 1,
 			fontSize: font.md,
 			color: colors.text,
+		},
+		turnBadge: {
+			width: TURN_BADGE_SIZE,
+			height: TURN_BADGE_SIZE,
+			borderRadius: TURN_BADGE_SIZE / 2,
+			backgroundColor: colors.accent,
 		},
 		historyHeader: {
 			flexDirection: 'row',
