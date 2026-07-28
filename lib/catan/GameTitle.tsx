@@ -89,11 +89,18 @@ function GameTabs({ games, currentId }: { games: Game[]; currentId: string }) {
 					onLayout={(x) => {
 						xById.current[game.id] = x
 					}}
-					// Replace rather than push, so Back always returns to the
-					// Games list however many tabs were tapped through.
+					// `setParams`, not `replace`. Both leave Back returning to
+					// the Games list however many tabs were tapped through,
+					// but React Navigation's REPLACE swaps the route object
+					// for one with a fresh key — which unmounts and remounts
+					// the whole `/game/[id]` screen, providers included. This
+					// updates the id on the route that's already there, so the
+					// screen stays mounted and only the param changes, which
+					// is what lets the body's sliding areas animate the switch
+					// rather than rebuild through it.
 					onPress={() => {
 						if (game.id === currentId) return
-						router.replace(`/game/${game.id}`)
+						router.setParams({ id: game.id })
 					}}
 				/>
 			))}

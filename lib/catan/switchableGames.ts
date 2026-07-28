@@ -9,8 +9,9 @@
 // too many tabs. `profiles.spectating` records the ones I've actually opened —
 // see `.claude/specs/spectating.md`.
 //
-// Shared by the tab strip and the body's slide transition so the two agree on
-// tab order, and the slide direction always matches the direction the tapped
+// Shared by the tab strip (`GameTitle.tsx`) and the game screen's zone sliders
+// (`app/game/[id].tsx`, which give each of these games a pane) so the two agree
+// on tab order, and the slide direction always matches the direction the tapped
 // tab sits in.
 
 import { useGamesStore, type Game } from '@/lib/stores/useGamesStore'

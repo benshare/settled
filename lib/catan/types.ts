@@ -367,6 +367,11 @@ export type PlayerState = {
 	// NOT in `resources`, so they're immune to steal and don't count toward
 	// the 7-discard hand limit. Sparse — only written for investor players.
 	investments?: Partial<Record<Resource, number>>
+	// Admin testing flag, set by hand in the `game_states.players` row — never
+	// written by the app. A dev player may name their own dice total on the
+	// roll bar (see `DevRollPicker`); the edge function's `handleRoll` honours
+	// a `total` override only for a seat carrying this.
+	dev?: boolean
 	// `haunt`: two vertices the player secretly picked at post_placement.
 	// Soft-hidden — stored in shared state but never rendered for other
 	// players (same model as opponents' hidden VP dev cards). Entries are
@@ -591,6 +596,51 @@ export type GameState = {
 	// Monotonic turn counter. Increments on each `end_turn`. Used to enforce
 	// "can't play dev card on turn bought" (stamped on DevCardEntry.purchasedTurn).
 	round: number
+	// The one-step undo snapshot, or null when the last action wasn't undoable.
+	// Read-only to the client — it exists so the back arrow's availability comes
+	// off the same row everything else does. See `UndoSnapshot`.
+	undo?: UndoSnapshot | null
+}
+
+// Actions a player may take back. The rule: solo and information-free. Rolling,
+// buying or playing a dev card, and anything involving another player are all
+// excluded — taking them reveals something, so unwinding them would leak it.
+// Mirrored in the edge function, which is the authority. See
+// `.claude/specs/undo.md`.
+export const UNDOABLE_ACTIONS = [
+	'build_road',
+	'build_settlement',
+	'build_city',
+	'build_super_city',
+	'bank_trade',
+	'liquidate',
+	'invest',
+	'buy_carpenter_vp',
+	'tap_knight',
+	'place_fence_token',
+	'place_explorer_road',
+] as const
+
+export type UndoableAction = (typeof UNDOABLE_ACTIONS)[number]
+
+// A snapshot of the `game_states` row as it was immediately before an undoable
+// action, written by the game-service dispatcher. Undo restores the row rather
+// than computing an inverse: a single road build can move Longest Road, consume
+// a fence token, and apply a smith/bricklayer cost substitution, and an inverse
+// would have to keep up with every bonus we add.
+export type UndoSnapshot = {
+	action: UndoableAction
+	// Seat that acted. Only they may undo — `post_placement` is a parallel
+	// phase, so the one snapshot slot can belong to any seat.
+	player: number
+	at: string
+	// `games.events` length BEFORE the action. Undo truncates back to it, which
+	// is what makes the undone action vanish from the log.
+	eventsLen: number
+	// The mutable `game_states` columns, under their column names. `hexes` and
+	// `variant` are omitted (nothing mutates them); `games.current_turn` is
+	// omitted because no undoable action writes it.
+	state: Record<string, unknown>
 }
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }

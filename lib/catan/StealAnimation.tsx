@@ -1,6 +1,7 @@
 // Roulette-style reveal of which resource was stolen by the robber. Mounted
 // only on the thief's and victim's clients; bystanders never see it (they
-// don't have the data — see app/game/[id].tsx for the detection logic).
+// don't have the data — see app/game/gameScreenContext.tsx for the detection
+// logic).
 //
 // The victim's pre-steal hand is laid out face-down; an indicator hops
 // through the cards with decelerating intervals and lands on the stolen one,

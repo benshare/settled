@@ -12,7 +12,14 @@
 // currently sliding out gets the outgoing transform on top of that. `overflow:
 // 'hidden'` clips the travelling panes to the area's own edges.
 
-import { Children, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+	Children,
+	isValidElement,
+	useEffect,
+	useRef,
+	useState,
+	type ReactNode,
+} from 'react'
 import {
 	StyleSheet,
 	View,
@@ -37,11 +44,16 @@ export function SlidingArea({
 	index,
 	duration = DEFAULT_DURATION,
 	style,
+	paneStyle,
 	children,
 }: {
 	index: number
 	duration?: number
 	style?: StyleProp<ViewStyle>
+	// Applied to every pane wrapper. Panes are content-height by default (the
+	// active one drives the container); pass `flex: 1` for an area that instead
+	// has to fill a fixed-height container.
+	paneStyle?: StyleProp<ViewStyle>
 	children: ReactNode
 }) {
 	const panes = Children.toArray(children)
@@ -101,11 +113,17 @@ export function SlidingArea({
 	return (
 		<View style={[styles.container, style]} onLayout={onLayout}>
 			{panes.map((pane, i) => {
+				// Keyed by the child's own key where it has one, so a caller
+				// whose panes move between positions (rather than staying put
+				// and changing selection) keeps them mounted. Falls back to the
+				// position for the ordinary fixed-tabs case.
+				const key =
+					isValidElement(pane) && pane.key != null ? pane.key : i
 				if (i === active) {
 					return (
 						<Animated.View
-							key={i}
-							style={[styles.active, incomingStyle]}
+							key={key}
+							style={[styles.active, paneStyle, incomingStyle]}
 						>
 							{pane}
 						</Animated.View>
@@ -117,8 +135,8 @@ export function SlidingArea({
 					i === outgoing ? outgoingStyle : styles.hidden
 				return (
 					<Animated.View
-						key={i}
-						style={[styles.parked, parkedStyle]}
+						key={key}
+						style={[styles.parked, paneStyle, parkedStyle]}
 						pointerEvents="none"
 					>
 						{pane}

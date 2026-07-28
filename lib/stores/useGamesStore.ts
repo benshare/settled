@@ -390,7 +390,9 @@ type GamesStore = {
 	placeSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
 	placeRoad: (gameId: string, edge: string) => Promise<ActionResult>
 
-	roll: (gameId: string) => Promise<RollResult>
+	// `forcedTotal` is the admin-testing override; the edge function honours it
+	// only for a seat whose player row carries `dev: true`.
+	roll: (gameId: string, forcedTotal?: number) => Promise<RollResult>
 	confirmRoll: (gameId: string) => Promise<RollResult>
 	rerollDice: (gameId: string) => Promise<RollResult>
 	endTurn: (gameId: string) => Promise<ActionResult>
@@ -399,6 +401,12 @@ type GamesStore = {
 	// Finish your slot in a special build phase (5-6 player games). Pops you
 	// off the build queue; advances to the next builder or the next roll.
 	endSpecialBuild: (gameId: string) => Promise<ActionResult>
+
+	// Take back your own last action, if it was solo and information-free
+	// (`UNDOABLE_ACTIONS`). The edge function restores the pre-action snapshot
+	// it stashed on `game_states.undo`; availability is read off that column,
+	// never derived here. See `.claude/specs/undo.md`.
+	undo: (gameId: string) => Promise<ActionResult>
 
 	// `useBricklayer`: pay 4 Brick instead of the standard cost. Ignored by
 	// the edge if the caller doesn't have the bricklayer bonus.
@@ -818,9 +826,9 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async roll(gameId) {
+	async roll(gameId, forcedTotal) {
 		const { error, data } = await callGameService(
-			{ action: 'roll', game_id: gameId },
+			{ action: 'roll', game_id: gameId, total: forcedTotal },
 			"Couldn't roll"
 		)
 		if (error) return { error }
@@ -882,6 +890,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'end_special_build', game_id: gameId },
 			"Couldn't finish building"
+		)
+	},
+
+	async undo(gameId) {
+		return callGameService(
+			{ action: 'undo', game_id: gameId },
+			"Couldn't undo"
 		)
 	},
 
