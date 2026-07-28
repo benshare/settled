@@ -1,9 +1,6 @@
 import { useAuth } from '@/lib/auth'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
-import {
-	ensurePermissionAndRegister,
-	useNotificationRouting,
-} from '@/lib/notifications'
+import { ensurePermissionAndRegister } from '@/lib/notifications'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import { useTheme } from '@/lib/ThemeContext'
@@ -20,12 +17,12 @@ export default function AppLayout() {
 	const { colors } = useTheme()
 	const { user } = useAuth()
 
+	// Registration belongs here — it is about being signed in and inside the
+	// app. Routing tapped notifications is not, and lives at the root.
 	useEffect(() => {
 		if (!user?.id) return
 		ensurePermissionAndRegister(user.id)
 	}, [user?.id])
-
-	useNotificationRouting()
 
 	return (
 		<Tabs
