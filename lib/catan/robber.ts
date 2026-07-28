@@ -41,6 +41,19 @@ export function requiredDiscards(
 	return out
 }
 
+// A discard that takes the whole hand isn't a choice — there is exactly one
+// valid selection. Only `avarice` ever produces one: every other required
+// count is floor(effective / 2), which is strictly below the hand size, and a
+// shepherd under avarice still chooses (sheep are exempt from the count but
+// not from the hand). The server resolves these itself so the player never
+// gets a discard prompt with no decision in it.
+export function isForcedFullDiscard(
+	hand: ResourceHand,
+	required: number
+): boolean {
+	return required > 0 && required === handSize(hand)
+}
+
 export function isValidDiscardSelection(
 	hand: ResourceHand,
 	selection: ResourceHand,

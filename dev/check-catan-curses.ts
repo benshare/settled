@@ -34,7 +34,7 @@ import { winVPThresholdFor } from '../lib/catan/bonus'
 import { findWinner, recomputeLargestArmy } from '../lib/catan/dev'
 import { initialGameState } from '../lib/catan/generate'
 import { availableBankOptions, ratioOf } from '../lib/catan/ports'
-import { requiredDiscards } from '../lib/catan/robber'
+import { isForcedFullDiscard, requiredDiscards } from '../lib/catan/robber'
 import type { GameState, PlayerState, ResourceHand } from '../lib/catan/types'
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -356,6 +356,28 @@ function testAvariceFullHandDiscard() {
 	const req = requiredDiscards(players)
 	equal(req[0], 10, 'avarice discards entire 10-card hand')
 	equal(req[1], 5, 'baseline discards floor(10/2)=5')
+
+	// Nothing to choose, so the server takes it rather than prompting.
+	assert(
+		isForcedFullDiscard(players[0].resources, req[0]!),
+		'avarice full-hand discard is forced'
+	)
+	assert(
+		!isForcedFullDiscard(players[1].resources, req[1]!),
+		'a half discard is a real choice'
+	)
+
+	// A shepherd under avarice owes total − sheep, so the sheep make it a
+	// choice again (they can be discarded, they just don't count).
+	const shepherd = players.map((p, i) =>
+		i === 0 ? { ...p, bonus: 'shepherd' as const } : p
+	)
+	const shepReq = requiredDiscards(shepherd)
+	equal(shepReq[0], 8, 'avarice shepherd owes total − sheep')
+	assert(
+		!isForcedFullDiscard(shepherd[0].resources, shepReq[0]!),
+		'avarice shepherd still chooses'
+	)
 }
 
 // --- power ------------------------------------------------------------------

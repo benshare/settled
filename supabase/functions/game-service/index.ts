@@ -2240,6 +2240,43 @@ function hoarderKeptEvents(players: PlayerState[]): unknown[] {
 	return out
 }
 
+// A discard that takes the whole hand isn't a choice — there is exactly one
+// valid selection. Only `avarice` ever produces one: every other required
+// count is floor(effective / 2), which is strictly below the hand size, and a
+// shepherd under avarice still chooses (sheep are exempt from the count but
+// not from the hand). Resolve those here so the player never gets a discard
+// prompt with no decision in it — and so a table where the avarice player was
+// the only one over the limit skips the discard phase entirely.
+function isForcedFullDiscard(hand: ResourceHand, required: number): boolean {
+	return required > 0 && required === handSize(hand)
+}
+
+function applyForcedDiscards(
+	players: PlayerState[],
+	pending: Record<number, number>
+): {
+	players: PlayerState[]
+	pending: Record<number, number>
+	events: unknown[]
+} {
+	const nextPending: Record<number, number> = { ...pending }
+	const events: unknown[] = []
+	const nextPlayers = players.map((p, i) => {
+		const required = nextPending[i]
+		if (required === undefined) return p
+		if (!isForcedFullDiscard(p.resources, required)) return p
+		delete nextPending[i]
+		events.push({
+			kind: 'discarded',
+			player: i,
+			count: required,
+			at: new Date().toISOString(),
+		})
+		return { ...p, resources: emptyHand() }
+	})
+	return { players: nextPlayers, pending: nextPending, events }
+}
+
 function isValidDiscardSelection(
 	hand: ResourceHand,
 	selection: ResourceHand,
@@ -4451,20 +4488,32 @@ async function applyRollOutcome(
 		// production is applied once every owed discard has been submitted
 		// (see handleDiscard), or immediately when nobody owes one. The
 		// investor's token payout rides the same deferral.
-		const pending = requiredDiscards(state.players)
 		const hoarderEvents = hoarderKeptEvents(state.players)
+		// A player owing their entire hand (avarice) has nothing to decide, so
+		// their discard is taken here rather than prompted for. That can empty
+		// the pending set outright, in which case the discard phase is skipped.
+		const forced = applyForcedDiscards(
+			state.players,
+			requiredDiscards(state.players)
+		)
+		const pending = forced.pending
+		const afterForced: GameState = { ...state, players: forced.players }
 		const resume: ResumePhase = { kind: 'main', roll: dice, trade: null }
 		const hasDiscards = Object.keys(pending).length > 0
 		const nomadResult = hasDiscards
-			? { players: state.players, events: [] as unknown[] }
-			: applyNomadProduce(state)
+			? { players: forced.players, events: [] as unknown[] }
+			: applyNomadProduce(afterForced)
 		const investorResult = hasDiscards
 			? { players: nomadResult.players, events: [] as unknown[] }
 			: applyInvestorPayout(
-					{ ...state, players: nomadResult.players },
+					{ ...afterForced, players: nomadResult.players },
 					activeIdx
 				)
-		const rollEvents = [...nomadResult.events, ...investorResult.events]
+		const rollEvents = [
+			...forced.events,
+			...nomadResult.events,
+			...investorResult.events,
+		]
 		const nextPhase: Phase = hasDiscards
 			? { kind: 'discard', resume, pending, from7: true }
 			: { kind: 'move_robber', resume, from7: true }
