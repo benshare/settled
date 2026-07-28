@@ -3,7 +3,14 @@
 // first failure. One `test*` function per curse.
 
 import { HEXES, adjacentVertices } from '../lib/catan/board'
-import type { CurseId } from '../lib/catan/bonuses'
+import {
+	CURSE_POOL,
+	CURSE_SIZE_VARIANTS,
+	curseById,
+	curseDescriptionFor,
+	isCurseAvailableAt,
+	type CurseId,
+} from '../lib/catan/bonuses'
 import {
 	canBuildMoreCities,
 	canBuildMoreRoads,
@@ -35,7 +42,12 @@ import { findWinner, recomputeLargestArmy } from '../lib/catan/dev'
 import { initialGameState } from '../lib/catan/generate'
 import { availableBankOptions, ratioOf } from '../lib/catan/ports'
 import { isForcedFullDiscard, requiredDiscards } from '../lib/catan/robber'
-import type { GameState, PlayerState, ResourceHand } from '../lib/catan/types'
+import {
+	GAME_SIZES,
+	type GameState,
+	type PlayerState,
+	type ResourceHand,
+} from '../lib/catan/types'
 
 function assert(cond: unknown, msg: string): asserts cond {
 	if (!cond) throw new Error(`assert: ${msg}`)
@@ -469,6 +481,46 @@ function testCurseOfSparse() {
 	)
 }
 
+// --- game size --------------------------------------------------------------
+//
+// The curse variant table ships empty. These assert the mechanism around it:
+// valid keys, description fallback, and availability defaulting to dealable.
+// Per-curse tuning gets its own assertions as each curse is retuned.
+
+function testCurseSizeVariantTable() {
+	for (const [id, bySize] of Object.entries(CURSE_SIZE_VARIANTS)) {
+		assert(curseById(id), `variant for unknown curse ${id}`)
+		for (const [size, variant] of Object.entries(bySize ?? {})) {
+			assert(
+				(GAME_SIZES as readonly string[]).includes(size),
+				`${id}: unknown size ${size}`
+			)
+			assert(
+				Object.keys(variant).length > 0,
+				`${id}/${size}: empty variant`
+			)
+		}
+	}
+}
+
+function testCurseSizeDescriptions() {
+	for (const c of CURSE_POOL) {
+		for (const size of GAME_SIZES) {
+			const declared = CURSE_SIZE_VARIANTS[c.id]?.[size]?.description
+			equal(
+				curseDescriptionFor(c.id, size),
+				declared ?? c.description,
+				`${c.id}/${size} description`
+			)
+			equal(
+				isCurseAvailableAt(c.id, size),
+				CURSE_SIZE_VARIANTS[c.id]?.[size]?.available !== false,
+				`${c.id}/${size} availability`
+			)
+		}
+	}
+}
+
 // --- runner -----------------------------------------------------------------
 
 const tests: [string, () => void][] = [
@@ -484,6 +536,8 @@ const tests: [string, () => void][] = [
 	['youth touched set', testYouthTouchedSet],
 	['provinciality 5:1', testProvincialityBankOption],
 	['curseOf sparse', testCurseOfSparse],
+	['size: variant table shape', testCurseSizeVariantTable],
+	['size: descriptions + availability', testCurseSizeDescriptions],
 ]
 for (const [name, fn] of tests) {
 	fn()

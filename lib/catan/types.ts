@@ -24,6 +24,20 @@ export function variantForPlayerCount(playerCount: number): Variant {
 	return playerCount >= 5 ? 'expanded' : 'standard'
 }
 
+// How big the table is, for bonus / curse tuning. Deliberately separate from
+// `Variant`: a card may want to read or behave differently at 2 players, where
+// the board does not change. Derived from player count, never persisted — see
+// `bonuses/sizes.ts` for the per-card overrides keyed by this.
+export const GAME_SIZES = ['small', 'standard', 'expanded'] as const
+export type GameSize = (typeof GAME_SIZES)[number]
+
+// 'standard' (3-4) is the baseline every card's pool description is written
+// against; 'small' is heads-up, 'expanded' is the 5-6 player table.
+export function gameSizeFor(playerCount: number): GameSize {
+	if (playerCount <= 2) return 'small'
+	return playerCount >= 5 ? 'expanded' : 'standard'
+}
+
 // Max players supported (expanded board tops out at 6).
 export const MAX_PLAYERS = 6
 

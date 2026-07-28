@@ -24,9 +24,15 @@ import Animated, {
 	withTiming,
 } from 'react-native-reanimated'
 import type { Profile } from '../stores/useProfileStore'
-import { bonusById, curseById, type BonusId } from './bonuses'
+import {
+	bonusById,
+	bonusDescriptionFor,
+	curseById,
+	curseDescriptionFor,
+	type BonusId,
+} from './bonuses'
 import { playerColors } from './palette'
-import type { SelectBonusHand } from './types'
+import { gameSizeFor, type SelectBonusHand } from './types'
 
 const ANIM_DURATION = 240
 
@@ -57,6 +63,7 @@ export function BonusSelection({
 }: BonusSelectionProps) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
+	const size = gameSizeFor(playerOrder.length)
 
 	// Track the player's in-flight pick separately from `hand.chosen` so the
 	// UI can show a selected state before the realtime update lands.
@@ -191,7 +198,10 @@ export function BonusSelection({
 														styles.cardDescription
 													}
 												>
-													{b.description}
+													{bonusDescriptionFor(
+														bonusId,
+														size
+													)}
 												</Text>
 											</Pressable>
 										)
@@ -210,7 +220,7 @@ export function BonusSelection({
 										{curseById(hand.curse)!.title}
 									</Text>
 									<Text style={styles.cardDescription}>
-										{curseById(hand.curse)!.description}
+										{curseDescriptionFor(hand.curse, size)}
 									</Text>
 								</View>
 

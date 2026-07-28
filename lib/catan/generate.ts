@@ -11,11 +11,13 @@ import {
 	BONUS_POOL,
 	CURSE_POOL,
 	isBannedCombo,
+	isBonusAvailableAt,
+	isCurseAvailableAt,
 	type BonusId,
-	type CurseId,
 } from './bonuses'
 import { buildInitialDevDeck } from './dev'
 import {
+	gameSizeFor,
 	type GameConfig,
 	type GameState,
 	type HexData,
@@ -233,21 +235,37 @@ function sheepPortsAdjacent(kinds: readonly PortKind[]): boolean {
 // Deal every player's select_bonus hand at once. Two bonuses + one curse per
 // player, all drawn WITHOUT replacement across the whole table, so no bonus and
 // no curse is ever offered to two players or twice to the same player. Bonuses
-// come from the subset of BONUS_POOL whose `set` is in `bonusSets`, falling
-// back to the full pool when the filter produces nothing.
+// come from the subset of BONUS_POOL whose `set` is in `bonusSets`.
 //
 // Curses go out first so that, when `bannedCombos` is on, each player's two
 // bonuses can be drawn from what's compatible with the curse they already hold
 // (see BANNED_BONUSES_BY_CURSE).
+//
+// Cards withheld at this table size (`sizes.ts`, `available: false`) are
+// dropped before the set filter. Both filters widen their net rather than
+// failing to deal: an empty set intersection falls back to everything
+// available, and a pool too small to deal from falls back to the full pool.
 export function dealBonusHands(
 	playerCount: number,
 	bonusSets: readonly string[],
 	bannedCombos = true
 ): Record<number, SelectBonusHand> {
-	const filtered = BONUS_POOL.filter((b) => bonusSets.includes(b.set))
-	const bonusPool = filtered.length > 0 ? filtered : BONUS_POOL
-	const drawBonus = dealer(bonusPool.map((b) => b.id as BonusId))
-	const drawCurse = dealer(CURSE_POOL.map((c) => c.id as CurseId))
+	const size = gameSizeFor(playerCount)
+	const available = BONUS_POOL.filter((b) => isBonusAvailableAt(b.id, size))
+	const inSets = available.filter((b) => bonusSets.includes(b.set))
+	const bonusPool = pickPool(
+		inSets.map((b) => b.id),
+		available.map((b) => b.id),
+		BONUS_POOL.map((b) => b.id)
+	)
+	const cursePool = pickPool(
+		CURSE_POOL.filter((c) => isCurseAvailableAt(c.id, size)).map(
+			(c) => c.id
+		),
+		CURSE_POOL.map((c) => c.id)
+	)
+	const drawBonus = dealer(bonusPool)
+	const drawCurse = dealer(cursePool)
 	const hands: Record<number, SelectBonusHand> = {}
 	const curses = Array.from({ length: playerCount }, () => drawCurse())
 	for (let i = 0; i < playerCount; i++) {
@@ -262,6 +280,16 @@ export function dealBonusHands(
 		}
 	}
 	return hands
+}
+
+// First candidate pool with enough cards to deal from, in order of preference.
+// `dealer` needs two, and every fallback ends at an unfiltered pool, so a
+// filter can narrow the deal but never break it.
+function pickPool<T>(...candidates: T[][]): T[] {
+	return (
+		candidates.find((c) => c.length >= 2) ??
+		candidates[candidates.length - 1]
+	)
 }
 
 // Deals from a shuffled pass over `pool`, reshuffling only once the pass is

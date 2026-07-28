@@ -11,12 +11,17 @@ import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES } from './board'
 import { INVEST_TRIO, INVESTOR_MAX_TOKENS } from './bonus'
-import { bonusById, curseById } from './bonuses'
+import {
+	bonusById,
+	bonusDescriptionFor,
+	curseById,
+	curseDescriptionFor,
+} from './bonuses'
 import { knightsPlayed } from './dev'
 import { longestRoadFor } from './longestRoad'
 import { playerColors } from './palette'
 import { CardFan, type CardFanEntry } from './ResourceHand'
-import type { GameState, PlayerState } from './types'
+import { gameSizeFor, type GameState, type PlayerState } from './types'
 
 export type PlayerDetailOverlayProps = {
 	playerIdx: number | null
@@ -94,6 +99,7 @@ function Body({
 	const cards = sumResources(player?.resources)
 	const bonus = player?.bonus ? bonusById(player.bonus) : undefined
 	const curse = player?.curse ? curseById(player.curse) : undefined
+	const size = gameSizeFor(gameState.players.length)
 	const showBonuses = gameState.config.bonuses
 	const showDevCards = gameState.config.devCards
 	const devCount = player?.devCards?.length ?? 0
@@ -167,7 +173,7 @@ function Body({
 							icon={bonus.icon}
 							iconColor={colors.brand}
 							title={bonus.title}
-							description={bonus.description}
+							description={bonusDescriptionFor(bonus.id, size)}
 							tag="Bonus"
 							tagColor={colors.brand}
 							borderColor={colors.brand}
@@ -189,7 +195,7 @@ function Body({
 							icon={curse.icon}
 							iconColor={colors.error}
 							title={curse.title}
-							description={curse.description}
+							description={curseDescriptionFor(curse.id, size)}
 							tag="Curse"
 							tagColor={colors.error}
 							borderColor={colors.error}

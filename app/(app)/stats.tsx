@@ -2,10 +2,15 @@ import { useAuth } from '@/lib/auth'
 import {
 	BONUS_POOL,
 	bonusById,
+	bonusDescriptionFor,
 	CURSE_POOL,
+	curseDescriptionFor,
+	isBonusAvailableAt,
+	isCurseAvailableAt,
 	type Bonus,
 	type Curse,
 } from '@/lib/catan/bonuses'
+import type { GameSize } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { SlidingArea } from '@/lib/modules/SlidingArea'
 import { computeStats, type BonusRate } from '@/lib/stats'
@@ -38,6 +43,19 @@ const BONUS_SETS: { set: Bonus['set']; label: string }[] = [
 	{ set: '2', label: 'Set 2' },
 	{ set: '3', label: 'Set 3' },
 ]
+
+// Player counts behind each GameSize, for the catalog's size picker. The
+// labels double as the phrasing in a withheld card's note ("Not dealt in
+// 2-player games").
+const CATALOG_SIZES: { size: GameSize; label: string }[] = [
+	{ size: 'small', label: '2-player' },
+	{ size: 'standard', label: '3-4 player' },
+	{ size: 'expanded', label: '5-6 player' },
+]
+
+function sizeLabelFor(size: GameSize): string {
+	return CATALOG_SIZES.find((s) => s.size === size)?.label ?? ''
+}
 
 // Grid width at or above which the catalog uses 3 columns; narrower (phones in
 // portrait) drops to 2.
@@ -213,6 +231,10 @@ function StatsTab({
 function CatalogTab() {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
+	// The catalog is read outside any game, so the table size it describes is
+	// the reader's choice. Defaults to the 3-4 player baseline the pool
+	// descriptions are written against.
+	const [size, setSize] = useState<GameSize>('standard')
 	// Measure the grid's real width rather than deriving it from the window —
 	// safe-area insets / max-width can leave the content narrower than the
 	// screen, which would misjudge how many columns fit.
@@ -229,6 +251,7 @@ function CatalogTab() {
 			style={styles.pane}
 			onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
 		>
+			<SizeSelector size={size} onSize={setSize} />
 			{cardWidth > 0 && (
 				<>
 					{BONUS_SETS.map(({ set, label }) => (
@@ -240,6 +263,14 @@ function CatalogTab() {
 										<CardCell
 											key={b.id}
 											card={b}
+											description={bonusDescriptionFor(
+												b.id,
+												size
+											)}
+											unavailable={
+												!isBonusAvailableAt(b.id, size)
+											}
+											size={size}
 											tint={colors.success}
 											width={cardWidth}
 										/>
@@ -256,6 +287,14 @@ function CatalogTab() {
 								<CardCell
 									key={c.id}
 									card={c}
+									description={curseDescriptionFor(
+										c.id,
+										size
+									)}
+									unavailable={
+										!isCurseAvailableAt(c.id, size)
+									}
+									size={size}
 									tint={colors.error}
 									width={cardWidth}
 								/>
@@ -268,24 +307,79 @@ function CatalogTab() {
 	)
 }
 
+// Segmented pill row picking which table size the catalog describes.
+function SizeSelector({
+	size,
+	onSize,
+}: {
+	size: GameSize
+	onSize: (s: GameSize) => void
+}) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View style={styles.sizeControl}>
+			{CATALOG_SIZES.map((s) => {
+				const active = s.size === size
+				return (
+					<Pressable
+						key={s.size}
+						style={[
+							styles.sizePill,
+							active && styles.sizePillActive,
+						]}
+						onPress={() => onSize(s.size)}
+					>
+						<Text
+							style={[
+								styles.sizeLabel,
+								active && styles.sizeLabelActive,
+							]}
+						>
+							{s.label}
+						</Text>
+					</Pressable>
+				)
+			})}
+		</View>
+	)
+}
+
 function CardCell({
 	card,
+	description,
+	unavailable,
+	size,
 	tint,
 	width,
 }: {
 	card: Bonus | Curse
+	description: string
+	unavailable: boolean
+	size: GameSize
 	tint: string
 	width: number
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	return (
-		<View style={[styles.cardCell, { width }]}>
+		<View
+			style={[
+				styles.cardCell,
+				{ width },
+				unavailable && styles.cardCellUnavailable,
+			]}
+		>
 			<View style={styles.cardIcon}>
 				<Ionicons name={card.icon} size={22} color={tint} />
 			</View>
 			<Text style={styles.cardTitle}>{card.title}</Text>
-			<Text style={styles.cardDescription}>{card.description}</Text>
+			<Text style={styles.cardDescription}>{description}</Text>
+			{unavailable && (
+				<Text style={styles.cardUnavailable}>
+					Not dealt in {sizeLabelFor(size)} games
+				</Text>
+			)}
 		</View>
 	)
 }
@@ -496,6 +590,32 @@ function makeStyles(colors: ColorScheme) {
 			flexWrap: 'wrap',
 			gap: spacing.sm,
 		},
+		sizeControl: {
+			flexDirection: 'row',
+			borderRadius: radius.full,
+			padding: 3,
+			gap: 2,
+			backgroundColor: colors.cardAlt,
+			borderWidth: 1,
+			borderColor: colors.border,
+		},
+		sizePill: {
+			flex: 1,
+			paddingVertical: 6,
+			borderRadius: radius.full,
+			alignItems: 'center',
+		},
+		sizePillActive: {
+			backgroundColor: colors.brand,
+		},
+		sizeLabel: {
+			fontSize: font.xs,
+			fontWeight: '600',
+			color: colors.textSecondary,
+		},
+		sizeLabelActive: {
+			color: colors.white,
+		},
 		cardCell: {
 			// Width is set inline (fixed column width). No fixed height: the
 			// grid's default cross-axis stretch makes every card in a row match
@@ -507,6 +627,15 @@ function makeStyles(colors: ColorScheme) {
 			borderColor: colors.border,
 			backgroundColor: colors.card,
 			borderRadius: radius.md,
+		},
+		cardCellUnavailable: {
+			opacity: 0.5,
+		},
+		cardUnavailable: {
+			fontSize: font.xs,
+			fontStyle: 'italic',
+			color: colors.textMuted,
+			textAlign: 'center',
 		},
 		cardIcon: {
 			width: 40,

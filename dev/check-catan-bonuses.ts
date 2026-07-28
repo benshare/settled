@@ -5,7 +5,12 @@
 import { boardFor, type Vertex } from '../lib/catan/board'
 import {
 	BANNED_BONUSES_BY_CURSE,
+	BONUS_POOL,
+	BONUS_SIZE_VARIANTS,
+	bonusDescriptionFor,
+	bonusById,
 	isBannedCombo,
+	isBonusAvailableAt,
 	type BonusId,
 } from '../lib/catan/bonuses'
 import {
@@ -75,7 +80,14 @@ import {
 } from '../lib/catan/ports'
 import { distributeResources } from '../lib/catan/roll'
 import { requiredDiscards } from '../lib/catan/robber'
-import type { GameState, PlayerState, ResourceHand } from '../lib/catan/types'
+import {
+	GAME_SIZES,
+	gameSizeFor,
+	type GameSize,
+	type GameState,
+	type PlayerState,
+	type ResourceHand,
+} from '../lib/catan/types'
 
 function assert(cond: unknown, msg: string): asserts cond {
 	if (!cond) throw new Error(`assert: ${msg}`)
@@ -849,9 +861,23 @@ function testDealNoDuplicates() {
 	}
 }
 
-// The banned table ships empty, so stub a ban in and confirm the deal honours
-// it — and that flipping `bannedCombos` off lets the pairing through again.
+// The real table first, over a pool wide enough that the dealer never has to
+// fall back past the ban filter (all three sets = 27 bonuses for 8 offers).
+// Then a stubbed ban, to confirm the deal honours whatever is in the table —
+// and that flipping `bannedCombos` off lets the pairing through again.
 function testDealBannedCombos() {
+	for (let trial = 0; trial < 200; trial++) {
+		const hands = dealBonusHands(4, ['1', '2', '3'], true)
+		for (let i = 0; i < 4; i++) {
+			for (const b of hands[i].offered) {
+				assert(
+					!isBannedCombo(hands[i].curse, b),
+					`${b} offered alongside ${hands[i].curse}`
+				)
+			}
+		}
+	}
+
 	const banned = BANNED_BONUSES_BY_CURSE as Record<string, readonly BonusId[]>
 	const original = banned.ambition
 	banned.ambition = ['gambler', 'veteran', 'hoarder']
@@ -881,6 +907,111 @@ function testDealBannedCombos() {
 		assert(sawBannedWithoutRule, 'bannedCombos off still deals the pairing')
 	} finally {
 		banned.ambition = original
+	}
+}
+
+// --- Game size --------------------------------------------------------------
+
+function testGameSizeBoundaries() {
+	equal(gameSizeFor(2), 'small', '2 players → small')
+	equal(gameSizeFor(3), 'standard', '3 players → standard')
+	equal(gameSizeFor(4), 'standard', '4 players → standard')
+	equal(gameSizeFor(5), 'expanded', '5 players → expanded')
+	equal(gameSizeFor(6), 'expanded', '6 players → expanded')
+}
+
+// The variant table ships empty; whatever lands in it later has to be a real
+// card, a real size, and actually say something.
+function testSizeVariantTable() {
+	for (const [id, bySize] of Object.entries(BONUS_SIZE_VARIANTS)) {
+		assert(bonusById(id), `variant for unknown bonus ${id}`)
+		for (const [size, variant] of Object.entries(bySize ?? {})) {
+			assert(
+				(GAME_SIZES as readonly string[]).includes(size),
+				`${id}: unknown size ${size}`
+			)
+			assert(
+				Object.keys(variant).length > 0,
+				`${id}/${size}: empty variant`
+			)
+		}
+	}
+}
+
+// A size with no entry reads the pool's (3-4 player) description; an entry
+// overrides it for that size only.
+function testSizeDescriptions() {
+	for (const b of BONUS_POOL) {
+		for (const size of GAME_SIZES) {
+			const declared = BONUS_SIZE_VARIANTS[b.id]?.[size]?.description
+			equal(
+				bonusDescriptionFor(b.id, size),
+				declared ?? b.description,
+				`${b.id}/${size} description`
+			)
+		}
+	}
+	withStubbedVariant(
+		'gambler',
+		'small',
+		{ description: 'Reroll twice.' },
+		() => {
+			equal(
+				bonusDescriptionFor('gambler', 'small'),
+				'Reroll twice.',
+				'stubbed small description'
+			)
+			equal(
+				bonusDescriptionFor('gambler', 'standard'),
+				bonusById('gambler')!.description,
+				'other sizes still fall back'
+			)
+		}
+	)
+}
+
+// The table ships with nothing withheld, so stub an exclusion in and confirm
+// the deal honours it at that size and only that size.
+function testDealSizeAvailability() {
+	withStubbedVariant('haunt', 'small', { available: false }, () => {
+		assert(!isBonusAvailableAt('haunt', 'small'), 'stub reads back')
+		assert(
+			isBonusAvailableAt('haunt', 'standard'),
+			'other sizes unaffected'
+		)
+		let sawElsewhere = false
+		for (let trial = 0; trial < 200; trial++) {
+			for (const hand of Object.values(dealBonusHands(2, ['3']))) {
+				assert(
+					!hand.offered.includes('haunt'),
+					'withheld bonus offered at that size'
+				)
+			}
+			for (const hand of Object.values(dealBonusHands(4, ['3']))) {
+				if (hand.offered.includes('haunt')) sawElsewhere = true
+			}
+		}
+		assert(sawElsewhere, 'still dealt at sizes that allow it')
+	})
+}
+
+function withStubbedVariant(
+	id: BonusId,
+	size: GameSize,
+	variant: { description?: string; available?: boolean },
+	fn: () => void
+) {
+	const table = BONUS_SIZE_VARIANTS as Record<
+		string,
+		Record<string, typeof variant> | undefined
+	>
+	const original = table[id]
+	table[id] = { ...(original ?? {}), [size]: variant }
+	try {
+		fn()
+	} finally {
+		if (original) table[id] = original
+		else delete table[id]
 	}
 }
 
@@ -1140,6 +1271,10 @@ function main() {
 		['set3: haunt ghosts', testHaunt],
 		['deal: no duplicate offers', testDealNoDuplicates],
 		['deal: banned combos', testDealBannedCombos],
+		['size: gameSizeFor boundaries', testGameSizeBoundaries],
+		['size: variant table shape', testSizeVariantTable],
+		['size: descriptions', testSizeDescriptions],
+		['size: deal availability', testDealSizeAvailability],
 	]
 	for (const [name, fn] of tests) {
 		fn()

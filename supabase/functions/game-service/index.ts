@@ -1142,6 +1142,16 @@ function variantForPlayerCount(playerCount: number): Variant {
 	return playerCount >= 5 ? 'expanded' : 'standard'
 }
 
+// How big the table is, for bonus / curse tuning. Mirror of lib/catan/types.ts
+// — deliberately separate from `Variant`, since a card may vary at 2 players
+// where the board does not.
+type GameSize = 'small' | 'standard' | 'expanded'
+
+function gameSizeFor(playerCount: number): GameSize {
+	if (playerCount <= 2) return 'small'
+	return playerCount >= 5 ? 'expanded' : 'standard'
+}
+
 // --- Bonuses (must match lib/catan/bonuses) --------------------------------
 
 type BonusId =
@@ -1270,16 +1280,16 @@ const BONUS_SET_OF: Record<BonusId, '1' | '2' | '3'> = {
 // Bonus / curse pairings that shouldn't be dealt together. Mirror of
 // lib/catan/bonuses/combos.ts. Enforced when `config.bannedCombos` is on.
 const BANNED_BONUSES_BY_CURSE: Record<CurseId, readonly BonusId[]> = {
-	age: [],
-	decadence: [],
-	ambition: [],
-	elitism: [],
+	age: ['accountant', 'investor'],
+	decadence: ['metropolitan'],
+	ambition: ['thrill_seeker'],
+	elitism: ['metropolitan', 'haunt'],
 	asceticism: [],
 	nomadism: [],
-	avarice: [],
-	power: [],
-	compaction: [],
-	provinciality: [],
+	avarice: ['hoarder'],
+	power: ['metropolitan', 'plutocrat'],
+	compaction: ['explorer', 'fencer'],
+	provinciality: ['specialist', 'merchant'],
 	youth: [],
 }
 
@@ -1287,22 +1297,53 @@ function isBannedCombo(curse: CurseId, bonus: BonusId): boolean {
 	return BANNED_BONUSES_BY_CURSE[curse]?.includes(bonus) ?? false
 }
 
+// Per-player-count card variants. Mirror of lib/catan/bonuses/sizes.ts, minus
+// the descriptions and params — the server holds no card copy and no rule here
+// reads a param yet, so only the deal-time availability flag is carried over.
+// A card marked `available: false` at a size is not dealt at that size.
+const BONUS_SIZE_VARIANTS: Partial<
+	Record<BonusId, Partial<Record<GameSize, { available?: boolean }>>>
+> = {}
+
+const CURSE_SIZE_VARIANTS: Partial<
+	Record<CurseId, Partial<Record<GameSize, { available?: boolean }>>>
+> = {}
+
+function isBonusAvailableAt(id: BonusId, size: GameSize): boolean {
+	return BONUS_SIZE_VARIANTS[id]?.[size]?.available !== false
+}
+
+function isCurseAvailableAt(id: CurseId, size: GameSize): boolean {
+	return CURSE_SIZE_VARIANTS[id]?.[size]?.available !== false
+}
+
 // Mirror of lib/catan/generate.ts dealBonusHands: deal every player's hand at
 // once, drawing bonuses and curses WITHOUT replacement across the whole table
 // so no card is ever offered to two players or twice to one player. Curses go
 // out first so each player's bonuses can be drawn from what's compatible with
 // the curse they already hold (when `bannedCombos` is on).
+//
+// Cards withheld at this table size (BONUS_SIZE_VARIANTS / CURSE_SIZE_VARIANTS,
+// `available: false`) are dropped before the set filter. Both filters widen
+// their net rather than failing to deal — see `pickPool`.
 function dealBonusHands(
 	playerCount: number,
 	bonusSets: readonly string[],
 	bannedCombos = true
 ): Record<number, SelectBonusHand> {
-	const filtered = BONUS_IDS.filter((id) =>
-		bonusSets.includes(BONUS_SET_OF[id])
+	const size = gameSizeFor(playerCount)
+	const available = BONUS_IDS.filter((id) => isBonusAvailableAt(id, size))
+	const bonusPool = pickPool(
+		available.filter((id) => bonusSets.includes(BONUS_SET_OF[id])),
+		available,
+		BONUS_IDS
 	)
-	const bonusPool = filtered.length > 0 ? filtered : BONUS_IDS
+	const cursePool = pickPool(
+		CURSE_IDS.filter((id) => isCurseAvailableAt(id, size)),
+		CURSE_IDS
+	)
 	const drawBonus = dealer(bonusPool)
-	const drawCurse = dealer(CURSE_IDS)
+	const drawCurse = dealer(cursePool)
 	const hands: Record<number, SelectBonusHand> = {}
 	const curses = Array.from({ length: playerCount }, () => drawCurse())
 	for (let i = 0; i < playerCount; i++) {
@@ -1317,6 +1358,16 @@ function dealBonusHands(
 		}
 	}
 	return hands
+}
+
+// First candidate pool with enough cards to deal from, in order of preference.
+// `dealer` needs two, and every fallback ends at an unfiltered pool, so a
+// filter can narrow the deal but never break it.
+function pickPool<T>(...candidates: (readonly T[])[]): readonly T[] {
+	return (
+		candidates.find((c) => c.length >= 2) ??
+		candidates[candidates.length - 1]
+	)
 }
 
 // Deals from a shuffled pass over `pool`, reshuffling only once the pass is

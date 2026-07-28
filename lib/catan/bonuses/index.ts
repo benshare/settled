@@ -4,6 +4,11 @@
 //
 // Card identity is the `id` string. UI reads `title` / `description` /
 // `icon`; rule code will key off `id` when effects get wired in.
+//
+// A card's `description` here is its 3-4 player ('standard') text. Cards that
+// read, behave, or deal differently at other table sizes declare that in
+// `sizes.ts` — read descriptions through `bonusDescriptionFor(id, size)`
+// rather than off the pool entry wherever a player count is known.
 
 import type { Ionicons } from '@expo/vector-icons'
 import type React from 'react'
@@ -71,3 +76,15 @@ export type Curse = {
 export { BONUS_POOL, bonusById } from './bonuses'
 export { CURSE_POOL, curseById } from './curses'
 export { BANNED_BONUSES_BY_CURSE, isBannedCombo } from './combos'
+export {
+	BONUS_SIZE_VARIANTS,
+	CURSE_SIZE_VARIANTS,
+	bonusVariantFor,
+	curseVariantFor,
+	bonusDescriptionFor,
+	curseDescriptionFor,
+	isBonusAvailableAt,
+	isCurseAvailableAt,
+	type BonusSizeVariant,
+	type CurseSizeVariant,
+} from './sizes'
