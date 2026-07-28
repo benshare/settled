@@ -13,7 +13,7 @@
 // view without any client-side cleanup needed.
 
 import { Button } from '@/lib/modules/Button'
-import { ColorScheme, font, radius, spacing } from '@/lib/theme'
+import { ColorScheme, font, radius, shadow, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 import { useEffect, useMemo, useState } from 'react'
@@ -334,11 +334,7 @@ function makeStyles(colors: ColorScheme) {
 			borderColor: colors.border,
 			borderRadius: radius.md,
 			overflow: 'hidden',
-			shadowColor: '#000',
-			shadowOffset: { width: 0, height: 4 },
-			shadowOpacity: 0.18,
-			shadowRadius: 12,
-			elevation: 8,
+			boxShadow: shadow.overlay,
 		},
 		header: {
 			flexDirection: 'row',

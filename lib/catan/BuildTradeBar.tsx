@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { colors, font, radius, spacing } from '../theme'
+import { colors, font, radius, shadow, spacing } from '../theme'
 
 import { Ionicons } from '@expo/vector-icons'
 import { Tooltip } from '../modules/Tooltip'
@@ -413,11 +413,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.sm,
 		gap: spacing.xs,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.08,
-		shadowRadius: 6,
-		elevation: 2,
+		boxShadow: shadow.bar,
 	},
 	panelDisabled: {
 		opacity: 0.45,

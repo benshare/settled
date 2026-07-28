@@ -14,7 +14,7 @@ import { Avatar } from '../modules/Avatar'
 import { Modal } from '../modules/Modal'
 import { useGamesStore } from '../stores/useGamesStore'
 import { useProfileStore } from '../stores/useProfileStore'
-import { colors, font, spacing, z } from '../theme'
+import { colors, font, shadow, spacing, z } from '../theme'
 import { useGame } from './gameContext'
 
 // Matches BUTTON_INSET / the 32 + spacing.xs slot pitch in GameChat.tsx.
@@ -127,11 +127,7 @@ const styles = StyleSheet.create({
 		borderColor: colors.border,
 		alignItems: 'center',
 		justifyContent: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.12,
-		shadowRadius: 6,
-		elevation: 3,
+		boxShadow: shadow.card,
 		zIndex: z.floatingButton,
 	},
 	stopButton: {

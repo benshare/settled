@@ -24,7 +24,7 @@ import { TradeBanner } from '@/lib/catan/TradeBanner'
 import type { PlayerState } from '@/lib/catan/types'
 import { StopWatchingButton, WatcherButton } from '@/lib/catan/Watchers'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
-import { colors, font, radius, spacing, z } from '@/lib/theme'
+import { colors, font, radius, shadow, spacing, z } from '@/lib/theme'
 import {
 	ActivityIndicator,
 	Pressable,
@@ -364,11 +364,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.xs,
 		gap: spacing.xs,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.12,
-		shadowRadius: 6,
-		elevation: 3,
+		boxShadow: shadow.card,
 		maxWidth: 220,
 		// Shares the buttons' corner, so it has to win against them.
 		zIndex: z.panel,

@@ -5,9 +5,11 @@ import { Input } from '@/lib/modules/Input'
 import {
 	DEFAULT_NOTIFICATION_PREFS,
 	deregisterCurrentToken,
+	getPushPermissionStatus,
 	parseNotificationPrefs,
 	setAppBadge,
 	type NotificationPrefs,
+	type PushPermissionStatus,
 } from '@/lib/notifications'
 import { clearAllUserStores } from '@/lib/stores'
 import { useProfileStore } from '@/lib/stores/useProfileStore'
@@ -16,7 +18,6 @@ import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { ThemeMode, useTheme } from '@/lib/ThemeContext'
 import { VERSION_LABEL } from '@/lib/version'
 import * as ImagePicker from 'expo-image-picker'
-import * as Notifications from 'expo-notifications'
 import { useFocusEffect, useRouter } from 'expo-router'
 import * as Updates from 'expo-updates'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -374,16 +375,16 @@ function NotificationsSettings() {
 		? parseNotificationPrefs(profile.notification_prefs)
 		: DEFAULT_NOTIFICATION_PREFS
 
-	const [permission, setPermission] =
-		useState<Notifications.PermissionStatus | null>(null)
+	const [permission, setPermission] = useState<PushPermissionStatus | null>(
+		null
+	)
 	const [savingKey, setSavingKey] = useState<keyof NotificationPrefs | null>(
 		null
 	)
 	const [permError, setPermError] = useState<string | null>(null)
 
 	const refreshPermission = useCallback(async () => {
-		const res = await Notifications.getPermissionsAsync()
-		setPermission(res.status)
+		setPermission(await getPushPermissionStatus())
 	}, [])
 
 	useEffect(() => {

@@ -15,7 +15,7 @@ import {
 	ViewStyle,
 } from 'react-native'
 import Animated from 'react-native-reanimated'
-import { radius, spacing } from '../theme'
+import { radius, shadow, spacing } from '../theme'
 
 export function Modal({
 	visible,
@@ -74,10 +74,6 @@ const styles = StyleSheet.create({
 	},
 	content: {
 		borderRadius: radius.md,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.12,
-		shadowRadius: 6,
-		elevation: 3,
+		boxShadow: shadow.card,
 	},
 })

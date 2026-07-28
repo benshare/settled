@@ -2,16 +2,15 @@ import { useAuth } from '@/lib/auth'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import {
 	ensurePermissionAndRegister,
-	resolveNotificationLink,
+	useNotificationRouting,
 } from '@/lib/notifications'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
-import * as Notifications from 'expo-notifications'
-import { Tabs, useRouter } from 'expo-router'
+import { Tabs } from 'expo-router'
 import { useEffect } from 'react'
-import { type ColorValue, Platform } from 'react-native'
+import { type ColorValue } from 'react-native'
 
 export const unstable_settings = {
 	initialRouteName: 'games',
@@ -20,36 +19,13 @@ export const unstable_settings = {
 export default function AppLayout() {
 	const { colors } = useTheme()
 	const { user } = useAuth()
-	const router = useRouter()
 
 	useEffect(() => {
 		if (!user?.id) return
 		ensurePermissionAndRegister(user.id)
 	}, [user?.id])
 
-	useEffect(() => {
-		if (Platform.OS === 'web') return
-		const sub = Notifications.addNotificationResponseReceivedListener(
-			(resp) => {
-				const link = resolveNotificationLink(
-					resp.notification.request.content.data
-				)
-				// `navigate`, not `push`: when the game screen is already on
-				// top, this updates its params in place instead of stacking a
-				// second copy of the same game behind the back chevron.
-				if (link) router.navigate(link)
-			}
-		)
-		// Cold-start case: the app was launched by tapping a notification.
-		Notifications.getLastNotificationResponseAsync().then((resp) => {
-			if (!resp) return
-			const link = resolveNotificationLink(
-				resp.notification.request.content.data
-			)
-			if (link) router.replace(link)
-		})
-		return () => sub.remove()
-	}, [router])
+	useNotificationRouting()
 
 	return (
 		<Tabs

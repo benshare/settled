@@ -9,7 +9,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
-import { colors, font, radius, spacing, z } from '../theme'
+import { colors, font, radius, shadow, spacing, z } from '../theme'
 import type { ResourceHand } from './types'
 import { RESOURCES, type Resource } from './board'
 import { bonusById, curseById } from './bonuses'
@@ -725,11 +725,7 @@ const styles = StyleSheet.create({
 		borderColor: colors.border,
 		alignItems: 'center',
 		justifyContent: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.12,
-		shadowRadius: 6,
-		elevation: 3,
+		boxShadow: shadow.card,
 		zIndex: z.floatingButton,
 	},
 	panel: {
@@ -743,11 +739,7 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: colors.border,
 		paddingVertical: spacing.xs,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.12,
-		shadowRadius: 6,
-		elevation: 3,
+		boxShadow: shadow.card,
 		zIndex: z.panel,
 	},
 	header: {

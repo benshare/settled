@@ -1,6 +1,6 @@
 // Roulette-style reveal of which resource was stolen by the robber. Mounted
 // only on the thief's and victim's clients; bystanders never see it (they
-// don't have the data — see app/game/gameScreenContext.tsx for the detection
+// don't have the data — see lib/game/gameScreenContext.tsx for the detection
 // logic).
 //
 // The victim's pre-steal hand is laid out face-down; an indicator hops
@@ -15,7 +15,7 @@ import Animated, {
 	useSharedValue,
 	withTiming,
 } from 'react-native-reanimated'
-import { colors, font, radius, spacing } from '../theme'
+import { alpha, colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor } from './palette'
 import type { ResourceHand } from './types'
@@ -247,11 +247,7 @@ const styles = StyleSheet.create({
 	},
 	cardSlotHighlight: {
 		borderColor: colors.brand,
-		shadowColor: colors.brand,
-		shadowOffset: { width: 0, height: 0 },
-		shadowOpacity: 0.7,
-		shadowRadius: 6,
-		elevation: 6,
+		boxShadow: `0px 0px 6px ${alpha(colors.brand, 0.7)}`,
 	},
 	card: {
 		width: CARD_W,

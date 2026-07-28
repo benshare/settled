@@ -32,6 +32,11 @@ import { FinalScoreButton, GameOverOverlay } from '@/lib/catan/GameOverOverlay'
 import { NomadAnimation } from '@/lib/catan/NomadAnimation'
 import { waterColor } from '@/lib/catan/palette'
 import { StealAnimation } from '@/lib/catan/StealAnimation'
+import { BoardArea } from '@/lib/game/BoardArea'
+import { BottomArea } from '@/lib/game/BottomArea'
+import { GameScreenProvider, useGameScreen } from '@/lib/game/gameScreenContext'
+import { Nav } from '@/lib/game/Nav'
+import { TopArea } from '@/lib/game/TopArea'
 import { SlidingArea } from '@/lib/modules/SlidingArea'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, font, spacing, z } from '@/lib/theme'
@@ -47,11 +52,6 @@ import {
 } from 'react-native'
 import Animated, { LinearTransition } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { BoardArea } from './BoardArea'
-import { BottomArea } from './BottomArea'
-import { GameScreenProvider, useGameScreen } from './gameScreenContext'
-import { Nav } from './Nav'
-import { TopArea } from './TopArea'
 
 const BOARD_RESIZE = LinearTransition.duration(220)
 

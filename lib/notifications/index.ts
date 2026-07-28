@@ -1,5 +1,10 @@
 export { ensurePermissionAndRegister, deregisterCurrentToken } from './push'
 export { setAppBadge, useAppBadge } from './badge'
+export { useNotificationRouting } from './responses'
+export {
+	getPushPermissionStatus,
+	type PushPermissionStatus,
+} from './permissions'
 export {
 	resolveNotificationLink,
 	type NotificationKind,

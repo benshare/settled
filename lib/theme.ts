@@ -186,3 +186,24 @@ export const font = {
 	lg: 20,
 	xl: 28,
 } as const
+
+// Drop shadows, as `boxShadow` strings rather than the `shadow*` style props —
+// those are deprecated (react-native-web warns on every one) and `boxShadow`
+// renders on iOS, Android and web alike, so it stands in for `elevation` too.
+// Pair one of these with a matching `zIndex` if the view also needs to stack;
+// `elevation` used to do both on Android and `boxShadow` does not.
+export const shadow = {
+	// The floating chrome: the board's stacked buttons and the panels they open.
+	card: '0px 2px 6px rgba(0, 0, 0, 0.12)',
+	// Bars that sit against the board rather than over it — a lighter lift.
+	bar: '0px 2px 6px rgba(0, 0, 0, 0.08)',
+	// Things that interrupt: the trade banner, the pre-roll bonus modal.
+	raised: '0px 3px 8px rgba(0, 0, 0, 0.12)',
+	overlay: '0px 4px 12px rgba(0, 0, 0, 0.18)',
+} as const
+
+/** `#RRGGBB` → `rgba(...)`, for the CSS color strings `boxShadow` takes. */
+export function alpha(hex: string, a: number): string {
+	const n = parseInt(hex.slice(1), 16)
+	return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
+}

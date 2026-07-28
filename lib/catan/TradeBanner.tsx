@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated'
 import { Button } from '../modules/Button'
 import type { Profile } from '../stores/useProfileStore'
-import { colors, font, radius, spacing } from '../theme'
+import { colors, font, radius, shadow, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { playerColors, resourceColor } from './palette'
 import {
@@ -281,11 +281,7 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: colors.border,
 		borderLeftWidth: 4,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 3 },
-		shadowOpacity: 0.12,
-		shadowRadius: 8,
-		elevation: 4,
+		boxShadow: shadow.raised,
 	},
 	body: {
 		flex: 1,

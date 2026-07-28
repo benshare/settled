@@ -152,8 +152,8 @@ even though the server would accept the undo.
 | `lib/catan/types.ts`                               | `UndoSnapshot`, `GameState.undo`                      |
 | `lib/catan/gameContext.tsx`                        | map `row.undo`                                        |
 | `lib/stores/useGamesStore.ts`                      | `undo(gameId)` action                                 |
-| `app/game/gameScreenContext.tsx`                   | `canUndo`, `onUndo`                                   |
-| `app/game/BottomArea.tsx`                          | the arrow, both placements                            |
+| `lib/game/gameScreenContext.tsx`                   | `canUndo`, `onUndo`                                   |
+| `lib/game/BottomArea.tsx`                          | the arrow, both placements                            |
 | `supabase/functions/game-service/index.ts`         | `UNDOABLE_ACTIONS`, snapshot in `serve`, `handleUndo` |
 
 Deploy: `npm run migrate` → `npm run types` → `npm run edge`.
