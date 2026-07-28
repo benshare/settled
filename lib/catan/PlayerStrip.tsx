@@ -18,6 +18,7 @@ export function PlayerStrip({
 	gameState,
 	pointsByPlayer,
 	publicByPlayer,
+	forfeitedIds,
 	onPressPlayer,
 }: {
 	playerOrder: string[]
@@ -35,6 +36,10 @@ export function PlayerStrip({
 	// legible — only happens on rows we're allowed to look behind, i.e.
 	// the viewer's own row in an active game and every row at game over.
 	publicByPlayer: number[]
+	// User ids holding a standing (withdrawable) forfeit. It has no mechanical
+	// effect — the seat still plays — so it's shown as a flag beside the name
+	// rather than by dimming the card. See the game menu in `lib/game/`.
+	forfeitedIds?: string[]
 	onPressPlayer?: (playerIdx: number) => void
 }) {
 	const showBonusIcons = gameState.config.bonuses
@@ -87,6 +92,13 @@ export function PlayerStrip({
 							<Text style={styles.name} numberOfLines={1}>
 								{name}
 							</Text>
+							{forfeitedIds?.includes(uid) && (
+								<Ionicons
+									name="flag"
+									size={11}
+									color={colors.textMuted}
+								/>
+							)}
 						</View>
 						<View style={styles.statsGrid}>
 							<View style={styles.gridStat}>

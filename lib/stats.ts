@@ -18,6 +18,12 @@ export type BonusRate = {
 
 export type Stats = {
 	gamesPlayed: number
+	// Games that were actually played to a finish. A game that ended because
+	// everyone else forfeited counts toward `gamesPlayed` and the win rate and
+	// nothing else — there is no meaningful score or placement in it — so every
+	// average below is measured over this smaller sample. The screen says so
+	// whenever the two differ.
+	playedGames: number
 	winRate: number
 	wins: number
 	avgPoints: number
@@ -53,9 +59,18 @@ export function computeStats(
 ): Stats {
 	const gamesPlayed = results.length
 	const wins = results.filter((r) => r.won).length
+	// Everything except games played and win rate is measured over games that
+	// were actually played out — see `Stats.playedGames`.
+	const played = results.filter((r) => !r.forfeit)
+
+	// A canceled game contributes nothing, and that includes who you sat down
+	// with. It writes no `game_results` rows at all, so it can only leak in
+	// through the games list, which shares History between both endings.
+	// Forfeited games do count here: you played with those people.
+	const counted = completeGames.filter((g) => g.status !== 'canceled')
 
 	const opponentCounts = new Map<string, number>()
-	for (const g of completeGames) {
+	for (const g of counted) {
 		for (const p of g.participants) {
 			if (p === meId) continue
 			opponentCounts.set(p, (opponentCounts.get(p) ?? 0) + 1)
@@ -66,20 +81,21 @@ export function computeStats(
 		.sort((a, b) => b.games - a.games || a.userId.localeCompare(b.userId))
 		.slice(0, TOP_OPPONENTS)
 
-	const bonusResults = results.filter((r) => r.bonus !== null)
+	const bonusResults = played.filter((r) => r.bonus !== null)
 
 	return {
 		gamesPlayed,
+		playedGames: played.length,
 		wins,
 		winRate: gamesPlayed === 0 ? 0 : wins / gamesPlayed,
-		avgPoints: mean(results.map((r) => r.points)),
-		avgPlacement: mean(results.map((r) => r.placement)),
+		avgPoints: mean(played.map((r) => r.points)),
+		avgPlacement: mean(played.map((r) => r.placement)),
 		avgRounds: mean(
-			results.map((r) =>
+			played.map((r) =>
 				r.player_count > 0 ? r.turns / r.player_count : 0
 			)
 		),
-		avgPlayers: mean(results.map((r) => r.player_count)),
+		avgPlayers: mean(played.map((r) => r.player_count)),
 
 		distinctOpponents: opponentCounts.size,
 		topOpponents,
@@ -87,9 +103,9 @@ export function computeStats(
 		bonusGames: bonusResults.length,
 		bonusesPlayed: distinct(bonusResults.map((r) => r.bonus)),
 		bonusPoolSize: BONUS_POOL.length,
-		cursesPlayed: distinct(results.map((r) => r.curse)),
+		cursesPlayed: distinct(played.map((r) => r.curse)),
 		cursePoolSize: CURSE_POOL.length,
-		topPickRate: topPickRate(results),
+		topPickRate: topPickRate(played),
 		topWinRate: topWinRate(bonusResults),
 	}
 }

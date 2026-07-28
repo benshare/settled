@@ -43,6 +43,7 @@ export function TopArea() {
 		myPlayer,
 		displayVP,
 		publicVP,
+		forfeitedIds,
 		profilesById,
 		isSpectator,
 		submitting,
@@ -100,6 +101,7 @@ export function TopArea() {
 					gameState={gameState}
 					pointsByPlayer={displayVP}
 					publicByPlayer={publicVP}
+					forfeitedIds={forfeitedIds}
 					onPressPlayer={setOpenPlayerIdx}
 				/>
 			)}

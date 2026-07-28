@@ -41,6 +41,23 @@ Three things about the mechanism are load-bearing:
 
 `GameState.undo` is what the client reads to decide whether to show the arrow — never a derivation from the event log. Only the acting seat may undo, and a game-winning action can't be undone at all (`games.status` is already `complete` and `game_results` is written; the orphan snapshot such a build leaves behind is inert). The arrow follows whoever holds the floor, which during `special_build` is `phase.queue[0]` rather than `current_turn` — see `lib/game/CLAUDE.md`. Full design in `.claude/specs/undo.md`.
 
+## Forfeiting and ending
+
+Two withdrawable, per-player declarations that a game can end without anyone reaching the VP threshold. Both are plain user-id arrays on the **games** row (`forfeits`, `end_votes`) — game metadata, like `config`, not board state — written only by the edge function's `set_forfeit` / `set_end_vote`. Full design in `.claude/specs/forfeit-and-end-game.md`.
+
+- **Forfeit.** When every seat but one holds a standing forfeit, the game ends: `status = 'complete'`, the survivor is `winner`, and the terminal `game_complete` event carries `by_forfeit: true`. The survivor wins **regardless of VP** — `findWinner` is not consulted.
+- **End game.** Needs the whole table. When the last seat votes, `status = 'canceled'`, `winner` stays null, and a `game_canceled` event is written — deliberately **not** a `game_complete`, since there is no winner and no scoreboard to announce.
+
+The rule that keeps this small: **neither declaration has any mechanical effect while it stands.** A player who has forfeited keeps their seat, their turn, their resources and every action they could take before; nothing in the turn engine, robber chain, trade rules, discard requirements, special build queue or scoring reads either array. Only the two thresholds do. Skipping a forfeiter in turn order instead would put a new condition into every turn-advance, steal-target, trade-addressee and discard path — and withdrawing would have to splice a seat back into a queue that had moved on.
+
+Three consequences worth knowing:
+
+- **`isFinished(status)` (`lib/stores/useGamesStore.ts`) is the status test, not `=== 'complete'`.** A canceled game shares History, the end-of-game overlay and the "board accepts nothing" posture with a completed one. An equality check silently leaves canceled games playable.
+- **An all-`N`-forfeited state is unreachable.** The `(N-1)`th forfeit ends the game, so "the winner" is always well defined.
+- **Stats treat the two endings differently.** A canceled game writes no `game_results` rows at all; a forfeited one writes them with `forfeit: true` and counts toward games played and win rate only. See `lib/stats.ts`.
+
+`GameOverOverlay` takes both as optional props: `canceled` swaps the heading for **Game canceled** and drops the winner treatment (the score/roll/highlight tabs still render — the scores as they stood are worth reading, and Rematch is still offered), while `wonByForfeit` adds a muted note under the winner. `PlayerStrip` takes `forfeitedIds` and flags those seats beside the name — a flag rather than a dimmed card, because the seat is still playing. The affordance itself is `lib/game/GameMenu.tsx`, in the nav.
+
 ## Admin testing: forced rolls
 
 A seat whose `game_states.players[i]` object carries `"dev": true` — set by hand

@@ -198,6 +198,7 @@ export type Database = {
           bonus: string | null
           completed_at: string
           curse: string | null
+          forfeit: boolean
           game_id: string
           offered_bonuses: string[] | null
           placement: number
@@ -212,6 +213,7 @@ export type Database = {
           bonus?: string | null
           completed_at?: string
           curse?: string | null
+          forfeit?: boolean
           game_id: string
           offered_bonuses?: string[] | null
           placement: number
@@ -226,6 +228,7 @@ export type Database = {
           bonus?: string | null
           completed_at?: string
           curse?: string | null
+          forfeit?: boolean
           game_id?: string
           offered_bonuses?: string[] | null
           placement?: number
@@ -323,7 +326,9 @@ export type Database = {
           config: Json
           created_at: string
           current_turn: number | null
+          end_votes: string[]
           events: Json[]
+          forfeits: string[]
           id: string
           participants: string[]
           player_order: string[]
@@ -334,7 +339,9 @@ export type Database = {
           config: Json
           created_at?: string
           current_turn?: number | null
+          end_votes?: string[]
           events?: Json[]
+          forfeits?: string[]
           id?: string
           participants: string[]
           player_order?: string[]
@@ -345,7 +352,9 @@ export type Database = {
           config?: Json
           created_at?: string
           current_turn?: number | null
+          end_votes?: string[]
           events?: Json[]
+          forfeits?: string[]
           id?: string
           participants?: string[]
           player_order?: string[]

@@ -53,7 +53,7 @@ import {
 	createClient,
 	SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2'
-import { sendNotifications } from '../_notify/index.ts'
+import { sendNotifications, type NotifyTarget } from '../_notify/index.ts'
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void }
 
@@ -103,6 +103,11 @@ type SendMessageBody = {
 }
 type EndSpecialBuildBody = { action: 'end_special_build'; game_id: string }
 type UndoBody = { action: 'undo'; game_id: string }
+// One setter per flag rather than four verbs: submitting and withdrawing share
+// every guard and differ only in which way the array moves, and an idempotent
+// setter can't get out of step with a client that fires twice.
+type SetForfeitBody = { action: 'set_forfeit'; game_id: string; on: boolean }
+type SetEndVoteBody = { action: 'set_end_vote'; game_id: string; on: boolean }
 type BuildRoadBody = {
 	action: 'build_road'
 	game_id: string
@@ -327,6 +332,8 @@ type Body =
 	| CastMagicBody
 	| SkipMagicBody
 	| UndoBody
+	| SetForfeitBody
+	| SetEndVoteBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -3074,18 +3081,36 @@ async function commitActionWrite(
 	winner: number | null,
 	// The post-action state, passed only so a completing game can be summarized
 	// into game_results. Omitted by callers that can't finish a game.
-	nextState?: GameState
+	nextState?: GameState,
+	opts?: {
+		// Extra columns merged into the games update — `forfeits` / `end_votes`.
+		gameFields?: Record<string, unknown>
+		// Ends the game with no winner and no game_results rows. A canceled
+		// game contributes nothing to anyone's stats, which is enforced by
+		// never writing the summary in the first place.
+		canceled?: boolean
+		// Stamps game_results.forfeit. Only meaningful alongside a winner.
+		byForfeit?: boolean
+	}
 ): Promise<Response | null> {
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update(stateUpdate)
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
+	// A declaration that doesn't end the game touches only the games row, and
+	// PostgREST rejects an empty PATCH body — so an empty update is a no-op,
+	// not a write.
+	if (Object.keys(stateUpdate).length > 0) {
+		const { error: stateErr } = await admin
+			.from('game_states')
+			.update(stateUpdate)
+			.eq('game_id', game.id)
+		if (stateErr) return err(500, 'could not update state')
+	}
 
 	const gameUpdate: Record<string, unknown> = {
 		events: [...(game.events ?? []), ...events],
+		...opts?.gameFields,
 	}
-	if (winner !== null) {
+	if (opts?.canceled) {
+		gameUpdate.status = 'canceled'
+	} else if (winner !== null) {
 		gameUpdate.status = 'complete'
 		gameUpdate.winner = winner
 	}
@@ -3095,7 +3120,7 @@ async function commitActionWrite(
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
-	if (winner !== null && nextState) {
+	if (winner !== null && nextState && !opts?.canceled) {
 		// `applyEndOfActionChecks` may have moved Longest Road after the caller
 		// built `nextState`, and that's worth 2 VP — read the change back off
 		// the state update rather than scoring a stale holder.
@@ -3106,7 +3131,14 @@ async function commitActionWrite(
 						longestRoad: stateUpdate.longest_road as number | null,
 					}
 				: nextState
-		await writeGameResults(admin, game, finalState, winner, events)
+		await writeGameResults(
+			admin,
+			game,
+			finalState,
+			winner,
+			events,
+			opts?.byForfeit ?? false
+		)
 	}
 	return null
 }
@@ -3121,7 +3153,10 @@ async function writeGameResults(
 	game: GameRow,
 	state: GameState,
 	winner: number,
-	newEvents: unknown[]
+	newEvents: unknown[],
+	// The game ended because everyone else forfeited, not by play. Such a game
+	// counts toward games played and win rate only — see lib/stats.ts.
+	forfeit: boolean
 ): Promise<void> {
 	const points = state.players.map((_, i) => totalVP(state, i))
 	const offered = offeredBonusesByPlayer([
@@ -3144,6 +3179,7 @@ async function writeGameResults(
 		curse: curseOf(state, i) ?? null,
 		offered_bonuses: offered[i] ?? null,
 		completed_at: completedAt,
+		forfeit,
 	}))
 	const { error } = await admin
 		.from('game_results')
@@ -3649,10 +3685,13 @@ type GameRow = {
 	participants: string[]
 	player_order: string[]
 	current_turn: number | null
-	status: 'placement' | 'active' | 'complete'
+	status: 'placement' | 'active' | 'complete' | 'canceled'
 	winner: number | null
 	events: unknown[]
 	config: GameConfig
+	// User ids holding a standing forfeit / end-game vote. See handleSetForfeit.
+	forfeits: string[]
+	end_votes: string[]
 }
 
 function currentPlayerIndex(game: GameRow, me: string): number | null {
@@ -5086,6 +5125,205 @@ async function handleHonk(
 			},
 		])
 	)
+
+	return json({ ok: true })
+}
+
+// --- Forfeiting and ending -------------------------------------------------
+//
+// Two withdrawable, per-player declarations, both stored as user-id arrays on
+// the games row. Neither has any mechanical effect: a player holding a standing
+// forfeit keeps their seat, their turn, their resources and every action they
+// could take before. The only thing that reads them is the threshold below.
+// See .claude/specs/forfeit-and-end-game.md.
+
+// The window in which a declaration can be submitted or withdrawn: the whole
+// time the game is in progress.
+function inProgress(game: GameRow): boolean {
+	return game.status === 'placement' || game.status === 'active'
+}
+
+// The seat this user occupies, or null. Deliberately NOT `currentPlayerIndex`,
+// which returns null whenever `games.current_turn` is null — that is the entire
+// simultaneous bonus-selection phase, and neither declaration has anything to
+// do with holding the turn.
+function seatOf(game: GameRow, me: string): number | null {
+	const idx = game.player_order.indexOf(me)
+	return idx < 0 ? null : idx
+}
+
+// Adds or removes `me`, returning null when the array already says what the
+// caller is asking for — an idempotent re-send writes nothing and notifies
+// nobody.
+function toggleMembership(
+	ids: string[],
+	me: string,
+	on: boolean
+): string[] | null {
+	const has = ids.includes(me)
+	if (has === on) return null
+	return on ? [...ids, me] : ids.filter((id) => id !== me)
+}
+
+async function handleSetForfeit(
+	admin: SupabaseClient,
+	me: string,
+	body: SetForfeitBody
+): Promise<Response> {
+	if (typeof body.on !== 'boolean') return err(400, 'invalid on')
+
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (!inProgress(game)) return err(400, 'game is over')
+
+	const meIdx = seatOf(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+
+	const next = toggleMembership(game.forfeits ?? [], me, body.on)
+	if (next === null) return json({ ok: true })
+
+	const at = new Date().toISOString()
+	const events: unknown[] = [
+		{
+			kind: body.on ? 'forfeit_submitted' : 'forfeit_withdrawn',
+			player: meIdx,
+			at,
+		},
+	]
+	const stateUpdate: Record<string, unknown> = {}
+
+	// Every seat but one has forfeited: the survivor wins, regardless of VP —
+	// `findWinner` is not consulted. An all-N-forfeited state is unreachable,
+	// since the (N-1)th forfeit always ends the game here.
+	const remaining = game.player_order.filter((id) => !next.includes(id))
+	const endsGame = body.on && remaining.length === 1
+	const winner = endsGame ? game.player_order.indexOf(remaining[0]) : null
+
+	if (winner !== null) {
+		const gameOverPhase: Phase = { kind: 'game_over' }
+		stateUpdate.phase = gameOverPhase
+		events.push({
+			kind: 'game_complete',
+			winner,
+			at,
+			vpCards: vpCardCountsByPlayer(state),
+			by_forfeit: true,
+		})
+	}
+
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		stateUpdate,
+		events,
+		winner,
+		state,
+		{ gameFields: { forfeits: next }, byForfeit: true }
+	)
+	if (commitErr) return commitErr
+
+	// Only the winner is told when a forfeit ends the game: everyone else chose
+	// to forfeit and already knows what that means. Withdrawals notify nobody.
+	const targets: NotifyTarget[] =
+		winner !== null
+			? [
+					{
+						userId: game.player_order[winner],
+						kind: 'game_won_by_forfeit',
+						gameId: game.id,
+					},
+				]
+			: body.on
+				? game.player_order
+						.filter((id) => id !== me)
+						.map((userId) => ({
+							userId,
+							kind: 'game_forfeited' as const,
+							gameId: game.id,
+							senderProfileId: me,
+						}))
+				: []
+	if (targets.length > 0)
+		EdgeRuntime.waitUntil(sendNotifications(admin, targets))
+
+	return json({ ok: true })
+}
+
+async function handleSetEndVote(
+	admin: SupabaseClient,
+	me: string,
+	body: SetEndVoteBody
+): Promise<Response> {
+	if (typeof body.on !== 'boolean') return err(400, 'invalid on')
+
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (!inProgress(game)) return err(400, 'game is over')
+
+	const meIdx = seatOf(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+
+	const next = toggleMembership(game.end_votes ?? [], me, body.on)
+	if (next === null) return json({ ok: true })
+
+	const at = new Date().toISOString()
+	const events: unknown[] = [
+		{
+			kind: body.on ? 'end_game_proposed' : 'end_game_withdrawn',
+			player: meIdx,
+			at,
+		},
+	]
+	const stateUpdate: Record<string, unknown> = {}
+
+	// Ending needs the whole table, so the threshold is every seat.
+	const canceled = body.on && next.length === game.player_order.length
+
+	if (canceled) {
+		const gameOverPhase: Phase = { kind: 'game_over' }
+		stateUpdate.phase = gameOverPhase
+		// Deliberately not a `game_complete` event: a canceled game has no
+		// winner and no scoreboard to announce, and nothing downstream should
+		// treat it as a completion.
+		events.push({ kind: 'game_canceled', at })
+	}
+
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		stateUpdate,
+		events,
+		null,
+		state,
+		{ gameFields: { end_votes: next }, canceled }
+	)
+	if (commitErr) return commitErr
+
+	// The last voter just tapped it; everyone else is told.
+	const targets: NotifyTarget[] = canceled
+		? game.player_order
+				.filter((id) => id !== me)
+				.map((userId) => ({
+					userId,
+					kind: 'game_canceled' as const,
+					gameId: game.id,
+				}))
+		: body.on
+			? game.player_order
+					.filter((id) => id !== me)
+					.map((userId) => ({
+						userId,
+						kind: 'end_game_proposed' as const,
+						gameId: game.id,
+						senderProfileId: me,
+					}))
+			: []
+	if (targets.length > 0)
+		EdgeRuntime.waitUntil(sendNotifications(admin, targets))
 
 	return json({ ok: true })
 }
@@ -8552,6 +8790,10 @@ function dispatch(
 			return handleSkipMagic(admin, me, body)
 		case 'undo':
 			return handleUndo(admin, me, body)
+		case 'set_forfeit':
+			return handleSetForfeit(admin, me, body)
+		case 'set_end_vote':
+			return handleSetEndVote(admin, me, body)
 		default:
 			return Promise.resolve(err(400, 'unknown action'))
 	}
