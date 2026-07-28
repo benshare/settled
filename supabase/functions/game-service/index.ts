@@ -3904,6 +3904,9 @@ async function handleProposeGame(
 				kind: 'game_invite',
 				gate: 'gameInvite',
 				senderProfileId: me,
+				// Deep-links the tap to the invite screen, which is where it
+				// can be accepted or declined.
+				requestId: data.id,
 			}))
 		)
 	)

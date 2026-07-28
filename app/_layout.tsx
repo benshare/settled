@@ -1,6 +1,6 @@
 import { useAppForeground } from '@/lib/appState'
 import { AuthProvider, useAuth } from '@/lib/auth'
-import { useAppBadge } from '@/lib/notifications'
+import { useAppBadge, useNotificationRouting } from '@/lib/notifications'
 import { loadAllUserStores } from '@/lib/stores'
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext'
 import { VERSION_LABEL } from '@/lib/version'
@@ -56,6 +56,12 @@ function RootNav() {
 	// Root, not `(app)`: the tab group unmounts when a push tap replaces it with
 	// a game screen, and that's the session where the badge needs clearing most.
 	useAppBadge()
+
+	// Root for the same reason, and because it has to outlive the tab group to
+	// keep handling taps after the first one. Called above the LoadingScreen
+	// return, so it holds each tap until the navigator can take it rather than
+	// needing a mounted tree of its own.
+	useNotificationRouting()
 
 	useEffect(() => {
 		async function applyUpdate() {

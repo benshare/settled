@@ -37,6 +37,9 @@ export type NotifyTarget = {
 	gate?: NotificationPrefKey
 	senderProfileId?: string // fills in <sender>/<proposer> body copy
 	gameId?: string // included in the deep-link payload
+	// Ditto, for game_invite — there is no game to link to yet, only the
+	// `game_requests` row the invite screen is keyed on.
+	requestId?: string
 	firstPlayer?: boolean // game_started copy variant for player_order[0]
 	// Chat puts the sender's name in the title and their message in the body,
 	// where every other kind is titled 'Settled' with generated copy. Opting in
@@ -137,8 +140,11 @@ export async function sendNotifications(
 		const title =
 			t.titleFrom === 'sender' ? (senderName ?? 'Settled') : 'Settled'
 		const body = truncate(t.bodyOverride ?? renderBody(t, senderName))
+		// Consumed by `resolveNotificationLink` in lib/notifications/links.ts,
+		// which declares the twin of the `NotificationKind` union above.
 		const data: Record<string, unknown> = { kind: t.kind }
 		if (t.gameId) data.game_id = t.gameId
+		if (t.requestId) data.request_id = t.requestId
 		for (const token of tokens) {
 			messages.push({
 				to: token,

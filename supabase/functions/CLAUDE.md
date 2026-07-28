@@ -21,6 +21,13 @@ Deno runtime, deployed with `supabase functions deploy <name>`. These run server
 
 A target with no `gate` is ungated and always sends (the honk).
 
+## Deep-link payload
+
+Each push carries a `data` blob of `{ kind, game_id?, request_id? }`, and that is the entire contract with the client's `resolveNotificationLink` (`lib/notifications/links.ts`). Two rules follow:
+
+- **`NotificationKind` here and in `links.ts` are twins.** Adding a kind server-side without adding it to the client union sends it to that switch's `default`, which returns `null` — the notification arrives, and tapping it does nothing at all. This is exactly how `honk` shipped broken.
+- **A kind that names something must carry its id.** Anything about a game passes `gameId`; `game_invite` passes `requestId` instead, because at that point there is only a `game_requests` row — it deep-links to `/game/request/[id]`, the screen that can accept or decline. A kind with no id falls back to a list screen, which is a worse landing than the tap deserves.
+
 ## The app-icon badge
 
 Every push carries a `badge`, and it is **not** a notification count — it's the recipient's number of in-progress games whose `current_turn` names them, the same "your turn" signal the Games list shows as a per-row dot (`isMyTurn` in `lib/stores/useGamesStore.ts`; `badgeCounts` is the server mirror, and inherits the same `null`-during-bonus-selection and lags-during-special-build approximations). It rides every kind, not just `your_turn`, so a chat message or friend request also corrects a badge that drifted while the app was closed — and a user with nothing waiting gets an explicit `0`, which is what clears the icon.
