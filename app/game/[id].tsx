@@ -170,6 +170,25 @@ function Game() {
 					publicByPlayer={publicVP}
 					onDismiss={() => setGameOverOpen(false)}
 					onBackToGames={() => router.replace('/games')}
+					// Straight into the create-game form, prefilled with this
+					// table and its settings. `replace` so Back from there
+					// lands on the games list rather than the finished game.
+					onRematch={
+						meIdx < 0
+							? undefined
+							: () =>
+									router.replace({
+										pathname: '/create-game',
+										params: {
+											invite: game.player_order
+												.filter((id) => id !== meId)
+												.join(','),
+											config: JSON.stringify(
+												gameState.config
+											),
+										},
+									})
+					}
 				/>
 			)}
 			{inGameOver && !gameOverOpen && (

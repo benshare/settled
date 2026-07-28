@@ -1,8 +1,10 @@
 // Final scoreboard shown when a game ends (`games.status === 'complete'`).
 // Rendered as a modal on top of the game screen. Reveals every player's
-// hidden VP cards since the game is over. Offers two exits: "Back to games"
-// (routes to the list) and "View board" (dismisses so the user can inspect
-// the final position; the caller provides a floating reopen button).
+// hidden VP cards since the game is over. Offers three exits: "Rematch" (into
+// the create-game form, prefilled with this table and its settings), "Back to
+// games" (routes to the list) and "View board" (dismisses so the user can
+// inspect the final position; the caller provides a floating reopen button).
+// All three are the caller's handlers — this file never navigates.
 //
 // Three tabs: the final Scores, the shared Roll distribution, and the game
 // Highlights (fun superlatives). The roll/highlight stats are derived from the
@@ -49,6 +51,9 @@ export type GameOverOverlayProps = {
 	publicByPlayer: number[]
 	onDismiss: () => void
 	onBackToGames: () => void
+	// Start a new game with the same table and settings. Omitted for a
+	// spectator, who has no seat to rematch from.
+	onRematch?: () => void
 }
 
 type TabKey = 'scores' | 'rolls' | 'highlights'
@@ -81,6 +86,7 @@ export function GameOverOverlay({
 	publicByPlayer,
 	onDismiss,
 	onBackToGames,
+	onRematch,
 }: GameOverOverlayProps) {
 	const [tab, setTab] = useState<TabKey>('scores')
 	const { height: windowHeight } = useWindowDimensions()
@@ -134,16 +140,25 @@ export function GameOverOverlay({
 				/>
 			)}
 			<View style={styles.buttons}>
-				<Button
-					variant="secondary"
-					onPress={onDismiss}
-					style={styles.button}
-				>
-					View board
-				</Button>
-				<Button onPress={onBackToGames} style={styles.button}>
-					Back to games
-				</Button>
+				{onRematch && <Button onPress={onRematch}>Rematch</Button>}
+				<View style={styles.buttonRow}>
+					<Button
+						variant="secondary"
+						onPress={onDismiss}
+						style={styles.button}
+					>
+						View board
+					</Button>
+					{/* Rematch takes the primary slot when it's offered, so the
+					    two exits sit together as the quieter row. */}
+					<Button
+						variant={onRematch ? 'secondary' : 'primary'}
+						onPress={onBackToGames}
+						style={styles.button}
+					>
+						Back to games
+					</Button>
+				</View>
 			</View>
 		</Modal>
 	)
@@ -725,11 +740,14 @@ const styles = StyleSheet.create({
 		color: colors.text,
 	},
 	buttons: {
-		flexDirection: 'row',
 		gap: spacing.sm,
 		padding: spacing.md,
 		borderTopWidth: 1,
 		borderTopColor: colors.border,
+	},
+	buttonRow: {
+		flexDirection: 'row',
+		gap: spacing.sm,
 	},
 	// Even halves so neither label can push the row past the sheet width.
 	button: {

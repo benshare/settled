@@ -2,8 +2,10 @@ import { useAuth } from '@/lib/auth'
 import {
 	MAX_PLAYERS,
 	monopolyCap,
+	parseGameConfig,
 	sameStringSet,
 	type BuildPhaseFrequency,
+	type GameConfig,
 	type NumberLayout,
 	type TradeMode,
 } from '@/lib/catan/types'
@@ -21,7 +23,7 @@ import {
 import { useTheme } from '@/lib/ThemeContext'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
-import { useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import type React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -51,40 +53,59 @@ export default function CreateGameScreen() {
 		? parseGameDefaults(profile.game_defaults)
 		: DEFAULT_GAME_DEFAULTS
 
+	// Rematch: the finished game's table + settings arrive as route params from
+	// the game-over modal. Parsed once, on mount — a later render must never
+	// re-seed the form over the user's edits.
+	const { invite, config: configParam } = useLocalSearchParams<{
+		invite?: string
+		config?: string
+	}>()
+	const [rematchConfig] = useState<GameConfig | null>(() =>
+		configParam ? parseRematchConfig(configParam) : null
+	)
+	const rematchInvites = useMemo(
+		() => (invite ? invite.split(',').filter(Boolean) : []),
+		[invite]
+	)
+	const isRematch = rematchInvites.length > 0
+	// A rematch seeds the form from the game it repeats; everything else from
+	// the profile's saved defaults.
+	const initial: GameDefaults = rematchConfig
+		? gameDefaultsFrom(rematchConfig)
+		: savedDefaults
+
 	const [query, setQuery] = useState('')
 	const [selected, setSelected] = useState<Set<string>>(new Set())
-	const [bonuses, setBonuses] = useState(savedDefaults.extras.bonuses)
+	const [bonuses, setBonuses] = useState(initial.extras.bonuses)
 	const [bonusSets, setBonusSets] = useState<string[]>(
-		savedDefaults.extras.bonusSets
+		initial.extras.bonusSets
 	)
 	const [bannedCombos, setBannedCombos] = useState(
-		savedDefaults.extras.bannedCombos
+		initial.extras.bannedCombos
 	)
-	const [devCards, setDevCards] = useState(savedDefaults.settings.devCards)
+	const [devCards, setDevCards] = useState(initial.settings.devCards)
 	const [numberLayout, setNumberLayout] = useState<NumberLayout>(
-		savedDefaults.settings.numberLayout
+		initial.settings.numberLayout
 	)
-	const [honk, setHonk] = useState(savedDefaults.settings.honk)
+	const [honk, setHonk] = useState(initial.settings.honk)
 	const [friendlyRobber, setFriendlyRobber] = useState(
-		savedDefaults.settings.friendlyRobber
+		initial.settings.friendlyRobber
 	)
 	const [limitMonopoly, setLimitMonopoly] = useState(
-		savedDefaults.settings.limitMonopoly
+		initial.settings.limitMonopoly
 	)
 	const [tradeMode, setTradeMode] = useState<TradeMode>(
-		savedDefaults.settings.tradeMode
+		initial.settings.tradeMode
 	)
-	const [spectators, setSpectators] = useState(
-		savedDefaults.settings.spectators
-	)
+	const [spectators, setSpectators] = useState(initial.settings.spectators)
 	const [extraBuildEnabled, setExtraBuildEnabled] = useState(
-		savedDefaults.settings.extraBuild.enabled
+		initial.settings.extraBuild.enabled
 	)
 	const [buildPhases, setBuildPhases] = useState<BuildPhaseFrequency>(
-		savedDefaults.settings.extraBuild.buildPhases
+		initial.settings.extraBuild.buildPhases
 	)
 	const [moreThanSeven, setMoreThanSeven] = useState(
-		savedDefaults.settings.extraBuild.moreThanSeven
+		initial.settings.extraBuild.moreThanSeven
 	)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [extrasOpen, setExtrasOpen] = useState(false)
@@ -94,8 +115,9 @@ export default function CreateGameScreen() {
 
 	// If the profile loads after mount, reset form fields to match the
 	// freshly-loaded saved values. Users who touched the toggles before the
-	// load completed keep their edits.
-	const [touched, setTouched] = useState(false)
+	// load completed keep their edits — as does a rematch, whose settings come
+	// from the repeated game rather than from the defaults.
+	const [touched, setTouched] = useState(rematchConfig !== null)
 	const savedBonuses = savedDefaults.extras.bonuses
 	const savedBonusSets = savedDefaults.extras.bonusSets
 	const savedBannedCombos = savedDefaults.extras.bannedCombos
@@ -198,7 +220,24 @@ export default function CreateGameScreen() {
 	const playerCount = selected.size + 1
 	const showExtraBuild = playerCount > 4
 
+	// Preselect a rematch's table. Done in an effect rather than as initial
+	// state because the friends list can land after mount; anyone the viewer is
+	// no longer friends with is dropped, since the picker can't show them and a
+	// hidden selection would make the invite count lie.
+	const [playersTouched, setPlayersTouched] = useState(false)
+	useEffect(() => {
+		if (playersTouched || rematchInvites.length === 0) return
+		setSelected(
+			new Set(
+				rematchInvites.filter((id) =>
+					friends.some((f) => f.otherId === id)
+				)
+			)
+		)
+	}, [rematchInvites, friends, playersTouched])
+
 	function toggle(id: string) {
+		setPlayersTouched(true)
 		setSelected((prev) => {
 			const next = new Set(prev)
 			if (next.has(id)) next.delete(id)
@@ -264,7 +303,9 @@ export default function CreateGameScreen() {
 							color={colors.text}
 						/>
 					</Pressable>
-					<Text style={styles.title}>Create game</Text>
+					<Text style={styles.title}>
+						{isRematch ? 'Rematch' : 'Create game'}
+					</Text>
 					<View style={styles.back} />
 				</View>
 
@@ -587,6 +628,38 @@ export default function CreateGameScreen() {
 			</KeyboardAvoidingView>
 		</SafeAreaView>
 	)
+}
+
+// The rematch config rides the route as JSON. `parseGameConfig` already fills
+// in anything missing, so only the parse itself can fail here.
+function parseRematchConfig(raw: string): GameConfig | null {
+	try {
+		return parseGameConfig(JSON.parse(raw))
+	} catch {
+		return null
+	}
+}
+
+// A game's config is flat; the form is grouped the way the profile's saved
+// defaults are, so reshape before seeding state from a rematch.
+function gameDefaultsFrom(config: GameConfig): GameDefaults {
+	return {
+		settings: {
+			devCards: config.devCards,
+			numberLayout: config.numberLayout,
+			honk: config.honk,
+			friendlyRobber: config.friendlyRobber,
+			limitMonopoly: config.limitMonopoly,
+			tradeMode: config.tradeMode,
+			spectators: config.spectators,
+			extraBuild: config.extraBuild,
+		},
+		extras: {
+			bonuses: config.bonuses,
+			bonusSets: config.bonusSets,
+			bannedCombos: config.bannedCombos,
+		},
+	}
 }
 
 function CollapsibleSection({
