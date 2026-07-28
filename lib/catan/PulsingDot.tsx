@@ -52,3 +52,40 @@ export function PulsingDot({
 		/>
 	)
 }
+
+// The same attention affordance drawn as a ring, for spots that already hold a
+// piece — a filled dot would cover the very thing being pointed at. Shares the
+// dot's clock, so rings and dots breathe together.
+export function PulsingRing({
+	cx,
+	cy,
+	r,
+	color,
+	width,
+}: {
+	cx: number
+	cy: number
+	r: number
+	color: string
+	width: number
+}) {
+	useEffect(() => {
+		ensurePulseStarted()
+	}, [])
+
+	const animatedProps = useAnimatedProps(() => ({
+		r: r * (1 + 0.18 * PULSE_T.value),
+		opacity: 1 - 0.5 * PULSE_T.value,
+	}))
+
+	return (
+		<AnimatedCircle
+			cx={cx}
+			cy={cy}
+			fill="none"
+			stroke={color}
+			strokeWidth={width}
+			animatedProps={animatedProps}
+		/>
+	)
+}

@@ -9,10 +9,15 @@
 //     zeroed hands, initial-placement phase), and delete the request.
 //   - place_settlement: place the current player's settlement at `vertex`
 //     during initial placement. Grants starting resources on the second
-//     settlement. Advances phase.step to 'road'.
+//     settlement, except for the seat that places both back-to-back — see
+//     choose_last_settlement. Advances phase.step to 'road'.
 //   - place_road: place the current player's road on `edge` incident to
 //     their just-placed settlement. Advances snake-order turn; on the final
 //     road, transitions the game to status='active' / phase='roll'.
+//   - choose_last_settlement: for the seat that places both settlements
+//     back-to-back, nominates which one it placed last. Grants that
+//     settlement's starting resources, rewrites the seat's placement events
+//     into the nominated order, and resumes the snake order.
 //   - roll: during phase='roll', rolls 2d6. On a non-7, distributes resources
 //     to every settlement/city adjacent to a matching hex (except the hex the
 //     robber sits on), transitions to phase='main'. On a 7, transitions to
@@ -78,6 +83,11 @@ type PlaceRoadBody = {
 	action: 'place_road'
 	game_id: string
 	edge: string
+}
+type ChooseLastSettlementBody = {
+	action: 'choose_last_settlement'
+	game_id: string
+	vertex: string
 }
 // `total` is the admin-testing roll override — honoured only for a seat whose
 // player row carries `dev: true`. Absent on every normal roll.
@@ -279,6 +289,7 @@ type Body =
 	| PickBonusBody
 	| PlaceSettlementBody
 	| PlaceRoadBody
+	| ChooseLastSettlementBody
 	| RollBody
 	| ConfirmRollBody
 	| RerollDiceBody
@@ -1781,6 +1792,28 @@ function isValidSettlementVertex(
 		if (!settlementKeepsYouthOK(state, playerIdx, v)) return false
 	}
 	return true
+}
+
+// Snake order makes the last seat of round 1 the first of round 2, so only
+// that seat places both settlements back-to-back and gets to nominate which
+// one it placed last (`step: 'pick_last'`).
+function isDoublePlacementSeat(
+	playerIdx: number,
+	playerCount: number
+): boolean {
+	return playerIdx === playerCount - 1
+}
+
+function ownSettlementVertices(state: GameState, playerIdx: number): Vertex[] {
+	return boardFor(state.variant).vertices.filter((v) => {
+		const vs = vertexStateOf(state, v)
+		return (
+			vs.occupied &&
+			vs.player === playerIdx &&
+			vs.building === 'settlement' &&
+			!isGhost(vs)
+		)
+	})
 }
 
 function targetSettlement(state: GameState, playerIdx: number): Vertex | null {
@@ -3880,6 +3913,57 @@ async function handlePickBonus(
 	return json({ ok: true })
 }
 
+// The starting-resource grant for one settlement: 1 of each adjacent
+// non-desert hex's resource. Nomad: a starting settlement on the desert
+// produces a resource, same as a 7-roll. One d5 per adjacent desert hex
+// (settlement = 1 each), and each rolls a `nomad_produce` event so the reveal
+// animation plays. Shared by `place_settlement` and the deferred grant in
+// `choose_last_settlement` so the two can't drift.
+function applyStartingGrant(
+	state: GameState,
+	playerIdx: number,
+	vertex: Vertex
+): { players: GameState['players']; nomadEvents: unknown[] } {
+	const grant = startingResourcesForVertex(state, vertex)
+	const nomadEvents: unknown[] = []
+	const nomadGrant: ResourceHand = {
+		brick: 0,
+		wood: 0,
+		sheep: 0,
+		wheat: 0,
+		ore: 0,
+	}
+	if (bonusOf(state, playerIdx) === 'nomad') {
+		for (const h of boardFor(state.variant).adjacentHexes[vertex]) {
+			if (state.hexes[h].resource !== null) continue
+			const resource = nomadDie()
+			nomadGrant[resource] += 1
+			nomadEvents.push({
+				kind: 'nomad_produce',
+				player: playerIdx,
+				resource,
+				count: 1,
+				at: new Date().toISOString(),
+			})
+		}
+	}
+	const players = state.players.map((p, i) => {
+		if (i !== playerIdx) return p
+		const r = p.resources
+		return {
+			...p,
+			resources: {
+				wood: r.wood + grant.wood + nomadGrant.wood,
+				wheat: r.wheat + grant.wheat + nomadGrant.wheat,
+				sheep: r.sheep + grant.sheep + nomadGrant.sheep,
+				brick: r.brick + grant.brick + nomadGrant.brick,
+				ore: r.ore + grant.ore + nomadGrant.ore,
+			},
+		}
+	})
+	return { players, nomadEvents }
+}
+
 async function handlePlaceSettlement(
 	admin: SupabaseClient,
 	me: string,
@@ -3921,48 +4005,19 @@ async function handlePlaceSettlement(
 	}
 
 	let nextPlayers = state.players
-	const nomadEvents: unknown[] = []
+	let nomadEvents: unknown[] = []
 	const myBonus = bonusOf(state, meIdx)
-	if (round === 2 || myBonus === 'aristocrat') {
-		const grant = startingResourcesForVertex(state, vertex)
-		// Nomad: a starting settlement on the desert produces a resource, same
-		// as a 7-roll. One d5 per adjacent desert hex (settlement = 1 each), and
-		// each rolls a `nomad_produce` event so the reveal animation plays.
-		const nomadGrant: ResourceHand = {
-			brick: 0,
-			wood: 0,
-			sheep: 0,
-			wheat: 0,
-			ore: 0,
-		}
-		if (myBonus === 'nomad') {
-			for (const h of boardFor(state.variant).adjacentHexes[vertex]) {
-				if (state.hexes[h].resource !== null) continue
-				const resource = nomadDie()
-				nomadGrant[resource] += 1
-				nomadEvents.push({
-					kind: 'nomad_produce',
-					player: meIdx,
-					resource,
-					count: 1,
-					at: new Date().toISOString(),
-				})
-			}
-		}
-		nextPlayers = state.players.map((p, i) => {
-			if (i !== meIdx) return p
-			const r = p.resources
-			return {
-				...p,
-				resources: {
-					wood: r.wood + grant.wood + nomadGrant.wood,
-					wheat: r.wheat + grant.wheat + nomadGrant.wheat,
-					sheep: r.sheep + grant.sheep + nomadGrant.sheep,
-					brick: r.brick + grant.brick + nomadGrant.brick,
-					ore: r.ore + grant.ore + nomadGrant.ore,
-				},
-			}
-		})
+	// The seat that places both settlements back-to-back nominates which one it
+	// placed last (`step: 'pick_last'`) and is granted there instead. An
+	// aristocrat collects on both, so it has nothing to defer or choose.
+	const deferGrant =
+		round === 2 &&
+		myBonus !== 'aristocrat' &&
+		isDoublePlacementSeat(meIdx, game.player_order.length)
+	if ((round === 2 || myBonus === 'aristocrat') && !deferGrant) {
+		const applied = applyStartingGrant(state, meIdx, vertex)
+		nextPlayers = applied.players
+		nomadEvents = applied.nomadEvents
 	}
 
 	const nextPhase: Phase = {
@@ -4046,6 +4101,50 @@ async function handlePlaceRoad(
 		at: new Date().toISOString(),
 	}
 
+	// A game that was already past its round-2 `place_settlement` when this
+	// feature deployed was granted under the old rule, and offering the pick
+	// now would either double the grant or leave the log disagreeing with the
+	// hand. During initial placement a non-aristocrat seat has no other way to
+	// hold cards, so a non-empty hand is an exact test for "already granted".
+	const alreadyGranted =
+		Object.values(state.players[meIdx]!.resources).reduce(
+			(a, b) => a + b,
+			0
+		) > 0
+
+	// Both of this seat's settlements are now down, and nothing fixed which it
+	// placed first — it nominates one, and that one pays the starting
+	// resources (deferred from `place_settlement`). The turn stays put.
+	if (
+		round === 2 &&
+		isDoublePlacementSeat(meIdx, playerCount) &&
+		bonusOf(state, meIdx) !== 'aristocrat' &&
+		!alreadyGranted
+	) {
+		const { error: stateErr } = await admin
+			.from('game_states')
+			.update({
+				edges: nextEdges,
+				phase: {
+					kind: 'initial_placement',
+					round: 2,
+					step: 'pick_last',
+				} satisfies Phase,
+			})
+			.eq('game_id', game.id)
+		if (stateErr) return err(500, 'could not update state')
+
+		const { error: gameErr } = await admin
+			.from('games')
+			.update({ events: [...(game.events ?? []), roadEvent] })
+			.eq('id', game.id)
+		if (gameErr) return err(500, 'could not log event')
+
+		// No notification: the player who has to act next is the one who just
+		// acted, and they're looking at the screen.
+		return json({ ok: true })
+	}
+
 	if (next === null) {
 		// Last placement — transition to active. If any player has a
 		// start-of-game bonus (specialist, explorer), enter `post_placement`
@@ -4120,6 +4219,135 @@ async function handlePlaceRoad(
 		.update({
 			current_turn: next.currentTurn,
 			events: [...(game.events ?? []), roadEvent],
+		})
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not update game')
+
+	const nextUserId = game.player_order[next.currentTurn]
+	if (nextUserId) {
+		EdgeRuntime.waitUntil(
+			sendNotifications(admin, [
+				{
+					userId: nextUserId,
+					kind: 'your_turn',
+					gate: 'yourTurn',
+					gameId: game.id,
+				},
+			])
+		)
+	}
+
+	return json({ ok: true })
+}
+
+// Mirror of `swapPlacementPairs` in lib/catan/placement.ts — rewrites the
+// acting seat's two placement pairs in `games.events` so the log shows the
+// order the player just nominated. Only the payloads move: `round` and `at`
+// stay put, which keeps timestamps monotonic and each road with its own
+// settlement. Located by scanning backwards rather than by index arithmetic,
+// so an unrelated event landing between them can't corrupt the swap.
+function swapPlacementPairs(events: unknown[], playerIdx: number): unknown[] {
+	const indicesOf = (kind: string) => {
+		const out: number[] = []
+		for (let i = events.length - 1; i >= 0 && out.length < 2; i--) {
+			const e = events[i] as { kind?: string; player?: number }
+			if (e?.kind === kind && e.player === playerIdx) out.unshift(i)
+		}
+		return out
+	}
+	const settlements = indicesOf('settlement_placed')
+	const roads = indicesOf('road_placed')
+	// A legacy or hand-edited log that doesn't have both pairs: leave it be.
+	// The grant is the part that matters and it applies either way.
+	if (settlements.length < 2 || roads.length < 2) return events.slice()
+
+	const next = events.slice()
+	const swap = (idxs: number[], key: 'vertex' | 'edge') => {
+		const a = { ...(next[idxs[0]] as Record<string, unknown>) }
+		const b = { ...(next[idxs[1]] as Record<string, unknown>) }
+		const tmp = a[key]
+		a[key] = b[key]
+		b[key] = tmp
+		next[idxs[0]] = a
+		next[idxs[1]] = b
+	}
+	swap(settlements, 'vertex')
+	swap(roads, 'edge')
+	return next
+}
+
+async function handleChooseLastSettlement(
+	admin: SupabaseClient,
+	me: string,
+	body: ChooseLastSettlementBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'placement') return err(400, 'not in placement')
+	if (state.phase.kind !== 'initial_placement') return err(400, 'wrong phase')
+	if (state.phase.step !== 'pick_last')
+		return err(400, 'expected pick_last step')
+
+	const meIdx = currentPlayerIndex(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	const mine = ownSettlementVertices(state, meIdx)
+	if (!mine.includes(body.vertex as Vertex))
+		return err(400, 'not your settlement')
+	const vertex = body.vertex as Vertex
+
+	const applied = applyStartingGrant(state, meIdx, vertex)
+
+	const playerCount = game.player_order.length
+	// Round 2 with meIdx = playerCount - 1, so this is never the final
+	// placement — round 2 still has to walk back down to seat 0.
+	const next = nextPlacementTurn(2, meIdx, playerCount)
+	if (next === null) return err(500, 'unexpected end of placement')
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({
+			players: applied.players,
+			phase: {
+				kind: 'initial_placement',
+				round: next.round,
+				step: 'settlement',
+			} satisfies Phase,
+		})
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	// The round-2 settlement is the one already recorded last, so nominating
+	// it is a no-op for the log.
+	const roundTwoVertex = (game.events ?? []).reduce<string | null>(
+		(found, e) => {
+			const ev = e as {
+				kind?: string
+				player?: number
+				round?: number
+				vertex?: string
+			}
+			return ev?.kind === 'settlement_placed' &&
+				ev.player === meIdx &&
+				ev.round === 2
+				? (ev.vertex ?? null)
+				: found
+		},
+		null
+	)
+	const events =
+		roundTwoVertex === vertex
+			? (game.events ?? [])
+			: swapPlacementPairs(game.events ?? [], meIdx)
+
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({
+			current_turn: next.currentTurn,
+			events: [...events, ...applied.nomadEvents],
 		})
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
@@ -8195,6 +8423,8 @@ function dispatch(
 			return handlePlaceSettlement(admin, me, body)
 		case 'place_road':
 			return handlePlaceRoad(admin, me, body)
+		case 'choose_last_settlement':
+			return handleChooseLastSettlement(admin, me, body)
 		case 'roll':
 			return handleRoll(admin, me, body)
 		case 'confirm_roll':

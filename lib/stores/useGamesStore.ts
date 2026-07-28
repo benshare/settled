@@ -389,6 +389,12 @@ type GamesStore = {
 
 	placeSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
 	placeRoad: (gameId: string, edge: string) => Promise<ActionResult>
+	// Only the seat that places both starting settlements back-to-back is ever
+	// asked this; `vertex` is the one it nominates as placed last.
+	chooseLastSettlement: (
+		gameId: string,
+		vertex: string
+	) => Promise<ActionResult>
 
 	// `forcedTotal` is the admin-testing override; the edge function honours it
 	// only for a seat whose player row carries `dev: true`.
@@ -823,6 +829,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'place_road', game_id: gameId, edge },
 			"Couldn't place road"
+		)
+	},
+
+	async chooseLastSettlement(gameId, vertex) {
+		return callGameService(
+			{ action: 'choose_last_settlement', game_id: gameId, vertex },
+			"Couldn't choose settlement"
 		)
 	},
 

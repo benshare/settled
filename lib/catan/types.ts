@@ -441,7 +441,15 @@ export type Phase =
 	// once every `hands[i].chosen` is non-null, the phase advances to
 	// initial_placement and the kept bonus/curse snapshots onto PlayerState.
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
-	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
+	// `pick_last` is only ever reached with round 2 by the one seat that places
+	// both settlements back-to-back (see placement.ts `isDoublePlacementSeat`):
+	// they nominate which settlement they placed last, and that one pays the
+	// starting resources. Skipped for an aristocrat, who collects on both.
+	| {
+			kind: 'initial_placement'
+			round: 1 | 2
+			step: 'settlement' | 'road' | 'pick_last'
+	  }
 	// Start-of-game bonus resolutions (specialist declaration, explorer free
 	// roads, etc). Inserted between the final initial_placement road and
 	// the first roll when any player has a bonus that requires an up-front

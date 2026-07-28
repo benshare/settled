@@ -30,6 +30,17 @@ export function placementTurnPlayer(
 	return round === 1 ? posInRound : playerCount - 1 - posInRound
 }
 
+// Snake order makes the last seat of round 1 the first of round 2, so that
+// seat — and only that seat — places both settlements back-to-back with no
+// intervening turn. Nothing fixes which of the two it placed first, so it gets
+// to nominate the one that pays out (`step: 'pick_last'`).
+export function isDoublePlacementSeat(
+	playerIdx: number,
+	playerCount: number
+): boolean {
+	return playerIdx === playerCount - 1
+}
+
 // Advance one placement step (settlement+road is one step) from the given
 // round/turn. Returns null once round 2's last placement is complete, which
 // is the signal to transition out of initial placement.
@@ -85,6 +96,24 @@ export function validSettlementVertices(
 	return boardFor(state.variant).vertices.filter((v) =>
 		isValidSettlementVertex(state, v, playerIdx)
 	)
+}
+
+// A player's own settlements. During initial placement this is the pair the
+// `pick_last` step chooses between. Ghosts (haunt) are excluded — they don't
+// exist this early, but they aren't the player's own placements either.
+export function ownSettlementVertices(
+	state: GameState,
+	playerIdx: number
+): Vertex[] {
+	return boardFor(state.variant).vertices.filter((v) => {
+		const vs = vertexStateOf(state, v)
+		return (
+			vs.occupied &&
+			vs.player === playerIdx &&
+			vs.building === 'settlement' &&
+			!isGhost(vs)
+		)
+	})
 }
 
 // --- Road validity ----------------------------------------------------------
@@ -163,6 +192,51 @@ export function addHand(a: ResourceHand, b: ResourceHand): ResourceHand {
 	const out: ResourceHand = { ...a }
 	for (const r of RESOURCES) out[r] = a[r] + b[r]
 	return out
+}
+
+// --- Nominating the last-placed settlement ----------------------------------
+
+// Rewrites a seat's two placement pairs in `games.events` so the log shows the
+// order the player nominated on the `pick_last` step. Only the payloads move —
+// `round` and `at` stay put, which keeps timestamps monotonic and keeps each
+// road with the settlement it was placed from (a road is always incident to
+// its own settlement, so swapping pairwise is the whole operation).
+//
+// Events are located by scanning backwards for the seat's last two
+// `settlement_placed` / `road_placed` entries rather than by index arithmetic,
+// so an unrelated event landing between them can't corrupt the rewrite. A log
+// missing either pair is returned untouched — the resource grant is the part
+// that matters and it applies either way. Typed loosely because the caller is
+// the edge function, which handles `games.events` as `unknown[]`.
+export function swapPlacementPairs(
+	events: readonly unknown[],
+	playerIdx: number
+): unknown[] {
+	const indicesOf = (kind: string) => {
+		const out: number[] = []
+		for (let i = events.length - 1; i >= 0 && out.length < 2; i--) {
+			const e = events[i] as { kind?: string; player?: number }
+			if (e?.kind === kind && e.player === playerIdx) out.unshift(i)
+		}
+		return out
+	}
+	const settlements = indicesOf('settlement_placed')
+	const roads = indicesOf('road_placed')
+	if (settlements.length < 2 || roads.length < 2) return events.slice()
+
+	const next = events.slice()
+	const swap = (idxs: number[], key: 'vertex' | 'edge') => {
+		const a = { ...(next[idxs[0]] as Record<string, unknown>) }
+		const b = { ...(next[idxs[1]] as Record<string, unknown>) }
+		const tmp = a[key]
+		a[key] = b[key]
+		b[key] = tmp
+		next[idxs[0]] = a
+		next[idxs[1]] = b
+	}
+	swap(settlements, 'vertex')
+	swap(roads, 'edge')
+	return next
 }
 
 // --- Misc -------------------------------------------------------------------

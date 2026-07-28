@@ -442,11 +442,15 @@ function PlacementHeader({
 			? 'You'
 			: (profilesById[currentId]?.username ?? 'Player')
 
-	const stepLabel =
-		gameState.phase.step === 'settlement' ? 'settlement' : 'road'
-	const message = isMyTurn
-		? `Your turn — place ${prefix(stepLabel)} ${stepLabel}`
-		: `Waiting for ${currentName} to place ${prefix(stepLabel)} ${stepLabel}`
+	const step = gameState.phase.step
+	const message =
+		step === 'pick_last'
+			? isMyTurn
+				? 'Your turn — choose the settlement you placed last'
+				: `Waiting for ${currentName} to choose their starting settlement`
+			: isMyTurn
+				? `Your turn — place ${prefix(step)} ${step}`
+				: `Waiting for ${currentName} to place ${prefix(step)} ${step}`
 
 	return (
 		<View style={styles.statusWrap}>
@@ -633,7 +637,9 @@ function spectatorStatus(
 		case 'select_bonus':
 			return 'Players are choosing bonuses'
 		case 'initial_placement':
-			return `${current} is placing ${prefix(phase.step)} ${phase.step}`
+			return phase.step === 'pick_last'
+				? `${current} is choosing their starting settlement`
+				: `${current} is placing ${prefix(phase.step)} ${phase.step}`
 		case 'post_placement':
 			return 'Players are setting up their bonuses'
 		case 'roll':

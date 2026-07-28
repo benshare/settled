@@ -99,6 +99,7 @@ function useGameScreenState(gameId: string) {
 	const pickBonus = useGamesStore((s) => s.pickBonus)
 	const placeSettlement = useGamesStore((s) => s.placeSettlement)
 	const placeRoad = useGamesStore((s) => s.placeRoad)
+	const chooseLastSettlement = useGamesStore((s) => s.chooseLastSettlement)
 	const roll = useGamesStore((s) => s.roll)
 	const confirmRoll = useGamesStore((s) => s.confirmRoll)
 	const rerollDice = useGamesStore((s) => s.rerollDice)
@@ -242,14 +243,25 @@ function useGameScreenState(gameId: string) {
 	const isMySpecialBuild =
 		sbActor !== null && sbActor === meIdx && game?.status === 'active'
 
-	// Reset selection when the turn or phase step changes under us.
+	// Reset selection when the turn or phase step changes under us — except on
+	// the `pick_last` step, which opens pre-seeded with the round-2 settlement
+	// so confirming untouched reproduces the standard rule. Which settlement
+	// that is has to come from the log: once both roads are down the board no
+	// longer says which one went second.
 	const placementKey =
 		gameState?.phase.kind === 'initial_placement'
 			? `${game?.current_turn}-${gameState.phase.round}-${gameState.phase.step}`
 			: null
+	const pickLastSeed =
+		gameState?.phase.kind === 'initial_placement' &&
+		gameState.phase.step === 'pick_last'
+			? roundTwoSettlementOf((game?.events ?? []) as GameEvent[], meIdx)
+			: null
 	useEffect(() => {
-		setSelection(null)
-	}, [placementKey])
+		setSelection(
+			pickLastSeed ? { kind: 'settlement', vertex: pickLastSeed } : null
+		)
+	}, [placementKey, pickLastSeed])
 
 	// Clear build tool + trade panel when we can no longer build — the turn
 	// flips away / we leave main, or a special-build slot passes to someone
@@ -744,11 +756,16 @@ function useGameScreenState(gameId: string) {
 
 	async function onConfirm() {
 		if (!selection || !game) return
+		const pickingLast =
+			gameState?.phase.kind === 'initial_placement' &&
+			gameState.phase.step === 'pick_last'
 		setSubmitting(true)
 		const res =
-			selection.kind === 'settlement'
-				? await placeSettlement(game.id, selection.vertex)
-				: await placeRoad(game.id, selection.edge)
+			pickingLast && selection.kind === 'settlement'
+				? await chooseLastSettlement(game.id, selection.vertex)
+				: selection.kind === 'settlement'
+					? await placeSettlement(game.id, selection.vertex)
+					: await placeRoad(game.id, selection.edge)
 		setSubmitting(false)
 		if (res.error) {
 			notify('Placement failed', res.error)
@@ -1323,6 +1340,25 @@ function useGameScreenState(gameId: string) {
 // drop, or a second dropped resource means an unrelated hand change (a build,
 // a bank trade, a discard) is layered on top and the steal is unrecoverable —
 // answering anyway would attribute a random resource to the steal.
+// The settlement a seat placed on round 2 — the one today's rules pay out on,
+// and so the default answer on the `pick_last` step. Nominating it is a no-op
+// server-side; nominating the other swaps the pair in the log.
+function roundTwoSettlementOf(
+	events: GameEvent[],
+	playerIdx: number
+): string | null {
+	for (let i = events.length - 1; i >= 0; i--) {
+		const e = events[i]
+		if (
+			e.kind === 'settlement_placed' &&
+			e.player === playerIdx &&
+			e.round === 2
+		)
+			return e.vertex
+	}
+	return null
+}
+
 function diffStolenResource(
 	before: ResourceHandType,
 	after: ResourceHandType

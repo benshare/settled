@@ -2,9 +2,13 @@ import { Fragment } from 'react'
 import { Circle, G } from 'react-native-svg'
 import { edgeEndpoints, type Edge, type Vertex } from './board'
 import { EdgePiece } from './EdgePiece'
-import { playerColors } from './palette'
-import { validRoadEdges, validSettlementVertices } from './placement'
-import { PulsingDot } from './PulsingDot'
+import { pieceStroke, playerColors } from './palette'
+import {
+	ownSettlementVertices,
+	validRoadEdges,
+	validSettlementVertices,
+} from './placement'
+import { PulsingDot, PulsingRing } from './PulsingDot'
 import type { GameState } from './types'
 import { VertexPiece } from './VertexPiece'
 
@@ -13,8 +17,9 @@ export type PlacementSelection =
 
 // Overlay inside BoardSvg's transformed group. Shows valid-spot dots + hit
 // targets during the current user's initial-placement turn, plus a ghost
-// preview of the current selection. Does nothing if the game isn't in the
-// initial-placement phase.
+// preview of the current selection — or, on the `pick_last` step, rings around
+// the two settlements being chosen between. Does nothing if the game isn't in
+// the initial-placement phase.
 export function PlacementLayer({
 	state,
 	meIdx,
@@ -33,6 +38,55 @@ export function PlacementLayer({
 	if (state.phase.kind !== 'initial_placement') return null
 	const step = state.phase.step
 	const color = playerColors[meIdx] ?? playerColors[0]
+
+	// The back-to-back seat nominating which settlement it placed last. Both of
+	// its settlements are already on the board, so the affordance rings the
+	// pieces rather than marking empty spots. Self-gating: nobody else has two
+	// settlements to choose between, and a spectator (meIdx -1) owns none.
+	if (step === 'pick_last') {
+		const mine = ownSettlementVertices(state, meIdx)
+		return (
+			<G>
+				{mine.map((v) => {
+					const p = vertexPositions[v]
+					const isSelected =
+						selection?.kind === 'settlement' &&
+						selection.vertex === v
+					return (
+						<Fragment key={v}>
+							{isSelected ? (
+								<Circle
+									cx={p.x}
+									cy={p.y}
+									r={layoutS * 0.5}
+									fill="none"
+									stroke={pieceStroke}
+									strokeWidth={layoutS * 0.12}
+								/>
+							) : (
+								<PulsingRing
+									cx={p.x}
+									cy={p.y}
+									r={layoutS * 0.5}
+									color={pieceStroke}
+									width={layoutS * 0.08}
+								/>
+							)}
+							<Circle
+								cx={p.x}
+								cy={p.y}
+								r={layoutS * 0.45}
+								fill="transparent"
+								onPress={() =>
+									onSelect({ kind: 'settlement', vertex: v })
+								}
+							/>
+						</Fragment>
+					)
+				})}
+			</G>
+		)
+	}
 
 	if (step === 'settlement') {
 		const valids = validSettlementVertices(state, meIdx)

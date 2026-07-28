@@ -473,14 +473,17 @@ function confirmLabel(
 	gameState: GameState | undefined,
 	selection: PlacementSelection | null
 ): string {
+	const step =
+		gameState?.phase.kind === 'initial_placement'
+			? gameState.phase.step
+			: null
 	if (!selection) {
-		if (gameState?.phase.kind === 'initial_placement') {
-			return gameState.phase.step === 'settlement'
-				? 'Tap a spot to place settlement'
-				: 'Tap an edge to place road'
-		}
+		if (step === 'settlement') return 'Tap a spot to place settlement'
+		if (step === 'road') return 'Tap an edge to place road'
+		if (step === 'pick_last') return 'Tap the settlement you placed last'
 		return 'Select a spot'
 	}
+	if (step === 'pick_last') return 'Confirm starting settlement'
 	return selection.kind === 'settlement'
 		? 'Confirm settlement'
 		: 'Confirm road'

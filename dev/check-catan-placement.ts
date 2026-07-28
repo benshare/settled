@@ -14,9 +14,12 @@ import {
 } from '../lib/catan/board'
 import { initialGameState } from '../lib/catan/generate'
 import {
+	isDoublePlacementSeat,
 	isValidRoadEdge,
 	isValidSettlementVertex,
 	nextPlacementTurn,
+	ownSettlementVertices,
+	swapPlacementPairs,
 	placementTurnPlayer,
 	startingResourcesForVertex,
 	targetSettlement,
@@ -289,6 +292,150 @@ function testNextPlacementTurnBoundaries() {
 	equal(placementTurnPlayer(2, 3, 4), 0, 'r2 last is first of r1')
 }
 
+// Only the seat that places both settlements back-to-back — the last of round
+// 1, first of round 2 — gets the `pick_last` step.
+function testDoublePlacementSeat() {
+	for (const n of [2, 3, 4, 5, 6]) {
+		for (let i = 0; i < n; i++) {
+			equal(isDoublePlacementSeat(i, n), i === n - 1, `seat ${i} of ${n}`)
+		}
+		// It is exactly the seat that repeats across the round boundary.
+		equal(
+			placementTurnPlayer(1, n - 1, n),
+			placementTurnPlayer(2, 0, n),
+			`snake repeats seat ${n - 1} of ${n}`
+		)
+	}
+}
+
+function testOwnSettlementVertices() {
+	let s = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		bannedCombos: true,
+		devCards: false,
+		numberLayout: 'random',
+		honk: true,
+		friendlyRobber: false,
+		limitMonopoly: false,
+		tradeMode: 'automatic',
+		spectators: true,
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
+	})
+	const blocked = new Set<Vertex>([
+		'3F',
+		...(neighborVertices['3F'] as readonly Vertex[]),
+	])
+	const second = VERTICES.find((v) => !blocked.has(v))
+	assert(second, 'need a non-adjacent vertex')
+	const other = VERTICES.find(
+		(v) =>
+			!blocked.has(v) &&
+			v !== second &&
+			!(neighborVertices[second] as readonly Vertex[]).includes(v)
+	)
+	assert(other, 'need a third non-adjacent vertex')
+
+	s = placeSettlement(s, '3F', 2)
+	s = placeSettlement(s, second, 2)
+	s = placeSettlement(s, other, 0)
+
+	assertVerticesEqual(
+		ownSettlementVertices(s, 2),
+		['3F', second],
+		'seat 2 owns both of its settlements'
+	)
+	assertVerticesEqual(
+		ownSettlementVertices(s, 0),
+		[other],
+		'seat 0 owns only its own'
+	)
+	assertVerticesEqual(ownSettlementVertices(s, 1), [], 'seat 1 owns none')
+
+	// Ghosts (haunt) sit on the board but are not the player's placements.
+	s = {
+		...s,
+		vertices: {
+			...s.vertices,
+			[other]: {
+				occupied: true,
+				player: 0,
+				building: 'ghost',
+				placedTurn: 0,
+			},
+		},
+	}
+	assertVerticesEqual(
+		ownSettlementVertices(s, 0),
+		[],
+		'ghosts are not own settlements'
+	)
+}
+
+// The `pick_last` log rewrite: the two (settlement, road) pairs trade
+// payloads, everything else — including other seats' events — stays put.
+function testSwapPlacementPairs() {
+	const log = [
+		{
+			kind: 'settlement_placed',
+			player: 0,
+			vertex: 'A0',
+			round: 1,
+			at: '1',
+		},
+		{ kind: 'road_placed', player: 0, edge: 'a0', round: 1, at: '2' },
+		{
+			kind: 'settlement_placed',
+			player: 2,
+			vertex: 'X',
+			round: 1,
+			at: '3',
+		},
+		{ kind: 'road_placed', player: 2, edge: 'x', round: 1, at: '4' },
+		{
+			kind: 'settlement_placed',
+			player: 2,
+			vertex: 'Y',
+			round: 2,
+			at: '5',
+		},
+		{ kind: 'road_placed', player: 2, edge: 'y', round: 2, at: '6' },
+	]
+	const out = swapPlacementPairs(log, 2) as typeof log
+
+	equal(out.length, log.length, 'length unchanged')
+	equal(out[0].vertex, 'A0', "another seat's settlement untouched")
+	equal(out[1].edge, 'a0', "another seat's road untouched")
+	equal(out[2].vertex, 'Y', 'round-1 slot now holds the round-2 settlement')
+	equal(out[3].edge, 'y', 'its road came with it')
+	equal(out[4].vertex, 'X', 'round-2 slot now holds the round-1 settlement')
+	equal(out[5].edge, 'x', 'its road came with it')
+	// Rounds and timestamps describe the slot, not the piece, so they stay.
+	equal(out[2].round, 1, 'round stays with the slot')
+	equal(out[4].round, 2, 'round stays with the slot')
+	equal(out.map((e) => e.at).join(''), '123456', 'timestamps stay monotonic')
+	// Input is not mutated.
+	equal(log[2].vertex, 'X', 'input log untouched')
+
+	// Swapping twice is the identity, so nominating the round-2 settlement
+	// (which the caller skips) would have been a no-op either way.
+	const back = swapPlacementPairs(out, 2) as typeof log
+	equal(
+		back.map((e) => e.vertex ?? e.edge).join(','),
+		'A0,a0,X,x,Y,y',
+		'swap is an involution'
+	)
+
+	// A log missing a pair is returned as-is rather than half-rewritten.
+	const partial = [log[0], log[1], log[2], log[3]]
+	const untouched = swapPlacementPairs(partial, 0) as typeof log
+	equal(untouched[0].vertex, 'A0', 'incomplete pairs left alone')
+}
+
 function testValidSettlementExcludesAllNeighbors() {
 	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
@@ -333,6 +480,9 @@ const tests: [string, () => void][] = [
 	['valid road edges', testValidRoadEdges],
 	['starting resources — interior', testStartingResourcesInterior],
 	['nextPlacementTurn boundaries', testNextPlacementTurnBoundaries],
+	['double-placement seat', testDoublePlacementSeat],
+	['own settlement vertices', testOwnSettlementVertices],
+	['pick_last log swap', testSwapPlacementPairs],
 ]
 
 for (const [name, fn] of tests) {

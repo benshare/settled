@@ -24,8 +24,8 @@ involved), `discard` / `move_robber` / `steal` / `claim_curio` /
 `pick_forger_target` / `cast_magic` (robber + reaction chains), `end_turn`,
 `end_special_build`, `shepherd_swap`, `move_forger_token`,
 `set_specialist_resource`, `set_haunt_spots`, `pick_bonus`, `place_settlement` /
-`place_road` (initial placement — the snake order and starting-resource grant
-make a rollback its own feature).
+`place_road` / `choose_last_settlement` (initial placement — the snake order and
+starting-resource grant make a rollback its own feature).
 
 ## 2. Mechanism: snapshot, not inverse
 
