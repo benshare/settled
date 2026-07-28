@@ -11,6 +11,7 @@ import { useAppForeground } from '@/lib/appState'
 import { uniqueTopic } from '@/lib/realtime'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import { supabase } from '@/lib/supabase'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import {
 	createContext,
 	useCallback,
@@ -29,6 +30,12 @@ export const CHAT_MAX_CHARS = 500
 // pushing notifications at someone who is looking at the thread.
 const CHAT_PRESENCE_MS = 30_000
 const CHAT_HEARTBEAT_MS = CHAT_PRESENCE_MS / 2
+
+// How long a keystroke keeps someone showing as typing. Unrelated to
+// CHAT_PRESENCE_MS above — that one is about suppressing a push, this one is
+// about an animation. A draft abandoned mid-sentence would otherwise pin the
+// indicator on for as long as the panel stayed open.
+const TYPING_IDLE_MS = 4_000
 
 // The panel shows the tail of the conversation. Older history is not reachable
 // in v1 — see the spec's Out of scope.
@@ -50,6 +57,11 @@ export type ChatContextValue = {
 	setOpen: (open: boolean) => void
 	send: (body: string) => Promise<{ error: string | null }>
 	sending: boolean
+	// Everyone except the viewer currently composing a message in this game.
+	typingIds: string[]
+	// Called by the composer on every keystroke, with whether the draft still
+	// has anything in it.
+	noteTyping: (drafting: boolean) => void
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
@@ -77,6 +89,8 @@ export function ChatProvider({
 	const [open, setOpen] = useState(requestOpen)
 	const [sending, setSending] = useState(false)
 	const [lastReadAt, setLastReadAt] = useState<string | null>(null)
+	const [typingIds, setTypingIds] = useState<string[]>([])
+	const [typing, setTyping] = useState(false)
 
 	// A chat notification tapped while this screen is already open reuses the
 	// screen, so the request arrives as a prop change rather than a mount.
@@ -119,6 +133,8 @@ export function ChatProvider({
 	useEffect(() => {
 		setMessages(undefined)
 		setLastReadAt(null)
+		setTypingIds([])
+		setTyping(false)
 	}, [gameId])
 
 	useEffect(() => {
@@ -202,6 +218,91 @@ export function ChatProvider({
 		}
 	}, [open, markRead])
 
+	// --- Typing presence ---------------------------------------------------
+	// Ephemeral, so there's nothing to store and nothing to clean up: a typer
+	// who closes the app simply stops being present. Presence rather than a
+	// broadcast heartbeat precisely because of that — with broadcast, every
+	// client would have to expire every other client on a timer, and a crash
+	// would leave the indicator stuck until it fired.
+	//
+	// Membership *is* the signal, so the viewer tracks and untracks rather than
+	// tracking a `{ typing }` flag: a flag would mean a presence event on every
+	// panel open and close for a state nobody reads.
+	//
+	// The channel is only joined while the panel is open. The indicator has no
+	// closed-panel surface, so a viewer with chat shut has nothing to do with
+	// the roster — and closing therefore stops them being tracked for free.
+	const typingChannel = useRef<RealtimeChannel | null>(null)
+	// Read from the SUBSCRIBED callback, which fires outside this render.
+	const typingRef = useRef(false)
+
+	useEffect(() => {
+		if (!gameId || !meId || !open) return
+		setTypingIds([])
+		const channel = supabase.channel(uniqueTopic(`chat_typing:${gameId}`), {
+			config: { presence: { key: meId } },
+		})
+		const sync = () => {
+			setTypingIds(
+				Object.keys(channel.presenceState()).filter((id) => id !== meId)
+			)
+		}
+		channel
+			.on('presence', { event: 'sync' }, sync)
+			.on('presence', { event: 'join' }, sync)
+			.on('presence', { event: 'leave' }, sync)
+			.subscribe((status) => {
+				// `track` before the join lands is dropped, so the state is
+				// asserted from here — on the first join and on every automatic
+				// rejoin after a drop, which is what makes a reconnect
+				// mid-sentence keep showing the viewer as typing.
+				if (status === 'SUBSCRIBED' && typingRef.current) {
+					channel.track({})
+				}
+			})
+		typingChannel.current = channel
+		return () => {
+			typingChannel.current = null
+			supabase.removeChannel(channel)
+		}
+	}, [gameId, meId, open, resyncNonce])
+
+	// Split from the subscribe effect so a keystroke doesn't tear down and
+	// rebuild the channel. Only transitions reach the wire — `typing` is a
+	// boolean, so a fast typist emits one `track` per burst, not one per key.
+	useEffect(() => {
+		typingRef.current = typing
+		const channel = typingChannel.current
+		if (!channel) return
+		if (typing) channel.track({})
+		else channel.untrack()
+	}, [typing])
+
+	// A close can't be allowed to leave a tracked presence behind.
+	useEffect(() => {
+		if (!open) setTyping(false)
+	}, [open])
+
+	const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const noteTyping = useCallback((drafting: boolean) => {
+		if (idleTimer.current) clearTimeout(idleTimer.current)
+		// An emptied composer stops typing at once rather than after the idle
+		// window — there is nothing left to be composing.
+		if (!drafting) {
+			setTyping(false)
+			return
+		}
+		setTyping(true)
+		idleTimer.current = setTimeout(() => setTyping(false), TYPING_IDLE_MS)
+	}, [])
+
+	useEffect(
+		() => () => {
+			if (idleTimer.current) clearTimeout(idleTimer.current)
+		},
+		[]
+	)
+
 	const unreadCount = useMemo(() => {
 		if (!messages || !meId) return 0
 		const cutoff = lastReadAt ? Date.parse(lastReadAt) : 0
@@ -224,8 +325,17 @@ export function ChatProvider({
 	)
 
 	const value = useMemo<ChatContextValue>(
-		() => ({ messages, unreadCount, open, setOpen, send, sending }),
-		[messages, unreadCount, open, send, sending]
+		() => ({
+			messages,
+			unreadCount,
+			open,
+			setOpen,
+			send,
+			sending,
+			typingIds,
+			noteTyping,
+		}),
+		[messages, unreadCount, open, send, sending, typingIds, noteTyping]
 	)
 
 	return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
