@@ -3,6 +3,7 @@
 
 import { edgeEndpoints, RESOURCES, type Resource } from './board'
 import { smithPortResourceOk } from './bonus'
+import { curseVariantFor, type BankAccess } from './bonuses'
 import type {
 	BankKind,
 	GameState,
@@ -10,7 +11,7 @@ import type {
 	Port,
 	ResourceHand,
 } from './types'
-import { vertexStateOf } from './types'
+import { gameSizeFor, vertexStateOf } from './types'
 
 // Which port kinds does this player currently have access to via a settlement
 // or city sitting on one of the port's two endpoint vertices?
@@ -33,19 +34,44 @@ export function playerPortKinds(
 	return out
 }
 
+// What the bank offers this player, after the `provinciality` curse. Table
+// size decides which version of the curse applies (see `bonuses/sizes.ts`);
+// 'open' is everyone else.
+export function bankAccessFor(
+	state: GameState,
+	playerIdx: number
+): BankAccess | 'open' {
+	if (state.players[playerIdx]?.curse !== 'provinciality') return 'open'
+	const size = gameSizeFor(state.players.length)
+	return curseVariantFor('provinciality', size)?.bankAccess ?? 'flat_5'
+}
+
+// Extra input the player pays on every ratio — 1 under the small-table
+// version of provinciality, 0 for everyone else. Callers thread this into
+// `effectiveBankRatioFor` / `isValidBankTradeShape` so the surcharge is
+// applied in exactly one place.
+export function bankSurchargeFor(state: GameState, playerIdx: number): number {
+	return bankAccessFor(state, playerIdx) === 'surcharge' ? 1 : 0
+}
+
 // The list of bank-trade options the player can pick from. Always includes
 // '4:1'; '3:1' appears if they own a generic port; each '2:1-*' appears if
 // they own the matching specific port. Order: 2:1s (by resource order), then
 // '3:1', then '4:1' — most-advantageous first.
 //
-// The `provinciality` curse collapses every option down to '5:1' (no port
-// access, penalised default bank rate). Pass the player's curse so this
-// function owns the final list the UI and server agree on.
+// The `provinciality` curse rewrites the list: 'flat_5' collapses it to '5:1'
+// (no port access, penalised bank rate), 'none' empties it entirely, and
+// 'surcharge' leaves it alone — there the curse is priced into the ratio
+// (`bankSurchargeFor`) rather than the options. This function owns the final
+// list the UI and server agree on, so an empty list means no bank trade is
+// possible at all.
 export function availableBankOptions(
 	state: GameState,
 	playerIdx: number
 ): BankKind[] {
-	if (state.players[playerIdx]?.curse === 'provinciality') return ['5:1']
+	const access = bankAccessFor(state, playerIdx)
+	if (access === 'none') return []
+	if (access === 'flat_5') return ['5:1']
 	const kinds = playerPortKinds(state, playerIdx)
 	const out: BankKind[] = []
 	for (const r of RESOURCES) {
@@ -86,9 +112,15 @@ export function isValidBankTradeShape(
 	receive: ResourceHand,
 	kind: BankKind,
 	specialistResource: Resource | null = null,
-	isSmith: boolean = false
+	isSmith: boolean = false,
+	surcharge: number = 0
 ): boolean {
-	const ratio = effectiveBankRatioFor(kind, give, specialistResource)
+	const ratio = effectiveBankRatioFor(
+		kind,
+		give,
+		specialistResource,
+		surcharge
+	)
 	const locked = lockedGiveResource(kind)
 	let giveTotal = 0
 	let receiveTotal = 0
@@ -104,15 +136,17 @@ export function isValidBankTradeShape(
 	return giveTotal > 0 && giveTotal === ratio * receiveTotal
 }
 
-// Effective bank ratio for a trade, accounting for the specialist discount
-// when the player gives a single-resource stack of their declared specialty.
-// Returns the base ratio in all other cases.
+// Effective bank ratio for a trade, accounting for the provinciality
+// surcharge (paid on every ratio) and then the specialist discount (when the
+// player gives a single-resource stack of their declared specialty). The two
+// are applied in that order, so a surcharged specialist pays the base rate.
 export function effectiveBankRatioFor(
 	kind: BankKind,
 	give: ResourceHand,
-	specialistResource: Resource | null
+	specialistResource: Resource | null,
+	surcharge: number = 0
 ): number {
-	const base = ratioOf(kind)
+	const base = ratioOf(kind) + surcharge
 	if (!specialistResource) return base
 	const givers = RESOURCES.filter((r) => give[r] > 0)
 	if (givers.length !== 1) return base

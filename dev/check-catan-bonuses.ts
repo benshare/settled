@@ -19,8 +19,10 @@ import {
 	bricklayerAltCost,
 	canBuyCarpenterVP,
 	canMoveForgerToken,
+	canChooseRoll,
 	canReroll,
 	canShepherdSwap,
+	gamblerModeFor,
 	canTapKnight,
 	canBuildMoreSuperCities,
 	carpenterVPOf,
@@ -29,6 +31,7 @@ import {
 	affordableScoutSwaps,
 	canScoutAffordDevCard,
 	effectiveBankRatio,
+	fortuneTellerGainMultiplier,
 	fortuneTellerTriggersOn,
 	grantsStartingResourcesOnRound,
 	hasBonus,
@@ -53,6 +56,7 @@ import {
 	// Set 3
 	canInvest,
 	fenceRoadCost,
+	investorActivateVPFor,
 	investorPayout,
 	investorTokenCount,
 	isFenceReservedAgainst,
@@ -60,6 +64,7 @@ import {
 	isValidMerchantAddon,
 	isValidSmithSwap,
 	magicDiscardCount,
+	magicianCanCast,
 	plutocratGain,
 	resolveHauntGhosts,
 	smithCostOf,
@@ -385,11 +390,89 @@ function testGambler() {
 		devCardsPlayed: {},
 		playedDevThisTurn: false,
 	}
-	assert(canReroll(p), 'fresh gambler can reroll')
+	assert(canReroll(p, 'standard'), 'fresh gambler can reroll')
 	const used: PlayerState = { ...p, rerolledThisTurn: true }
-	assert(!canReroll(used), 'used reroll blocked')
+	assert(!canReroll(used, 'standard'), 'used reroll blocked')
 	const noBonus: PlayerState = { ...p, bonus: undefined }
-	assert(!canReroll(noBonus), 'no gambler no reroll')
+	assert(!canReroll(noBonus, 'standard'), 'no gambler no reroll')
+}
+
+// At a 5-6 player table the reroll becomes choose-of-two: both rolls are
+// thrown up front, so the reroll affordance is gone entirely.
+function testGamblerBySize() {
+	equal(gamblerModeFor('small'), 'reroll', 'small: reroll')
+	equal(gamblerModeFor('standard'), 'reroll', 'standard: reroll')
+	equal(gamblerModeFor('expanded'), 'choose_two', 'expanded: choose of two')
+	const p: PlayerState = {
+		resources: emptyHand(),
+		bonus: 'gambler',
+		devCards: [],
+		devCardsPlayed: {},
+		playedDevThisTurn: false,
+	}
+	assert(canReroll(p, 'standard'), 'standard: reroll offered')
+	assert(!canReroll(p, 'expanded'), 'expanded: no reroll')
+	assert(!canChooseRoll(p, 'standard'), 'standard: no choice')
+	assert(canChooseRoll(p, 'expanded'), 'expanded: choice offered')
+	const noBonus: PlayerState = { ...p, bonus: undefined }
+	assert(!canChooseRoll(noBonus, 'expanded'), 'non-gambler gets no choice')
+	assert(
+		bonusDescriptionFor('gambler', 'expanded').includes('roll twice'),
+		'expanded description describes the choice'
+	)
+}
+
+// Flat 3 heads-up, flat 2 at a 5-6 player table; only 3-4 tracks cities.
+function testRitualistCostBySize() {
+	const base = initialGameState('standard', 2, baseState().config)
+	equal(ritualCardCost(base, 0), 3, 'small: flat 3 with no city')
+	const withCity: GameState = {
+		...base,
+		vertices: {
+			...base.vertices,
+			'1B': {
+				occupied: true,
+				player: 0,
+				building: 'city',
+				placedTurn: 0,
+			},
+		},
+	}
+	equal(ritualCardCost(withCity, 0), 3, 'small: still 3 with a city')
+
+	const big = initialGameState('expanded', 5, baseState().config)
+	equal(ritualCardCost(big, 0), 2, 'expanded: flat 2 with no city')
+	const bigWithCity: GameState = {
+		...big,
+		vertices: {
+			...big.vertices,
+			'1B': {
+				occupied: true,
+				player: 0,
+				building: 'city',
+				placedTurn: 0,
+			},
+		},
+	}
+	equal(ritualCardCost(bigWithCity, 0), 2, 'expanded: still 2 with a city')
+
+	// 3-4 players keeps the city-dependent baseline — covered by testRitualist,
+	// asserted here as the contrast that makes the flat sizes meaningful.
+	const mid = initialGameState('standard', 4, baseState().config)
+	equal(ritualCardCost(mid, 0), 2, 'standard: 2 before a city')
+	const midWithCity: GameState = {
+		...mid,
+		vertices: {
+			...mid.vertices,
+			'1B': {
+				occupied: true,
+				player: 0,
+				building: 'city',
+				placedTurn: 0,
+			},
+		},
+	}
+	equal(ritualCardCost(midWithCity, 0), 3, 'standard: 3 after a city')
 }
 
 // --- nomad -----------------------------------------------------------------
@@ -615,6 +698,27 @@ function testFortuneTeller() {
 	assert(
 		!fortuneTellerTriggersOn(undefined, { a: 3, b: 3 }),
 		'non-FT no trigger'
+	)
+}
+
+// The extra roll pays double at a 5-6 player table only. The chain itself is
+// server-side, so this pins the multiplier the edge function reads.
+function testFortuneTellerGainBySize() {
+	equal(fortuneTellerGainMultiplier('small'), 1, 'small: single')
+	equal(fortuneTellerGainMultiplier('standard'), 1, 'standard: single')
+	equal(fortuneTellerGainMultiplier('expanded'), 2, 'expanded: double')
+	// The trigger is unchanged at every size — only the payout moves.
+	assert(
+		fortuneTellerTriggersOn('fortune_teller', { a: 3, b: 3 }),
+		'doubles still trigger'
+	)
+	assert(
+		fortuneTellerTriggersOn('fortune_teller', { a: 3, b: 4 }),
+		'a 7 still triggers'
+	)
+	assert(
+		bonusDescriptionFor('fortune_teller', 'expanded').includes('double'),
+		'expanded description says double'
 	)
 }
 
@@ -1137,11 +1241,14 @@ function testInvestor() {
 		bonus: 'investor',
 		resources: hand({ wheat: 3, ore: 2 }),
 	}
-	assert(!canInvest(base, 'wheat', 2), 'VP < 3 blocks invest')
-	assert(canInvest(base, 'wheat', 3), 'VP ≥ 3 + 3 wheat ok')
-	assert(!canInvest(base, 'ore', 3), '2 ore insufficient')
+	assert(!canInvest(base, 'wheat', 2, 'standard'), 'VP < 3 blocks invest')
+	assert(canInvest(base, 'wheat', 3, 'standard'), 'VP ≥ 3 + 3 wheat ok')
+	assert(!canInvest(base, 'ore', 3, 'standard'), '2 ore insufficient')
 	const nonInvestor: PlayerState = { ...base, bonus: 'smith' }
-	assert(!canInvest(nonInvestor, 'wheat', 5), 'non-investor cannot')
+	assert(
+		!canInvest(nonInvestor, 'wheat', 5, 'standard'),
+		'non-investor cannot'
+	)
 	// Token count + payout + cap.
 	const withTokens: PlayerState = {
 		...base,
@@ -1157,7 +1264,51 @@ function testInvestor() {
 		resources: hand({ wheat: 9 }),
 		investments: { wheat: 3, ore: 3 },
 	}
-	assert(!canInvest(capped, 'wheat', 5), '6 tokens = cap reached')
+	assert(!canInvest(capped, 'wheat', 5, 'standard'), '6 tokens = cap reached')
+}
+
+// Withheld entirely heads-up; active from turn one at a 5-6 player table.
+function testInvestorBySize() {
+	equal(
+		investorActivateVPFor('small'),
+		3,
+		'small: baseline (unused — banned)'
+	)
+	equal(investorActivateVPFor('standard'), 3, 'standard: 3 VP')
+	equal(investorActivateVPFor('expanded'), 0, 'expanded: no gate')
+
+	const p: PlayerState = {
+		resources: { ...emptyHand(), wheat: 3 },
+		bonus: 'investor',
+		devCards: [],
+		devCardsPlayed: {},
+		playedDevThisTurn: false,
+	}
+	assert(!canInvest(p, 'wheat', 0, 'standard'), 'standard: 0 VP blocked')
+	assert(canInvest(p, 'wheat', 0, 'expanded'), 'expanded: 0 VP allowed')
+
+	// The small-table ban is a deal-time filter, so it has to actually keep
+	// the card out of a 2-player hand.
+	assert(!isBonusAvailableAt('investor', 'small'), 'small: withheld')
+	assert(isBonusAvailableAt('investor', 'standard'), 'standard: dealable')
+	for (let trial = 0; trial < 300; trial++) {
+		for (const hand of Object.values(dealBonusHands(2, ['3']))) {
+			assert(
+				!hand.offered.includes('investor'),
+				'investor offered at a 2-player table'
+			)
+		}
+	}
+	// A card someone already holds still reads at that size, so an in-flight
+	// game can never render blank.
+	assert(
+		bonusDescriptionFor('investor', 'small').length > 0,
+		'small still resolves a description'
+	)
+	assert(
+		bonusDescriptionFor('investor', 'expanded').includes('from the start'),
+		'expanded description drops the 3-point gate'
+	)
 }
 
 // --- magician ---------------------------------------------------------------
@@ -1168,9 +1319,50 @@ function testMagician() {
 	assert(!isValidMagicTarget(8, 8), 'same as actual invalid')
 	assert(!isValidMagicTarget(8, 13), 'out of range invalid')
 	assert(!isValidMagicTarget(8, 1), 'below range invalid')
-	equal(magicDiscardCount(8, 6), 3, '|8-6|+1 = 3')
-	equal(magicDiscardCount(8, 9), 2, '|8-9|+1 = 2')
-	equal(magicDiscardCount(7, 2), 6, '|7-2|+1 = 6')
+	equal(magicDiscardCount(8, 6, 'standard'), 3, '|8-6|+1 = 3')
+	equal(magicDiscardCount(8, 9, 'standard'), 2, '|8-9|+1 = 2')
+	equal(magicDiscardCount(7, 2, 'standard'), 6, '|7-2|+1 = 6')
+}
+
+// Heads-up: a cast blocks the magician's next turn but not the one after.
+// 5-6 players: the same cast costs one card less.
+function testMagicianBySize() {
+	equal(magicDiscardCount(8, 6, 'small'), 3, 'small: N + 1')
+	equal(magicDiscardCount(8, 6, 'standard'), 3, 'standard: N + 1')
+	equal(magicDiscardCount(8, 6, 'expanded'), 2, 'expanded: N')
+	equal(magicDiscardCount(7, 2, 'expanded'), 5, 'expanded: distance only')
+
+	// Cooldown. A 2-player game's turns are 2 rounds apart, so a cast in
+	// round 4 blocks round 6 and clears by round 8.
+	const two = initialGameState('standard', 2, baseState().config)
+	const magician = (round: number, lastMagicRound?: number): GameState => ({
+		...two,
+		round,
+		players: two.players.map((p, i) =>
+			i === 0 ? { ...p, bonus: 'magician' as const, lastMagicRound } : p
+		),
+	})
+	assert(magicianCanCast(magician(4), 0), 'small: never cast → allowed')
+	assert(!magicianCanCast(magician(6, 4), 0), 'small: next turn blocked')
+	assert(magicianCanCast(magician(8, 4), 0), 'small: the turn after clears')
+	assert(!magicianCanCast(magician(6), 1), 'a non-magician never casts')
+
+	// No cooldown at the other sizes — the same stamp does not block.
+	const four = initialGameState('standard', 4, baseState().config)
+	const midMagician: GameState = {
+		...four,
+		round: 8,
+		players: four.players.map((p, i) =>
+			i === 0
+				? { ...p, bonus: 'magician' as const, lastMagicRound: 4 }
+				: p
+		),
+	}
+	assert(magicianCanCast(midMagician, 0), 'standard: no cooldown')
+	assert(
+		bonusDescriptionFor('magician', 'small').includes('two of your turns'),
+		'small description states the cooldown'
+	)
 }
 
 // --- haunt ------------------------------------------------------------------
@@ -1250,13 +1442,16 @@ function main() {
 		['carpenter', testCarpenter],
 		['veteran', testVeteran],
 		['gambler', testGambler],
+		['gambler by size', testGamblerBySize],
 		['nomad d5 mapping', testNomadResourceMapping],
 		['aristocrat placement gate', testAristocratGrantGate],
 		['findWinner + thrill_seeker', testFindWinnerThrillSeeker],
 		['set2: populist', testPopulist],
 		['set2: shepherd', testShepherdHandSize],
 		['set2: ritualist', testRitualist],
+		['set2: ritualist cost by size', testRitualistCostBySize],
 		['set2: fortune_teller', testFortuneTeller],
+		['set2: fortune_teller gain by size', testFortuneTellerGainBySize],
 		['set2: curio_collector', testCurioCollector],
 		['set2: metropolitan', testMetropolitan],
 		['set2: forger', testForger],
@@ -1267,7 +1462,9 @@ function main() {
 		['set3: merchant', testMerchant],
 		['set3: fencer', testFencer],
 		['set3: investor', testInvestor],
+		['set3: investor by size', testInvestorBySize],
 		['set3: magician', testMagician],
+		['set3: magician by size', testMagicianBySize],
 		['set3: haunt ghosts', testHaunt],
 		['deal: no duplicate offers', testDealNoDuplicates],
 		['deal: banned combos', testDealBannedCombos],

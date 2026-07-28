@@ -16,10 +16,10 @@ import {
 	type Vertex,
 } from './board'
 import type { CurseId, IoniconName } from './bonuses'
-import { curseById } from './bonuses'
+import { curseById, curseVariantFor } from './bonuses'
 import type { BuildKind } from './build'
-import type { GameState, PlayerState } from './types'
-import { vertexStateOf } from './types'
+import type { GameSize, GameState, PlayerState } from './types'
+import { gameSizeFor, vertexStateOf } from './types'
 
 export function curseOf(
 	state: GameState,
@@ -124,14 +124,24 @@ export function effectiveKnightsPlayed(
 
 // --- Age --------------------------------------------------------------------
 
+// The 3-4 player baseline; other table sizes override it in `sizes.ts`.
 export const AGE_CARD_LIMIT = 6
 
+export function ageCardLimitFor(size: GameSize): number {
+	return curseVariantFor('age', size)?.cardLimit ?? AGE_CARD_LIMIT
+}
+
 // Is the player allowed to pay `costSize` more cards this turn under the
-// `age` curse? Non-cursed: always. Cursed: existing spend + new cost ≤ 6.
-export function canSpendUnderAge(p: PlayerState, costSize: number): boolean {
+// `age` curse? Non-cursed: always. Cursed: existing spend + new cost ≤ the
+// limit for this table size.
+export function canSpendUnderAge(
+	p: PlayerState,
+	costSize: number,
+	size: GameSize
+): boolean {
 	if (p.curse !== 'age') return true
 	const spent = p.cardsSpentThisTurn ?? 0
-	return spent + costSize <= AGE_CARD_LIMIT
+	return spent + costSize <= ageCardLimitFor(size)
 }
 
 // Cost size for each build kind, used by age enforcement in handlers and
@@ -296,12 +306,14 @@ export function curseBuildReason(
 	}
 	if (curse === 'age') {
 		const p = state.players[playerIdx]
-		if (p && !canSpendUnderAge(p, BUILD_COST_SIZES[kind])) {
+		const size = gameSizeFor(state.players.length)
+		const limit = ageCardLimitFor(size)
+		if (p && !canSpendUnderAge(p, BUILD_COST_SIZES[kind], size)) {
 			const spent = p.cardsSpentThisTurn ?? 0
-			const remaining = Math.max(0, AGE_CARD_LIMIT - spent)
+			const remaining = Math.max(0, limit - spent)
 			return {
 				...base,
-				reason: `${data.title}: only ${remaining} of your ${AGE_CARD_LIMIT} cards left to spend this turn.`,
+				reason: `${data.title}: only ${remaining} of your ${limit} cards left to spend this turn.`,
 			}
 		}
 	}

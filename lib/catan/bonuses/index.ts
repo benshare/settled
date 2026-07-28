@@ -85,6 +85,8 @@ export {
 	curseDescriptionFor,
 	isBonusAvailableAt,
 	isCurseAvailableAt,
+	type BankAccess,
+	type GamblerMode,
 	type BonusSizeVariant,
 	type CurseSizeVariant,
 } from './sizes'

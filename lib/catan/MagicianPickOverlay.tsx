@@ -10,20 +10,25 @@ import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor } from './palette'
+import { magicDiscardCount } from './bonus'
 import { handSize } from './robber'
-import type { ResourceHand } from './types'
+import type { GameSize, ResourceHand } from './types'
 
 const TOTALS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
 
 export function MagicianPickOverlay({
 	hand,
 	actualTotal,
+	size,
 	submitting,
 	onSkip,
 	onCast,
 }: {
 	hand: ResourceHand
 	actualTotal: number
+	// Table size sets the price of a cast — N + 1 cards, or N at a 5-6
+	// player table.
+	size: GameSize
 	submitting: boolean
 	onSkip: () => void
 	onCast: (target: number, discard: ResourceHand) => void
@@ -32,7 +37,8 @@ export function MagicianPickOverlay({
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const [target, setTarget] = useState<number | null>(null)
 	const [discard, setDiscard] = useState<ResourceHand>(empty())
-	const cost = target === null ? 0 : Math.abs(target - actualTotal) + 1
+	const cost =
+		target === null ? 0 : magicDiscardCount(actualTotal, target, size)
 	const discardSize = handSize(discard)
 	const ready = target !== null && discardSize === cost && !submitting
 
@@ -62,7 +68,7 @@ export function MagicianPickOverlay({
 			<Text style={styles.section}>1 · Pick a number</Text>
 			<View style={styles.totalGrid}>
 				{TOTALS.filter((t) => t !== actualTotal).map((t) => {
-					const c = Math.abs(t - actualTotal) + 1
+					const c = magicDiscardCount(actualTotal, t, size)
 					return (
 						<Pressable
 							key={t}

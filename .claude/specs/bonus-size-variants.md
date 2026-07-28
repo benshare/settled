@@ -25,12 +25,44 @@ Player count comes from `state.players.length` in rules code, `playerOrder`
 / `gameState` in game UI, and a user-chosen selector on the catalog screen
 (which has no game).
 
-## Scope of this pass
+## Scope
 
-**Scaffolding only.** The mechanism plus every wiring point, with no card's
-text or behaviour changed yet — both tables ship empty. Cards get retuned one
-at a time in follow-up work; each one touches exactly two places: its entry in
-`sizes.ts` and the `switch` in its rule helper.
+Shipped in two passes. The first landed the mechanism with both tables empty
+(a verified no-op); the second walked all 38 cards and retuned the 7 below.
+Every other card reads and behaves identically at every size.
+
+### Curses
+
+| Card              | small (2)                          | standard (3-4)     | expanded (5-6)         |
+| ----------------- | ---------------------------------- | ------------------ | ---------------------- |
+| **Age**           | 5 cards/turn                       | 6                  | 7                      |
+| **Provinciality** | ports usable, every ratio +1 input | no ports, 5:1 bank | no bank trading at all |
+
+### Bonuses
+
+| Card               | small (2)                        | standard (3-4)       | expanded (5-6)                |
+| ------------------ | -------------------------------- | -------------------- | ----------------------------- |
+| **Gambler**        | reroll                           | reroll               | roll twice, keep either       |
+| **Ritualist**      | flat 3 cards                     | 2, or 3 after a city | flat 2 cards                  |
+| **Fortune Teller** | single gains                     | single gains         | double gains from bonus rolls |
+| **Investor**       | **not dealt**                    | active at 3 VP       | active immediately            |
+| **Magician**       | no cast on consecutive own turns | N + 1 cards          | N cards                       |
+
+Three of these needed more than a number:
+
+- **Provinciality** can't be expressed as a `BankKind` at either end. The
+  small version is priced into the ratio (`bankSurchargeFor` → +1) so ports
+  keep working; the expanded version empties `availableBankOptions`, which the
+  UI reads to disable the bank button ("Bank closed (curse)").
+- **Gambler** at 5-6 throws both pairs up front into
+  `phase.pending.{dice, altDice}`; `confirm_roll` takes a `which` to name the
+  keeper and `reroll_dice` is rejected. Adds a `roll_choice` event so the
+  choice is visible in the log the way a reroll already is.
+- **Magician**'s 2-player cooldown needs `PlayerState.lastMagicRound`, stamped
+  on cast (never on skip). `round` increments per turn, so a player's own
+  turns are `playerCount` apart and the gate is
+  `round > lastMagicRound + playerCount`. Enforced by `wrapMagicianWindow`
+  declining to open, so the player is never shown a sheet they can't use.
 
 ## Locked decisions (from clarification)
 
@@ -52,7 +84,13 @@ at a time in follow-up work; each one touches exactly two places: its entry in
 
 ```ts
 // Per-card param shapes. A card that varies only in wording needs no entry.
-type BonusSizeParams = Record<never, never> // e.g. { thrill_seeker: { vpDelta: number } }
+type BonusSizeParams = {
+	gambler: { mode: GamblerMode }
+	ritualist: { cardCost: number }
+	fortune_teller: { gainMultiplier: number }
+	investor: { activateVP: number }
+	magician: { discardPlus: number; cooldown: boolean }
+}
 
 type SizeVariantOf<K> = {
 	description?: string
@@ -87,8 +125,13 @@ Rule helpers in `lib/catan/bonus.ts` / `curses.ts` that vary by size take a
 (`winVPThresholdFor`, `underdogMultiplierFor`, `bricklayerAltCost`, …) gain an
 explicit parameter.
 
-**No helper signature changes in this pass** — signatures change per card as
-that card is retuned, so each card's diff stays self-contained and reviewable.
+Signatures change per card as that card is retuned, so each card's diff stays
+self-contained. Retuned so far: `canSpendUnderAge` / `ageCardLimitFor`,
+`bankAccessFor` / `bankSurchargeFor` (+ `effectiveBankRatioFor` and
+`isValidBankTradeShape` gaining a `surcharge`), `canReroll` / `canChooseRoll` /
+`gamblerModeFor`, `ritualCardCost`, `fortuneTellerGainMultiplier`,
+`canInvest` / `investorActivateVPFor`, and `magicianCanCast` /
+`magicDiscardCount`.
 
 ## 3. Dealing
 
@@ -119,8 +162,11 @@ render a blank card.
 
 `supabase/functions/game-service/index.ts` mirrors `gameSizeFor`, both
 variant tables, and `isBonusAvailableAt` / `isCurseAvailableAt` for its
-`dealBonusHands`. It holds no descriptions (only `BONUS_IDS` /
-`BONUS_SET_OF`), so the description resolvers are **not** mirrored — the
+`dealBonusHands` — plus every param a server-side rule reads, which today is
+all of them (the age limit, bank access, gambler mode, ritual cost, fortune
+teller multiplier, investor VP gate, and both magician params). It holds no
+descriptions (only `BONUS_IDS` / `BONUS_SET_OF`), so the description
+resolvers are **not** mirrored — the
 tables there carry availability only.
 
 ## 6. Check scripts

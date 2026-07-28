@@ -20,6 +20,7 @@ import {
 import { playerColors, resourceColor } from './palette'
 import {
 	availableBankOptions,
+	bankSurchargeFor,
 	effectiveBankRatioFor,
 	isValidBankTradeShape,
 	lockedGiveResource,
@@ -89,10 +90,19 @@ export function TradePanel({
 		() => availableBankOptions(state, meIdx),
 		[state, meIdx]
 	)
+	// Provinciality's small-table version prices itself into the ratio rather
+	// than the option list, so every ratio shown and charged below adds this.
+	const surcharge = useMemo(
+		() => bankSurchargeFor(state, meIdx),
+		[state, meIdx]
+	)
 
 	const [mode, setMode] = useState<Mode>({ kind: 'player' })
 
 	function startBank() {
+		// No options at all — the expanded-table provinciality curse closes
+		// the bank outright. The button is disabled, so this is belt-and-braces.
+		if (bankOptions.length === 0) return
 		// If the only option is 4:1 (no ports), skip the selector.
 		if (bankOptions.length === 1) {
 			setMode({ kind: 'bank_compose', choice: bankOptions[0] })
@@ -110,6 +120,7 @@ export function TradePanel({
 				profilesById={profilesById}
 				submitting={submitting}
 				onBank={startBank}
+				bankClosed={bankOptions.length === 0}
 				onSend={onSend}
 				onCancel={onCancel}
 			/>
@@ -119,6 +130,7 @@ export function TradePanel({
 		return (
 			<BankSelect
 				options={bankOptions}
+				surcharge={surcharge}
 				specialistResource={
 					state.players[meIdx]?.specialistResource ?? null
 				}
@@ -130,6 +142,7 @@ export function TradePanel({
 	return (
 		<BankCompose
 			choice={mode.choice}
+			surcharge={surcharge}
 			myHand={myHand}
 			specialistResource={
 				state.players[meIdx]?.specialistResource ?? null
@@ -158,6 +171,7 @@ function PlayerTrade({
 	profilesById,
 	submitting,
 	onBank,
+	bankClosed,
 	onSend,
 	onCancel,
 }: {
@@ -167,6 +181,8 @@ function PlayerTrade({
 	profilesById: Record<string, Profile>
 	submitting: boolean
 	onBank: () => void
+	// Provinciality can close the bank outright at a 5-6 player table.
+	bankClosed: boolean
 	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
 	onCancel: () => void
 }) {
@@ -220,17 +236,26 @@ function PlayerTrade({
 				<Text style={styles.heading}>Trade</Text>
 				<Pressable
 					onPress={onBank}
+					disabled={bankClosed}
 					style={({ pressed }) => [
 						styles.bankBtn,
-						pressed && styles.pressed,
+						bankClosed && styles.bankBtnDisabled,
+						pressed && !bankClosed && styles.pressed,
 					]}
 				>
 					<Ionicons
 						name="business-outline"
 						size={14}
-						color={colors.text}
+						color={bankClosed ? colors.textMuted : colors.text}
 					/>
-					<Text style={styles.bankBtnLabel}>Trade with bank</Text>
+					<Text
+						style={[
+							styles.bankBtnLabel,
+							bankClosed && styles.bankBtnLabelDisabled,
+						]}
+					>
+						{bankClosed ? 'Bank closed (curse)' : 'Trade with bank'}
+					</Text>
 				</Pressable>
 			</View>
 
@@ -307,11 +332,13 @@ function PlayerTrade({
 
 function BankSelect({
 	options,
+	surcharge,
 	specialistResource,
 	onPick,
 	onBack,
 }: {
 	options: BankKind[]
+	surcharge: number
 	specialistResource: Resource | null
 	onPick: (choice: BankKind) => void
 	onBack: () => void
@@ -341,6 +368,7 @@ function BankSelect({
 					<BankOptionCard
 						key={opt}
 						kind={opt}
+						surcharge={surcharge}
 						specialistResource={specialistResource}
 						onPress={() => onPick(opt)}
 					/>
@@ -352,37 +380,43 @@ function BankSelect({
 
 function BankOptionCard({
 	kind,
+	surcharge,
 	specialistResource,
 	onPress,
 }: {
 	kind: BankKind
+	surcharge: number
 	specialistResource: Resource | null
 	onPress: () => void
 }) {
 	const locked = lockedGiveResource(kind)
-	const baseRatio = ratioOf(kind)
+	// The surcharged curse leaves the option list alone and adds to every
+	// ratio, so the card has to name the surcharged rate — a "2:1 port" that
+	// actually charges 3 would be a lie.
+	const baseRatio = ratioOf(kind) + surcharge
 	// Specialist pays one fewer on a port that takes their declared resource.
 	// For a specific 2:1 port that's the locked resource itself → 1:1.
 	const specialtyMatchesLocked = !!locked && specialistResource === locked
 	const ratio = specialtyMatchesLocked
 		? Math.max(1, baseRatio - 1)
 		: baseRatio
+	const cursed = surcharge > 0 ? ' (Curse of Provinciality)' : ''
 	const title = locked
-		? `2:1 ${RESOURCE_LABELS[locked]} port`
+		? `${baseRatio}:1 ${RESOURCE_LABELS[locked]} port${cursed}`
 		: kind === '3:1'
-			? '3:1 generic port'
+			? `${baseRatio}:1 generic port${cursed}`
 			: kind === '5:1'
 				? '5:1 bank (Curse of Provinciality)'
-				: '4:1 bank'
+				: `${baseRatio}:1 bank${cursed}`
 	const subtitle = locked
 		? specialtyMatchesLocked
 			? `Specialist: trade ${ratio} ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
-			: `Trade 2 ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
-		: kind === '3:1'
-			? 'Trade 3 of any one resource for 1 of anything else.'
-			: kind === '5:1'
-				? 'Under your curse, trade 5 of any one resource for 1 of anything else.'
-				: 'Default rate: trade 4 of any one resource for 1 of anything else.'
+			: `Trade ${baseRatio} ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
+		: kind === '5:1'
+			? 'Under your curse, trade 5 of any one resource for 1 of anything else.'
+			: kind === '3:1'
+				? `Trade ${baseRatio} of any one resource for 1 of anything else.`
+				: `Default rate: trade ${baseRatio} of any one resource for 1 of anything else.`
 	const accent = locked ? resourceColor[locked] : '#CCCCCC'
 	return (
 		<Pressable
@@ -411,6 +445,7 @@ function BankOptionCard({
 
 function BankCompose({
 	choice,
+	surcharge,
 	myHand,
 	specialistResource,
 	isMerchant,
@@ -420,6 +455,9 @@ function BankCompose({
 	onSend,
 }: {
 	choice: BankKind
+	// Extra input per group under provinciality's small-table version; 0 for
+	// everyone else. Folded into every ratio below.
+	surcharge: number
 	myHand: ResourceHand
 	specialistResource: Resource | null
 	isMerchant: boolean
@@ -445,13 +483,18 @@ function BankCompose({
 			? myHand[giveRes] - give[giveRes] - merchantCount
 			: 0
 
-	const baseRatio = ratioOf(choice)
+	const baseRatio = ratioOf(choice) + surcharge
 	const locked = lockedGiveResource(choice)
 
 	// Recomputes every render so single-resource specialist discount tracks
 	// the current `give`. If the player pivots to a multi-resource give, the
 	// ratio snaps back to the base.
-	const ratio = effectiveBankRatioFor(choice, give, specialistResource)
+	const ratio = effectiveBankRatioFor(
+		choice,
+		give,
+		specialistResource,
+		surcharge
+	)
 
 	const giveTotal = RESOURCES.reduce((a, r) => a + give[r], 0)
 	const receiveTotal = RESOURCES.reduce((a, r) => a + receive[r], 0)
@@ -472,7 +515,8 @@ function BankCompose({
 			const effective = effectiveBankRatioFor(
 				choice,
 				hypothetical,
-				specialistResource
+				specialistResource,
+				surcharge
 			)
 			const remaining = myHand[r] - prev[r]
 			if (remaining < effective) return prev
@@ -527,7 +571,14 @@ function BankCompose({
 				give[merchantAddon.resource] + merchantAddon.count)
 
 	const valid =
-		isValidBankTradeShape(give, receive, choice, specialistResource) &&
+		isValidBankTradeShape(
+			give,
+			receive,
+			choice,
+			specialistResource,
+			false,
+			surcharge
+		) &&
 		canAfford(myHand, give) &&
 		merchantValid
 
@@ -541,7 +592,8 @@ function BankCompose({
 		const effective = effectiveBankRatioFor(
 			choice,
 			hypothetical,
-			specialistResource
+			specialistResource,
+			surcharge
 		)
 		return myHand[r] - give[r] >= effective
 	}
@@ -551,13 +603,15 @@ function BankCompose({
 		(r) => !(slotsRemaining > 0 && give[r] === 0)
 	)
 
+	// Names the surcharged rate, matching BankOptionCard — `baseRatio` already
+	// includes the surcharge.
 	const heading = locked
-		? `2:1 ${RESOURCE_LABELS[locked]} port`
+		? `${baseRatio}:1 ${RESOURCE_LABELS[locked]} port`
 		: choice === '3:1'
-			? '3:1 generic port'
+			? `${baseRatio}:1 generic port`
 			: choice === '5:1'
 				? '5:1 bank (Curse of Provinciality)'
-				: '4:1 bank'
+				: `${baseRatio}:1 bank`
 
 	return (
 		<View style={styles.wrap}>
@@ -831,10 +885,16 @@ const styles = StyleSheet.create({
 		borderColor: colors.border,
 		backgroundColor: colors.card,
 	},
+	bankBtnDisabled: {
+		backgroundColor: colors.cardAlt,
+	},
 	bankBtnLabel: {
 		fontSize: font.sm,
 		fontWeight: '600',
 		color: colors.text,
+	},
+	bankBtnLabelDisabled: {
+		color: colors.textMuted,
 	},
 	linkBtn: {
 		flexDirection: 'row',

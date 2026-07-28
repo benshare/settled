@@ -189,6 +189,15 @@ export type GameEvent =
 			resources: [Resource, Resource]
 			at: string
 	  }
+	// Gambler at a 5-6 player table: both rolls were thrown up front and the
+	// player kept one. The kept roll is logged separately as a normal `rolled`.
+	| {
+			kind: 'roll_choice'
+			player: number
+			kept_dice: [number, number]
+			discarded_dice: [number, number]
+			at: string
+	  }
 	// Gambler: the first roll was thrown away for a second one. The kept roll
 	// is logged separately as a normal `rolled`.
 	| {
@@ -399,7 +408,9 @@ type GamesStore = {
 	// `forcedTotal` is the admin-testing override; the edge function honours it
 	// only for a seat whose player row carries `dev: true`.
 	roll: (gameId: string, forcedTotal?: number) => Promise<RollResult>
-	confirmRoll: (gameId: string) => Promise<RollResult>
+	// `which` picks between the gambler's two pending rolls where the bonus is
+	// choose-of-two (5-6 players); omitted elsewhere.
+	confirmRoll: (gameId: string, which?: 0 | 1) => Promise<RollResult>
 	rerollDice: (gameId: string) => Promise<RollResult>
 	endTurn: (gameId: string) => Promise<ActionResult>
 	honk: (gameId: string) => Promise<ActionResult>
@@ -852,9 +863,9 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		}
 	},
 
-	async confirmRoll(gameId) {
+	async confirmRoll(gameId, which) {
 		const { error, data } = await callGameService(
-			{ action: 'confirm_roll', game_id: gameId },
+			{ action: 'confirm_roll', game_id: gameId, which },
 			"Couldn't confirm roll"
 		)
 		if (error) return { error }

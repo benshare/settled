@@ -40,9 +40,10 @@ import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { useSwitchableGames } from '@/lib/catan/switchableGames'
 import { visibleOfferFor } from '@/lib/catan/TradeBanner'
 import { isOfferRejectedByAll } from '@/lib/catan/trade'
-import type {
-	PlayerState,
-	ResourceHand as ResourceHandType,
+import {
+	gameSizeFor,
+	type PlayerState,
+	type ResourceHand as ResourceHandType,
 } from '@/lib/catan/types'
 import { useGamesStore, type GameEvent } from '@/lib/stores/useGamesStore'
 import {
@@ -791,10 +792,10 @@ function useGameScreenState(gameId: string) {
 		if (res.error) notify('Roll failed', res.error)
 	}
 
-	async function onConfirmRoll() {
+	async function onConfirmRoll(which?: 0 | 1) {
 		if (!game) return
 		setSubmitting(true)
-		const res = await confirmRoll(game.id)
+		const res = await confirmRoll(game.id, which)
 		setSubmitting(false)
 		if (res.error) notify('Confirm failed', res.error)
 	}
@@ -1183,7 +1184,14 @@ function useGameScreenState(gameId: string) {
 	const investorEnabled =
 		canBuildThisTurn &&
 		!!myPlayer &&
-		RESOURCES.some((r) => canInvest(myPlayer, r, selfVP[meIdx]))
+		RESOURCES.some((r) =>
+			canInvest(
+				myPlayer,
+				r,
+				selfVP[meIdx],
+				gameSizeFor(gameState?.players.length ?? 0)
+			)
+		)
 
 	const bonusSelectionData =
 		inBonusSelection && game && gameState?.phase.kind === 'select_bonus'

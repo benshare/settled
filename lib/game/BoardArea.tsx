@@ -21,7 +21,7 @@ import { MagicianPickOverlay } from '@/lib/catan/MagicianPickOverlay'
 import { MetropolitanCostPicker } from '@/lib/catan/MetropolitanCostPicker'
 import { ScoutPickOverlay } from '@/lib/catan/ScoutPickOverlay'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
-import type { PlayerState } from '@/lib/catan/types'
+import { gameSizeFor, type PlayerState } from '@/lib/catan/types'
 import { StopWatchingButton, WatcherButton } from '@/lib/catan/Watchers'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, font, radius, shadow, spacing, z } from '@/lib/theme'
@@ -138,6 +138,7 @@ export function BoardArea() {
 						actualTotal={
 							gameState.phase.roll.a + gameState.phase.roll.b
 						}
+						size={gameSizeFor(gameState.players.length)}
 						submitting={submitting}
 						onSkip={onSkipMagic}
 						onCast={onCastMagic}

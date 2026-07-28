@@ -23,7 +23,8 @@ export function RitualistPicker({
 	onConfirm,
 }: {
 	hand: ResourceHand
-	cardCost: 2 | 3
+	// Flat or city-dependent depending on table size — see ritualCardCost.
+	cardCost: number
 	submitting: boolean
 	onCancel: () => void
 	onConfirm: (discard: ResourceHand, total: number) => void

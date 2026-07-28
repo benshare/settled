@@ -92,7 +92,13 @@ type ChooseLastSettlementBody = {
 // `total` is the admin-testing roll override — honoured only for a seat whose
 // player row carries `dev: true`. Absent on every normal roll.
 type RollBody = { action: 'roll'; game_id: string; total?: unknown }
-type ConfirmRollBody = { action: 'confirm_roll'; game_id: string }
+// `which` picks between the gambler's two pending rolls at a 5-6 player
+// table (0 = the first pair, 1 = the alternate). Ignored otherwise.
+type ConfirmRollBody = {
+	action: 'confirm_roll'
+	game_id: string
+	which?: 0 | 1
+}
 type RerollDiceBody = { action: 'reroll_dice'; game_id: string }
 type EndTurnBody = { action: 'end_turn'; game_id: string }
 type HonkBody = { action: 'honk'; game_id: string }
@@ -1298,16 +1304,78 @@ function isBannedCombo(curse: CurseId, bonus: BonusId): boolean {
 }
 
 // Per-player-count card variants. Mirror of lib/catan/bonuses/sizes.ts, minus
-// the descriptions and params — the server holds no card copy and no rule here
-// reads a param yet, so only the deal-time availability flag is carried over.
-// A card marked `available: false` at a size is not dealt at that size.
+// the descriptions — the server holds no card copy. A card marked
+// `available: false` at a size is not dealt at that size; params are carried
+// over only for cards whose rules are enforced here.
 const BONUS_SIZE_VARIANTS: Partial<
-	Record<BonusId, Partial<Record<GameSize, { available?: boolean }>>>
-> = {}
+	Record<
+		BonusId,
+		Partial<
+			Record<
+				GameSize,
+				{
+					available?: boolean
+					mode?: 'reroll' | 'choose_two'
+					cardCost?: number
+					gainMultiplier?: number
+					activateVP?: number
+					discardPlus?: number
+					cooldown?: boolean
+				}
+			>
+		>
+	>
+> = {
+	gambler: {
+		expanded: { mode: 'choose_two' },
+	},
+	ritualist: {
+		small: { cardCost: 3 },
+		expanded: { cardCost: 2 },
+	},
+	fortune_teller: {
+		expanded: { gainMultiplier: 2 },
+	},
+	investor: {
+		small: { available: false },
+		expanded: { activateVP: 0 },
+	},
+	magician: {
+		small: { cooldown: true },
+		expanded: { discardPlus: 0 },
+	},
+}
 
 const CURSE_SIZE_VARIANTS: Partial<
-	Record<CurseId, Partial<Record<GameSize, { available?: boolean }>>>
-> = {}
+	Record<
+		CurseId,
+		Partial<
+			Record<
+				GameSize,
+				{
+					available?: boolean
+					cardLimit?: number
+					bankAccess?: 'surcharge' | 'flat_5' | 'none'
+				}
+			>
+		>
+	>
+> = {
+	age: {
+		small: { cardLimit: 5 },
+		expanded: { cardLimit: 7 },
+	},
+	provinciality: {
+		small: { bankAccess: 'surcharge' },
+		expanded: { bankAccess: 'none' },
+	},
+}
+
+// How the gambler's bonus behaves at this table size. Mirror of
+// lib/catan/bonus.ts gamblerModeFor.
+function gamblerModeFor(size: GameSize): 'reroll' | 'choose_two' {
+	return BONUS_SIZE_VARIANTS.gambler?.[size]?.mode ?? 'reroll'
+}
 
 function isBonusAvailableAt(id: BonusId, size: GameSize): boolean {
 	return BONUS_SIZE_VARIANTS[id]?.[size]?.available !== false
@@ -1726,10 +1794,18 @@ function effectiveKnightsPlayed(
 	return rawCount
 }
 
-function canSpendUnderAge(p: PlayerState, costSize: number): boolean {
+function ageCardLimitFor(size: GameSize): number {
+	return CURSE_SIZE_VARIANTS.age?.[size]?.cardLimit ?? AGE_CARD_LIMIT
+}
+
+function canSpendUnderAge(
+	p: PlayerState,
+	costSize: number,
+	size: GameSize
+): boolean {
 	if (p.curse !== 'age') return true
 	const spent = p.cardsSpentThisTurn ?? 0
-	return spent + costSize <= AGE_CARD_LIMIT
+	return spent + costSize <= ageCardLimitFor(size)
 }
 
 function costSize(cost: ResourceHand): number {
@@ -2651,7 +2727,13 @@ function shepherdEffectiveHandSize(p: PlayerState): number {
 	return n
 }
 
-function ritualCardCost(state: GameState, playerIdx: number): 2 | 3 {
+// Flat where the table size says so; otherwise 2 before the player's first
+// city, 3 after. Mirror of lib/catan/bonus.ts.
+function ritualCardCost(state: GameState, playerIdx: number): number {
+	const flat =
+		BONUS_SIZE_VARIANTS.ritualist?.[gameSizeFor(state.players.length)]
+			?.cardCost
+	if (flat !== undefined) return flat
 	let cities = 0
 	for (const v of Object.values(state.vertices)) {
 		if (!v?.occupied || v.player !== playerIdx) continue
@@ -2675,6 +2757,11 @@ function dicePairForTotal(total: number): DiceRoll {
 		}
 	}
 	throw new Error(`no dice pair sums to ${total}`)
+}
+
+// Mirror of lib/catan/bonus.ts fortuneTellerGainMultiplier.
+function fortuneTellerGainMultiplier(size: GameSize): number {
+	return BONUS_SIZE_VARIANTS.fortune_teller?.[size]?.gainMultiplier ?? 1
 }
 
 function fortuneTellerTriggersOn(
@@ -2921,9 +3008,21 @@ function investorTokenCount(p: PlayerState): number {
 	return n
 }
 
-function canInvest(p: PlayerState, resource: Resource, vp: number): boolean {
+// Mirror of lib/catan/bonus.ts investorActivateVPFor.
+function investorActivateVPFor(size: GameSize): number {
+	return (
+		BONUS_SIZE_VARIANTS.investor?.[size]?.activateVP ?? INVESTOR_ACTIVATE_VP
+	)
+}
+
+function canInvest(
+	p: PlayerState,
+	resource: Resource,
+	vp: number,
+	size: GameSize
+): boolean {
 	if (p.bonus !== 'investor') return false
-	if (vp < INVESTOR_ACTIVATE_VP) return false
+	if (vp < investorActivateVPFor(size)) return false
 	if (p.resources[resource] < INVEST_TRIO) return false
 	return investorTokenCount(p) < INVESTOR_MAX_TOKENS
 }
@@ -2948,7 +3047,8 @@ function applyInvestorPayout(
 	if (
 		p?.bonus !== 'investor' ||
 		investorTokenCount(p) === 0 ||
-		totalVP(state, idx) < INVESTOR_ACTIVATE_VP
+		totalVP(state, idx) <
+			investorActivateVPFor(gameSizeFor(state.players.length))
 	) {
 		return { players: state.players, events: [] }
 	}
@@ -2979,8 +3079,25 @@ function isValidMagicTarget(actualTotal: number, target: number): boolean {
 	return target !== actualTotal
 }
 
-function magicDiscardCount(actualTotal: number, target: number): number {
-	return Math.abs(target - actualTotal) + 1
+// Mirror of lib/catan/bonus.ts magicianCanCast: at a two-player table the
+// magician must skip one of their own turns between casts. A player's turns
+// are exactly `players.length` rounds apart.
+function magicianCanCast(state: GameState, playerIdx: number): boolean {
+	const p = state.players[playerIdx]
+	if (p?.bonus !== 'magician') return false
+	const size = gameSizeFor(state.players.length)
+	if (!BONUS_SIZE_VARIANTS.magician?.[size]?.cooldown) return true
+	if (p.lastMagicRound === undefined) return true
+	return state.round > p.lastMagicRound + state.players.length
+}
+
+function magicDiscardCount(
+	actualTotal: number,
+	target: number,
+	size: GameSize
+): number {
+	const plus = BONUS_SIZE_VARIANTS.magician?.[size]?.discardPlus ?? 1
+	return Math.abs(target - actualTotal) + plus
 }
 
 // Haunt.
@@ -3337,10 +3454,28 @@ function ratioOfBank(kind: BankKind): 2 | 3 | 4 | 5 {
 	return 2
 }
 
+// What the bank offers this player after the `provinciality` curse, which
+// varies by table size. Mirror of lib/catan/ports.ts.
+function bankAccessFor(
+	state: GameState,
+	playerIdx: number
+): 'open' | 'surcharge' | 'flat_5' | 'none' {
+	if (curseOf(state, playerIdx) !== 'provinciality') return 'open'
+	const size = gameSizeFor(state.players.length)
+	return CURSE_SIZE_VARIANTS.provinciality?.[size]?.bankAccess ?? 'flat_5'
+}
+
+// Extra input paid on every ratio — 1 under the small-table version of
+// provinciality, 0 otherwise.
+function bankSurchargeFor(state: GameState, playerIdx: number): number {
+	return bankAccessFor(state, playerIdx) === 'surcharge' ? 1 : 0
+}
+
 // Given a give/receive hand, infer which bank kind the caller is trying to
 // use — highest-quality ratio they can support. Returns null if the hand
-// can't be parsed into any kind the player actually has access to. Players
-// under the `provinciality` curse can only use 5:1 regardless of ports.
+// can't be parsed into any kind the player actually has access to. Under the
+// `provinciality` curse that depends on the table size: 5:1 only, ports at a
+// +1 surcharge, or no bank trade at all.
 //
 // Specialist discount: when the give is a single-resource stack of the
 // player's declared specialty, the divisibility check uses
@@ -3353,10 +3488,13 @@ function inferBankKind(
 	const giveResources = RESOURCES.filter((r) => give[r] > 0)
 	if (giveResources.length === 0) return null
 
-	if (curseOf(state, playerIdx) === 'provinciality') {
+	const access = bankAccessFor(state, playerIdx)
+	if (access === 'none') return null
+	if (access === 'flat_5') {
 		const allDivBy5 = giveResources.every((r) => give[r] % 5 === 0)
 		return allDivBy5 ? '5:1' : null
 	}
+	const surcharge = access === 'surcharge' ? 1 : 0
 
 	const kinds = playerPortKinds(state, playerIdx)
 	const specialistResource =
@@ -3366,7 +3504,7 @@ function inferBankKind(
 	// discount only when give is a single-resource stack of the declared
 	// specialty.
 	const effective = (kind: BankKind) =>
-		effectiveBankRatioFor(kind, give, specialistResource)
+		effectiveBankRatioFor(kind, give, specialistResource, surcharge)
 
 	// Single-resource give → could be any; prefer 2:1 port for that resource,
 	// then 3:1, then 4:1.
@@ -3384,9 +3522,13 @@ function inferBankKind(
 
 	// Multi-resource give → can't use a 2:1 specific port. Prefer 3:1 then 4:1.
 	// Specialist discount never applies to multi-resource gives.
-	const allDivBy3 = giveResources.every((r) => give[r] % 3 === 0)
+	const allDivBy3 = giveResources.every(
+		(r) => give[r] % effective('3:1') === 0
+	)
 	if (kinds.has('3:1') && allDivBy3) return '3:1'
-	const allDivBy4 = giveResources.every((r) => give[r] % 4 === 0)
+	const allDivBy4 = giveResources.every(
+		(r) => give[r] % effective('4:1') === 0
+	)
 	if (allDivBy4) return '4:1'
 	return null
 }
@@ -3394,9 +3536,10 @@ function inferBankKind(
 function effectiveBankRatioFor(
 	kind: BankKind,
 	give: ResourceHand,
-	specialistResource: Resource | null
+	specialistResource: Resource | null,
+	surcharge: number = 0
 ): number {
-	const base = ratioOfBank(kind)
+	const base = ratioOfBank(kind) + surcharge
 	if (!specialistResource) return base
 	const givers = RESOURCES.filter((r) => give[r] > 0)
 	if (givers.length !== 1) return base
@@ -3409,9 +3552,15 @@ function isValidBankTradeShape(
 	receive: ResourceHand,
 	kind: BankKind,
 	specialistResource: Resource | null = null,
-	isSmith: boolean = false
+	isSmith: boolean = false,
+	surcharge: number = 0
 ): boolean {
-	const ratio = effectiveBankRatioFor(kind, give, specialistResource)
+	const ratio = effectiveBankRatioFor(
+		kind,
+		give,
+		specialistResource,
+		surcharge
+	)
 	const locked: Resource | null = kind.startsWith('2:1-')
 		? (kind.slice(4) as Resource)
 		: null
@@ -4467,12 +4616,15 @@ async function handleChooseLastSettlement(
 // No-op otherwise. The non-7 path wraps inline (outside curio/forger).
 function wrapMagicianWindow(
 	phase: Phase,
-	players: PlayerState[],
+	state: GameState,
 	rollerIdx: number,
 	roll: DiceRoll
 ): Phase {
 	if (phase.kind !== 'main') return phase
-	if (players[rollerIdx]?.bonus !== 'magician') return phase
+	// Not just "are they the magician" — the two-player cooldown is enforced
+	// by never opening the window, so the player is never shown a sheet they
+	// cannot act on.
+	if (!magicianCanCast(state, rollerIdx)) return phase
 	return { kind: 'magician_pick', resume: phase, roller: rollerIdx, roll }
 }
 
@@ -4511,7 +4663,7 @@ async function applyRollOutcome(
 			const mainPhase: Phase = { kind: 'main', roll: dice, trade: null }
 			const nextPhase = wrapMagicianWindow(
 				mainPhase,
-				investorResult.players,
+				{ ...state, players: investorResult.players },
 				activeIdx,
 				dice
 			)
@@ -4844,6 +4996,14 @@ async function runFortuneTellerChain(
 			const g = perPlayer[ftIdx]
 			if (g) addHandInto(ftGain, g)
 		}
+		// At a 5-6 player table the bonus roll pays double. Applied before the
+		// hand update and the event, so the log reports what was received.
+		const multiplier = fortuneTellerGainMultiplier(
+			gameSizeFor(cur.players.length)
+		)
+		if (multiplier !== 1) {
+			for (const r of RESOURCES) ftGain[r] *= multiplier
+		}
 		cur = {
 			...cur,
 			players: cur.players.map((p, i) => {
@@ -4919,12 +5079,18 @@ async function handleRoll(
 
 	// Gambler: hold the dice in phase.pending so the player can confirm or
 	// reroll before distribution / 7-chain fires. No event is logged until
-	// the player commits via confirm_roll.
+	// the player commits via confirm_roll. At a 5-6 player table the bonus is
+	// choose-of-two instead, so a second pair is thrown now and both sit in
+	// pending until confirm_roll names the winner. A dev-forced total pins the
+	// first pair only, leaving the choice meaningful.
 	if (bonusOf(state, meIdx) === 'gambler') {
+		const chooseTwo =
+			gamblerModeFor(gameSizeFor(state.players.length)) === 'choose_two'
+		const pending = chooseTwo ? { dice, altDice: rollDice() } : { dice }
 		const { error: stateErr } = await admin
 			.from('game_states')
 			.update({
-				phase: { kind: 'roll', pending: { dice } } satisfies Phase,
+				phase: { kind: 'roll', pending } satisfies Phase,
 			})
 			.eq('game_id', game.id)
 		if (stateErr) return err(500, 'could not update state')
@@ -4952,16 +5118,32 @@ async function handleConfirmRoll(
 	if (meIdx === null) return err(403, 'not a participant')
 	if (game.current_turn !== meIdx) return err(403, 'not your turn')
 
-	const dice = state.phase.pending.dice
+	// `which` names the pending pair to keep — only meaningful when the
+	// gambler was dealt two (choose-of-two at a 5-6 player table). Anything
+	// else keeps the single pending pair, so an old client's body still works.
+	const { dice: firstDice, altDice } = state.phase.pending
+	const takeAlt = body.which === 1 && !!altDice
+	const dice = takeAlt && altDice ? altDice : firstDice
 	const total = dice.a + dice.b
-	const rollEvent = {
+	const events: Record<string, unknown>[] = []
+	if (altDice) {
+		const discarded = takeAlt ? firstDice : altDice
+		events.push({
+			kind: 'roll_choice',
+			player: meIdx,
+			kept_dice: [dice.a, dice.b],
+			discarded_dice: [discarded.a, discarded.b],
+			at: new Date().toISOString(),
+		})
+	}
+	events.push({
 		kind: 'rolled',
 		player: meIdx,
 		dice: [dice.a, dice.b],
 		total,
 		at: new Date().toISOString(),
-	}
-	return applyRollOutcome(admin, game, state, dice, [rollEvent])
+	})
+	return applyRollOutcome(admin, game, state, dice, events)
 }
 
 async function handleRerollDice(
@@ -4982,6 +5164,8 @@ async function handleRerollDice(
 	if (meIdx === null) return err(403, 'not a participant')
 	if (game.current_turn !== meIdx) return err(403, 'not your turn')
 	if (bonusOf(state, meIdx) !== 'gambler') return err(400, 'not a gambler')
+	if (gamblerModeFor(gameSizeFor(state.players.length)) === 'choose_two')
+		return err(400, 'gambler chooses between two rolls at this table size')
 
 	const p = state.players[meIdx]
 	if (p.rerolledThisTurn) return err(400, 'already rerolled this turn')
@@ -5560,7 +5744,13 @@ async function handleBuildRoad(
 			)
 		}
 		if (!cost) return err(400, 'insufficient resources')
-		if (!canSpendUnderAge(meP, costSize(cost)))
+		if (
+			!canSpendUnderAge(
+				meP,
+				costSize(cost),
+				gameSizeFor(state.players.length)
+			)
+		)
 			return err(400, 'age limit reached this turn')
 		nextPlayers = applyCost(state.players, meIdx, cost)
 	}
@@ -5646,7 +5836,13 @@ async function handleBuildSettlement(
 		body.smith_swap ?? 0
 	)
 	if (!cost) return err(400, 'insufficient resources')
-	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
+	if (
+		!canSpendUnderAge(
+			state.players[meIdx],
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
 		return err(400, 'age limit reached this turn')
 
 	const nextVertices = {
@@ -5748,7 +5944,13 @@ async function handleBuildCity(
 		)
 	}
 	if (!cost) return err(400, 'insufficient resources')
-	if (!canSpendUnderAge(meP, costSize(cost)))
+	if (
+		!canSpendUnderAge(
+			meP,
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
 		return err(400, 'age limit reached this turn')
 
 	const nextVertices = {
@@ -6033,7 +6235,7 @@ async function handleMoveRobber(
 			...finalState,
 			phase: wrapMagicianWindow(
 				finalState.phase,
-				finalState.players,
+				finalState,
 				game.current_turn ?? 0,
 				finalState.phase.roll
 			),
@@ -6616,8 +6818,16 @@ async function handleBankTrade(
 	const kind = inferBankKind(state, meIdx, give)
 	if (!kind) return err(400, 'no valid bank ratio for this give hand')
 	const specialistResource = meP.specialistResource ?? null
+	const surcharge = bankSurchargeFor(state, meIdx)
 	if (
-		!isValidBankTradeShape(give, receive, kind, specialistResource, isSmith)
+		!isValidBankTradeShape(
+			give,
+			receive,
+			kind,
+			specialistResource,
+			isSmith,
+			surcharge
+		)
 	)
 		return err(400, 'invalid bank trade shape')
 
@@ -6662,7 +6872,12 @@ async function handleBankTrade(
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
-	const ratio = effectiveBankRatioFor(kind, give, specialistResource)
+	const ratio = effectiveBankRatioFor(
+		kind,
+		give,
+		specialistResource,
+		surcharge
+	)
 	const event = {
 		kind: 'bank_trade',
 		player: meIdx,
@@ -6735,7 +6950,13 @@ async function handleBuyDevCard(
 		)
 	}
 	if (!cost) return err(400, 'insufficient resources')
-	if (!canSpendUnderAge(state.players[meIdx], costSize(cost)))
+	if (
+		!canSpendUnderAge(
+			state.players[meIdx],
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
 		return err(400, 'age limit reached this turn')
 
 	const devSpend = costSize(cost)
@@ -6943,7 +7164,13 @@ async function handleBuildSuperCity(
 	const cost = metropolitanCityCost(meP.bonus, swapDelta)
 	if (!canAfford(meP.resources, cost))
 		return err(400, 'insufficient resources')
-	if (!canSpendUnderAge(meP, costSize(cost)))
+	if (
+		!canSpendUnderAge(
+			meP,
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
 		return err(400, 'age limit reached this turn')
 
 	const nextVertices = {
@@ -7983,7 +8210,14 @@ async function handleInvest(
 	if (meP.bonus !== 'investor') return err(400, 'not an investor')
 	const resource = parseResource(body.resource)
 	if (!resource) return err(400, 'unknown resource')
-	if (!canInvest(meP, resource, totalVP(state, meIdx)))
+	if (
+		!canInvest(
+			meP,
+			resource,
+			totalVP(state, meIdx),
+			gameSizeFor(state.players.length)
+		)
+	)
 		return err(400, 'cannot invest')
 
 	const nextResources = {
@@ -8037,7 +8271,14 @@ async function handleCastMagic(
 		return err(400, 'invalid target')
 	const discard = normalizeHand(body.discard)
 	if (!discard) return err(400, 'invalid discard hand')
-	if (handSize(discard) !== magicDiscardCount(actualTotal, target))
+	if (
+		handSize(discard) !==
+		magicDiscardCount(
+			actualTotal,
+			target,
+			gameSizeFor(state.players.length)
+		)
+	)
 		return err(400, 'wrong discard count')
 	const meP = state.players[meIdx]
 	if (!canAfford(meP.resources, discard))
@@ -8048,8 +8289,13 @@ async function handleCastMagic(
 	const nextResources = { ...meP.resources }
 	for (const r of RESOURCES)
 		nextResources[r] = nextResources[r] - discard[r] + gain[r]
+	// Stamp the round so the two-player cooldown can see it. Harmless
+	// everywhere else — `magicianCanCast` only reads it where the variant
+	// declares a cooldown.
 	const nextPlayers = state.players.map((p, i) =>
-		i === meIdx ? { ...p, resources: nextResources } : p
+		i === meIdx
+			? { ...p, resources: nextResources, lastMagicRound: state.round }
+			: p
 	)
 	const resume = state.phase.resume
 

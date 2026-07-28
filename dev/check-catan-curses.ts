@@ -20,6 +20,7 @@ import {
 } from '../lib/catan/build'
 import {
 	AGE_CARD_LIMIT,
+	ageCardLimitFor,
 	BUILD_COST_SIZES,
 	POWER_HEX_LIMIT,
 	POWER_MAX_HEXES,
@@ -40,11 +41,18 @@ import {
 import { winVPThresholdFor } from '../lib/catan/bonus'
 import { findWinner, recomputeLargestArmy } from '../lib/catan/dev'
 import { initialGameState } from '../lib/catan/generate'
-import { availableBankOptions, ratioOf } from '../lib/catan/ports'
+import {
+	availableBankOptions,
+	bankSurchargeFor,
+	effectiveBankRatioFor,
+	isValidBankTradeShape,
+	ratioOf,
+} from '../lib/catan/ports'
 import { isForcedFullDiscard, requiredDiscards } from '../lib/catan/robber'
 import {
 	GAME_SIZES,
 	type GameState,
+	type Variant,
 	type PlayerState,
 	type ResourceHand,
 } from '../lib/catan/types'
@@ -80,6 +88,11 @@ function baseState(): GameState {
 	})
 }
 
+// A fresh state with a given player count, for the size-dependent curses.
+function playerState(count: number, variant: Variant = 'standard'): GameState {
+	return initialGameState(variant, count, baseState().config)
+}
+
 function setCurse(state: GameState, idx: number, curse: CurseId): GameState {
 	return {
 		...state,
@@ -98,18 +111,66 @@ function testAgeSpendGate() {
 		playedDevThisTurn: false,
 	}
 	assert(
-		canSpendUnderAge(p, BUILD_COST_SIZES.settlement),
+		canSpendUnderAge(p, BUILD_COST_SIZES.settlement, 'standard'),
 		'fresh: 4-card build OK'
 	)
 	const afterCity: PlayerState = { ...p, cardsSpentThisTurn: 5 }
 	assert(
-		!canSpendUnderAge(afterCity, BUILD_COST_SIZES.road),
+		!canSpendUnderAge(afterCity, BUILD_COST_SIZES.road, 'standard'),
 		'spent 5 + road (2) exceeds 6'
 	)
-	assert(canSpendUnderAge(afterCity, 1), 'spent 5 + 1-card build still OK')
+	assert(
+		canSpendUnderAge(afterCity, 1, 'standard'),
+		'spent 5 + 1-card build still OK'
+	)
 	const noCurse: PlayerState = { ...p, curse: undefined }
-	assert(canSpendUnderAge(noCurse, 100), 'no curse → any amount OK')
+	assert(
+		canSpendUnderAge(noCurse, 100, 'standard'),
+		'no curse → any amount OK'
+	)
 	equal(AGE_CARD_LIMIT, 6, 'age limit constant')
+}
+
+// 5 heads-up / 6 at 3-4 / 7 at a 5-6 player table.
+function testAgeSpendGateBySize() {
+	equal(ageCardLimitFor('small'), 5, 'small limit')
+	equal(ageCardLimitFor('standard'), 6, 'standard limit')
+	equal(ageCardLimitFor('expanded'), 7, 'expanded limit')
+	const p: PlayerState = {
+		resources: emptyHand(),
+		curse: 'age',
+		devCards: [],
+		devCardsPlayed: {},
+		playedDevThisTurn: false,
+		cardsSpentThisTurn: 5,
+	}
+	// The same spend + build lands differently at each size.
+	assert(
+		!canSpendUnderAge(p, 1, 'small'),
+		'small: 5 spent is already the cap'
+	)
+	assert(canSpendUnderAge(p, 1, 'standard'), 'standard: 1 more fits')
+	assert(
+		!canSpendUnderAge(p, BUILD_COST_SIZES.road, 'standard'),
+		'standard: a road (2) does not'
+	)
+	assert(
+		canSpendUnderAge(p, BUILD_COST_SIZES.road, 'expanded'),
+		'expanded: a road (2) fits'
+	)
+	// The description restates the limit, so it has to move with it.
+	for (const [size, word] of [
+		['small', 'five'],
+		['standard', 'six'],
+		['expanded', 'seven'],
+	] as const) {
+		assert(
+			curseDescriptionFor('age', size).includes(
+				`maximum of ${word} cards`
+			),
+			`${size} description names the limit`
+		)
+	}
 }
 
 // --- compaction -------------------------------------------------------------
@@ -467,6 +528,75 @@ function testProvincialityBankOption() {
 	equal(opts.length, 1, 'provinciality gives one option')
 	equal(opts[0], '5:1', 'that option is 5:1')
 	equal(ratioOf('5:1'), 5, '5:1 ratio')
+	equal(bankSurchargeFor(s, 0), 0, 'no surcharge at 3-4 players')
+}
+
+// Heads-up the curse is a +1 surcharge with ports still usable; at a 5-6
+// player table the bank closes completely.
+function testProvincialityBySize() {
+	const give = (h: Partial<ResourceHand>): ResourceHand => ({
+		...emptyHand(),
+		...h,
+	})
+
+	// --- small: ports stay, every ratio costs one more
+	const small = setCurse(playerState(2), 0, 'provinciality')
+	equal(bankSurchargeFor(small, 0), 1, 'small: +1 surcharge')
+	const smallOpts = availableBankOptions(small, 0)
+	assert(smallOpts.includes('4:1'), 'small: the option list is not collapsed')
+	assert(!smallOpts.includes('5:1'), 'small: 5:1 is not how it is expressed')
+	equal(
+		effectiveBankRatioFor('4:1', give({ wheat: 5 }), null, 1),
+		5,
+		'small: bank 4:1 charges 5'
+	)
+	equal(
+		effectiveBankRatioFor('2:1-wheat', give({ wheat: 3 }), null, 1),
+		3,
+		'small: a 2:1 port charges 3'
+	)
+	assert(
+		isValidBankTradeShape(
+			give({ wheat: 5 }),
+			give({ brick: 1 }),
+			'4:1',
+			null,
+			false,
+			1
+		),
+		'small: 5 wheat buys 1'
+	)
+	assert(
+		!isValidBankTradeShape(
+			give({ wheat: 4 }),
+			give({ brick: 1 }),
+			'4:1',
+			null,
+			false,
+			1
+		),
+		'small: 4 wheat no longer does'
+	)
+	// Surcharge then specialist discount cancel out, back to the base rate.
+	equal(
+		effectiveBankRatioFor('4:1', give({ wheat: 4 }), 'wheat', 1),
+		4,
+		'small: surcharged specialist pays the base rate'
+	)
+
+	// --- expanded: no bank trading at all
+	const big = setCurse(playerState(5, 'expanded'), 0, 'provinciality')
+	equal(availableBankOptions(big, 0).length, 0, 'expanded: no options')
+	equal(bankSurchargeFor(big, 0), 0, 'expanded: nothing to surcharge')
+
+	// --- uncursed players are untouched at every size
+	for (const st of [small, big]) {
+		assert(
+			availableBankOptions(st, 1).includes('4:1'),
+			'uncursed player keeps the bank'
+		)
+		equal(bankSurchargeFor(st, 1), 0, 'uncursed player pays no surcharge')
+	}
 }
 
 // --- curseOf helper ---------------------------------------------------------
@@ -525,6 +655,7 @@ function testCurseSizeDescriptions() {
 
 const tests: [string, () => void][] = [
 	['age spend gate', testAgeSpendGate],
+	['age spend gate by size', testAgeSpendGateBySize],
 	['compaction road cap', testCompactionRoadCap],
 	['decadence city cap', testDecadenceCityCap],
 	['ambition vp threshold', testAmbitionVPThreshold],
@@ -535,6 +666,7 @@ const tests: [string, () => void][] = [
 	['power pip caps', testPowerCaps],
 	['youth touched set', testYouthTouchedSet],
 	['provinciality 5:1', testProvincialityBankOption],
+	['provinciality by size', testProvincialityBySize],
 	['curseOf sparse', testCurseOfSparse],
 	['size: variant table shape', testCurseSizeVariantTable],
 	['size: descriptions + availability', testCurseSizeDescriptions],

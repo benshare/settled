@@ -353,6 +353,10 @@ export type PlayerState = {
 	// `gambler`: set to true once the player has used their one per-turn
 	// reroll. Reset on end_turn.
 	rerolledThisTurn?: boolean
+	// Round in which the magician last cast. Only used where the bonus has a
+	// cooldown (2 players): a player's turns are exactly `playerCount` rounds
+	// apart, so their next turn is blocked and the one after is not.
+	lastMagicRound?: number
 	// `carpenter`: set to true when the player has already bought a Wood→VP
 	// this turn. Reset on end_turn. Paired counter `carpenterVP` cumulative.
 	boughtCarpenterVPThisTurn?: boolean
@@ -491,7 +495,11 @@ export type Phase =
 	// `reroll_dice` (once per turn). Non-gambler players skip this
 	// intermediate: their `roll` action distributes / enters 7-chain
 	// atomically.
-	| { kind: 'roll'; pending?: { dice: DiceRoll } }
+	// `altDice` is the gambler's second option at a 5-6 player table (see
+	// `gamblerModeFor`): both rolls are thrown up front and `confirm_roll`
+	// names which one counts. Absent everywhere else, where the gambler
+	// instead rerolls the single pending pair.
+	| { kind: 'roll'; pending?: { dice: DiceRoll; altDice?: DiceRoll } }
 	| {
 			kind: 'discard'
 			resume: ResumePhase

@@ -35,7 +35,13 @@ type LogContext = {
 // `satisfies` keeps them honest against the event union: a renamed or dropped
 // kind fails to compile here rather than silently filtering to nothing.
 const CATEGORIES = {
-	rolls: ['rolled', 'reroll', 'ritual_roll', 'fortune_teller_roll'],
+	rolls: [
+		'rolled',
+		'reroll',
+		'roll_choice',
+		'ritual_roll',
+		'fortune_teller_roll',
+	],
 	builds: [
 		'settlement_placed',
 		'road_placed',
@@ -61,6 +67,7 @@ const CATEGORIES = {
 		'carpenter_vp',
 		'knight_tapped',
 		'reroll',
+		'roll_choice',
 		'nomad_produce',
 		'fortune_teller_roll',
 		'explorer_road',
@@ -474,6 +481,21 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 					{
 						label: 'Gained',
 						text: `1 ${RESOURCE_LABELS[e.resources[0]]}, 1 ${RESOURCE_LABELS[e.resources[1]]}`,
+					},
+				],
+			}
+		case 'roll_choice':
+			return {
+				text: `${who(e.player)} kept one of two rolls (gambler)`,
+				player: e.player,
+				detail: [
+					{
+						label: 'Kept',
+						text: `${e.kept_dice[0] + e.kept_dice[1]} (${e.kept_dice.join(' + ')})`,
+					},
+					{
+						label: 'Passed on',
+						text: `${e.discarded_dice[0] + e.discarded_dice[1]} (${e.discarded_dice.join(' + ')})`,
 					},
 				],
 			}

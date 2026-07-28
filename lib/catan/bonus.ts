@@ -17,11 +17,14 @@ import {
 	type Resource,
 	type Vertex,
 } from './board'
-import type { BonusId, CurseId } from './bonuses'
+import type { BonusId, CurseId, GamblerMode } from './bonuses'
+import { bonusVariantFor } from './bonuses'
 import type { BuildKind } from './build'
 import {
+	gameSizeFor,
 	type BankKind,
 	type DiceRoll,
+	type GameSize,
 	type GameState,
 	type PlayerState,
 	type ResourceHand,
@@ -180,8 +183,20 @@ export function canTapKnight(p: PlayerState): boolean {
 
 // --- Gambler ----------------------------------------------------------------
 
-export function canReroll(p: PlayerState): boolean {
+export function gamblerModeFor(size: GameSize): GamblerMode {
+	return bonusVariantFor('gambler', size)?.mode ?? 'reroll'
+}
+
+// Reroll is the 3-4 / heads-up version of the bonus. At a 5-6 player table
+// the gambler gets both rolls up front instead (`canChooseRoll`), so the
+// reroll affordance is gone there.
+export function canReroll(p: PlayerState, size: GameSize): boolean {
+	if (gamblerModeFor(size) !== 'reroll') return false
 	return p.bonus === 'gambler' && !p.rerolledThisTurn
+}
+
+export function canChooseRoll(p: PlayerState, size: GameSize): boolean {
+	return p.bonus === 'gambler' && gamblerModeFor(size) === 'choose_two'
 }
 
 // --- Aristocrat -------------------------------------------------------------
@@ -279,7 +294,14 @@ export function canShepherdSwap(p: PlayerState): boolean {
 // Discard 2 cards (no city) or 3 cards (≥ 1 city OR super_city) to choose
 // the dice value (2..6, 8..12 — never 7). No other player receives resources
 // from this roll. Once per turn.
-export function ritualCardCost(state: GameState, playerIdx: number): 2 | 3 {
+// Flat where the table size says so (see `sizes.ts`), otherwise the
+// city-dependent baseline: 2 before your first city, 3 after.
+export function ritualCardCost(state: GameState, playerIdx: number): number {
+	const flat = bonusVariantFor(
+		'ritualist',
+		gameSizeFor(state.players.length)
+	)?.cardCost
+	if (flat !== undefined) return flat
 	let cities = 0
 	for (const v of Object.values(state.vertices)) {
 		if (!v?.occupied || v.player !== playerIdx) continue
@@ -328,6 +350,14 @@ export function dicePairForTotal(total: number): DiceRoll {
 // `total === 7` fires off the chain-trigger check too — not via dice equality
 // but via the dice's sum. The active player gets the bonus chain after the
 // 7-chain (or distribution) completes for the original roll.
+// What the fortune teller collects from each bonus roll is multiplied by
+// this. The chain itself runs server-side (the edge function's
+// `runFortuneTellerChain`), so this is the pure mirror of a rule applied
+// there — keep the two in step.
+export function fortuneTellerGainMultiplier(size: GameSize): number {
+	return bonusVariantFor('fortune_teller', size)?.gainMultiplier ?? 1
+}
+
 export function fortuneTellerTriggersOn(
 	bonus: BonusId | undefined,
 	dice: DiceRoll
@@ -744,13 +774,19 @@ export function investorTokenCount(p: PlayerState): number {
 }
 
 // `totalVP` is passed in (not imported) to avoid a bonus ↔ dev import cycle.
+// The VP gate, which a 5-6 player table drops to 0 (active immediately).
+export function investorActivateVPFor(size: GameSize): number {
+	return bonusVariantFor('investor', size)?.activateVP ?? INVESTOR_ACTIVATE_VP
+}
+
 export function canInvest(
 	p: PlayerState,
 	resource: Resource,
-	totalVP: number
+	totalVP: number,
+	size: GameSize
 ): boolean {
 	if (p.bonus !== 'investor') return false
-	if (totalVP < INVESTOR_ACTIVATE_VP) return false
+	if (totalVP < investorActivateVPFor(size)) return false
 	if (p.resources[resource] < INVEST_TRIO) return false
 	return investorTokenCount(p) < INVESTOR_MAX_TOKENS
 }
@@ -769,8 +805,19 @@ export function investorPayout(p: PlayerState): ResourceHand {
 // After the magician's own roll resolves, discard N+1 cards to additionally
 // receive production as if a number N away from the actual result had rolled.
 // Direction is the magician's choice; the phantom number must land in 2..12.
-export function magicianCanCast(p: PlayerState): boolean {
-	return p.bonus === 'magician'
+// Baseline cost is the distance plus one card.
+export const MAGIC_DISCARD_PLUS = 1
+
+// May this player open a magician window on this roll? Everywhere but the
+// two-player table that is just "are they the magician"; there they must also
+// have skipped a turn since their last cast.
+export function magicianCanCast(state: GameState, playerIdx: number): boolean {
+	const p = state.players[playerIdx]
+	if (p?.bonus !== 'magician') return false
+	const size = gameSizeFor(state.players.length)
+	if (!bonusVariantFor('magician', size)?.cooldown) return true
+	if (p.lastMagicRound === undefined) return true
+	return state.round > p.lastMagicRound + state.players.length
 }
 
 export function isValidMagicTarget(
@@ -782,8 +829,14 @@ export function isValidMagicTarget(
 	return target !== actualTotal
 }
 
-export function magicDiscardCount(actualTotal: number, target: number): number {
-	return Math.abs(target - actualTotal) + 1
+export function magicDiscardCount(
+	actualTotal: number,
+	target: number,
+	size: GameSize
+): number {
+	const plus =
+		bonusVariantFor('magician', size)?.discardPlus ?? MAGIC_DISCARD_PLUS
+	return Math.abs(target - actualTotal) + plus
 }
 
 // --- Haunt ------------------------------------------------------------------
