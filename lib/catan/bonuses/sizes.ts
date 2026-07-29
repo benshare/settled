@@ -154,7 +154,7 @@ export const CURSE_SIZE_VARIANTS: {
 	provinciality: {
 		small: {
 			description:
-				'Every port and bank trade costs one more of the input resource: 2:1 ports become 3:1, 3:1 ports become 4:1, and the default bank rate becomes 5:1.',
+				'Every port and bank trade costs one more of the input resource.',
 			bankAccess: 'surcharge',
 		},
 		expanded: {
