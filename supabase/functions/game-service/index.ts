@@ -6570,8 +6570,11 @@ async function handleSteal(
 	]
 
 	// FT chain after a 7 → steal → main transition.
-	let finalPlayers: PlayerState[] = nextPlayers
-	let finalPhase: Phase = nextPhase
+	let finalState: GameState = {
+		...state,
+		players: nextPlayers,
+		phase: nextPhase,
+	}
 	if (
 		state.phase.from7 &&
 		nextPhase.kind === 'main' &&
@@ -6580,33 +6583,30 @@ async function handleSteal(
 			nextPhase.roll
 		)
 	) {
-		const stateAfterSteal: GameState = {
-			...state,
-			players: nextPlayers,
-			phase: nextPhase,
-		}
 		const ft = await runFortuneTellerChain(
-			stateAfterSteal,
+			finalState,
 			game.current_turn ?? 0,
 			events
 		)
-		finalPlayers = ft.state.players
-		finalPhase = ft.state.phase
+		finalState = ft.state
 	}
 
 	// Magician: a 7-roll resolving to main opens the magician's window.
-	if (state.phase.from7 && finalPhase.kind === 'main') {
-		finalPhase = wrapMagicianWindow(
-			finalPhase,
-			finalPlayers,
-			game.current_turn ?? 0,
-			finalPhase.roll
-		)
+	if (state.phase.from7 && finalState.phase.kind === 'main') {
+		finalState = {
+			...finalState,
+			phase: wrapMagicianWindow(
+				finalState.phase,
+				finalState,
+				game.current_turn ?? 0,
+				finalState.phase.roll
+			),
+		}
 	}
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ players: finalPlayers, phase: finalPhase })
+		.update({ players: finalState.players, phase: finalState.phase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
