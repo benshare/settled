@@ -91,6 +91,7 @@ function testCanBuyDevCard() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -156,6 +157,7 @@ function testCanBuyDevCard() {
 			limitMonopoly: false,
 			tradeMode: 'automatic',
 			spectators: true,
+			timeout: null,
 			extraBuild: {
 				enabled: false,
 				buildPhases: 'every',
@@ -207,6 +209,7 @@ function testLargestArmyStrictOvertake() {
 			limitMonopoly: false,
 			tradeMode: 'automatic',
 			spectators: true,
+			timeout: null,
 			extraBuild: {
 				enabled: false,
 				buildPhases: 'every',
@@ -252,6 +255,7 @@ function testTotalVP() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -331,6 +335,7 @@ function testInitialGameStateSeedsDevState() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -358,6 +363,7 @@ function testInitialGameStateSeedsDevState() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

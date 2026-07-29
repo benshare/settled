@@ -70,6 +70,7 @@ function testRolledSevenYieldsNothing() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -94,6 +95,7 @@ function testSettlementGetsOne() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -124,6 +126,7 @@ function testCityGetsTwo() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -153,6 +156,7 @@ function testMismatchedRollPaysNothing() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

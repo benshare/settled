@@ -20,7 +20,9 @@ import {
 	SpecialistDeclareOverlay,
 } from '@/lib/catan/PostPlacementOverlay'
 import { ScoutCostPicker } from '@/lib/catan/ScoutCostPicker'
+import { formatRemaining } from '@/lib/catan/timeout'
 import type { GameState } from '@/lib/catan/types'
+import { useCountdown } from '@/lib/catan/useCountdown'
 import type { Game } from '@/lib/stores/useGamesStore'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
@@ -88,6 +90,11 @@ export function TopArea() {
 		submitBuyDevCard,
 	} = useGameScreen()
 
+	// A spectator has no PlayerStrip chip to read — their one status line is
+	// the only place the clock can show. Called before the early return, since
+	// it's a hook.
+	const spectatorRemaining = useCountdown(game?.deadline_at)
+
 	if (!game) return null
 
 	return (
@@ -102,6 +109,7 @@ export function TopArea() {
 					pointsByPlayer={displayVP}
 					publicByPlayer={publicVP}
 					forfeitedIds={forfeitedIds}
+					deadlineAt={game.deadline_at}
 					onPressPlayer={setOpenPlayerIdx}
 				/>
 			)}
@@ -112,6 +120,8 @@ export function TopArea() {
 				<View style={styles.statusWrap}>
 					<Text style={styles.statusLine}>
 						{spectatorStatus(game, gameState, profilesById)}
+						{spectatorRemaining !== null &&
+							` · ${formatRemaining(spectatorRemaining)} left`}
 					</Text>
 				</View>
 			)}

@@ -1,5 +1,10 @@
 import { useAuth } from '@/lib/auth'
 import {
+	TIMEOUT_OPTIONS,
+	timeoutLabel,
+	type TimeoutOption,
+} from '@/lib/catan/timeout'
+import {
 	MAX_PLAYERS,
 	monopolyCap,
 	parseGameConfig,
@@ -12,6 +17,7 @@ import {
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
+import { Select } from '@/lib/modules/Select'
 import { useFriendsStore, type FriendEntry } from '@/lib/stores/useFriendsStore'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import {
@@ -100,6 +106,9 @@ export default function CreateGameScreen() {
 		initial.settings.tradeMode
 	)
 	const [spectators, setSpectators] = useState(initial.settings.spectators)
+	const [moveTimeout, setMoveTimeout] = useState<TimeoutOption | null>(
+		initial.settings.timeout
+	)
 	const [extraBuildEnabled, setExtraBuildEnabled] = useState(
 		initial.settings.extraBuild.enabled
 	)
@@ -133,6 +142,7 @@ export default function CreateGameScreen() {
 	const savedTradeMode = savedDefaults.settings.tradeMode
 	const savedSpectators = savedDefaults.settings.spectators
 	const savedExtraBuild = savedDefaults.settings.extraBuild
+	const savedTimeout = savedDefaults.settings.timeout
 	useEffect(() => {
 		if (touched) return
 		setBonuses(savedBonuses)
@@ -147,6 +157,7 @@ export default function CreateGameScreen() {
 		setLimitMonopoly(savedLimitMonopoly)
 		setTradeMode(savedTradeMode)
 		setSpectators(savedSpectators)
+		setMoveTimeout(savedTimeout)
 		setExtraBuildEnabled(savedExtraBuild.enabled)
 		setBuildPhases(savedExtraBuild.buildPhases)
 		setMoreThanSeven(savedExtraBuild.moreThanSeven)
@@ -163,6 +174,7 @@ export default function CreateGameScreen() {
 		savedLimitMonopoly,
 		savedTradeMode,
 		savedSpectators,
+		savedTimeout,
 		savedExtraBuild,
 		touched,
 	])
@@ -181,6 +193,7 @@ export default function CreateGameScreen() {
 				buildPhases,
 				moreThanSeven,
 			},
+			timeout: moveTimeout,
 		},
 		extras: { bonuses, bonusSets, bannedCombos, bonusCount, curseCount },
 	}
@@ -197,6 +210,7 @@ export default function CreateGameScreen() {
 			savedDefaults.settings.tradeMode ||
 		currentDefaults.settings.spectators !==
 			savedDefaults.settings.spectators ||
+		currentDefaults.settings.timeout !== savedDefaults.settings.timeout ||
 		currentDefaults.settings.extraBuild.enabled !==
 			savedExtraBuild.enabled ||
 		currentDefaults.settings.extraBuild.buildPhases !==
@@ -278,6 +292,7 @@ export default function CreateGameScreen() {
 				buildPhases,
 				moreThanSeven,
 			},
+			timeout: moveTimeout,
 		})
 		setBusy(false)
 		if (error) {
@@ -472,6 +487,26 @@ export default function CreateGameScreen() {
 											}}
 										/>
 									)}
+									<Select
+										label="Move timeout"
+										description="Skip a player who doesn't take their turn in time."
+										icon={
+											<Ionicons
+												name="timer"
+												size={18}
+												color={colors.textSecondary}
+											/>
+										}
+										value={moveTimeout}
+										options={TIMEOUT_OPTIONS.map((key) => ({
+											key,
+											label: timeoutLabel(key),
+										}))}
+										onSelect={(v) => {
+											setMoveTimeout(v)
+											setTouched(true)
+										}}
+									/>
 									<SegmentedRow
 										label="Trades"
 										description="Confirm: you approve each acceptance before the swap. Automatic: the first accepter trades instantly."
@@ -691,6 +726,7 @@ function gameDefaultsFrom(config: GameConfig): GameDefaults {
 			tradeMode: config.tradeMode,
 			spectators: config.spectators,
 			extraBuild: config.extraBuild,
+			timeout: config.timeout,
 		},
 		extras: {
 			bonuses: config.bonuses,

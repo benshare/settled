@@ -9,6 +9,7 @@ import type {
 } from './board'
 import type { BonusId, CurseId } from './bonuses'
 import type { DevCardId } from './devCards'
+import { isTimeoutOption, timeoutLabel, type TimeoutOption } from './timeout'
 
 // `placedTurn` is the value of `GameState.round` at the moment a piece was
 // placed. Initial-placement pieces are stamped with 0; main-phase builds are
@@ -127,6 +128,10 @@ export type GameConfig = {
 	// See ExtraBuildConfig. Only affects games with >4 players; ignored
 	// otherwise.
 	extraBuild: ExtraBuildConfig
+	// How long the game may sit idle before whoever is holding it up is skipped
+	// (at 2 players, loses). `null` — the default — is no clock at all. See
+	// lib/catan/timeout.ts.
+	timeout: TimeoutOption | null
 }
 
 // System-shipped defaults for a standard game. Used as the reference when
@@ -147,6 +152,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	tradeMode: 'automatic',
 	spectators: true,
 	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
+	timeout: null,
 }
 
 // Whether a game needs the simultaneous `select_bonus` phase at all. With one
@@ -209,6 +215,10 @@ export function parseGameConfig(raw: unknown): GameConfig {
 				? src.numberLayout
 				: DEFAULT_CONFIG.numberLayout,
 		extraBuild: parseExtraBuild(src.extraBuild, DEFAULT_CONFIG.extraBuild),
+		// Anything unrecognized — including the missing key every game created
+		// before timeouts shipped carries — parses to no clock, so an in-flight
+		// game can never acquire one.
+		timeout: isTimeoutOption(src.timeout) ? src.timeout : null,
 	}
 }
 
@@ -309,6 +319,9 @@ export function summarizeGameConfig(
 	}
 	if (config.spectators !== DEFAULT_CONFIG.spectators) {
 		parts.push('Spectators disabled')
+	}
+	if (config.timeout !== null) {
+		parts.push(`${timeoutLabel(config.timeout)} move timeout`)
 	}
 	// Extra build phases only apply to >4 player games, so only surface a
 	// non-default value there.

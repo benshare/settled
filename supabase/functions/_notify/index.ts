@@ -29,6 +29,11 @@ export type NotificationKind =
 	| 'end_game_proposed'
 	| 'game_canceled'
 	| 'game_won_by_forfeit'
+	// Move timeouts. Ungated for the same reason: rare, and about to change the
+	// game without you. The warning ships a `bodyOverride` because its lead
+	// time varies (an hour, then ten minutes).
+	| 'turn_timeout_warning'
+	| 'turn_timed_out'
 
 // A chat message body is arbitrary user text and can run to the column's 500
 // chars. Ship a bounded preview rather than letting the OS clip at an arbitrary
@@ -270,6 +275,12 @@ function renderBody(t: NotifyTarget, sender: string | undefined): string {
 			return 'Your game was canceled.'
 		case 'game_won_by_forfeit':
 			return 'Everyone else forfeited — you win.'
+		// Always sent with a bodyOverride naming the actual lead time; this is
+		// the fallback the exhaustive switch needs.
+		case 'turn_timeout_warning':
+			return 'Your turn is about to run out.'
+		case 'turn_timed_out':
+			return 'You ran out of time — your turn was skipped.'
 	}
 }
 
