@@ -44,4 +44,6 @@ Deno reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_ANON_KEY` 
 
 ## Type-checking
 
-`tsconfig.json` excludes `supabase/functions` — we don't want Expo's TS config checking Deno-style imports. Edge function type errors surface at deploy time via `supabase functions deploy`.
+`tsconfig.json` excludes `supabase/functions` — we don't want Expo's TS config checking Deno-style imports. **`supabase functions deploy` does not type-check either**; it bundles and ships. So `npm run check:edge` (`deno check supabase/functions/*/index.ts`, via the pinned `deno` devDependency) is the only thing standing between a type error and production, and it runs as part of `npm run check`. Run it before every `npm run edge`.
+
+This matters more than usual because the game types here are a **hand-maintained mirror of `lib/catan/types.ts`**, not an import — the two files can't share a module across the Expo/Deno boundary. When a phase or `PlayerState` field changes on the client, port it here in the same change. Drift doesn't fail the build; it fails at runtime, and an uncaught `TypeError` in a handler surfaces to the client as the opaque "edge function returned non-2xx". A steal after a 7 was broken this way for two weeks: a `GameState` parameter was handed a `PlayerState[]`, and the mirror was stale enough that four other real type errors were sitting in the file undetected.

@@ -700,6 +700,9 @@ type PlayerState = {
 	forgerToken?: Hex
 	forgerMovedThisTurn?: boolean
 	// Set 3.
+	// Round in which the magician last cast; only consulted where the bonus
+	// has a cooldown (2 players).
+	lastMagicRound?: number
 	investments?: Partial<Record<Resource, number>>
 	hauntSpots?: Vertex[]
 	// Admin testing flag, set by hand in the row. Lets this seat name its own
@@ -1528,7 +1531,14 @@ type ForgerPickEntry = {
 
 type Phase =
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
-	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' | 'road' }
+	// `pick_last` is only ever reached with round 2 by the one seat that
+	// places both settlements back-to-back: they nominate which they placed
+	// last, and that one pays the starting resources.
+	| {
+			kind: 'initial_placement'
+			round: 1 | 2
+			step: 'settlement' | 'road' | 'pick_last'
+	  }
 	| {
 			kind: 'post_placement'
 			pending: {
@@ -1538,7 +1548,9 @@ type Phase =
 				haunt?: number[]
 			}
 	  }
-	| { kind: 'roll'; pending?: { dice: DiceRoll } }
+	// `altDice` is the gambler's second option at a 5-6 player table: both
+	// rolls are thrown up front and `confirm_roll` names which one counts.
+	| { kind: 'roll'; pending?: { dice: DiceRoll; altDice?: DiceRoll } }
 	| {
 			kind: 'discard'
 			resume: ResumePhase
@@ -1558,9 +1570,11 @@ type Phase =
 	  }
 	| { kind: 'road_building'; resume: ResumePhase; remaining: 1 | 2 }
 	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
+	// `resume` also accepts a `special_build` snapshot, since a scout may buy
+	// in their special-build slot and must land back on the queue it came from.
 	| {
 			kind: 'scout_pick'
-			resume: ResumePhase
+			resume: ResumePhase | { kind: 'special_build'; queue: number[] }
 			owner: number
 			cards: DevCardId[]
 	  }
@@ -7151,13 +7165,15 @@ async function handleBuyDevCard(
 
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	// Buyable on your own main turn or in your special-build slot.
-	const inMain = state.phase.kind === 'main' && game.current_turn === meIdx
-	if (!inMain && !isSpecialBuildActor(state, meIdx)) {
-		if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
-			return err(400, 'expected main phase')
+	// Buyable on your own main turn or in your special-build slot. The phase
+	// check leads so that `phase` stays narrowed to those two for the scout
+	// resume below; `isSpecialBuildActor` is false off `special_build` anyway.
+	if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
+		return err(400, 'expected main phase')
+	const phase = state.phase
+	const inMain = phase.kind === 'main' && game.current_turn === meIdx
+	if (!inMain && !isSpecialBuildActor(state, meIdx))
 		return err(403, 'not your turn')
-	}
 
 	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
 	const useBricklayer = !!body.use_bricklayer
@@ -7229,9 +7245,9 @@ async function handleBuyDevCard(
 		const scoutPhase: Phase = {
 			kind: 'scout_pick',
 			resume:
-				state.phase.kind === 'special_build'
-					? { kind: 'special_build', queue: state.phase.queue }
-					: { kind: 'main', roll: state.phase.roll, trade: null },
+				phase.kind === 'special_build'
+					? { kind: 'special_build', queue: phase.queue }
+					: { kind: 'main', roll: phase.roll, trade: null },
 			owner: meIdx,
 			cards: peek,
 		}

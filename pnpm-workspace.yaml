@@ -1,0 +1,5 @@
+# pnpm 10+ reads settings from here rather than package.json's "pnpm" field.
+# `deno` (used by the check:edge script) runs a postinstall to place its
+# binary; without this, every install ends in ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+    deno: true
