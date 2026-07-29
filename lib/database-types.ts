@@ -201,6 +201,7 @@ export type Database = {
           forfeit: boolean
           game_id: string
           offered_bonuses: string[] | null
+          offered_curses: string[] | null
           placement: number
           player_count: number
           player_index: number
@@ -216,6 +217,7 @@ export type Database = {
           forfeit?: boolean
           game_id: string
           offered_bonuses?: string[] | null
+          offered_curses?: string[] | null
           placement: number
           player_count: number
           player_index: number
@@ -231,6 +233,7 @@ export type Database = {
           forfeit?: boolean
           game_id?: string
           offered_bonuses?: string[] | null
+          offered_curses?: string[] | null
           placement?: number
           player_count?: number
           player_index?: number

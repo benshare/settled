@@ -83,6 +83,8 @@ export default function CreateGameScreen() {
 	const [bannedCombos, setBannedCombos] = useState(
 		initial.extras.bannedCombos
 	)
+	const [bonusCount, setBonusCount] = useState(initial.extras.bonusCount)
+	const [curseCount, setCurseCount] = useState(initial.extras.curseCount)
 	const [devCards, setDevCards] = useState(initial.settings.devCards)
 	const [numberLayout, setNumberLayout] = useState<NumberLayout>(
 		initial.settings.numberLayout
@@ -121,6 +123,8 @@ export default function CreateGameScreen() {
 	const savedBonuses = savedDefaults.extras.bonuses
 	const savedBonusSets = savedDefaults.extras.bonusSets
 	const savedBannedCombos = savedDefaults.extras.bannedCombos
+	const savedBonusCount = savedDefaults.extras.bonusCount
+	const savedCurseCount = savedDefaults.extras.curseCount
 	const savedDevCards = savedDefaults.settings.devCards
 	const savedNumberLayout = savedDefaults.settings.numberLayout
 	const savedHonk = savedDefaults.settings.honk
@@ -134,6 +138,8 @@ export default function CreateGameScreen() {
 		setBonuses(savedBonuses)
 		setBonusSets(savedBonusSets)
 		setBannedCombos(savedBannedCombos)
+		setBonusCount(savedBonusCount)
+		setCurseCount(savedCurseCount)
 		setDevCards(savedDevCards)
 		setNumberLayout(savedNumberLayout)
 		setHonk(savedHonk)
@@ -148,6 +154,8 @@ export default function CreateGameScreen() {
 		savedBonuses,
 		savedBonusSets,
 		savedBannedCombos,
+		savedBonusCount,
+		savedCurseCount,
 		savedDevCards,
 		savedNumberLayout,
 		savedHonk,
@@ -174,7 +182,7 @@ export default function CreateGameScreen() {
 				moreThanSeven,
 			},
 		},
-		extras: { bonuses, bonusSets, bannedCombos },
+		extras: { bonuses, bonusSets, bannedCombos, bonusCount, curseCount },
 	}
 	const dirty =
 		currentDefaults.settings.devCards !== savedDefaults.settings.devCards ||
@@ -198,6 +206,8 @@ export default function CreateGameScreen() {
 		currentDefaults.extras.bonuses !== savedDefaults.extras.bonuses ||
 		currentDefaults.extras.bannedCombos !==
 			savedDefaults.extras.bannedCombos ||
+		currentDefaults.extras.bonusCount !== savedDefaults.extras.bonusCount ||
+		currentDefaults.extras.curseCount !== savedDefaults.extras.curseCount ||
 		!sameStringSet(
 			currentDefaults.extras.bonusSets,
 			savedDefaults.extras.bonusSets
@@ -254,6 +264,8 @@ export default function CreateGameScreen() {
 			bonuses,
 			bonusSets,
 			bannedCombos,
+			bonusCount,
+			curseCount,
 			devCards,
 			numberLayout,
 			honk,
@@ -593,6 +605,32 @@ export default function CreateGameScreen() {
 													}
 												)}
 											</View>
+											<View style={styles.subOptions}>
+												<SegmentedRow
+													label="Bonus cards"
+													options={CARD_COUNT_OPTIONS}
+													value={String(bonusCount)}
+													onSelect={(v) => {
+														setBonusCount(Number(v))
+														setTouched(true)
+													}}
+												/>
+												<SegmentedRow
+													label="Curse cards"
+													options={CARD_COUNT_OPTIONS}
+													value={String(curseCount)}
+													onSelect={(v) => {
+														setCurseCount(Number(v))
+														setTouched(true)
+													}}
+												/>
+												<Text style={styles.subNote}>
+													{cardCountNote(
+														bonusCount,
+														curseCount
+													)}
+												</Text>
+											</View>
 											<CompactToggleRow
 												icon="close-circle"
 												title="Ban bad combos"
@@ -658,6 +696,8 @@ function gameDefaultsFrom(config: GameConfig): GameDefaults {
 			bonuses: config.bonuses,
 			bonusSets: config.bonusSets,
 			bannedCombos: config.bannedCombos,
+			bonusCount: config.bonusCount,
+			curseCount: config.curseCount,
 		},
 	}
 }
@@ -800,6 +840,30 @@ const ALLOW_BUILD_OPTIONS = [
 	{ key: 'always', label: 'Always' },
 	{ key: 'over', label: 'Over 7 cards' },
 ]
+// Cards dealt per player in the bonus-selection phase. One means the card is
+// simply assigned; both at one skips the phase entirely.
+const CARD_COUNT_OPTIONS = [
+	{ key: '1', label: '1' },
+	{ key: '2', label: '2' },
+	{ key: '3', label: '3' },
+]
+
+// Spells out what the two counts mean together, since "1" reads as a choice
+// until you notice there's nothing to choose from.
+function cardCountNote(bonusCount: number, curseCount: number): string {
+	const bonus =
+		bonusCount === 1
+			? 'Your bonus is dealt to you'
+			: `Keep 1 of ${bonusCount} bonuses`
+	const curse =
+		curseCount === 1
+			? 'your curse is dealt to you'
+			: `keep 1 of ${curseCount} curses`
+	if (bonusCount === 1 && curseCount === 1) {
+		return 'Both cards are dealt to you — no selection round.'
+	}
+	return `${bonus}, ${curse}.`
+}
 
 // A labelled two/three-option segmented control. Used for the extra-build
 // sub-options (build cadence + who may build). `value` is the active key.
@@ -1092,6 +1156,11 @@ function makeStyles(colors: ColorScheme) {
 			paddingLeft: spacing.md + 18,
 			paddingBottom: spacing.xs,
 			gap: 2,
+		},
+		subNote: {
+			fontSize: font.xs,
+			color: colors.textMuted,
+			marginTop: spacing.xs,
 		},
 		checkboxRow: {
 			flexDirection: 'row',

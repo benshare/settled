@@ -30,9 +30,15 @@ import {
 	curseById,
 	curseDescriptionFor,
 	type BonusId,
+	type CurseId,
 } from './bonuses'
 import { playerColors } from './palette'
-import { gameSizeFor, type SelectBonusHand } from './types'
+import {
+	gameSizeFor,
+	handChosenCurse,
+	handCurses,
+	type SelectBonusHand,
+} from './types'
 
 const ANIM_DURATION = 240
 
@@ -42,7 +48,7 @@ export type BonusSelectionProps = {
 	submitting: boolean
 	collapsed: boolean
 	onToggleCollapsed: () => void
-	onPick: (bonus: BonusId) => void
+	onPick: (bonus: BonusId, curse: CurseId) => void
 	playerOrder: string[]
 	meIdx: number
 	profilesById: Record<string, Profile>
@@ -65,11 +71,20 @@ export function BonusSelection({
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const size = gameSizeFor(playerOrder.length)
 
-	// Track the player's in-flight pick separately from `hand.chosen` so the
-	// UI can show a selected state before the realtime update lands.
-	const [pick, setPick] = useState<0 | 1 | null>(null)
+	// Track the player's in-flight picks separately from `hand.chosen` /
+	// `hand.chosenCurse` so the UI can show a selected state before the
+	// realtime update lands.
+	const [pick, setPick] = useState<number | null>(null)
+	const [cursePick, setCursePick] = useState<number | null>(null)
 
 	const committed = hand ? hand.chosen !== null : false
+	const curses = hand ? handCurses(hand) : []
+	// A single card of either kind is decided at deal time — nothing to pick,
+	// so it's preselected and inert.
+	const bonusFixed = hand ? hand.offered.length === 1 : false
+	const curseFixed = curses.length === 1
+	const bonusIdx = bonusFixed ? 0 : pick
+	const curseIdx = curseFixed ? 0 : cursePick
 
 	const outerHeightSV = useSharedValue(0)
 	const headerHeightSV = useSharedValue(0)
@@ -97,14 +112,16 @@ export function BonusSelection({
 	}))
 
 	async function onConfirm() {
-		if (pick === null || !hand) return
-		onPick(hand.offered[pick])
+		if (!hand || bonusIdx === null || curseIdx === null) return
+		onPick(hand.offered[bonusIdx], curses[curseIdx])
 	}
 
 	const headerLabel = hand
 		? committed
-			? 'Bonus locked in'
-			: 'Pick your bonus'
+			? 'Cards locked in'
+			: curseFixed
+				? 'Pick your bonus'
+				: 'Pick your cards'
 		: 'Bonus selection'
 
 	return (
@@ -147,82 +164,60 @@ export function BonusSelection({
 						{hand ? (
 							<>
 								<Text style={styles.subheading}>
-									Keep one bonus card. The other will be
-									discarded. Your curse card stays either way.
+									{selectionCopy(
+										hand.offered.length,
+										curses.length
+									)}
 								</Text>
-								<View style={styles.bonusRow}>
-									{hand.offered.map((bonusId, i) => {
-										const b = bonusById(bonusId)!
-										const isPicked = committed
-											? hand.offered[i] === hand.chosen
-											: pick === i
-										const isDiscarded =
-											committed && !isPicked
-										return (
-											<Pressable
-												key={i}
-												onPress={() =>
-													!committed &&
-													setPick(i as 0 | 1)
-												}
-												disabled={
-													committed || submitting
-												}
-												style={({ pressed }) => [
-													styles.card,
-													isPicked &&
-														styles.cardPicked,
-													isDiscarded &&
-														styles.cardFaded,
-													pressed &&
-														!committed &&
-														styles.pressed,
-												]}
-											>
-												<View style={styles.cardIcon}>
-													<Ionicons
-														name={b.icon}
-														size={28}
-														color={
-															isDiscarded
-																? colors.textMuted
-																: colors.brand
-														}
-													/>
-												</View>
-												<Text style={styles.cardTitle}>
-													{b.title}
-												</Text>
-												<Text
-													style={
-														styles.cardDescription
-													}
-												>
-													{bonusDescriptionFor(
-														bonusId,
-														size
-													)}
-												</Text>
-											</Pressable>
-										)
-									})}
-								</View>
+								<CardRow
+									kind="bonus"
+									cards={hand.offered.map((id) => ({
+										id,
+										title: bonusById(id)!.title,
+										icon: bonusById(id)!.icon,
+										description: bonusDescriptionFor(
+											id,
+											size
+										),
+									}))}
+									pickedIdx={
+										committed
+											? hand.offered.indexOf(hand.chosen!)
+											: bonusIdx
+									}
+									committed={committed}
+									fixed={bonusFixed}
+									disabled={submitting}
+									onPick={setPick}
+									styles={styles}
+									colors={colors}
+								/>
 
-								<View style={[styles.card, styles.curseCard]}>
-									<View style={styles.cardIcon}>
-										<Ionicons
-											name={curseById(hand.curse)!.icon}
-											size={28}
-											color={colors.error}
-										/>
-									</View>
-									<Text style={styles.cardTitle}>
-										{curseById(hand.curse)!.title}
-									</Text>
-									<Text style={styles.cardDescription}>
-										{curseDescriptionFor(hand.curse, size)}
-									</Text>
-								</View>
+								<CardRow
+									kind="curse"
+									cards={curses.map((id) => ({
+										id,
+										title: curseById(id)!.title,
+										icon: curseById(id)!.icon,
+										description: curseDescriptionFor(
+											id,
+											size
+										),
+									}))}
+									pickedIdx={
+										committed
+											? curses.indexOf(
+													handChosenCurse(hand)!
+												)
+											: curseIdx
+									}
+									committed={committed}
+									fixed={curseFixed}
+									disabled={submitting}
+									onPick={setCursePick}
+									styles={styles}
+									colors={colors}
+								/>
 
 								{committed ? (
 									<View style={styles.waitingRow}>
@@ -237,13 +232,17 @@ export function BonusSelection({
 										<Button
 											onPress={onConfirm}
 											disabled={
-												pick === null || submitting
+												bonusIdx === null ||
+												curseIdx === null ||
+												submitting
 											}
 											loading={submitting}
 										>
-											{pick === null
+											{bonusIdx === null
 												? 'Pick a bonus'
-												: 'Confirm'}
+												: curseIdx === null
+													? 'Pick a curse'
+													: 'Confirm'}
 										</Button>
 									</View>
 								)}
@@ -267,6 +266,98 @@ export function BonusSelection({
 			</Animated.View>
 		</View>
 	)
+}
+
+type PickerCard = {
+	id: string
+	title: string
+	icon: React.ComponentProps<typeof Ionicons>['name']
+	description: string
+}
+
+// One kind's dealt cards. Two or fewer share the width; three would leave the
+// text unreadable at that size, so the row scrolls sideways instead. A `fixed`
+// row (one card, dealt rather than chosen) renders the same card inert.
+function CardRow({
+	kind,
+	cards,
+	pickedIdx,
+	committed,
+	fixed,
+	disabled,
+	onPick,
+	styles,
+	colors,
+}: {
+	kind: 'bonus' | 'curse'
+	cards: PickerCard[]
+	pickedIdx: number | null
+	committed: boolean
+	fixed: boolean
+	disabled: boolean
+	onPick: (idx: number) => void
+	styles: ReturnType<typeof makeStyles>
+	colors: ColorScheme
+}) {
+	const scrolls = cards.length > 2
+	const accent = kind === 'bonus' ? colors.brand : colors.error
+
+	const items = cards.map((card, i) => {
+		// A fixed card was dealt, not chosen — it reads as picked from the
+		// start, and can never be the discarded one.
+		const isPicked = fixed || pickedIdx === i
+		const isDiscarded = committed && !isPicked
+		return (
+			<Pressable
+				key={`${card.id}-${i}`}
+				onPress={() => onPick(i)}
+				disabled={fixed || committed || disabled}
+				style={({ pressed }) => [
+					styles.card,
+					scrolls ? styles.cardFixedWidth : styles.cardFlex,
+					isPicked &&
+						(kind === 'curse'
+							? styles.curseCardPicked
+							: styles.cardPicked),
+					isDiscarded && styles.cardFaded,
+					pressed && !fixed && !committed && styles.pressed,
+				]}
+			>
+				<View style={styles.cardIcon}>
+					<Ionicons
+						name={card.icon}
+						size={28}
+						color={isDiscarded ? colors.textMuted : accent}
+					/>
+				</View>
+				<Text style={styles.cardTitle}>{card.title}</Text>
+				<Text style={styles.cardDescription}>{card.description}</Text>
+			</Pressable>
+		)
+	})
+
+	if (!scrolls) return <View style={styles.cardRow}>{items}</View>
+	return (
+		<ScrollView
+			horizontal
+			showsHorizontalScrollIndicator={false}
+			contentContainerStyle={styles.cardScroll}
+		>
+			{items}
+		</ScrollView>
+	)
+}
+
+// What the player is being asked to do, which depends on how many of each card
+// they were dealt. A count of 1 is dealt, not chosen.
+function selectionCopy(bonusCount: number, curseCount: number): string {
+	if (curseCount === 1) {
+		return 'Keep one bonus card — the rest are discarded. Your curse card stays either way.'
+	}
+	if (bonusCount === 1) {
+		return 'Keep one curse card — the rest are discarded. Your bonus card is already yours.'
+	}
+	return 'Keep one bonus card and one curse card. The rest are discarded.'
 }
 
 function PlayOrderFooter({
@@ -376,12 +467,22 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.sm,
 			color: colors.textMuted,
 		},
-		bonusRow: {
+		cardRow: {
 			flexDirection: 'row',
 			gap: spacing.sm,
 		},
-		card: {
+		cardScroll: {
+			flexDirection: 'row',
+			gap: spacing.sm,
+			paddingRight: spacing.sm,
+		},
+		cardFlex: {
 			flex: 1,
+		},
+		cardFixedWidth: {
+			width: 150,
+		},
+		card: {
 			padding: spacing.sm,
 			borderRadius: radius.md,
 			borderWidth: 2,
@@ -419,10 +520,9 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.sm,
 			color: colors.textSecondary,
 		},
-		curseCard: {
-			flexGrow: 0,
+		curseCardPicked: {
 			borderColor: colors.error,
-			backgroundColor: colors.card,
+			backgroundColor: colors.cardAlt,
 		},
 		actionRow: {
 			marginTop: spacing.xs,

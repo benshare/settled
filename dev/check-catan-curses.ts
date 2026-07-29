@@ -73,6 +73,8 @@ function baseState(): GameState {
 		bonuses: true,
 		bonusSets: ['1'],
 		bannedCombos: true,
+		bonusCount: 2,
+		curseCount: 1,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
