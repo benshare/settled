@@ -15,6 +15,8 @@ import {
 	canBuildMoreSuperCities,
 	canInvest,
 	fenceOwner,
+	forgerTokenHex,
+	mustMoveForgerToken,
 	type ScoutSwap,
 } from '@/lib/catan/bonus'
 import {
@@ -154,7 +156,6 @@ function useGameScreenState(gameId: string) {
 	const [tradePanelOpen, setTradePanelOpen] = useState(false)
 	const [ritualOpen, setRitualOpen] = useState(false)
 	const [shepherdOpen, setShepherdOpen] = useState(false)
-	const [forgerMoveOpen, setForgerMoveOpen] = useState(false)
 	const [accountantOpen, setAccountantOpen] = useState(false)
 	const [scoutCostOpen, setScoutCostOpen] = useState(false)
 	// When a city / super_city build is pending and the metropolitan
@@ -584,6 +585,21 @@ function useGameScreenState(gameId: string) {
 	// Hand-set on the player row for testing; unlocks the force-roll picker.
 	const isDev = myPlayer?.dev === true
 
+	// Forger: the token move is compulsory and gates the roll, so the board
+	// pulses the valid hexes on its own — there is no affordance to open. The
+	// server enforces the same gate in `handleRoll`.
+	const forgerMustMove =
+		!!gameState &&
+		isMyActiveTurn &&
+		gameState.phase.kind === 'roll' &&
+		!gameState.phase.pending?.dice &&
+		!!myPlayer &&
+		mustMoveForgerToken(myPlayer)
+	const forgerTokenFrom =
+		forgerMustMove && myPlayer && gameState
+			? forgerTokenHex(myPlayer, gameState.robber)
+			: null
+
 	async function onPickBonus(bonus: BonusId, curse: CurseId) {
 		if (!game) return
 		setSubmitting(true)
@@ -642,13 +658,14 @@ function useGameScreenState(gameId: string) {
 		if (res.error) notify('Claim failed', res.error)
 	}
 
-	async function onMoveForgerToken(hex: Hex) {
+	function onMoveForgerTokenRequest(hex: Hex) {
 		if (!game) return
-		setSubmitting(true)
-		const res = await moveForgerToken(game.id, hex)
-		setSubmitting(false)
-		if (res.error) notify('Move failed', res.error)
-		else setForgerMoveOpen(false)
+		confirmAction('Move forger token here?', async () => {
+			setSubmitting(true)
+			const res = await moveForgerToken(game.id, hex)
+			setSubmitting(false)
+			if (res.error) notify('Move failed', res.error)
+		})
 	}
 
 	async function onPickForgerTarget(target: number) {
@@ -1282,6 +1299,8 @@ function useGameScreenState(gameId: string) {
 		inRobberFlow,
 		inRoadBuilding,
 		inGameOver,
+		forgerMustMove,
+		forgerTokenFrom,
 
 		// --- Forfeiting / ending ---------------------------------------
 		playerCount,
@@ -1328,8 +1347,6 @@ function useGameScreenState(gameId: string) {
 		setRitualOpen,
 		shepherdOpen,
 		setShepherdOpen,
-		forgerMoveOpen,
-		setForgerMoveOpen,
 		accountantOpen,
 		setAccountantOpen,
 		scoutCostOpen,
@@ -1355,7 +1372,7 @@ function useGameScreenState(gameId: string) {
 		onRitualRoll,
 		onShepherdSwap,
 		onClaimCurio,
-		onMoveForgerToken,
+		onMoveForgerTokenRequest,
 		onPickForgerTarget,
 		onConfirmScoutCard,
 		onLiquidate,

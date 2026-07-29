@@ -445,8 +445,19 @@ export const CURIO_PICK_SIZE = 3
 
 // --- Forger -----------------------------------------------------------------
 
-export function forgerActive(p: PlayerState): boolean {
-	return p.bonus === 'forger' && p.forgerToken !== undefined
+// Where a forger's token sits. Seeded onto the player at bonus lock-in (the
+// robber's starting hex — the desert), so the fallback only ever fires for a
+// game whose forger was dealt before the token was seeded; there the token
+// materialises on the robber's current hex the first time anything reads it.
+export function forgerTokenHex(p: PlayerState, robberHex: Hex): Hex {
+	return p.forgerToken ?? robberHex
+}
+
+// The move is compulsory: a forger cannot roll until the token has left the
+// hex it's standing on. Every hex on both boards has at least two
+// vertex-adjacent neighbours, so this can never deadlock.
+export function mustMoveForgerToken(p: PlayerState): boolean {
+	return p.bonus === 'forger' && !p.forgerMovedThisTurn
 }
 
 // Hexes adjacent to `hex` (i.e. share at least one vertex). Used to gate
@@ -466,13 +477,14 @@ export function hexesAdjacentTo(hex: Hex, variant: Variant): Hex[] {
 export function canMoveForgerToken(
 	p: PlayerState,
 	target: Hex,
-	variant: Variant
+	variant: Variant,
+	robberHex: Hex
 ): boolean {
 	if (p.bonus !== 'forger') return false
 	if (p.forgerMovedThisTurn) return false
-	if (!p.forgerToken) return false
-	if (target === p.forgerToken) return false
-	return hexesAdjacentTo(p.forgerToken, variant).includes(target)
+	const from = forgerTokenHex(p, robberHex)
+	if (target === from) return false
+	return hexesAdjacentTo(from, variant).includes(target)
 }
 
 // --- Scout ------------------------------------------------------------------

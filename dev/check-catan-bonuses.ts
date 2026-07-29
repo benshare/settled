@@ -19,6 +19,8 @@ import {
 	bricklayerAltCost,
 	canBuyCarpenterVP,
 	canMoveForgerToken,
+	forgerTokenHex,
+	mustMoveForgerToken,
 	canChooseRoll,
 	canReroll,
 	canShepherdSwap,
@@ -789,6 +791,7 @@ function testForger() {
 	const adj = hexesAdjacentTo('3C' as never, 'standard')
 	assert(adj.length > 0, 'forger adj has results')
 	assert(!adj.includes('3C' as never), 'forger adj excludes self')
+	const robber = '3C' as never
 	const p: PlayerState = {
 		resources: emptyHand(),
 		bonus: 'forger',
@@ -796,23 +799,39 @@ function testForger() {
 		devCardsPlayed: {},
 		playedDevThisTurn: false,
 	}
+	// A forger dealt before the token was seeded falls back to the robber's
+	// hex, so a legacy game is never stuck with an unmovable token.
+	equal(forgerTokenHex(p, robber), '3C', 'no token → falls back to robber')
 	assert(
-		!canMoveForgerToken(p, '3C' as never, 'standard'),
-		'no token → cannot move'
+		canMoveForgerToken(p, adj[0], 'standard', robber),
+		'no token → moves from the robber hex'
 	)
-	const active = { ...p, forgerToken: '3C' as never }
+	const active = { ...p, forgerToken: '2B' as never }
+	equal(forgerTokenHex(active, robber), '2B', 'seeded token wins')
+	const activeAdj = hexesAdjacentTo('2B' as never, 'standard')
 	assert(
-		canMoveForgerToken(active, adj[0], 'standard'),
+		canMoveForgerToken(active, activeAdj[0], 'standard', robber),
 		'forger with token → can move to adjacent'
 	)
 	assert(
-		!canMoveForgerToken(active, '3C' as never, 'standard'),
+		!canMoveForgerToken(active, '2B' as never, 'standard', robber),
 		'cannot move to same hex'
 	)
-	const used = { ...active, forgerMovedThisTurn: true }
 	assert(
-		!canMoveForgerToken(used, adj[0], 'standard'),
+		!canMoveForgerToken(active, adj[0], 'standard', robber),
+		'cannot move to a non-adjacent hex'
+	)
+	// The move is compulsory, so the obligation stands until it's taken.
+	assert(mustMoveForgerToken(active), 'unmoved forger owes a move')
+	const used = { ...active, forgerMovedThisTurn: true }
+	assert(!mustMoveForgerToken(used), 'moved forger owes nothing')
+	assert(
+		!canMoveForgerToken(used, activeAdj[0], 'standard', robber),
 		'already moved cannot move'
+	)
+	assert(
+		!mustMoveForgerToken({ ...active, bonus: 'scout' }),
+		'non-forger owes nothing'
 	)
 }
 

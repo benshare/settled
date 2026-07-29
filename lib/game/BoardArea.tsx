@@ -67,7 +67,10 @@ export function BoardArea() {
 		setBonusPaneCollapsed,
 		metroPending,
 		setMetroPending,
+		forgerMustMove,
+		forgerTokenFrom,
 		onBuildSpotSelect,
+		onMoveForgerTokenRequest,
 		onMoveRobberRequest,
 		onStealRequest,
 		onAcceptTrade,
@@ -215,6 +218,15 @@ export function BoardArea() {
 													: undefined,
 										}
 									: undefined
+					}
+					forgerMove={
+						forgerMustMove && forgerTokenFrom
+							? {
+									meIdx,
+									from: forgerTokenFrom,
+									onMove: onMoveForgerTokenRequest,
+								}
+							: undefined
 					}
 					robber={
 						isMyActiveTurn &&

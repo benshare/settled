@@ -1,5 +1,4 @@
 Add move timeouts as config
-Improve forger
 
 Allow for banning specific boons/curses
 Allow honking everywhere

@@ -227,9 +227,10 @@ export type GameEvent =
 			at: string
 	  }
 	| { kind: 'curio_collected'; player: number; take: Resource[]; at: string }
-	// A 7's robber move snaps every forger token to the new hex — activating
-	// it the first time (`_set`), relocating it after that (`_move`). The
-	// forger can also move it themselves on their turn (`_move`).
+	// `_move` is the forger's compulsory start-of-turn token move, the only
+	// thing that relocates the token today. `_set` is legacy: 7-rolls used to
+	// snap every token to the robber, activating it the first time. No longer
+	// written — kept so old logs still render.
 	| { kind: 'forger_token_set'; player: number; hex: Hex; at: string }
 	| { kind: 'forger_token_move'; player: number; hex: Hex; at: string }
 	// `target` is the copied player's seat index.

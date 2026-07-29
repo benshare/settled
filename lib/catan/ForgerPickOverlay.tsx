@@ -1,6 +1,6 @@
-// Modal shown to a forger after their token's hex produced and two or more
-// other players gained from it. The forger picks one candidate to copy from.
-// A single eligible player is copied server-side without a prompt.
+// Modal shown to a forger after their token's hex was rolled and two or more
+// other players would gain from it. The forger picks one candidate to copy
+// from. A single eligible player is copied server-side without a prompt.
 
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -37,8 +37,9 @@ export function ForgerPickOverlay({
 			contentStyle={styles.sheet}
 		>
 			<Text style={styles.subtitle}>
-				Your token at hex {hex} produced. Pick one player to copy what
-				THEY gained from that hex on this roll.
+				Hex {hex}, where your token sits, was rolled. Pick one player to
+				copy what THEY collected from it — a robber on the hex
+				doesn&apos;t stop you.
 			</Text>
 			<View style={styles.list}>
 				{candidates.map((idx) => (

@@ -201,7 +201,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'forger',
 		title: 'Forger',
 		description:
-			'You receive a "forger token" which becomes active once a 7 is rolled. Whenever the robber moves due to a 7, the forger token moves to the same hex. Before your roll you may move the token to any adjacent hex. Whenever the token\'s hex produces resources, you copy the resources of another player.',
+			'You receive a "forger token", starting on the desert. At the start of each of your turns you must move it to an adjacent hex before rolling. Whenever the token\'s hex is rolled, you copy the resources another player receives from it — even if the robber is blocking that hex.',
 		icon: 'copy-outline',
 		set: '2',
 	},

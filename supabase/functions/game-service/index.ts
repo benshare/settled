@@ -2166,9 +2166,46 @@ function distributeResources(
 	return result
 }
 
-// Per-hex per-player gain for a roll. Used by the forger bonus to look up
-// the gain another player received from the forger's token hex on this
-// roll. Same rules as distributeResources but factored per hex.
+// What each player would gain from a SINGLE hex on `total`, IGNORING the
+// robber. The forger copies through a blocked hex, so its candidate lookup
+// can't go through distributeResourcesByHex — that one skips the robber's hex,
+// which is exactly the case the forger bypasses. Plutocrat is deliberately
+// absent: it bumps the summed per-roll gain, not a per-hex slice.
+function gainsFromHex(
+	state: GameState,
+	hex: Hex,
+	total: number
+): Record<number, ResourceHand> {
+	const perPlayer: Record<number, ResourceHand> = {}
+	if (total === 7) return perPlayer
+	const hd = state.hexes[hex]
+	if (!hd || hd.resource === null) return perPlayer
+	if (hd.number !== total) return perPlayer
+	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
+		const vs = vertexStateOf(state, v)
+		if (!vs.occupied) continue
+		const base =
+			vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
+		const mult = underdogMultiplierFor(
+			state.players[vs.player]?.bonus,
+			hd.number
+		)
+		const hand =
+			perPlayer[vs.player] ??
+			(perPlayer[vs.player] = {
+				brick: 0,
+				wood: 0,
+				sheep: 0,
+				wheat: 0,
+				ore: 0,
+			})
+		hand[hd.resource] += base * mult
+	}
+	return perPlayer
+}
+
+// Per-hex per-player gain for a roll — gainsFromHex over every hex, minus the
+// one the robber sits on.
 function distributeResourcesByHex(
 	state: GameState,
 	total: number
@@ -2177,35 +2214,7 @@ function distributeResourcesByHex(
 	if (total === 7) return out
 	for (const hex of boardFor(state.variant).hexes) {
 		if (hex === state.robber) continue
-		const hd = state.hexes[hex]
-		if (hd.resource === null) continue
-		if (hd.number !== total) continue
-		const perPlayer: Record<number, ResourceHand> = {}
-		for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-			const vs = vertexStateOf(state, v)
-			if (!vs.occupied) continue
-			const base =
-				vs.building === 'super_city'
-					? 3
-					: vs.building === 'city'
-						? 2
-						: 1
-			const mult = underdogMultiplierFor(
-				state.players[vs.player]?.bonus,
-				hd.number
-			)
-			const gain = base * mult
-			const hand =
-				perPlayer[vs.player] ??
-				(perPlayer[vs.player] = {
-					brick: 0,
-					wood: 0,
-					sheep: 0,
-					wheat: 0,
-					ore: 0,
-				})
-			hand[hd.resource] += gain
-		}
+		const perPlayer = gainsFromHex(state, hex, total)
 		if (Object.keys(perPlayer).length > 0) out[hex] = perPlayer
 	}
 	return out
@@ -2883,6 +2892,20 @@ function hexesAdjacentTo(hex: Hex, variant: Variant): Hex[] {
 	return Array.from(seen)
 }
 
+// Where a forger's token sits. Seeded to the robber's starting hex (the
+// desert) at bonus lock-in, so the fallback only fires for a forger dealt
+// before the seeding existed — there the token materialises on the robber's
+// current hex the first time anything reads it.
+function forgerTokenHex(p: PlayerState, robberHex: Hex): Hex {
+	return p.forgerToken ?? robberHex
+}
+
+// The move is compulsory: a forger cannot roll until the token has left the
+// hex it's standing on.
+function mustMoveForgerToken(p: PlayerState): boolean {
+	return p.bonus === 'forger' && !p.forgerMovedThisTurn
+}
+
 const SCOUT_COST_RESOURCES: readonly Resource[] = ['sheep', 'wheat', 'ore']
 
 function isValidScoutSwap(swap: { from: Resource; to: Resource }): boolean {
@@ -3440,7 +3463,10 @@ async function writeGameResults(
 function offeredCardsByPlayer(
 	events: unknown[]
 ): Record<number, { bonuses: string[]; curses: string[] | undefined }> {
-	const out: Record<number, { bonuses: string[]; curses?: string[] }> = {}
+	const out: Record<
+		number,
+		{ bonuses: string[]; curses: string[] | undefined }
+	> = {}
 	for (const e of events) {
 		const ev = e as {
 			kind?: string
@@ -4149,13 +4175,19 @@ async function handleRespond(
 			variant,
 			config.numberLayout ?? 'spiral'
 		)
+		// A forger's token starts on the robber's hex. Seeded here for the
+		// auto-assign path — handlePickBonus does it for games that choose —
+		// and it has to wait for generateHexes, which is what fixes the desert.
+		const seatedPlayers = players.map((p) =>
+			p.bonus === 'forger' ? { ...p, forgerToken: desert } : p
+		)
 		const { error: stateErr } = await admin.from('game_states').insert({
 			game_id: inserted.id,
 			variant,
 			hexes: generatedHexes,
 			vertices: {},
 			edges: {},
-			players,
+			players: seatedPlayers,
 			phase: initialPhase,
 			robber: desert,
 			ports: generatePorts(variant),
@@ -4279,11 +4311,18 @@ async function handlePickBonus(
 	let nextPhase: Phase
 	let nextPlayers = state.players
 	if (allChosen) {
-		nextPlayers = state.players.map((p, i) => ({
-			...p,
-			bonus: nextHands[i]!.chosen!,
-			curse: handChosenCurse(nextHands[i]!) ?? undefined,
-		}))
+		nextPlayers = state.players.map((p, i) => {
+			const chosen = nextHands[i]!.chosen!
+			return {
+				...p,
+				bonus: chosen,
+				curse: handChosenCurse(nextHands[i]!) ?? undefined,
+				// A forger's token starts on the robber's hex (the desert) and
+				// from here on moves only when the forger moves it — nothing
+				// else on the board relocates it.
+				...(chosen === 'forger' ? { forgerToken: state.robber } : {}),
+			}
+		})
 		nextPhase = { kind: 'initial_placement', round: 1, step: 'settlement' }
 	} else {
 		nextPhase = { kind: 'select_bonus', hands: nextHands }
@@ -5028,16 +5067,17 @@ async function applyRollOutcome(
 		}
 	}
 
-	// Forger: queue picks for any forger whose token's hex produced AND
-	// for whom two or more other players gained from that hex this roll (a
-	// lone candidate is copied outright). Skipped on bonus rolls.
+	// Forger: queue picks for any forger whose token's hex rolled AND for whom
+	// two or more other players would gain from that hex this roll (a lone
+	// candidate is copied outright). Skipped on bonus rolls. Sourced from
+	// `gainsFromHex`, NOT `perHex` — the forger copies through the robber, so
+	// a blocked token hex still pays them.
 	const forgerQueue: ForgerPickEntry[] = []
 	if (options.distributeOnlyTo === undefined) {
 		stateAfter.players.forEach((p, idx) => {
-			if (p.bonus !== 'forger' || !p.forgerToken) return
-			const hex = p.forgerToken
-			const perPlayer = perHex[hex]
-			if (!perPlayer) return
+			if (p.bonus !== 'forger') return
+			const hex = forgerTokenHex(p, state.robber)
+			const perPlayer = gainsFromHex(state, hex, total)
 			const candidates: Record<number, ResourceHand> = {}
 			for (const cidStr of Object.keys(perPlayer)) {
 				const cid = Number(cidStr)
@@ -5228,6 +5268,11 @@ async function handleRoll(
 	const meIdx = currentPlayerIndex(game, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+
+	// Forger: moving the token is compulsory and gates the roll. The client
+	// disables Roll for the same reason, so this only catches a forged body.
+	if (mustMoveForgerToken(state.players[meIdx]))
+		return err(400, 'move your forger token first')
 
 	// Admin testing: a seat flagged `dev: true` (set by hand in the row) may
 	// name its own total. Silently ignored for anyone else, so a forged body
@@ -6559,25 +6604,6 @@ async function handleMoveRobber(
 			candidates,
 			from7: state.phase.from7,
 		}
-	}
-
-	// Forger token snap: any 7-induced robber move re-anchors every
-	// forger player's token to the new robber hex. Activates the token
-	// the first time (snap from undefined → hex). Knight moves don't
-	// trigger the snap (gated by from7).
-	if (state.phase.from7) {
-		const snapEvents: unknown[] = []
-		nextPlayers = nextPlayers.map((p, i) => {
-			if (p.bonus !== 'forger') return p
-			snapEvents.push({
-				kind: p.forgerToken ? 'forger_token_move' : 'forger_token_set',
-				player: i,
-				hex,
-				at: now,
-			})
-			return { ...p, forgerToken: hex }
-		})
-		events.push(...snapEvents)
 	}
 
 	// If we're transitioning straight to main (no steal needed), apply
@@ -8136,15 +8162,15 @@ async function handleMoveForgerToken(
 	if (game.current_turn !== meIdx) return err(403, 'not your turn')
 	const meP = state.players[meIdx]
 	if (meP.bonus !== 'forger') return err(400, 'not a forger')
-	if (!meP.forgerToken) return err(400, 'forger token not yet active')
 	if (meP.forgerMovedThisTurn) return err(400, 'already moved this turn')
 	if (
 		!(boardFor(state.variant).hexes as readonly string[]).includes(body.hex)
 	)
 		return err(400, 'unknown hex')
 	const target = body.hex as Hex
-	if (target === meP.forgerToken) return err(400, 'must move to a new hex')
-	if (!hexesAdjacentTo(meP.forgerToken, state.variant).includes(target))
+	const from = forgerTokenHex(meP, state.robber)
+	if (target === from) return err(400, 'must move to a new hex')
+	if (!hexesAdjacentTo(from, state.variant).includes(target))
 		return err(400, 'target hex must be adjacent to current')
 
 	const nextPlayers = state.players.map((p, i) => {

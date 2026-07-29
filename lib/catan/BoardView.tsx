@@ -18,9 +18,11 @@ import {
 	type Hex,
 	type Vertex,
 } from './board'
+import { forgerTokenHex } from './bonus'
 import { BuildLayer, type BoardTool, type BuildSelection } from './BuildLayer'
 import { EdgePiece } from './EdgePiece'
 import { FenceTokenPiece } from './FenceTokenPiece'
+import { ForgerMoveLayer } from './ForgerMoveLayer'
 import { ForgerTokenPiece } from './ForgerTokenPiece'
 import { HexTile } from './HexTile'
 import {
@@ -60,6 +62,15 @@ export type RobberInteraction = {
 	onSteal: (victim: number) => void
 }
 
+// The forger's compulsory start-of-turn token move. `from` is where the token
+// stands now; the layer pulses its neighbours. Mutually exclusive with
+// `robber` by phase (`roll` vs `move_robber`).
+export type ForgerMoveInteraction = {
+	meIdx: number
+	from: Hex
+	onMove: (hex: Hex) => void
+}
+
 const MIN_SCALE = 1
 const MAX_SCALE = 4
 
@@ -68,12 +79,14 @@ export function BoardView({
 	interaction,
 	build,
 	robber,
+	forgerMove,
 	robberDormant,
 }: {
 	state: GameState
 	interaction?: BoardInteraction
 	build?: BuildInteraction
 	robber?: RobberInteraction
+	forgerMove?: ForgerMoveInteraction
 	robberDormant?: boolean
 }) {
 	const [box, setBox] = useState<{ w: number; h: number } | null>(null)
@@ -153,6 +166,7 @@ export function BoardView({
 								interaction={interaction}
 								build={build}
 								robber={robber}
+								forgerMove={forgerMove}
 								robberDormant={robberDormant}
 							/>
 						</Animated.View>
@@ -170,6 +184,7 @@ function BoardSvg({
 	interaction,
 	build,
 	robber,
+	forgerMove,
 	robberDormant,
 }: {
 	state: GameState
@@ -178,6 +193,7 @@ function BoardSvg({
 	interaction?: BoardInteraction
 	build?: BuildInteraction
 	robber?: RobberInteraction
+	forgerMove?: ForgerMoveInteraction
 	robberDormant?: boolean
 }) {
 	// Ports sit ~1s outside the hex grid on each edge, so the true bounding
@@ -284,8 +300,9 @@ function BoardSvg({
 					)
 				})()}
 				{state.players.map((p, i) => {
-					if (p.bonus !== 'forger' || !p.forgerToken) return null
-					const hex = layout.hexes.find((h) => h.id === p.forgerToken)
+					if (p.bonus !== 'forger') return null
+					const tokenHex = forgerTokenHex(p, state.robber)
+					const hex = layout.hexes.find((h) => h.id === tokenHex)
 					if (!hex) return null
 					return (
 						<ForgerTokenPiece
@@ -317,6 +334,16 @@ function BoardSvg({
 						onSelect={build.onSelect}
 						pending={build.pending}
 						selected={build.selected}
+					/>
+				)}
+				{forgerMove && (
+					<ForgerMoveLayer
+						state={state}
+						meIdx={forgerMove.meIdx}
+						from={forgerMove.from}
+						layoutS={layout.s}
+						hexLayouts={layout.hexes}
+						onMove={forgerMove.onMove}
 					/>
 				)}
 				{robber && (

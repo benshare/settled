@@ -410,13 +410,15 @@ export type PlayerState = {
 	// `shepherd`: set to true once the player has used their per-turn
 	// shepherd swap (4-sheep start-of-turn). Reset on end_turn.
 	shepherdUsedThisTurn?: boolean
-	// `forger`: hex where the forger token currently sits, undefined until
-	// the first 7 is rolled (any player). Re-snaps to the post-7 robber
-	// hex on every subsequent 7 (regardless of whose roll). The forger
-	// player may move it to a vertex-adjacent hex once per their own turn.
+	// `forger`: hex where the forger token currently sits. Seeded to the
+	// robber's starting hex (the desert) when bonuses lock in, and moved by
+	// the forger alone — nothing else on the board relocates it. Undefined
+	// only in games dealt before the seeding existed, where readers fall
+	// back to the robber's hex (`forgerTokenHex`).
 	forgerToken?: Hex
-	// `forger`: set to true once the player has used their per-turn token
-	// move. Reset on end_turn.
+	// `forger`: set to true once the player has moved the token this turn.
+	// The move is compulsory — a forger cannot roll until it is true. Reset
+	// on end_turn.
 	forgerMovedThisTurn?: boolean
 	// `investor`: set-aside investment tokens keyed by resource. Each token
 	// cost 3 of that resource and pays 1 back at the start of the player's
@@ -565,8 +567,7 @@ export type Phase =
 			// Amount each player still owes. Entries are removed as players submit.
 			pending: Partial<Record<number, number>>
 			// True iff the chain was triggered by a 7-roll (vs a knight).
-			// Used to snap forger tokens after move_robber completes and to
-			// trigger fortune_teller bonus rolls on resume.
+			// Used to trigger fortune_teller bonus rolls on resume.
 			from7?: boolean
 	  }
 	| { kind: 'move_robber'; resume: ResumePhase; from7?: boolean }
@@ -610,9 +611,11 @@ export type Phase =
 			resume: Phase
 			pending: number[]
 	  }
-	// Forger token-hex production. Each forger whose token's hex produced
-	// AND for whom two or more other players gained from that hex is queued
+	// Forger token-hex production. Each forger whose token's hex rolled AND
+	// for whom two or more other players would gain from that hex is queued
 	// here — a single eligible player is copied automatically, no prompt.
+	// "Would gain" is robber-blind (`gainsFromHex`): the forger copies even
+	// when the robber stops the hex paying out.
 	// Each entry resolves serially (head of queue acts first). The acting
 	// forger picks one candidate, gains a copy of that candidate's hex
 	// gain, queue pops, and `resume` fires once empty.
@@ -646,8 +649,9 @@ export type ForgerPickEntry = {
 	idx: number
 	hex: Hex
 	// `gainsByCandidate` maps candidate player index → resources THAT
-	// candidate received from `hex` on the original roll. The forger picks
-	// one candidate and copies that hand into their own.
+	// candidate received (or would have, had the robber not been sitting
+	// there) from `hex` on the original roll. The forger picks one
+	// candidate and copies that hand into their own.
 	gainsByCandidate: Record<number, ResourceHand>
 }
 

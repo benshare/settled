@@ -5,17 +5,13 @@
 // content only — the background it slides against belongs to the frame (see
 // `styles.bottomMenu` in `[id].tsx`).
 //
-// Also owns the pre-roll bonus modals its own bar opens: ritual, shepherd
-// swap, and the forger token move.
+// Also owns the pre-roll bonus modals its own bar opens: ritual and the
+// shepherd swap. (The forger's token move is a board interaction, not a modal
+// — see `ForgerMoveLayer`.)
 
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
-import { ForgerMovePicker } from '@/lib/catan/ForgerMovePicker'
-import {
-	canShepherdSwap,
-	forgerActive,
-	ritualCardCost,
-} from '@/lib/catan/bonus'
+import { canShepherdSwap, ritualCardCost } from '@/lib/catan/bonus'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
@@ -69,8 +65,7 @@ export function BottomArea() {
 		setRitualOpen,
 		shepherdOpen,
 		setShepherdOpen,
-		forgerMoveOpen,
-		setForgerMoveOpen,
+		forgerMustMove,
 		onConfirm,
 		onRoll,
 		onConfirmRoll,
@@ -83,7 +78,6 @@ export function BottomArea() {
 		onTapKnight,
 		onRitualRoll,
 		onShepherdSwap,
-		onMoveForgerToken,
 		onUndo,
 	} = useGameScreen()
 
@@ -139,16 +133,7 @@ export function BottomArea() {
 									? () => setShepherdOpen(true)
 									: undefined
 							}
-							onForgerMovePress={
-								isMyActiveTurn &&
-								gameState.phase.kind === 'roll' &&
-								!gameState.phase.pending?.dice &&
-								myPlayer &&
-								forgerActive(myPlayer) &&
-								!myPlayer.forgerMovedThisTurn
-									? () => setForgerMoveOpen(true)
-									: undefined
-							}
+							forgerMustMove={forgerMustMove}
 							canUndo={canUndo}
 							onUndo={onUndo}
 							devRollTotal={isDev ? devRollTotal : undefined}
@@ -244,16 +229,6 @@ export function BottomArea() {
 					onConfirm={onShepherdSwap}
 				/>
 			)}
-
-			{forgerMoveOpen && myPlayer?.forgerToken && gameState && (
-				<ForgerMovePicker
-					state={gameState}
-					currentHex={myPlayer.forgerToken}
-					submitting={submitting}
-					onCancel={() => setForgerMoveOpen(false)}
-					onConfirm={onMoveForgerToken}
-				/>
-			)}
 		</>
 	)
 }
@@ -272,7 +247,7 @@ function MainLoopBar({
 	onHonk,
 	onRitualPress,
 	onShepherdPress,
-	onForgerMovePress,
+	forgerMustMove,
 	canUndo,
 	onUndo,
 	devRollTotal,
@@ -296,7 +271,10 @@ function MainLoopBar({
 	// reached).
 	onRitualPress?: () => void
 	onShepherdPress?: () => void
-	onForgerMovePress?: () => void
+	// Forger: the token move is compulsory and gates the roll. There is no
+	// button — the board pulses the valid hexes — so this only disables Roll
+	// and retitles the status line.
+	forgerMustMove?: boolean
 	// Already narrowed to "my main-phase turn, on my own last action" by the
 	// screen context — the bar only decides where the arrow sits.
 	canUndo: boolean
@@ -342,17 +320,18 @@ function MainLoopBar({
 			? `You rolled ${total} — confirm or reroll`
 			: `${currentName} rolled ${total}`
 	} else if (phase.kind === 'roll') {
-		status = isMyTurn
-			? 'Your turn — roll the dice'
-			: `${currentName} to roll`
+		status = !isMyTurn
+			? `${currentName} to roll`
+			: forgerMustMove
+				? 'Move your forger token to an adjacent hex'
+				: 'Your turn — roll the dice'
 	} else {
 		status = isMyTurn
 			? `You rolled ${total}`
 			: `${currentName} rolled ${total}`
 	}
 
-	const showBonusRow =
-		!!onRitualPress || !!onShepherdPress || !!onForgerMovePress
+	const showBonusRow = !!onRitualPress || !!onShepherdPress
 	return (
 		<View style={styles.mainLoopBar}>
 			<View style={sharedStyles.mainLoopRow}>
@@ -376,7 +355,11 @@ function MainLoopBar({
 								onChange={onDevRollTotalChange}
 							/>
 						)}
-						<Button onPress={onRoll} loading={submitting}>
+						<Button
+							onPress={onRoll}
+							loading={submitting}
+							disabled={forgerMustMove}
+						>
 							Roll
 						</Button>
 					</View>
@@ -452,15 +435,6 @@ function MainLoopBar({
 							disabled={submitting}
 						>
 							Shepherd swap
-						</Button>
-					)}
-					{onForgerMovePress && (
-						<Button
-							variant="secondary"
-							onPress={onForgerMovePress}
-							disabled={submitting}
-						>
-							Move forger token
 						</Button>
 					)}
 				</View>

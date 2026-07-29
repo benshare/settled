@@ -111,49 +111,58 @@ export function specialBuildQueue(
 	return Array.from({ length: n - 1 }, (_, k) => (enderIdx + 1 + k) % n)
 }
 
-// Per-hex per-player gain from a roll. Same rules as `distributeResources`
-// (robber blocks production, super_city pays 3, city pays 2, settlement
-// pays 1, underdog doubles on 1- and 2-pip hexes), but factored so the
-// caller can attribute gains to specific hexes — used by the forger bonus
-// to look up "what did each player gain from MY token's hex this roll".
+// What each player would gain from a SINGLE hex on `total`, **ignoring the
+// robber**. The forger copies through a blocked hex, so its candidate lookup
+// can't go through `distributeResourcesByHex` — that one skips the robber's
+// hex, which is exactly the case the forger is meant to bypass. Everything
+// else matches `distributeResources` (super_city 3 / city 2 / settlement 1,
+// underdog doubles on 1- and 2-pip hexes). Plutocrat is deliberately absent:
+// it bumps the summed per-roll gain, not a per-hex slice.
+export function gainsFromHex(
+	state: GameState,
+	hex: Hex,
+	total: number
+): Record<number, ResourceHand> {
+	const perPlayer: Record<number, ResourceHand> = {}
+	if (total === 7) return perPlayer
+	const hd = state.hexes[hex]
+	if (!hd || hd.resource === null) return perPlayer
+	if (hd.number !== total) return perPlayer
+	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
+		const vs = vertexStateOf(state, v)
+		if (!vs.occupied) continue
+		const base =
+			vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
+		const mult = underdogMultiplierFor(
+			state.players[vs.player]?.bonus,
+			hd.number
+		)
+		const hand =
+			perPlayer[vs.player] ??
+			(perPlayer[vs.player] = {
+				brick: 0,
+				wood: 0,
+				sheep: 0,
+				wheat: 0,
+				ore: 0,
+			})
+		hand[hd.resource] += base * mult
+	}
+	return perPlayer
+}
+
+// Per-hex per-player gain from a roll — `gainsFromHex` over every hex, minus
+// the one the robber sits on. Factored so the caller can attribute gains to
+// specific hexes; the summed version is `distributeResources`.
 export function distributeResourcesByHex(
 	state: GameState,
 	total: number
 ): Partial<Record<Hex, Record<number, ResourceHand>>> {
 	const out: Partial<Record<Hex, Record<number, ResourceHand>>> = {}
 	if (total === 7) return out
-	const board = boardFor(state.variant)
-	for (const hex of board.hexes) {
+	for (const hex of boardFor(state.variant).hexes) {
 		if (hex === state.robber) continue
-		const hd = state.hexes[hex]
-		if (hd.resource === null) continue
-		if (hd.number !== total) continue
-		const perPlayer: Record<number, ResourceHand> = {}
-		for (const v of board.adjacentVertices[hex]) {
-			const vs = vertexStateOf(state, v)
-			if (!vs.occupied) continue
-			const base =
-				vs.building === 'super_city'
-					? 3
-					: vs.building === 'city'
-						? 2
-						: 1
-			const mult = underdogMultiplierFor(
-				state.players[vs.player]?.bonus,
-				hd.number
-			)
-			const gain = base * mult
-			const hand =
-				perPlayer[vs.player] ??
-				(perPlayer[vs.player] = {
-					brick: 0,
-					wood: 0,
-					sheep: 0,
-					wheat: 0,
-					ore: 0,
-				})
-			hand[hd.resource] += gain
-		}
+		const perPlayer = gainsFromHex(state, hex, total)
 		if (Object.keys(perPlayer).length > 0) out[hex] = perPlayer
 	}
 	return out

@@ -13,6 +13,8 @@ import { initialGameState } from '../lib/catan/generate'
 import {
 	acrossSeat,
 	distributeResources,
+	distributeResourcesByHex,
+	gainsFromHex,
 	nextMainTurn,
 	rollDice,
 	specialBuildQueue,
@@ -169,6 +171,55 @@ function testMismatchedRollPaysNothing() {
 	)
 }
 
+// The forger copies through a blocked hex, so `gainsFromHex` must ignore the
+// robber where `distributeResourcesByHex` skips the hex entirely.
+function testGainsFromHexIgnoresRobber() {
+	const s0 = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		bannedCombos: true,
+		bonusCount: 2,
+		curseCount: 1,
+		devCards: false,
+		numberLayout: 'random',
+		honk: true,
+		friendlyRobber: false,
+		limitMonopoly: false,
+		tradeMode: 'automatic',
+		spectators: true,
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
+	})
+	const { hex, number } = firstResourceHex(s0)
+	const v = adjacentVertices[hex][0] as Vertex
+	const hd = s0.hexes[hex]
+	if (hd.resource === null) throw new Error('unreachable: hex is desert')
+	const s = { ...placeBuilding(s0, v, 0, 'settlement'), robber: hex }
+
+	equal(
+		distributeResourcesByHex(s, number)[hex],
+		undefined,
+		'per-hex breakdown skips the robber hex'
+	)
+	equal(
+		Object.keys(distributeResources(s, number)).length,
+		0,
+		'robber blocks'
+	)
+	const bypass = gainsFromHex(s, hex, number)
+	assert(bypass[0], 'gainsFromHex pays through the robber')
+	equal(bypass[0][hd.resource], 1, 'settlement pays 1 through the robber')
+	equal(
+		Object.keys(gainsFromHex(s, hex, number === 6 ? 8 : 6)).length,
+		0,
+		'gainsFromHex still respects the hex number'
+	)
+	equal(Object.keys(gainsFromHex(s, hex, 7)).length, 0, 'no gains on a 7')
+}
+
 function testNextMainTurnWraps() {
 	equal(nextMainTurn(0, 3), 1, '0 -> 1')
 	equal(nextMainTurn(1, 3), 2, '1 -> 2')
@@ -237,6 +288,7 @@ const tests: [string, () => void][] = [
 	['settlement gets 1', testSettlementGetsOne],
 	['city gets 2', testCityGetsTwo],
 	['mismatched roll pays nothing', testMismatchedRollPaysNothing],
+	['gainsFromHex ignores the robber', testGainsFromHexIgnoresRobber],
 	['nextMainTurn wraps', testNextMainTurnWraps],
 	['rollDice bounds', testRollDiceBounds],
 	['acrossSeat mapping', testAcrossSeat],
