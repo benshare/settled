@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { isTimeoutOption, type TimeoutOption } from '../catan/timeout'
 import {
 	clampCardCount,
 	DEFAULT_CONFIG,
@@ -26,6 +27,7 @@ export type GameDefaults = {
 		tradeMode: TradeMode
 		spectators: boolean
 		extraBuild: ExtraBuildConfig
+		timeout: TimeoutOption | null
 	}
 	extras: {
 		bonuses: boolean
@@ -54,6 +56,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 			buildPhases: 'every',
 			moreThanSeven: false,
 		},
+		timeout: null,
 	},
 	extras: {
 		bonuses: false,
@@ -106,6 +109,9 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				settings?.extraBuild,
 				DEFAULT_GAME_DEFAULTS.settings.extraBuild
 			),
+			timeout: isTimeoutOption(settings?.timeout)
+				? settings.timeout
+				: DEFAULT_GAME_DEFAULTS.settings.timeout,
 		},
 		extras: {
 			bonuses:

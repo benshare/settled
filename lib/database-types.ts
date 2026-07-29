@@ -329,6 +329,7 @@ export type Database = {
           config: Json
           created_at: string
           current_turn: number | null
+          deadline_at: string | null
           end_votes: string[]
           events: Json[]
           forfeits: string[]
@@ -336,12 +337,15 @@ export type Database = {
           participants: string[]
           player_order: string[]
           status: string
+          timed_out: string[]
+          timeout_warned: number
           winner: number | null
         }
         Insert: {
           config: Json
           created_at?: string
           current_turn?: number | null
+          deadline_at?: string | null
           end_votes?: string[]
           events?: Json[]
           forfeits?: string[]
@@ -349,12 +353,15 @@ export type Database = {
           participants: string[]
           player_order?: string[]
           status?: string
+          timed_out?: string[]
+          timeout_warned?: number
           winner?: number | null
         }
         Update: {
           config?: Json
           created_at?: string
           current_turn?: number | null
+          deadline_at?: string | null
           end_votes?: string[]
           events?: Json[]
           forfeits?: string[]
@@ -362,6 +369,8 @@ export type Database = {
           participants?: string[]
           player_order?: string[]
           status?: string
+          timed_out?: string[]
+          timeout_warned?: number
           winner?: number | null
         }
         Relationships: []

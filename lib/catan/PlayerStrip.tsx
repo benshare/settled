@@ -8,7 +8,9 @@ import { bonusById, curseById } from './bonuses'
 import { knightsPlayed } from './dev'
 import { longestRoadFor } from './longestRoad'
 import { playerColors, resourceColor } from './palette'
+import { formatRemaining, pendingSeats } from './timeout'
 import type { GameState } from './types'
+import { useCountdown } from './useCountdown'
 
 export function PlayerStrip({
 	playerOrder,
@@ -19,6 +21,7 @@ export function PlayerStrip({
 	pointsByPlayer,
 	publicByPlayer,
 	forfeitedIds,
+	deadlineAt,
 	onPressPlayer,
 }: {
 	playerOrder: string[]
@@ -40,10 +43,20 @@ export function PlayerStrip({
 	// effect — the seat still plays — so it's shown as a flag beside the name
 	// rather than by dimming the card. See the game menu in `lib/game/`.
 	forfeitedIds?: string[]
+	// `games.deadline_at` — when whoever is on the clock runs out. Null on a
+	// game with no move timeout, which is every game by default.
+	deadlineAt?: string | null
 	onPressPlayer?: (playerIdx: number) => void
 }) {
 	const showBonusIcons = gameState.config.bonuses
 	const showDevCards = gameState.config.devCards
+	// One interval for the whole strip, and only while the deadline is close
+	// enough to be worth showing. The seats it applies to are `pendingSeats`,
+	// not `currentTurn` — during a special build phase or a parallel discard
+	// they are different players.
+	const remaining = useCountdown(deadlineAt)
+	const onTheClock =
+		remaining === null ? [] : pendingSeats(gameState.phase, currentTurn)
 
 	return (
 		<View style={styles.row}>
@@ -98,6 +111,11 @@ export function PlayerStrip({
 									size={11}
 									color={colors.textMuted}
 								/>
+							)}
+							{remaining !== null && onTheClock.includes(i) && (
+								<Text style={styles.countdown}>
+									{formatRemaining(remaining)}
+								</Text>
 							)}
 						</View>
 						<View style={styles.statsGrid}>
@@ -259,6 +277,15 @@ const styles = StyleSheet.create({
 		width: 8,
 		height: 8,
 		borderRadius: radius.full,
+	},
+	// Muted rather than an alarm colour: it only appears in the final hour, so
+	// its presence is already the signal.
+	countdown: {
+		marginLeft: 'auto',
+		fontSize: font.xs,
+		fontWeight: '600',
+		color: colors.textMuted,
+		fontVariant: ['tabular-nums'],
 	},
 	pressed: {
 		opacity: 0.7,
