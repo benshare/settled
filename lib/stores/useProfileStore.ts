@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import {
+	clampCardCount,
+	DEFAULT_CONFIG,
 	parseExtraBuild,
 	type ExtraBuildConfig,
 	type NumberLayout,
@@ -25,7 +27,13 @@ export type GameDefaults = {
 		spectators: boolean
 		extraBuild: ExtraBuildConfig
 	}
-	extras: { bonuses: boolean; bonusSets: string[]; bannedCombos: boolean }
+	extras: {
+		bonuses: boolean
+		bonusSets: string[]
+		bannedCombos: boolean
+		bonusCount: number
+		curseCount: number
+	}
 }
 
 // Default used before a profile loads, and as a fallback when a row is
@@ -47,7 +55,13 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 			moreThanSeven: false,
 		},
 	},
-	extras: { bonuses: false, bonusSets: ['1'], bannedCombos: true },
+	extras: {
+		bonuses: false,
+		bonusSets: ['1'],
+		bannedCombos: true,
+		bonusCount: DEFAULT_CONFIG.bonusCount,
+		curseCount: DEFAULT_CONFIG.curseCount,
+	},
 }
 
 // Narrow the JSONB blob to GameDefaults. Silently falls back on shape drift.
@@ -107,6 +121,14 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				typeof extras?.bannedCombos === 'boolean'
 					? extras.bannedCombos
 					: DEFAULT_GAME_DEFAULTS.extras.bannedCombos,
+			bonusCount: clampCardCount(
+				extras?.bonusCount,
+				DEFAULT_GAME_DEFAULTS.extras.bonusCount
+			),
+			curseCount: clampCardCount(
+				extras?.curseCount,
+				DEFAULT_GAME_DEFAULTS.extras.curseCount
+			),
 		},
 	}
 }

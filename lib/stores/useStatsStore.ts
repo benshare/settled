@@ -12,11 +12,12 @@ type GameResultRow = Database['public']['Tables']['game_results']['Row']
 
 export type GameResult = Omit<
 	GameResultRow,
-	'bonus' | 'curse' | 'offered_bonuses'
+	'bonus' | 'curse' | 'offered_bonuses' | 'offered_curses'
 > & {
 	bonus: BonusId | null
 	curse: CurseId | null
 	offered_bonuses: BonusId[] | null
+	offered_curses: CurseId[] | null
 }
 
 type StatsStore = {

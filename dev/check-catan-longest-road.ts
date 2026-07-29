@@ -20,6 +20,8 @@ function fresh(players = 3): GameState {
 		bonuses: false,
 		bonusSets: ['1'],
 		bannedCombos: true,
+		bonusCount: 2,
+		curseCount: 1,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
