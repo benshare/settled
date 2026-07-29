@@ -4,6 +4,7 @@ import {
 	bonusById,
 	bonusDescriptionFor,
 	CURSE_POOL,
+	curseById,
 	curseDescriptionFor,
 	isBonusAvailableAt,
 	isCurseAvailableAt,
@@ -13,7 +14,7 @@ import {
 import type { GameSize } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { SlidingArea } from '@/lib/modules/SlidingArea'
-import { computeStats, type BonusRate } from '@/lib/stats'
+import { computeStats, type CardRate } from '@/lib/stats'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
 import { useStatsStore } from '@/lib/stores/useStatsStore'
@@ -222,14 +223,22 @@ function StatsTab({
 						/>
 					</View>
 					{stats.topPickRate && (
-						<BonusRateRow
+						<CardRateRow
 							label="Most picked"
 							rate={stats.topPickRate}
 							unit="offers"
 						/>
 					)}
+					{stats.topCursePickRate && (
+						<CardRateRow
+							label="Most picked curse"
+							rate={stats.topCursePickRate}
+							unit="offers"
+							kind="curse"
+						/>
+					)}
 					{stats.topWinRate && (
-						<BonusRateRow
+						<CardRateRow
 							label="Best win rate"
 							rate={stats.topWinRate}
 							unit="games"
@@ -439,29 +448,35 @@ function OpponentRow({
 	)
 }
 
-function BonusRateRow({
+function CardRateRow({
 	label,
 	rate,
 	unit,
+	kind = 'bonus',
 }: {
 	label: string
-	rate: BonusRate
+	rate: CardRate
 	unit: string
+	// Which pool `rate.id` names — the rate itself carries only the id.
+	kind?: 'bonus' | 'curse'
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
-	const bonus = bonusById(rate.bonus)
+	const card = kind === 'curse' ? curseById(rate.id) : bonusById(rate.id)
 	return (
 		<View style={styles.row}>
 			<Ionicons
-				name={bonus?.icon ?? 'sparkles-outline'}
+				name={
+					card?.icon ??
+					(kind === 'curse' ? 'skull-outline' : 'sparkles-outline')
+				}
 				size={24}
 				color={colors.text}
 				style={styles.rowIcon}
 			/>
 			<View style={styles.rowStack}>
 				<Text style={styles.rowPrimary} numberOfLines={1}>
-					{bonus?.title ?? rate.bonus}
+					{card?.title ?? rate.id}
 				</Text>
 				<Text style={styles.rowSecondary}>{label}</Text>
 			</View>

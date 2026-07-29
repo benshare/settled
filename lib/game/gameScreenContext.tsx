@@ -9,7 +9,7 @@
 import { useAuth } from '@/lib/auth'
 import { RESOURCES, type Hex, type Resource } from '@/lib/catan/board'
 import type { LiquidationTarget } from '@/lib/catan/AccountantPicker'
-import type { BonusId } from '@/lib/catan/bonuses'
+import type { BonusId, CurseId } from '@/lib/catan/bonuses'
 import {
 	affordableScoutSwaps,
 	canBuildMoreSuperCities,
@@ -584,10 +584,10 @@ function useGameScreenState(gameId: string) {
 	// Hand-set on the player row for testing; unlocks the force-roll picker.
 	const isDev = myPlayer?.dev === true
 
-	async function onPickBonus(bonus: BonusId) {
+	async function onPickBonus(bonus: BonusId, curse: CurseId) {
 		if (!game) return
 		setSubmitting(true)
-		const res = await pickBonus(game.id, bonus)
+		const res = await pickBonus(game.id, bonus, curse)
 		setSubmitting(false)
 		if (res.error) notify('Pick failed', res.error)
 	}

@@ -172,10 +172,12 @@ export type GameEvent =
 			player: number
 			bonus: BonusId
 			curse?: CurseId
-			// The pair this seat was dealt — the only record of the bonus they
+			// The cards this seat was dealt — the only record of what they
 			// turned down, and what pick rate on the Stats tab is measured
-			// against. Absent on games that started before it was logged.
-			offered?: [BonusId, BonusId]
+			// against. `offered` is absent on games that started before it was
+			// logged; `offeredCurses` before curses could be chosen.
+			offered?: BonusId[]
+			offeredCurses?: CurseId[]
 			at: string
 	  }
 	| { kind: 'specialist_set'; player: number; resource: Resource; at: string }
@@ -399,7 +401,11 @@ type GamesStore = {
 	) => Promise<RespondResult>
 	cancelRequest: (meId: string, requestId: string) => Promise<ActionResult>
 
-	pickBonus: (gameId: string, bonus: BonusId) => Promise<ActionResult>
+	pickBonus: (
+		gameId: string,
+		bonus: BonusId,
+		curse: CurseId
+	) => Promise<ActionResult>
 	setSpecialistResource: (
 		gameId: string,
 		resource: Resource
@@ -801,9 +807,9 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async pickBonus(gameId, bonus) {
+	async pickBonus(gameId, bonus, curse) {
 		return callGameService(
-			{ action: 'pick_bonus', game_id: gameId, bonus },
+			{ action: 'pick_bonus', game_id: gameId, bonus, curse },
 			"Couldn't pick bonus"
 		)
 	},

@@ -29,6 +29,7 @@ const result = (over: Partial<GameResult> = {}): GameResult => ({
 	bonus: null,
 	curse: null,
 	offered_bonuses: null,
+	offered_curses: null,
 	completed_at: '2026-07-01T00:00:00.000Z',
 	forfeit: false,
 	...over,
@@ -142,7 +143,7 @@ assert(bonuses.bonusesPlayed === 2, 'bonuses: two distinct')
 assert(bonuses.cursesPlayed === 2, 'bonuses: two distinct curses')
 assert(bonuses.bonusPoolSize > 20, 'bonuses: pool size looks real')
 assert(
-	bonuses.topWinRate?.bonus === 'merchant' &&
+	bonuses.topWinRate?.id === 'merchant' &&
 		bonuses.topWinRate.hits === 1 &&
 		bonuses.topWinRate.total === 1,
 	'bonuses: 1-of-1 merchant beats 1-of-2 gambler (no minimum sample)'
@@ -167,10 +168,53 @@ const picks = computeStats(
 	ME
 )
 assert(
-	picks.topPickRate?.bonus === 'gambler' &&
+	picks.topPickRate?.id === 'gambler' &&
 		picks.topPickRate.hits === 2 &&
 		picks.topPickRate.total === 2,
 	'pick rate: gambler kept both times offered'
+)
+
+// A single-card offer is not a pick — the player had nothing to decline.
+const forced = computeStats(
+	[
+		b('gambler', { offered_bonuses: ['gambler'] }),
+		b('scout', { offered_bonuses: ['scout'] }),
+	],
+	[],
+	ME
+)
+assert(forced.topPickRate === null, 'pick rate: 1-card offers are not picks')
+
+// Curses are measured the same way, off their own column.
+const cursePicks = computeStats(
+	[
+		b('gambler', {
+			curse: 'age' as CurseId,
+			offered_curses: ['age', 'youth'] as CurseId[],
+		}),
+		b('scout', {
+			curse: 'age' as CurseId,
+			offered_curses: ['age', 'avarice'] as CurseId[],
+		}),
+		// Dealt, not chosen — excluded from the sample.
+		b('merchant', {
+			curse: 'youth' as CurseId,
+			offered_curses: ['youth'] as CurseId[],
+		}),
+	],
+	[],
+	ME
+)
+assert(
+	cursePicks.topCursePickRate?.id === 'age' &&
+		cursePicks.topCursePickRate.hits === 2 &&
+		cursePicks.topCursePickRate.total === 2,
+	'curse pick rate: age kept both times offered'
+)
+assert(
+	computeStats([b('gambler', { curse: 'age' as CurseId })], [], ME)
+		.topCursePickRate === null,
+	'curse pick rate: null without offer data'
 )
 
 // Ties break toward the larger sample: both are 100%, scout was offered twice.
@@ -184,7 +228,7 @@ const tie = computeStats(
 	ME
 )
 assert(
-	tie.topPickRate?.bonus === 'scout' && tie.topPickRate.total === 2,
+	tie.topPickRate?.id === 'scout' && tie.topPickRate.total === 2,
 	'pick rate: tie broken by sample size'
 )
 
@@ -239,7 +283,7 @@ const forfeitBonus = computeStats(
 assert(forfeitBonus.bonusGames === 1, 'forfeit: bonus games skip forfeits')
 assert(forfeitBonus.bonusesPlayed === 1, 'forfeit: distinct bonuses skip too')
 assert(
-	forfeitBonus.topWinRate?.bonus === 'gambler',
+	forfeitBonus.topWinRate?.id === 'gambler',
 	'forfeit: scout never entered the win-rate sample'
 )
 

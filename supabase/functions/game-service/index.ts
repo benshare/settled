@@ -73,6 +73,9 @@ type PickBonusBody = {
 	action: 'pick_bonus'
 	game_id: string
 	bonus: string
+	// Omitted when the hand holds a single curse (nothing to choose), and by
+	// clients that predate curse selection.
+	curse?: string
 }
 type PlaceSettlementBody = {
 	action: 'place_settlement'
@@ -1254,10 +1257,28 @@ const CURSE_IDS: readonly CurseId[] = [
 	'youth',
 ]
 
+// Mirror of lib/catan/types.ts SelectBonusHand. `curse` is the legacy
+// single-curse field, still present on hands dealt before curse counts
+// existed — read through handCurses / handChosenCurse, never directly.
 type SelectBonusHand = {
-	offered: [BonusId, BonusId]
-	curse: CurseId
+	offered: BonusId[]
+	curses: CurseId[]
 	chosen: BonusId | null
+	chosenCurse: CurseId | null
+	curse?: CurseId
+}
+
+function handCurses(hand: SelectBonusHand): CurseId[] {
+	if (hand.curses?.length) return hand.curses
+	return hand.curse ? [hand.curse] : []
+}
+
+// The curse this hand ends up carrying, or null while it's still an open
+// choice. A one-card deal needs no pick, so it resolves immediately.
+function handChosenCurse(hand: SelectBonusHand): CurseId | null {
+	if (hand.chosenCurse) return hand.chosenCurse
+	const curses = handCurses(hand)
+	return curses.length === 1 ? curses[0] : null
 }
 
 // Which set each bonus belongs to. Must stay in sync with
@@ -1396,10 +1417,11 @@ function isCurseAvailableAt(id: CurseId, size: GameSize): boolean {
 }
 
 // Mirror of lib/catan/generate.ts dealBonusHands: deal every player's hand at
-// once, drawing bonuses and curses WITHOUT replacement across the whole table
-// so no card is ever offered to two players or twice to one player. Curses go
-// out first so each player's bonuses can be drawn from what's compatible with
-// the curse they already hold (when `bannedCombos` is on).
+// once — `bonusCount` bonuses + `curseCount` curses each — drawing WITHOUT
+// replacement across the whole table so a card repeats only once the pool is
+// exhausted. Curses go out first so each player's bonuses can be drawn from
+// what's compatible with EVERY curse they hold (when `bannedCombos` is on),
+// which makes whichever pair they keep legal by construction.
 //
 // Cards withheld at this table size (BONUS_SIZE_VARIANTS / CURSE_SIZE_VARIANTS,
 // `available: false`) are dropped before the set filter. Both filters widen
@@ -1407,55 +1429,70 @@ function isCurseAvailableAt(id: CurseId, size: GameSize): boolean {
 function dealBonusHands(
 	playerCount: number,
 	bonusSets: readonly string[],
-	bannedCombos = true
+	bannedCombos = true,
+	bonusCount = DEFAULT_BONUS_COUNT,
+	curseCount = DEFAULT_CURSE_COUNT
 ): Record<number, SelectBonusHand> {
+	const bonusN = clampCardCount(bonusCount, DEFAULT_BONUS_COUNT)
+	const curseN = clampCardCount(curseCount, DEFAULT_CURSE_COUNT)
 	const size = gameSizeFor(playerCount)
 	const available = BONUS_IDS.filter((id) => isBonusAvailableAt(id, size))
 	const bonusPool = pickPool(
+		bonusN,
 		available.filter((id) => bonusSets.includes(BONUS_SET_OF[id])),
 		available,
 		BONUS_IDS
 	)
 	const cursePool = pickPool(
+		curseN,
 		CURSE_IDS.filter((id) => isCurseAvailableAt(id, size)),
 		CURSE_IDS
 	)
 	const drawBonus = dealer(bonusPool)
 	const drawCurse = dealer(cursePool)
 	const hands: Record<number, SelectBonusHand> = {}
-	const curses = Array.from({ length: playerCount }, () => drawCurse())
 	for (let i = 0; i < playerCount; i++) {
-		const curse = curses[i]
-		const compatible = (b: BonusId) =>
-			!bannedCombos || !isBannedCombo(curse, b)
-		const first = drawBonus(compatible)
-		hands[i] = {
-			offered: [first, drawBonus((b) => b !== first && compatible(b))],
-			curse,
-			chosen: null,
+		const curses: CurseId[] = []
+		for (let n = 0; n < curseN; n++) {
+			curses.push(drawCurse((c) => !curses.includes(c)))
 		}
+		const offered: BonusId[] = []
+		for (let n = 0; n < bonusN; n++) {
+			offered.push(
+				drawBonus(
+					(b) =>
+						!offered.includes(b) &&
+						(!bannedCombos ||
+							curses.every((c) => !isBannedCombo(c, b)))
+				)
+			)
+		}
+		hands[i] = { offered, curses, chosen: null, chosenCurse: null }
 	}
 	return hands
 }
 
-// First candidate pool with enough cards to deal from, in order of preference.
-// `dealer` needs two, and every fallback ends at an unfiltered pool, so a
-// filter can narrow the deal but never break it.
-function pickPool<T>(...candidates: (readonly T[])[]): readonly T[] {
+// First candidate pool with enough cards to fill one hand, in order of
+// preference. Every fallback ends at an unfiltered pool, so a filter can narrow
+// the deal but never break it.
+function pickPool<T>(
+	need: number,
+	...candidates: (readonly T[])[]
+): readonly T[] {
 	return (
-		candidates.find((c) => c.length >= 2) ??
+		candidates.find((c) => c.length >= need) ??
 		candidates[candidates.length - 1]
 	)
 }
 
 // Deals from a shuffled pass over `pool`, reshuffling only once the pass is
 // exhausted. `accept` filters to the cards the caller can take, keeping a
-// player's two offered bonuses distinct — and compatible with their curse —
-// even when the pool is smaller than the table needs (set 3 alone is 7 cards;
+// hand's cards distinct — and its bonuses compatible with its curses — even
+// when the pool is smaller than the table needs (set 3 alone is 7 cards;
 // a 4-player table wants 8). When nothing in the pool is acceptable the filter
 // is ignored rather than failing to deal.
 function dealer<T>(pool: readonly T[]): (accept?: (x: T) => boolean) => T {
-	if (pool.length < 2) throw new Error('pool too small to deal')
+	if (pool.length < 1) throw new Error('pool too small to deal')
 	let bag: T[] = []
 	return (accept?: (x: T) => boolean) => {
 		if (bag.length === 0) bag = shuffle(pool)
@@ -1486,12 +1523,41 @@ type ExtraBuildConfig = {
 	moreThanSeven: boolean
 }
 
+// Bonus / curse cards dealt per player. Mirror of lib/catan/types.ts.
+const DEFAULT_BONUS_COUNT = 2
+const DEFAULT_CURSE_COUNT = 1
+const MIN_CARD_COUNT = 1
+const MAX_CARD_COUNT = 3
+
+// `config` is stored as raw JSON and never validated on write, so every read of
+// a card count goes through this.
+function clampCardCount(raw: unknown, fallback: number): number {
+	if (typeof raw !== 'number' || !Number.isInteger(raw)) return fallback
+	return Math.max(MIN_CARD_COUNT, Math.min(MAX_CARD_COUNT, raw))
+}
+
+// Whether a game needs the simultaneous select_bonus phase at all. With one
+// card of each kind nobody has a decision to make, so the cards are assigned at
+// creation and the game opens on initial placement instead.
+function needsBonusSelection(config: GameConfig): boolean {
+	if (!config.bonuses) return false
+	return (
+		clampCardCount(config.bonusCount, DEFAULT_BONUS_COUNT) > 1 ||
+		clampCardCount(config.curseCount, DEFAULT_CURSE_COUNT) > 1
+	)
+}
+
 type GameConfig = {
 	bonuses: boolean
 	bonusSets: string[]
 	// Absent on rows created before the option shipped — read defensively
 	// (`!== false`), defaulting to on.
 	bannedCombos?: boolean
+	// How many bonus / curse cards each player chooses between (1..3). Absent
+	// on rows created before the option shipped — read through clampCardCount,
+	// which falls back to the 2 / 1 deal those games were played with.
+	bonusCount?: number
+	curseCount?: number
 	devCards: boolean
 	numberLayout: NumberLayout
 	honk: boolean
@@ -3341,10 +3407,7 @@ async function writeGameResults(
 	forfeit: boolean
 ): Promise<void> {
 	const points = state.players.map((_, i) => totalVP(state, i))
-	const offered = offeredBonusesByPlayer([
-		...(game.events ?? []),
-		...newEvents,
-	])
+	const offered = offeredCardsByPlayer([...(game.events ?? []), ...newEvents])
 	const completedAt = new Date().toISOString()
 	const rows = game.player_order.map((userId, i) => ({
 		game_id: game.id,
@@ -3359,7 +3422,8 @@ async function writeGameResults(
 		player_count: game.player_order.length,
 		bonus: bonusOf(state, i) ?? null,
 		curse: curseOf(state, i) ?? null,
-		offered_bonuses: offered[i] ?? null,
+		offered_bonuses: offered[i]?.bonuses ?? null,
+		offered_curses: offered[i]?.curses ?? null,
 		completed_at: completedAt,
 		forfeit,
 	}))
@@ -3371,16 +3435,28 @@ async function writeGameResults(
 
 // The bonus pair each seat was dealt, recovered from the `bonus_chosen` events.
 // Absent for games that finished (or started) before `offered` was logged.
-function offeredBonusesByPlayer(
+// What each seat was dealt, off their `bonus_chosen` event. `curses` is absent
+// on games played before curses could be chosen.
+function offeredCardsByPlayer(
 	events: unknown[]
-): Record<number, string[] | undefined> {
-	const out: Record<number, string[] | undefined> = {}
+): Record<number, { bonuses: string[]; curses: string[] | undefined }> {
+	const out: Record<number, { bonuses: string[]; curses?: string[] }> = {}
 	for (const e of events) {
-		const ev = e as { kind?: string; player?: number; offered?: string[] }
+		const ev = e as {
+			kind?: string
+			player?: number
+			offered?: string[]
+			offeredCurses?: string[]
+		}
 		if (ev?.kind !== 'bonus_chosen') continue
 		if (typeof ev.player !== 'number' || !Array.isArray(ev.offered))
 			continue
-		out[ev.player] = ev.offered
+		out[ev.player] = {
+			bonuses: ev.offered,
+			curses: Array.isArray(ev.offeredCurses)
+				? ev.offeredCurses
+				: undefined,
+		}
 	}
 	return out
 }
@@ -4004,6 +4080,48 @@ async function handleRespond(
 		const playerOrder = shuffle(participants)
 		const config = request.config as GameConfig
 
+		// One bonus and one curse each is nothing to choose between, so those
+		// games skip the selection phase and open on placement with the cards
+		// already assigned.
+		const selecting = needsBonusSelection(config)
+		const hands = config.bonuses
+			? dealBonusHands(
+					playerOrder.length,
+					config.bonusSets,
+					config.bannedCombos !== false,
+					config.bonusCount,
+					config.curseCount
+				)
+			: null
+
+		let players = initialPlayers(playerOrder.length)
+		let initialPhase: Phase = INITIAL_PHASE
+		const startEvents: unknown[] = []
+		if (hands && selecting) {
+			initialPhase = { kind: 'select_bonus', hands }
+		} else if (hands) {
+			const at = new Date().toISOString()
+			players = players.map((p, i) => ({
+				...p,
+				bonus: hands[i].offered[0],
+				curse: handChosenCurse(hands[i]) ?? undefined,
+			}))
+			// Logged here rather than in handlePickBonus, which this path never
+			// reaches — the action log and `game_results.offered_*` both read
+			// these events.
+			startEvents.push(
+				...players.map((p, i) => ({
+					kind: 'bonus_chosen',
+					player: i,
+					bonus: p.bonus,
+					curse: p.curse,
+					offered: hands[i].offered,
+					offeredCurses: handCurses(hands[i]),
+					at,
+				}))
+			)
+		}
+
 		const { data: inserted, error: insertErr } = await admin
 			.from('games')
 			.insert({
@@ -4013,11 +4131,12 @@ async function handleRespond(
 				// naming a seat there is actively wrong (the header's tab strip
 				// reads this column to badge "waiting on you"). Set to 0 when
 				// the phase resolves to initial_placement in handlePickBonus.
-				current_turn: config.bonuses ? null : 0,
+				current_turn: selecting ? null : 0,
 				status: 'placement',
 				// Passed through whole rather than re-derived field by field —
 				// the spectator policies read config.spectators off this row.
 				config,
+				...(startEvents.length > 0 ? { events: startEvents } : {}),
 			})
 			.select('id')
 			.single()
@@ -4030,26 +4149,13 @@ async function handleRespond(
 			variant,
 			config.numberLayout ?? 'spiral'
 		)
-		let initialPhase: Phase
-		if (config.bonuses) {
-			initialPhase = {
-				kind: 'select_bonus',
-				hands: dealBonusHands(
-					playerOrder.length,
-					config.bonusSets,
-					config.bannedCombos !== false
-				),
-			}
-		} else {
-			initialPhase = INITIAL_PHASE
-		}
 		const { error: stateErr } = await admin.from('game_states').insert({
 			game_id: inserted.id,
 			variant,
 			hexes: generatedHexes,
 			vertices: {},
 			edges: {},
-			players: initialPlayers(playerOrder.length),
+			players,
 			phase: initialPhase,
 			robber: desert,
 			ports: generatePorts(variant),
@@ -4118,10 +4224,10 @@ async function handleCancelRequest(
 	return json({ ok: true })
 }
 
-// select_bonus: each player picks one of their two offered bonuses to keep.
-// Picks are parallel — no current_turn enforcement. When every hand's
-// `chosen` is set, snapshot each player's kept bonus + dealt curse onto
-// PlayerState and advance the phase to initial_placement.
+// select_bonus: each player picks one of their offered bonuses, and one of
+// their offered curses, to keep — both in the same call. Picks are parallel —
+// no current_turn enforcement. When every hand's `chosen` is set, snapshot each
+// player's kept cards onto PlayerState and advance to initial_placement.
 async function handlePickBonus(
 	admin: SupabaseClient,
 	me: string,
@@ -4147,9 +4253,23 @@ async function handlePickBonus(
 	const bonus = body.bonus as BonusId
 	if (!hand.offered.includes(bonus)) return err(400, 'bonus not offered')
 
+	// A hand holding one curse was decided at deal time, so the curse may be
+	// omitted — which is also what a client predating curse choice sends.
+	const offeredCurses = handCurses(hand)
+	let curse: CurseId | null = null
+	if (body.curse !== undefined) {
+		if (!(CURSE_IDS as readonly string[]).includes(body.curse))
+			return err(400, 'unknown curse')
+		curse = body.curse as CurseId
+		if (!offeredCurses.includes(curse)) return err(400, 'curse not offered')
+	} else {
+		curse = handChosenCurse(hand)
+		if (curse === null) return err(400, 'must pick a curse')
+	}
+
 	const nextHands: Record<number, SelectBonusHand> = {
 		...state.phase.hands,
-		[meIdx]: { ...hand, chosen: bonus },
+		[meIdx]: { ...hand, chosen: bonus, chosenCurse: curse },
 	}
 
 	const allChosen = game.player_order.every(
@@ -4162,7 +4282,7 @@ async function handlePickBonus(
 		nextPlayers = state.players.map((p, i) => ({
 			...p,
 			bonus: nextHands[i]!.chosen!,
-			curse: nextHands[i]!.curse,
+			curse: handChosenCurse(nextHands[i]!) ?? undefined,
 		}))
 		nextPhase = { kind: 'initial_placement', round: 1, step: 'settlement' }
 	} else {
@@ -4180,15 +4300,16 @@ async function handlePickBonus(
 	// from that point on (the player strip shows them).
 	if (allChosen) {
 		const at = new Date().toISOString()
-		// `offered` is the only surviving record of the pair a player turned
-		// down — the hands live in `phase`, which is replaced right here by
-		// initial_placement. Stats reads it back for pick rate.
+		// The offered cards are the only surviving record of what a player
+		// turned down — the hands live in `phase`, which is replaced right here
+		// by initial_placement. Stats reads them back for pick rate.
 		const events = nextPlayers.map((p, i) => ({
 			kind: 'bonus_chosen',
 			player: i,
 			bonus: p.bonus,
 			curse: p.curse,
 			offered: nextHands[i]!.offered,
+			offeredCurses: handCurses(nextHands[i]!),
 			at,
 		}))
 		const { error: gameErr } = await admin

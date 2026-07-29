@@ -17,20 +17,21 @@ backfills the existing games.
 
 One row per (game, seated player).
 
-| column            | type        | notes                                                                            |
-| ----------------- | ----------- | -------------------------------------------------------------------------------- |
-| `game_id`         | uuid        | FK `games(id)` on delete cascade                                                 |
-| `user_id`         | uuid        | FK `profiles(id)` on delete cascade                                              |
-| `player_index`    | int         | seat, i.e. index into `games.player_order`                                       |
-| `points`          | int         | final VP, fully revealed (`totalVP(state, i)` — includes hidden VP dev cards)    |
-| `placement`       | int         | 1-based; ties share the better rank (`1 + count of players with strictly more`)  |
-| `won`             | boolean     | `player_index === games.winner`                                                  |
-| `turns`           | int         | final `game_states.round` (the monotonic turn counter — **not** rounds)          |
-| `player_count`    | int         | `games.player_order.length`, denormalized so stats need no join                  |
-| `bonus`           | text        | nullable — `PlayerState.bonus`; null on non-bonus games                          |
-| `curse`           | text        | nullable — `PlayerState.curse`                                                   |
-| `offered_bonuses` | text[]      | nullable — the two bonuses this player was dealt (see §2); null for legacy games |
-| `completed_at`    | timestamptz | `now()` at write time; backfill uses the `game_complete` event's `at`            |
+| column            | type        | notes                                                                           |
+| ----------------- | ----------- | ------------------------------------------------------------------------------- |
+| `game_id`         | uuid        | FK `games(id)` on delete cascade                                                |
+| `user_id`         | uuid        | FK `profiles(id)` on delete cascade                                             |
+| `player_index`    | int         | seat, i.e. index into `games.player_order`                                      |
+| `points`          | int         | final VP, fully revealed (`totalVP(state, i)` — includes hidden VP dev cards)   |
+| `placement`       | int         | 1-based; ties share the better rank (`1 + count of players with strictly more`) |
+| `won`             | boolean     | `player_index === games.winner`                                                 |
+| `turns`           | int         | final `game_states.round` (the monotonic turn counter — **not** rounds)         |
+| `player_count`    | int         | `games.player_order.length`, denormalized so stats need no join                 |
+| `bonus`           | text        | nullable — `PlayerState.bonus`; null on non-bonus games                         |
+| `curse`           | text        | nullable — `PlayerState.curse`                                                  |
+| `offered_bonuses` | text[]      | nullable — the bonuses this player was dealt (see §2); null for legacy games    |
+| `offered_curses`  | text[]      | nullable — the curses this player was dealt; null before curses could be chosen |
+| `completed_at`    | timestamptz | `now()` at write time; backfill uses the `game_complete` event's `at`           |
 
 Primary key `(game_id, user_id)`. Index on `user_id`.
 
@@ -138,9 +139,14 @@ missing-bonus games).
 - `bonusesPlayed` / `cursesPlayed` — distinct non-null `bonus` / `curse`
   values, alongside `BONUS_POOL.length` / `CURSE_POOL.length` as the
   denominator (all three bonus sets are live).
-- `topPickRateBonus` — over results with `offered_bonuses`: for each bonus,
-  `timesKept / timesOffered`; the max, ties broken by more offers then id. Null
-  when no result has offer data.
+- `topPickRateBonus` — over results whose `offered_bonuses` holds **two or
+  more** cards: for each bonus, `timesKept / timesOffered`; the max, ties broken
+  by more offers then id. Null when no result has offer data. A game configured
+  to deal a single bonus card (`GameConfig.bonusCount === 1`) still records the
+  offer, but is excluded here — a card nobody could decline would read as 100%
+  picked.
+- `topCursePickRate` — the same derivation over `offered_curses` / `curse`,
+  for games that dealt a curse choice (`GameConfig.curseCount > 1`).
 - `topWinRateBonus` — over results with a `bonus`: `wins / games` per bonus,
   max, ties broken by more games then id. **No minimum sample** (per the user's
   choice) — a 1-of-1 100% is allowed, so the tile always shows its sample size.

@@ -76,6 +76,17 @@ export type ExtraBuildConfig = {
 	moreThanSeven: boolean
 }
 
+// Bounds on `GameConfig.bonusCount` / `curseCount`.
+export const MIN_CARD_COUNT = 1
+export const MAX_CARD_COUNT = 3
+
+// Config arrives as unvalidated JSON on both the client and the edge function,
+// so every read of a card count goes through this.
+export function clampCardCount(raw: unknown, fallback: number): number {
+	if (typeof raw !== 'number' || !Number.isInteger(raw)) return fallback
+	return Math.max(MIN_CARD_COUNT, Math.min(MAX_CARD_COUNT, raw))
+}
+
 // Top-level game config. Serialized to JSONB on game_requests and
 // game_states. New options get added here (and wired through the
 // propose_game RPC + handleRespond in the edge function).
@@ -88,6 +99,12 @@ export type GameConfig = {
 	// bans — see BANNED_BONUSES_BY_CURSE in lib/catan/bonuses/combos.ts. Only
 	// meaningful while `bonuses` is on.
 	bannedCombos: boolean
+	// How many bonus / curse cards each player is dealt to choose between in
+	// the select_bonus phase, 1..3. A count of 1 is no choice at all — that
+	// card is simply assigned. When both are 1 the phase is skipped entirely
+	// (see handleRespond in the edge function).
+	bonusCount: number
+	curseCount: number
 	devCards: boolean
 	numberLayout: NumberLayout
 	// Whether the Honk nudge (ping a stalled player after the idle threshold)
@@ -120,6 +137,8 @@ export const DEFAULT_CONFIG: GameConfig = {
 	bonuses: false,
 	bonusSets: ['1'],
 	bannedCombos: true,
+	bonusCount: 2,
+	curseCount: 1,
 	devCards: true,
 	numberLayout: 'spiral',
 	honk: true,
@@ -128,6 +147,14 @@ export const DEFAULT_CONFIG: GameConfig = {
 	tradeMode: 'automatic',
 	spectators: true,
 	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
+}
+
+// Whether a game needs the simultaneous `select_bonus` phase at all. With one
+// card of each kind nobody has a decision to make, so the cards are assigned at
+// creation and the game opens on initial placement instead.
+export function needsBonusSelection(config: GameConfig): boolean {
+	if (!config.bonuses) return false
+	return config.bonusCount > 1 || config.curseCount > 1
 }
 
 // Defensive JSON reader. `raw` comes off `game_requests.config` /
@@ -150,6 +177,8 @@ export function parseGameConfig(raw: unknown): GameConfig {
 			typeof src.bannedCombos === 'boolean'
 				? src.bannedCombos
 				: DEFAULT_CONFIG.bannedCombos,
+		bonusCount: clampCardCount(src.bonusCount, DEFAULT_CONFIG.bonusCount),
+		curseCount: clampCardCount(src.curseCount, DEFAULT_CONFIG.curseCount),
 		devCards:
 			typeof src.devCards === 'boolean'
 				? src.devCards
@@ -239,6 +268,16 @@ export function summarizeGameConfig(
 	}
 	if (config.bonuses && !config.bannedCombos) {
 		parts.push('Curse pairings unrestricted')
+	}
+	if (config.bonuses && config.bonusCount !== DEFAULT_CONFIG.bonusCount) {
+		parts.push(
+			config.bonusCount === 1
+				? 'One bonus card'
+				: `${config.bonusCount} bonus cards`
+		)
+	}
+	if (config.bonuses && config.curseCount !== DEFAULT_CONFIG.curseCount) {
+		parts.push(`${config.curseCount} curse cards`)
 	}
 	if (config.devCards !== DEFAULT_CONFIG.devCards) {
 		parts.push(config.devCards ? 'Dev cards enabled' : 'Dev cards disabled')
@@ -397,13 +436,33 @@ export type PlayerState = {
 	hauntSpots?: Vertex[]
 }
 
-// Per-player card hand during the select_bonus phase. `offered` is the two
-// bonus cards dealt to the player (duplicates allowed; the pool today has
-// size 1). `chosen` flips from null to one of `offered` on commit.
+// Per-player card hand during the select_bonus phase. `offered` and `curses`
+// are the cards dealt to the player — `config.bonusCount` / `config.curseCount`
+// of each, distinct within a hand. `chosen` and `chosenCurse` flip from null on
+// commit, always together. A single-card kind is decided at deal time, so its
+// `chosen*` may stay null (read through the helpers below).
 export type SelectBonusHand = {
-	offered: [BonusId, BonusId]
-	curse: CurseId
+	offered: BonusId[]
+	curses: CurseId[]
 	chosen: BonusId | null
+	chosenCurse: CurseId | null
+	// Hands dealt before curse counts existed carried one `curse` and no
+	// `curses` / `chosenCurse`. Never read directly — use `handCurses` /
+	// `handChosenCurse`, which cover both shapes.
+	curse?: CurseId
+}
+
+export function handCurses(hand: SelectBonusHand): CurseId[] {
+	if (hand.curses?.length) return hand.curses
+	return hand.curse ? [hand.curse] : []
+}
+
+// The curse this hand ends up carrying, or null while it's still an open
+// choice. A one-card deal needs no pick, so it resolves immediately.
+export function handChosenCurse(hand: SelectBonusHand): CurseId | null {
+	if (hand.chosenCurse) return hand.chosenCurse
+	const curses = handCurses(hand)
+	return curses.length === 1 ? curses[0] : null
 }
 
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6

@@ -88,10 +88,13 @@ import { requiredDiscards } from '../lib/catan/robber'
 import {
 	GAME_SIZES,
 	gameSizeFor,
+	handChosenCurse,
+	handCurses,
 	type GameSize,
 	type GameState,
 	type PlayerState,
 	type ResourceHand,
+	type SelectBonusHand,
 } from '../lib/catan/types'
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -110,6 +113,8 @@ function baseState(): GameState {
 		bonuses: true,
 		bonusSets: ['1'],
 		bannedCombos: true,
+		bonusCount: 2,
+		curseCount: 1,
 		devCards: true,
 		numberLayout: 'random',
 		honk: true,
@@ -949,7 +954,7 @@ function testDealNoDuplicates() {
 					`${label}: hand ${i} offers two distinct bonuses`
 				)
 				bonuses.push(...hand.offered)
-				curses.push(hand.curse)
+				curses.push(...handCurses(hand))
 			}
 			assert(
 				new Set(curses).size === players,
@@ -965,19 +970,106 @@ function testDealNoDuplicates() {
 	}
 }
 
+// Every (bonusCount, curseCount) pair deals hands of exactly those sizes, with
+// no card repeated inside a hand. Counts outside 1..3 clamp rather than throw —
+// `config` is unvalidated JSON by the time it reaches the deal.
+function testDealCardCounts() {
+	for (let bonusCount = 1; bonusCount <= 3; bonusCount++) {
+		for (let curseCount = 1; curseCount <= 3; curseCount++) {
+			for (let trial = 0; trial < 50; trial++) {
+				const hands = dealBonusHands(
+					4,
+					['1', '2', '3'],
+					true,
+					bonusCount,
+					curseCount
+				)
+				const label = `${bonusCount} bonuses / ${curseCount} curses`
+				for (let i = 0; i < 4; i++) {
+					const curses = handCurses(hands[i])
+					equal(
+						hands[i].offered.length,
+						bonusCount,
+						`${label}: hand ${i} bonus count`
+					)
+					equal(curses.length, curseCount, `${label}: curse count`)
+					equal(
+						new Set(hands[i].offered).size,
+						bonusCount,
+						`${label}: distinct bonuses in hand ${i}`
+					)
+					equal(
+						new Set(curses).size,
+						curseCount,
+						`${label}: distinct curses in hand ${i}`
+					)
+					// A single card is settled at deal time; more than one is
+					// an open choice until the player commits.
+					equal(
+						handChosenCurse(hands[i]),
+						curseCount === 1 ? curses[0] : null,
+						`${label}: chosen curse resolution`
+					)
+				}
+			}
+		}
+	}
+
+	for (const bad of [0, -1, 4, 99, 2.5, NaN]) {
+		const hands = dealBonusHands(3, ['1'], true, bad, bad)
+		for (let i = 0; i < 3; i++) {
+			assert(
+				hands[i].offered.length >= 1 && hands[i].offered.length <= 3,
+				`count ${bad} clamps bonuses into range`
+			)
+			assert(
+				handCurses(hands[i]).length >= 1 &&
+					handCurses(hands[i]).length <= 3,
+				`count ${bad} clamps curses into range`
+			)
+		}
+	}
+
+	// A hand dealt before curse counts existed carries a single `curse` and no
+	// `curses` array — both helpers still read it.
+	const legacy = {
+		offered: ['gambler', 'scout'],
+		curse: 'age',
+		chosen: null,
+	} as unknown as SelectBonusHand
+	equal(handCurses(legacy).length, 1, 'legacy hand: one curse')
+	equal(handCurses(legacy)[0], 'age', 'legacy hand: reads the curse')
+	equal(handChosenCurse(legacy), 'age', 'legacy hand: curse is settled')
+}
+
 // The real table first, over a pool wide enough that the dealer never has to
 // fall back past the ban filter (all three sets = 27 bonuses for 8 offers).
 // Then a stubbed ban, to confirm the deal honours whatever is in the table —
 // and that flipping `bannedCombos` off lets the pairing through again.
 function testDealBannedCombos() {
-	for (let trial = 0; trial < 200; trial++) {
-		const hands = dealBonusHands(4, ['1', '2', '3'], true)
-		for (let i = 0; i < 4; i++) {
-			for (const b of hands[i].offered) {
-				assert(
-					!isBannedCombo(hands[i].curse, b),
-					`${b} offered alongside ${hands[i].curse}`
-				)
+	// Every offered bonus × offered curse pair must be clean, at every count —
+	// the player may keep any combination of the two.
+	for (const [bonusCount, curseCount] of [
+		[2, 1],
+		[3, 3],
+	]) {
+		for (let trial = 0; trial < 200; trial++) {
+			const hands = dealBonusHands(
+				4,
+				['1', '2', '3'],
+				true,
+				bonusCount,
+				curseCount
+			)
+			for (let i = 0; i < 4; i++) {
+				for (const b of hands[i].offered) {
+					for (const c of handCurses(hands[i])) {
+						assert(
+							!isBannedCombo(c, b),
+							`${bonusCount}/${curseCount}: ${b} offered alongside ${c}`
+						)
+					}
+				}
 			}
 		}
 	}
@@ -992,7 +1084,7 @@ function testDealBannedCombos() {
 		for (let trial = 0; trial < 300; trial++) {
 			const on = dealBonusHands(4, ['1'], true)
 			for (let i = 0; i < 4; i++) {
-				if (on[i].curse !== 'ambition') continue
+				if (!handCurses(on[i]).includes('ambition')) continue
 				for (const b of on[i].offered) {
 					assert(
 						!banned.ambition.includes(b),
@@ -1002,7 +1094,7 @@ function testDealBannedCombos() {
 			}
 			const off = dealBonusHands(4, ['1'], false)
 			for (let i = 0; i < 4; i++) {
-				if (off[i].curse !== 'ambition') continue
+				if (!handCurses(off[i]).includes('ambition')) continue
 				if (off[i].offered.some((b) => banned.ambition.includes(b))) {
 					sawBannedWithoutRule = true
 				}
@@ -1467,6 +1559,7 @@ function main() {
 		['set3: magician by size', testMagicianBySize],
 		['set3: haunt ghosts', testHaunt],
 		['deal: no duplicate offers', testDealNoDuplicates],
+		['deal: card counts', testDealCardCounts],
 		['deal: banned combos', testDealBannedCombos],
 		['size: gameSizeFor boundaries', testGameSizeBoundaries],
 		['size: variant table shape', testSizeVariantTable],
