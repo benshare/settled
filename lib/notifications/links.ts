@@ -23,6 +23,8 @@ export type NotificationKind =
 	| 'end_game_proposed'
 	| 'game_canceled'
 	| 'game_won_by_forfeit'
+	| 'turn_timeout_warning'
+	| 'turn_timed_out'
 
 export type NotificationData = {
 	kind: NotificationKind
@@ -59,6 +61,10 @@ export function resolveNotificationLink(data: unknown): Href | null {
 		case 'end_game_proposed':
 		case 'game_canceled':
 		case 'game_won_by_forfeit':
+		// The warning is only actionable on the board, and the skip notice
+		// lands on the turn it cost you.
+		case 'turn_timeout_warning':
+		case 'turn_timed_out':
 			return d.game_id ? (`/game/${d.game_id}` as Href) : '/games'
 		// Land in the conversation, not merely on the board — the message is
 		// what the tap was about.

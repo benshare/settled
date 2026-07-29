@@ -113,6 +113,7 @@ function checkGenerate() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -136,6 +137,7 @@ function stateWithSettlement(vertex: string, portKind: string): GameState {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -201,6 +203,7 @@ function checkAvailableOptions() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

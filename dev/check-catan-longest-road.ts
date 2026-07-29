@@ -29,6 +29,7 @@ function fresh(players = 3): GameState {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

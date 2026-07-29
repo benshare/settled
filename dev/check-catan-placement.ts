@@ -85,6 +85,7 @@ function testFreshGameAllValid() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -109,6 +110,7 @@ function testDistanceRule() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -154,6 +156,7 @@ function testTargetSettlementRound1() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -179,6 +182,7 @@ function testTargetSettlementRound2() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -219,6 +223,7 @@ function testValidRoadEdges() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -257,6 +262,7 @@ function testStartingResourcesInterior() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -334,6 +340,7 @@ function testOwnSettlementVertices() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',
@@ -464,6 +471,7 @@ function testValidSettlementExcludesAllNeighbors() {
 		limitMonopoly: false,
 		tradeMode: 'automatic',
 		spectators: true,
+		timeout: null,
 		extraBuild: {
 			enabled: false,
 			buildPhases: 'every',

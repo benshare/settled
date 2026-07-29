@@ -294,6 +294,9 @@ type SkipMagicBody = {
 	action: 'skip_magic'
 	game_id: string
 }
+// The one action with no user behind it and no game_id: the cron sweep. See
+// handleRunTimeouts.
+type RunTimeoutsBody = { action: 'run_timeouts' }
 type Body =
 	| HonkBody
 	| SendMessageBody
@@ -340,6 +343,7 @@ type Body =
 	| InvestBody
 	| CastMagicBody
 	| SkipMagicBody
+	| RunTimeoutsBody
 	| UndoBody
 	| SetForfeitBody
 	| SetEndVoteBody
@@ -1577,6 +1581,10 @@ type GameConfig = {
 	// off `games.config`, so this is the authority for access control.
 	spectators?: boolean
 	extraBuild: ExtraBuildConfig
+	// How long the game may sit idle before whoever is holding it up is
+	// skipped. Absent on every row created before timeouts shipped — read
+	// through `timeoutOptionOf`, which defaults those to no clock at all.
+	timeout?: TimeoutOption | null
 }
 
 // Per-opponent ceiling on a Monopoly haul when `config.limitMonopoly` is on.
@@ -3456,8 +3464,6 @@ async function writeGameResults(
 	if (error) console.error('[game_results] write failed', error.message)
 }
 
-// The bonus pair each seat was dealt, recovered from the `bonus_chosen` events.
-// Absent for games that finished (or started) before `offered` was logged.
 // What each seat was dealt, off their `bonus_chosen` event. `curses` is absent
 // on games played before curses could be chosen.
 function offeredCardsByPlayer(
@@ -4008,6 +4014,10 @@ type GameRow = {
 	// User ids holding a standing forfeit / end-game vote. See handleSetForfeit.
 	forfeits: string[]
 	end_votes: string[]
+	// Move-timeout bookkeeping. See the timeout section below.
+	deadline_at: string | null
+	timeout_warned: number | null
+	timed_out: string[] | null
 }
 
 function currentPlayerIndex(game: GameRow, me: string): number | null {
@@ -4163,6 +4173,15 @@ async function handleRespond(
 				// the spectator policies read config.spectators off this row.
 				config,
 				...(startEvents.length > 0 ? { events: startEvents } : {}),
+				// The clock starts the moment the game does. Whatever the
+				// opening phase, it is waiting on somebody and nobody has been
+				// skipped yet, so this is always the full window. Every action
+				// after this one re-stamps it from `serve`.
+				deadline_at: timeoutOptionOf(config)
+					? new Date(
+							Date.now() + TIMEOUT_MS[timeoutOptionOf(config)!]
+						).toISOString()
+					: null,
 			})
 			.select('id')
 			.single()
@@ -5744,6 +5763,748 @@ async function handleSetEndVote(
 		EdgeRuntime.waitUntil(sendNotifications(admin, targets))
 
 	return json({ ok: true })
+}
+
+// --- Move timeouts ---------------------------------------------------------
+//
+// Mirror of lib/catan/timeout.ts, plus the two halves the client has no
+// business owning: stamping `games.deadline_at` after every action, and the
+// cron-driven sweep that warns, then acts. See .claude/specs/move-timeouts.md.
+
+type TimeoutOption =
+	'1h' | '3h' | '12h' | '1d' | '2d' | '3d' | '4d' | '5d' | '6d' | '7d'
+
+const T_HOUR = 60 * 60 * 1000
+const T_DAY = 24 * T_HOUR
+
+const TIMEOUT_MS: Record<TimeoutOption, number> = {
+	'1h': T_HOUR,
+	'3h': 3 * T_HOUR,
+	'12h': 12 * T_HOUR,
+	'1d': T_DAY,
+	'2d': 2 * T_DAY,
+	'3d': 3 * T_DAY,
+	'4d': 4 * T_DAY,
+	'5d': 5 * T_DAY,
+	'6d': 6 * T_DAY,
+	'7d': 7 * T_DAY,
+}
+
+// The window a seat gets once it has already been skipped, until it acts
+// again — so an absent player is skipped about once a minute rather than
+// stalling the table for another full window every go-around.
+const TIMEOUT_PENALTY_MS = 60 * 1000
+const WARN_HOUR_MS = T_HOUR
+const WARN_TEN_MIN_MS = 10 * 60 * 1000
+// Timeouts at or above this get the extra one-hour warning; 1h and 3h games
+// get only the ten-minute one.
+const HOUR_WARNING_MIN_TIMEOUT_MS = 12 * T_HOUR
+// How many auto actions one sweep will drive through a single game. Enough to
+// clear an abandoned turn that rolled a 7 (roll → discard → move robber →
+// steal → end turn) in one pass. Hitting it is not a failure — the next tick
+// continues.
+const MAX_TIMEOUT_STEPS = 12
+// Games handled per sweep tick, most overdue first.
+const SWEEP_BATCH = 100
+
+// Every row created before timeouts shipped is missing the key, and must parse
+// to no clock — an in-flight game can never acquire one.
+function timeoutOptionOf(config: GameConfig): TimeoutOption | null {
+	const t = config?.timeout
+	return typeof t === 'string' && t in TIMEOUT_MS
+		? (t as TimeoutOption)
+		: null
+}
+
+/**
+ * Every seat the game is waiting on right now — who gets warned, who gets
+ * skipped, and (client-side) whose countdown shows. Deliberately NOT
+ * `current_turn`, which names the wrong seat during `special_build` and is null
+ * for the whole simultaneous bonus-selection phase.
+ */
+function pendingSeats(phase: Phase, currentTurn: number | null): number[] {
+	const turn = currentTurn === null ? [] : [currentTurn]
+	switch (phase.kind) {
+		case 'select_bonus':
+			return Object.entries(phase.hands)
+				.filter(([, hand]) => hand.chosen === null)
+				.map(([idx]) => Number(idx))
+		case 'post_placement': {
+			const p = phase.pending
+			const seats = new Set<number>(p.specialist)
+			for (const idx of p.haunt ?? []) seats.add(idx)
+			for (const [idx, owed] of Object.entries(p.explorer ?? {})) {
+				if ((owed ?? 0) > 0) seats.add(Number(idx))
+			}
+			for (const [idx, owed] of Object.entries(p.fencer ?? {})) {
+				if ((owed ?? 0) > 0) seats.add(Number(idx))
+			}
+			return [...seats].sort((a, b) => a - b)
+		}
+		case 'discard':
+			return Object.keys(phase.pending).map(Number)
+		case 'scout_pick':
+			return [phase.owner]
+		case 'curio_pick':
+			return [...phase.pending]
+		case 'forger_pick':
+			return phase.queue.length > 0 ? [phase.queue[0].idx] : []
+		case 'magician_pick':
+			return [phase.roller]
+		case 'special_build':
+			return phase.queue.length > 0 ? [phase.queue[0]] : []
+		case 'game_over':
+			return []
+		default:
+			// initial_placement, roll, main, move_robber, steal, road_building
+			return turn
+	}
+}
+
+function deadlineFor(args: {
+	timeout: TimeoutOption | null
+	phase: Phase
+	currentTurn: number | null
+	playerOrder: string[]
+	timedOut: string[]
+	now: number
+}): string | null {
+	const { timeout, phase, currentTurn, playerOrder, timedOut, now } = args
+	if (timeout === null) return null
+	const pending = pendingSeats(phase, currentTurn)
+	if (pending.length === 0) return null
+	const penalized = pending.some((idx) => {
+		const userId = playerOrder[idx]
+		return userId !== undefined && timedOut.includes(userId)
+	})
+	const window = penalized ? TIMEOUT_PENALTY_MS : TIMEOUT_MS[timeout]
+	return new Date(now + window).toISOString()
+}
+
+// The warning stage a game is due, or null. Stages never repeat and never go
+// backwards, so a game first seen inside its final ten minutes just gets
+// stage 2 rather than both.
+function warningStageDue(args: {
+	timeout: TimeoutOption
+	deadlineAt: number
+	warned: number
+	now: number
+}): 1 | 2 | null {
+	const { timeout, deadlineAt, warned, now } = args
+	const remaining = deadlineAt - now
+	if (warned < 2 && remaining <= WARN_TEN_MIN_MS) return 2
+	if (
+		warned < 1 &&
+		TIMEOUT_MS[timeout] >= HOUR_WARNING_MIN_TIMEOUT_MS &&
+		remaining <= WARN_HOUR_MS
+	)
+		return 1
+	return null
+}
+
+/**
+ * Re-stamps `games.deadline_at` after an action. Called from `serve` for every
+ * successful game action — one place, rather than in each of the fifty
+ * handlers — and inside `EdgeRuntime.waitUntil`, since nothing is waiting on it.
+ *
+ * `actor` is dropped from `timed_out`: taking any real action is what returns a
+ * skipped player to the full window.
+ *
+ * Honk and chat deliberately never reach here (see `serve`). A honk writes a
+ * `games.events` entry but must not push the deadline out — the same reason
+ * `lastActivityAt` ignores honks: the nudge is a complaint about the stall, not
+ * an escape from it.
+ */
+async function refreshDeadline(
+	admin: SupabaseClient,
+	gameId: string,
+	actor: string | null
+): Promise<void> {
+	// Deliberately not `loadGame`: this runs after every action, and a game with
+	// no timeout — the default, and most of them — must not pay for a
+	// `game_states` read it will do nothing with.
+	const { data: row, error: loadErr } = await admin
+		.from('games')
+		.select(
+			'id, status, config, current_turn, player_order, deadline_at, timed_out'
+		)
+		.eq('id', gameId)
+		.maybeSingle()
+	if (loadErr || !row) return
+	const game = row as Pick<
+		GameRow,
+		| 'id'
+		| 'status'
+		| 'config'
+		| 'current_turn'
+		| 'player_order'
+		| 'deadline_at'
+		| 'timed_out'
+	>
+
+	const prevTimedOut = game.timed_out ?? []
+	const timedOut = actor
+		? prevTimedOut.filter((id) => id !== actor)
+		: prevTimedOut
+	const timeout = timeoutOptionOf(game.config)
+	const live =
+		timeout !== null &&
+		(game.status === 'placement' || game.status === 'active')
+
+	let deadline: string | null = null
+	if (live) {
+		const { data: stateRow } = await admin
+			.from('game_states')
+			.select('phase')
+			.eq('game_id', gameId)
+			.maybeSingle()
+		if (!stateRow) return
+		deadline = deadlineFor({
+			timeout,
+			phase: stateRow.phase as Phase,
+			currentTurn: game.current_turn,
+			playerOrder: game.player_order,
+			timedOut,
+			now: Date.now(),
+		})
+	}
+
+	const update: Record<string, unknown> = {}
+	// Both null is the overwhelmingly common case — a game with no clock — and
+	// writes nothing at all rather than emitting a realtime event per action.
+	if (deadline !== null || game.deadline_at !== null) {
+		update.deadline_at = deadline
+		update.timeout_warned = 0
+	}
+	if (timedOut.length !== prevTimedOut.length) update.timed_out = timedOut
+	if (Object.keys(update).length === 0) return
+
+	const { error } = await admin.from('games').update(update).eq('id', gameId)
+	if (error) console.warn('[timeouts] deadline refresh failed', error.message)
+}
+
+/**
+ * The cron sweep. Runs every minute (see the migration), authorized by the
+ * service-role key rather than a user JWT — there is no user behind it.
+ *
+ * Each game is swept independently: one failure never aborts the others.
+ */
+async function handleRunTimeouts(admin: SupabaseClient): Promise<Response> {
+	// One indexed query. The horizon is the widest warning lead plus a tick of
+	// slack, so a sweep only loads games that could owe something.
+	const horizon = new Date(Date.now() + WARN_HOUR_MS + 60_000).toISOString()
+	const { data, error } = await admin
+		.from('games')
+		.select('id')
+		.in('status', ['placement', 'active'])
+		.not('deadline_at', 'is', null)
+		.lte('deadline_at', horizon)
+		// Most overdue first, and bounded: a sweep that ran past the function's
+		// own limit would drop whatever it hadn't reached anyway. Anything left
+		// over is still expired a minute later, so the next tick takes it.
+		.order('deadline_at', { ascending: true })
+		.limit(SWEEP_BATCH)
+	if (error) return err(500, 'timeout sweep failed')
+
+	const rows = (data ?? []) as { id: string }[]
+	if (rows.length === SWEEP_BATCH) {
+		console.warn('[timeouts] sweep batch full', SWEEP_BATCH)
+	}
+	let warned = 0
+	let expired = 0
+	for (const row of rows) {
+		try {
+			const outcome = await sweepGame(admin, row.id)
+			if (outcome === 'warned') warned++
+			else if (outcome === 'expired') expired++
+		} catch (e) {
+			console.error('[timeouts] sweep failed', row.id, e)
+		}
+	}
+	return json({ ok: true, scanned: rows.length, warned, expired })
+}
+
+async function sweepGame(
+	admin: SupabaseClient,
+	gameId: string
+): Promise<'warned' | 'expired' | 'none'> {
+	const loaded = await loadGame(admin, gameId)
+	if (!loaded.ok) return 'none'
+	const { game, state } = loaded
+
+	const timeout = timeoutOptionOf(game.config)
+	const pending = pendingSeats(state.phase, game.current_turn)
+	// The row can't have a live deadline — clear it so the sweep stops
+	// selecting it. (Reachable if a game ends through a path that somehow
+	// skipped the refresh, or sits in a phase waiting on nobody.)
+	if (
+		!inProgress(game) ||
+		timeout === null ||
+		!game.deadline_at ||
+		pending.length === 0
+	) {
+		if (game.deadline_at !== null) {
+			await admin
+				.from('games')
+				.update({ deadline_at: null })
+				.eq('id', gameId)
+		}
+		return 'none'
+	}
+
+	const deadlineAt = Date.parse(game.deadline_at)
+	const now = Date.now()
+
+	if (now < deadlineAt) {
+		// A seat inside its one-minute penalty window is never warned — there
+		// is no room for a ten-minute warning in a one-minute window.
+		const flagged = new Set(game.timed_out ?? [])
+		const targets = pending
+			.map((idx) => game.player_order[idx])
+			.filter((id) => id !== undefined && !flagged.has(id))
+		if (targets.length === 0) return 'none'
+		const stage = warningStageDue({
+			timeout,
+			deadlineAt,
+			warned: game.timeout_warned ?? 0,
+			now,
+		})
+		if (stage === null) return 'none'
+
+		const { error } = await admin
+			.from('games')
+			.update({ timeout_warned: stage })
+			.eq('id', gameId)
+		if (error) return 'none'
+		EdgeRuntime.waitUntil(
+			sendNotifications(
+				admin,
+				targets.map((userId) => ({
+					userId,
+					kind: 'turn_timeout_warning' as const,
+					gameId,
+					bodyOverride:
+						stage === 1
+							? 'Your turn ends in an hour.'
+							: 'Your turn ends in 10 minutes.',
+				}))
+			)
+		)
+		return 'warned'
+	}
+
+	await applyTimeout(admin, game, state, pending)
+	return 'expired'
+}
+
+/**
+ * The deadline passed. At two players that ends the game; above two the
+ * expired seats are auto-resolved and the turn moves on.
+ */
+async function applyTimeout(
+	admin: SupabaseClient,
+	game: GameRow,
+	state: GameState,
+	pending: number[]
+): Promise<void> {
+	const expiredIds = pending
+		.map((idx) => game.player_order[idx])
+		.filter((id): id is string => typeof id === 'string')
+	if (expiredIds.length === 0) return
+
+	if (game.player_order.length === 2) {
+		await applyTwoPlayerTimeout(admin, game, state, pending, expiredIds)
+		return
+	}
+
+	// Three or more: skip. Every auto action goes through the ordinary handler
+	// via `dispatch`, so no game rule is re-implemented here and the action is
+	// indistinguishable from that player having tapped the button.
+	const expired = new Set(expiredIds)
+	// Seats we actually moved past. A phase that offered no legal choice leaves
+	// its seat out of this, so it is neither flagged nor told its turn was
+	// skipped — nothing was.
+	const skipped = new Set<string>()
+	let cur = { game, state }
+	for (let step = 0; step < MAX_TIMEOUT_STEPS; step++) {
+		const seats = pendingSeats(
+			cur.state.phase,
+			cur.game.current_turn
+		).filter((idx) => expired.has(cur.game.player_order[idx]))
+		// Nobody expired is on the clock any more — the game is waiting on
+		// someone who still has their own full window.
+		if (seats.length === 0) break
+
+		const body = autoActionFor(cur.state, cur.game, seats[0])
+		if (!body) {
+			// A state a human couldn't act on either. Leave it for the next
+			// tick rather than throwing and taking the sweep down.
+			console.warn('[timeouts] no legal auto action', {
+				game: cur.game.id,
+				phase: cur.state.phase.kind,
+				seat: seats[0],
+			})
+			break
+		}
+		const res = await dispatch(admin, cur.game.player_order[seats[0]], body)
+		if (!res.ok) {
+			console.warn('[timeouts] auto action rejected', {
+				game: cur.game.id,
+				action: body.action,
+				status: res.status,
+			})
+			break
+		}
+		skipped.add(cur.game.player_order[seats[0]])
+		const reloaded = await loadGame(admin, cur.game.id)
+		if (!reloaded.ok) return
+		cur = reloaded
+		if (!inProgress(cur.game)) break
+	}
+
+	// Nothing was legal to do. Leave the row untouched so the next tick tries
+	// again rather than telling anyone their turn was skipped.
+	if (skipped.size === 0) return
+
+	// `dispatch` was called directly, so serve's post-action bookkeeping never
+	// ran — the runner owns it. The skipped seats stay flagged (they did not
+	// act; only a real action clears that), which is what shortens their next
+	// window to a minute.
+	const timedOut = [...new Set([...(cur.game.timed_out ?? []), ...skipped])]
+	const deadline = inProgress(cur.game)
+		? deadlineFor({
+				timeout: timeoutOptionOf(cur.game.config),
+				phase: cur.state.phase,
+				currentTurn: cur.game.current_turn,
+				playerOrder: cur.game.player_order,
+				timedOut,
+				now: Date.now(),
+			})
+		: null
+	await admin
+		.from('games')
+		.update({
+			timed_out: timedOut,
+			deadline_at: deadline,
+			timeout_warned: 0,
+		})
+		.eq('id', cur.game.id)
+	// An auto action must not leave an undo snapshot behind for the next player
+	// to take back. Guarded, so the usual case matches no rows.
+	await admin
+		.from('game_states')
+		.update({ undo: null })
+		.eq('game_id', cur.game.id)
+		.not('undo', 'is', null)
+
+	EdgeRuntime.waitUntil(
+		sendNotifications(
+			admin,
+			[...skipped].map((userId) => ({
+				userId,
+				kind: 'turn_timed_out' as const,
+				gameId: game.id,
+			}))
+		)
+	)
+}
+
+/**
+ * Two players: running out of time is losing. Reuses the forfeit machinery
+ * wholesale — the timed-out player joins `games.forfeits` and the game
+ * completes with the other as winner — so a timeout counts toward games played
+ * and win rate exactly like a manual forfeit and needs no new stats shape.
+ *
+ * With both seats pending (only reachable in the simultaneous phases) nobody
+ * was there to win, so the game is canceled instead: no winner, no
+ * `game_results` rows.
+ */
+async function applyTwoPlayerTimeout(
+	admin: SupabaseClient,
+	game: GameRow,
+	state: GameState,
+	pending: number[],
+	expiredIds: string[]
+): Promise<void> {
+	const at = new Date().toISOString()
+	const gameOverPhase: Phase = { kind: 'game_over' }
+	const everyoneIdle = expiredIds.length >= game.player_order.length
+
+	if (everyoneIdle) {
+		await commitActionWrite(
+			admin,
+			game,
+			{ phase: gameOverPhase },
+			[{ kind: 'game_canceled', at }],
+			null,
+			state,
+			{
+				canceled: true,
+				gameFields: { deadline_at: null, timed_out: expiredIds },
+			}
+		)
+		EdgeRuntime.waitUntil(
+			sendNotifications(
+				admin,
+				game.player_order.map((userId) => ({
+					userId,
+					kind: 'game_canceled' as const,
+					gameId: game.id,
+				}))
+			)
+		)
+		return
+	}
+
+	const loserIdx = pending[0]
+	const loserId = game.player_order[loserIdx]
+	// An in-progress 2-player game can't already hold a forfeit: the first one
+	// would have ended it. So the survivor is the other seat, full stop.
+	const forfeits = [...new Set([...(game.forfeits ?? []), loserId])]
+	const winner = game.player_order.findIndex((id) => !forfeits.includes(id))
+	if (winner < 0) return
+
+	await commitActionWrite(
+		admin,
+		game,
+		{ phase: gameOverPhase },
+		[
+			// The seat really is in `games.forfeits` now, so the log and the
+			// array agree — and PlayerStrip's forfeit flag stays truthful.
+			{ kind: 'forfeit_submitted', player: loserIdx, at },
+			{
+				kind: 'game_complete',
+				winner,
+				at,
+				vpCards: vpCardCountsByPlayer(state),
+				by_forfeit: true,
+			},
+		],
+		winner,
+		state,
+		{
+			byForfeit: true,
+			gameFields: {
+				forfeits,
+				deadline_at: null,
+				timed_out: [...new Set([...(game.timed_out ?? []), loserId])],
+			},
+		}
+	)
+
+	EdgeRuntime.waitUntil(
+		sendNotifications(admin, [
+			{
+				userId: loserId,
+				kind: 'turn_timed_out',
+				gameId: game.id,
+				bodyOverride: 'You ran out of time and lost the game.',
+			},
+			{
+				userId: game.player_order[winner],
+				kind: 'game_won_by_forfeit',
+				gameId: game.id,
+			},
+		])
+	)
+}
+
+/**
+ * An arbitrary legal choice for the seat that ran out of time, as a body for
+ * its ordinary handler. Returns null when the phase offers no legal option —
+ * a state a human couldn't act on either.
+ *
+ * Exhaustive over `Phase['kind']`: a new phase must fail to compile rather than
+ * silently becoming un-timeout-able.
+ */
+function autoActionFor(
+	state: GameState,
+	game: GameRow,
+	seat: number
+): Body | null {
+	const gid = game.id
+	const board = boardFor(state.variant)
+	const phase = state.phase
+
+	switch (phase.kind) {
+		case 'select_bonus': {
+			const hand = phase.hands[seat]
+			if (!hand) return null
+			// The curse rides along: a hand dealt more than one is only
+			// resolved by naming it here.
+			return {
+				action: 'pick_bonus',
+				game_id: gid,
+				bonus: hand.offered[0],
+				curse: handCurses(hand)[0],
+			}
+		}
+		case 'initial_placement': {
+			if (phase.step === 'settlement') {
+				const v = randomOf(
+					board.vertices.filter((v) =>
+						isValidSettlementVertex(state, v, seat)
+					)
+				)
+				return v
+					? { action: 'place_settlement', game_id: gid, vertex: v }
+					: null
+			}
+			if (phase.step === 'road') {
+				const e = randomOf(
+					board.edges.filter((e) => isValidRoadEdge(state, seat, e))
+				)
+				return e
+					? { action: 'place_road', game_id: gid, edge: e }
+					: null
+			}
+			// pick_last: nominate the round-2 settlement — the value the UI
+			// pre-seeds, and a no-op against today's rules.
+			const v = roundTwoSettlementOf(game.events ?? [], seat)
+			return v
+				? { action: 'choose_last_settlement', game_id: gid, vertex: v }
+				: null
+		}
+		case 'post_placement': {
+			const p = phase.pending
+			if (p.specialist.includes(seat)) {
+				return {
+					action: 'set_specialist_resource',
+					game_id: gid,
+					resource: 'brick',
+				}
+			}
+			if ((p.explorer?.[seat] ?? 0) > 0) {
+				const e = randomOf(validBuildRoadEdges(state, seat))
+				return e
+					? { action: 'place_explorer_road', game_id: gid, edge: e }
+					: null
+			}
+			if ((p.fencer?.[seat] ?? 0) > 0) {
+				const e = randomOf(
+					board.edges.filter(
+						(e) =>
+							!edgeStateOf(state, e).occupied &&
+							state.fenceTokens?.[e] === undefined
+					)
+				)
+				return e
+					? { action: 'place_fence_token', game_id: gid, edge: e }
+					: null
+			}
+			if ((p.haunt ?? []).includes(seat)) {
+				const spots = shuffle(
+					board.vertices.filter((v) =>
+						isValidSettlementVertex(state, v)
+					)
+				).slice(0, HAUNT_SPOT_COUNT)
+				return spots.length === HAUNT_SPOT_COUNT
+					? { action: 'set_haunt_spots', game_id: gid, spots }
+					: null
+			}
+			return null
+		}
+		case 'roll':
+			// A gambler's dice are already thrown and waiting on a decision;
+			// take the first pair. Everyone else just rolls.
+			return phase.pending
+				? { action: 'confirm_roll', game_id: gid, which: 0 }
+				: { action: 'roll', game_id: gid }
+		case 'main':
+			return { action: 'end_turn', game_id: gid }
+		case 'discard': {
+			const required = phase.pending[seat]
+			if (!required) return null
+			const discard = arbitraryDiscard(
+				state.players[seat]?.resources,
+				required
+			)
+			return discard ? { action: 'discard', game_id: gid, discard } : null
+		}
+		case 'move_robber': {
+			const hex = randomOf(board.hexes.filter((h) => h !== state.robber))
+			return hex ? { action: 'move_robber', game_id: gid, hex } : null
+		}
+		case 'steal': {
+			const victim = randomOf(phase.candidates)
+			return victim === null
+				? null
+				: { action: 'steal', game_id: gid, victim }
+		}
+		case 'road_building': {
+			const e = randomOf(validBuildRoadEdges(state, seat))
+			return e ? { action: 'build_road', game_id: gid, edge: e } : null
+		}
+		case 'scout_pick':
+			return { action: 'confirm_scout_card', game_id: gid, index: 0 }
+		case 'curio_pick':
+			return {
+				action: 'claim_curio',
+				game_id: gid,
+				take: ['brick', 'wood', 'sheep'],
+			}
+		case 'forger_pick': {
+			const head = phase.queue[0]
+			if (!head) return null
+			const target = Object.keys(head.gainsByCandidate)[0]
+			return target === undefined
+				? null
+				: {
+						action: 'pick_forger_target',
+						game_id: gid,
+						target: Number(target),
+					}
+		}
+		case 'magician_pick':
+			return { action: 'skip_magic', game_id: gid }
+		case 'special_build':
+			return { action: 'end_special_build', game_id: gid }
+		case 'game_over':
+			return null
+	}
+}
+
+function randomOf<T>(xs: readonly T[]): T | null {
+	if (xs.length === 0) return null
+	return xs[Math.floor(Math.random() * xs.length)]
+}
+
+// The settlement this seat placed on round 2 — the default answer on the
+// `pick_last` step. Mirrors roundTwoSettlementOf in lib/game/gameScreenContext.
+function roundTwoSettlementOf(events: unknown[], seat: number): string | null {
+	for (let i = events.length - 1; i >= 0; i--) {
+		const e = events[i] as {
+			kind?: string
+			player?: number
+			round?: number
+			vertex?: string
+		}
+		if (
+			e?.kind === 'settlement_placed' &&
+			e.player === seat &&
+			e.round === 2 &&
+			typeof e.vertex === 'string'
+		)
+			return e.vertex
+	}
+	return null
+}
+
+// Any legal discard of `required` cards, taken off the hand in resource order.
+function arbitraryDiscard(
+	hand: ResourceHand | undefined,
+	required: number
+): ResourceHand | null {
+	if (!hand) return null
+	const out = emptyHand()
+	let left = required
+	for (const r of RESOURCES) {
+		const take = Math.min(left, hand[r])
+		out[r] = take
+		left -= take
+		if (left === 0) break
+	}
+	return left === 0 ? out : null
 }
 
 // Chat has no rules layer, so unlike every other handler here it mirrors
@@ -9129,9 +9890,6 @@ serve(async (req) => {
 	}
 	if (req.method !== 'POST') return err(405, 'method not allowed')
 
-	const me = await callerUserId(req)
-	if (!me) return err(401, 'not authenticated')
-
 	let body: Body
 	try {
 		body = (await req.json()) as Body
@@ -9140,6 +9898,17 @@ serve(async (req) => {
 	}
 
 	const admin = adminClient()
+
+	// The cron sweep is the one action with no user behind it, so it is
+	// authorized by the service-role key rather than a JWT — and parsed before
+	// the usual auth for exactly that reason.
+	if (body.action === 'run_timeouts') {
+		if (!isServiceRoleCaller(req)) return err(401, 'not authenticated')
+		return handleRunTimeouts(admin)
+	}
+
+	const me = await callerUserId(req)
+	if (!me) return err(401, 'not authenticated')
 
 	// `game_states.undo` is maintained here rather than inside the handlers, so
 	// an action opts into undo by joining `UNDOABLE_ACTIONS` and nothing else.
@@ -9151,9 +9920,30 @@ serve(async (req) => {
 			: null
 
 	const res = await dispatch(admin, me, body)
-	if (gameId && res.ok) await trackUndo(admin, gameId, body.action, baseline)
+	if (gameId && res.ok) {
+		await trackUndo(admin, gameId, body.action, baseline)
+		// `games.deadline_at` is maintained here for the same reason as undo:
+		// one place rather than fifty handlers. Backgrounded — nothing is
+		// waiting on it. See refreshDeadline.
+		if (!TIMEOUT_NEUTRAL_ACTIONS.has(body.action)) {
+			EdgeRuntime.waitUntil(refreshDeadline(admin, gameId, me))
+		}
+	}
 	return res
 })
+
+// A honk is a complaint about the stall, not an escape from it, so it must not
+// push the deadline out — the same reason `lastActivityAt` ignores honks. Chat
+// isn't a move either.
+const TIMEOUT_NEUTRAL_ACTIONS = new Set<string>(['honk', 'send_message'])
+
+function isServiceRoleCaller(req: Request): boolean {
+	const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+	const token = (req.headers.get('Authorization') ?? '')
+		.replace(/^Bearer\s+/i, '')
+		.trim()
+	return key.length > 0 && token === key
+}
 
 function dispatch(
 	admin: SupabaseClient,
