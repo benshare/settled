@@ -51,7 +51,7 @@ export function BottomArea() {
 		profilesById,
 		isSpectator,
 		submitting,
-		selection,
+		pickLast,
 		placementDraft,
 		placementPairs,
 		placementStage,
@@ -122,7 +122,7 @@ export function BottomArea() {
 								placementStage,
 								placementPairs,
 								placementDraft.length,
-								!!selection
+								!!pickLast
 							)}
 						</Button>
 					</View>
@@ -506,7 +506,7 @@ function confirmLabel(
 	stage: PlacementStage,
 	pairs: 1 | 2,
 	drafted: number,
-	hasSelection: boolean
+	hasPickLast: boolean
 ): string {
 	switch (stage) {
 		case 'settlement':
@@ -514,12 +514,6 @@ function confirmLabel(
 				? 'Tap a spot to place your second settlement'
 				: 'Tap a spot to place settlement'
 		case 'road':
-			// An empty draft here is the legacy per-piece step, where the road
-			// is chosen and confirmed on its own.
-			if (drafted === 0)
-				return hasSelection
-					? 'Confirm road'
-					: 'Tap an edge to place road'
 			return drafted === 2
 				? 'Tap an edge to place your second road'
 				: 'Tap an edge to place road'
@@ -528,7 +522,7 @@ function confirmLabel(
 				? 'Confirm both placements'
 				: 'Confirm settlement and road'
 		case 'pick_last':
-			return hasSelection
+			return hasPickLast
 				? 'Confirm starting settlement'
 				: 'Tap the settlement you placed last'
 		default:

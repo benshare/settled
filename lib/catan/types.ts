@@ -533,6 +533,11 @@ export type Phase =
 	// once every `hands[i].chosen` is non-null, the phase advances to
 	// initial_placement and the kept bonus/curse snapshots onto PlayerState.
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
+	// `settlement` is a whole turn: the settlement and its road are chosen on
+	// the acting client and submitted together, so the step never names which
+	// piece is being placed — that stage is local (see `placementStage` in
+	// lib/game/gameScreenContext.tsx).
+	//
 	// `pick_last` is only ever reached with round 2 by the one seat that places
 	// both settlements back-to-back (see placement.ts `isDoublePlacementSeat`):
 	// they nominate which settlement they placed last, and that one pays the
@@ -540,7 +545,7 @@ export type Phase =
 	| {
 			kind: 'initial_placement'
 			round: 1 | 2
-			step: 'settlement' | 'road' | 'pick_last'
+			step: 'settlement' | 'pick_last'
 	  }
 	// Start-of-game bonus resolutions (specialist declaration, explorer free
 	// roads, etc). Inserted between the final initial_placement road and

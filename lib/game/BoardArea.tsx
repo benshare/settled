@@ -46,7 +46,7 @@ export function BoardArea() {
 		profilesById,
 		isSpectator,
 		submitting,
-		selection,
+		pickLast,
 		placementDraft,
 		placementPairs,
 		onPlacementSelect,
@@ -202,7 +202,7 @@ export function BoardArea() {
 									meIdx,
 									draft: placementDraft,
 									pairsExpected: placementPairs,
-									selection,
+									pickLast,
 									onSelect: onPlacementSelect,
 								}
 							: undefined

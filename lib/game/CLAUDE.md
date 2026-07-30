@@ -169,11 +169,9 @@ app/game/[id].tsx
   anything (`place_start`). `placementStage` on the context is what every
   placement affordance reads: the server's `step` stays `'settlement'` for the
   whole turn, so reading it instead shows the wrong instruction from the second
-  tap onwards. The one thing `step` still decides is **which flow is running** —
-  `placementDrafting` — because a game left mid-turn by an older client or by
-  the timeout sweep sits at `'road'` and takes the old one-piece-per-confirm
-  path through `selection`. The stage alone can't tell those apart: a legacy
-  `road` step and the drafting road stage read the same.
+  tap onwards. `step` decides exactly one thing — whether this is the
+  `pick_last` nomination, which is a separate one-tap choice held in `pickLast`
+  rather than in the draft.
 - **The placement arrow is not the undo arrow.** `canUndoPlacement` pops the
   last drafted piece — pure local state, nothing has reached the server. It has
   no relationship to `canUndo` / `gameState.undo` below, and placement is not

@@ -5,11 +5,11 @@ frontend step** and submitted in **one backend update**. The seat that places
 both of its settlements back-to-back (seat `N-1`) chooses all four pieces —
 settlement, road, settlement, road — in one step, still one backend update.
 
-Today each piece is its own round-trip: tap a vertex → Confirm →
+Each piece used to be its own round-trip: tap a vertex → Confirm →
 `place_settlement` → phase advances to `step: 'road'` → tap an edge → Confirm →
-`place_road`. That is two server writes, two realtime broadcasts and two
-re-renders for what a player experiences as one move, and it makes the
-settlement uncancellable the moment it lands.
+`place_road`. That was two server writes, two realtime broadcasts and two
+re-renders for what a player experiences as one move, and it made the
+settlement uncancellable the moment it landed.
 
 ## Locked decisions (confirmed with user)
 
@@ -23,16 +23,17 @@ settlement uncancellable the moment it lands.
    chosen settlement returns to settlement-picking. Repeatable through all four
    pieces for the double seat. It is local state only — nothing has been sent
    yet, so there is nothing server-side to undo.
-3. **The per-piece handlers stay.** `place_settlement` / `place_road` remain in
-   the edge function so a game already sitting at `step: 'road'` when this
-   deploys can finish its turn, and so the timeout auto-skip sweep
-   (`autoActionFor`) keeps working piece-by-piece with no changes.
+3. **The per-piece flow is gone.** `place_settlement` / `place_road` shipped
+   one commit as a fallback for a turn left half-placed, then were deleted once
+   we confirmed no game was sitting in one (see "Deploy gate" below).
+   `initial_placement`'s step is now `'settlement' | 'pick_last'`, and the
+   timeout sweep submits a whole turn like a player does.
 
 ## Scope
 
-- `supabase/functions/game-service/index.ts` — new `place_start` action; two
-  extractions so the new handler shares logic with the old ones rather than
-  copying it.
+- `supabase/functions/game-service/index.ts` — new `place_start` action, built
+  on three extractions from the per-piece handlers it replaces; the sweep's
+  `autoActionFor` rebuilt on the same pieces.
 - `lib/catan/placement.ts` — `applyPlacementDraft` (pure local simulation, so
   the client can compute pair 2's valid spots against pair 1) and
   `placementPairsExpected`.
@@ -47,8 +48,7 @@ settlement uncancellable the moment it lands.
 - `dev/check-catan-placement.ts` — cases for the two new pure helpers.
 
 Out of scope: the `pick_last` step's rules and UI (unchanged), the
-`post_placement` transition (unchanged), the timeout sweep (unchanged), any
-change to the `initial_placement` phase shape or to the event log's shape.
+`post_placement` transition (unchanged), any change to the event log's shape.
 
 ## Server — `place_start`
 
@@ -61,8 +61,8 @@ type PlaceStartBody = {
 ```
 
 Rejects unless: `games.status === 'placement'`, `phase.kind ===
-'initial_placement'`, **`phase.step === 'settlement'`** (a legacy game at
-`'road'` uses `place_road`), and the caller is `current_turn`.
+'initial_placement'`, `phase.step === 'settlement'` (`pick_last` has its own
+action), and the caller is `current_turn`.
 
 `placements.length` must equal `placementPairsExpected(round, meIdx, N)` — 2
 when `round === 1 && isDoublePlacementSeat(meIdx, N)`, else 1. An exact match
@@ -143,10 +143,9 @@ stamps `placedTurn: state.round`, matching what the server will write.
 
 ## Client flow
 
-State on `gameScreenContext`: `placementDraft: PlacementDraftEntry[]`,
-alongside the existing `selection` — which now serves **only** the two
-single-selection steps (`pick_last`, and the legacy `'road'` step). Both reset
-on the existing `placementKey` change; `pick_last` still opens pre-seeded.
+State on `gameScreenContext`: `placementDraft: PlacementDraftEntry[]`, plus
+`pickLast: Vertex | null` for the nomination step. Both reset on the existing
+`placementKey` change; `pickLast` still opens pre-seeded.
 
 Derived `placementStage`, for `step === 'settlement'` on my turn:
 
@@ -161,14 +160,13 @@ Derived `placementStage`, for `step === 'settlement'` on my turn:
 - Undo pops: an entry with an `edge` loses the edge; an entry without one is
   removed. Shown whenever the draft is non-empty.
 - Confirm is enabled only at `ready`, and calls `placeStart(game.id, pairs)`.
-  The two legacy steps keep calling `placeRoad` / `chooseLastSettlement`.
+  On `pick_last` it calls `chooseLastSettlement` as before.
 
 `PlacementLayer` renders, for the draft step: a half-opacity `VertexPiece` /
 `EdgePiece` ghost for every piece chosen so far, plus `PulsingDot` + hit
 targets for the current stage — `validSettlementVertices` /
 `validRoadEdges` evaluated against `applyPlacementDraft(state, meIdx, draft)`.
-At `ready` it shows ghosts only. Its `pick_last` and single-road branches are
-unchanged.
+At `ready` it shows ghosts only. Its `pick_last` branch is unchanged.
 
 Copy:
 
@@ -184,30 +182,29 @@ road` / `Your turn — confirm your placements`.
 ## Consequences worth knowing
 
 - **A placement turn is one realtime broadcast instead of two.** Other clients
-  see the settlement and road appear together; the intermediate
-  `step: 'road'` state no longer exists for new games.
-- **`phase.step` is `'settlement'` for the whole of a new game's placement.**
-  `'road'` survives only for games mid-turn at deploy time and for the timeout
-  sweep's piece-by-piece auto-actions. Anything reading `step` to describe what
-  the table is waiting on must not assume it names the actor's current stage.
+  see the settlement and road appear together; there is no intermediate
+  half-placed state to render.
+- **`phase.step` is `'settlement'` for the whole of a placement turn.** It
+  never names which piece is being placed — that stage is local to the acting
+  client, so anything describing what the table is waiting on must say "a
+  settlement and road", not one of them.
 - **The double seat's four pieces land in one write**, so its round-1 and
   round-2 events share a timestamp ordering but keep distinct `round` stamps —
   which is exactly what `pick_last`'s log rewrite needs.
 
-## Cleanup, later
+## Deploy gate
 
-The per-piece flow is kept only for turns that were already half-placed. It can
-go once nothing can be sitting in one — but **in this order**, because the
-timeout sweep is itself a producer of that state:
+The per-piece actions (`place_settlement` / `place_road`) existed for one
+commit as a fallback for a half-placed turn, then were deleted along with the
+`'road'` step itself — the timeout sweep was moved onto `place_start` in the
+same change, so nothing can produce that state any more.
 
-1. **Move the sweep onto `place_start` first.** `autoActionFor`'s
-   `initial_placement` case picks a settlement and returns, leaving the game at
-   `step: 'road'` for the next sweep to finish. Replace it with one action that
-   picks a random valid settlement, applies it with `applyPlacementDraft`, then
-   picks a random valid road from the result — two pairs when
-   `placementPairsExpected` says so. Until this lands, a skipped seat keeps
-   minting exactly the state we're waiting to see the end of.
-2. **Confirm no game is left at that step**, allowing for a turn in flight:
+What that costs is a **deploy that isn't backwards compatible**, in both
+directions: a game sitting at `step: 'road'` has no action left that can finish
+its turn, and a client old enough to send `place_settlement` gets a 400. So
+before `npm run edge`:
+
+1. **No game may be at the road step.** Zero rows from:
 
     ```sql
     select g.id, g.status, g.created_at, g.deadline_at
@@ -218,37 +215,21 @@ timeout sweep is itself a producer of that state:
       and s.phase->>'step' = 'road';
     ```
 
-    Zero rows, and no client old enough to send `place_settlement` still in the
-    wild (the action is only reachable from a build that predates this change —
-    check the oldest OTA/native version still in use before deciding).
+    Checked 2026-07-30: three games in `placement` — `66328d5b` (2 seats) and
+    `9ce26e45` (3 seats) both at `round 1, step: 'settlement'`, `7db0bfb5`
+    still in `select_bonus`. None at `'road'`.
 
-    Snapshot at the time this shipped (2026-07-30): three games in
-    `placement` — `66328d5b` (2 seats) and `9ce26e45` (3 seats) both at
-    `round 1, step: 'settlement'`, and `7db0bfb5` still in `select_bonus`.
-    **None at `'road'`**, so nothing was stranded by the change itself; the
-    wait is for step 1 above and for old clients to age out.
+2. **Ship the client first, or together.** The edge deploy is instant for
+   everyone; an OTA update is not. A client that predates `place_start` can
+   still only send the per-piece actions, so anyone mid-placement on an old
+   build is stuck until they update — check the oldest OTA/native version in
+   use, or wait for a quiet window in placement.
 
-3. **Then delete:**
-    - `place_settlement` / `place_road` — body types, `Body` union entries,
-      handlers, dispatcher cases, and the two bullets in the file's header
-      comment. `placeSettlementPiece` / `placeRoadPiece` stay: `place_start`
-      is built on them.
-    - `placeRoad` in `lib/stores/useGamesStore.ts` (type + implementation).
-    - The `step === 'road'` branch in `PlacementLayer` — and with it
-      `RoadSpots`' `selected` param, which the surviving caller only ever
-      passes `null`.
-    - `placementDrafting` in `gameScreenContext.tsx`: with one flow left it is
-      always true, so `placementStage` collapses to the draft derivation and
-      `onConfirm`'s third branch goes. `selection` narrows to `pick_last`
-      only, so it can become `Vertex | null`.
-    - The `'road'` cases in `confirmLabel` (`BottomArea`), `PlacementHeader`,
-      and `spectatorStatus` (`TopArea`) — including `confirmLabel`'s
-      `drafted === 0` legacy test.
-    - `'road'` from the `initial_placement` step union in `types.ts` and its
-      edge mirror, which is what makes the compiler find anything missed.
-
-Nothing else reads the step: `pendingSeats` switches on `phase.kind`, and the
-event log's shape never distinguished the two flows.
+If a game does get stranded, the fix is a hand-edit of its `game_states.phase`
+back to `{ kind: 'initial_placement', round, step: 'settlement' }` — the
+partially-placed settlement stays on the board, and `targetSettlement` would
+then hand its road to the _next_ pair, so the road must be written by hand too.
+Cheaper to check the query.
 
 ## Verification
 
@@ -256,6 +237,10 @@ event log's shape never distinguished the two flows.
   blocks a second settlement adjacent to the first, and its road validity is
   scoped to the second settlement; `placementPairsExpected` returns 2 only for
   seat `N-1` in round 1.
-- `npm run check` (includes `deno check` on the edge function).
+- `npm run check` (includes `deno check` on the edge function). Narrowing the
+  step union to `'settlement' | 'pick_last'` is what makes the compiler list
+  every place that still expects a road step.
 - Manual: a 3-player game through both rounds — undo at each stage, the double
   seat's four-piece turn, then `pick_last`.
+- Manual: a timed-out placement seat, so the sweep's whole-turn auto action
+  runs against a real board.

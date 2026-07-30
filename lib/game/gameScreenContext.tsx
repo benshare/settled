@@ -126,9 +126,6 @@ function useGameScreenState(gameId: string) {
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const pickBonus = useGamesStore((s) => s.pickBonus)
 	const placeStart = useGamesStore((s) => s.placeStart)
-	// Only for a turn left mid-way by an older client or by the timeout sweep;
-	// a whole turn goes through `placeStart`.
-	const placeRoad = useGamesStore((s) => s.placeRoad)
 	const chooseLastSettlement = useGamesStore((s) => s.chooseLastSettlement)
 	const roll = useGamesStore((s) => s.roll)
 	const confirmRoll = useGamesStore((s) => s.confirmRoll)
@@ -174,12 +171,11 @@ function useGameScreenState(gameId: string) {
 	// The placement turn being drafted locally: a settlement, its road, and a
 	// second pair for the seat that places both back-to-back. Nothing is sent
 	// until the player confirms, which is what makes taking a piece back free.
-	// `selection` is the single-piece pick of the two steps that still take one
-	// (`pick_last`, and the legacy `road` step).
+	// `pickLast` is the separate one-tap nomination of the `pick_last` step.
 	const [placementDraft, setPlacementDraft] = useState<PlacementDraftEntry[]>(
 		[]
 	)
-	const [selection, setSelection] = useState<PlacementSelection | null>(null)
+	const [pickLast, setPickLast] = useState<string | null>(null)
 	const [submitting, setSubmitting] = useState(false)
 	const [buildTool, setBuildTool] = useState<BuildKind | 'super_city' | null>(
 		null
@@ -300,9 +296,7 @@ function useGameScreenState(gameId: string) {
 			? roundTwoSettlementOf((game?.events ?? []) as GameEvent[], meIdx)
 			: null
 	useEffect(() => {
-		setSelection(
-			pickLastSeed ? { kind: 'settlement', vertex: pickLastSeed } : null
-		)
+		setPickLast(pickLastSeed)
 		setPlacementDraft([])
 	}, [placementKey, pickLastSeed])
 
@@ -316,21 +310,14 @@ function useGameScreenState(gameId: string) {
 					game.player_order.length
 				)
 			: 1
-	// True while a whole turn is being drafted locally. The other two steps are
-	// a single server-side piece each and keep the old `selection` behaviour —
-	// which is why the stage alone can't be the test: a legacy `road` step and
-	// the drafting road stage read the same.
-	const placementDrafting =
-		gameState?.phase.kind === 'initial_placement' &&
-		gameState.phase.step === 'settlement'
 	// The stage is a local derivation, not a server field: `phase.step` stays
 	// 'settlement' for the whole of a drafted turn.
 	const openPair = placementDraft[placementDraft.length - 1]
 	const placementStage: PlacementStage =
 		gameState?.phase.kind !== 'initial_placement'
 			? null
-			: !placementDrafting
-				? gameState.phase.step
+			: gameState.phase.step === 'pick_last'
+				? 'pick_last'
 				: openPair && openPair.edge === undefined
 					? 'road'
 					: placementDraft.length < placementPairs
@@ -339,7 +326,9 @@ function useGameScreenState(gameId: string) {
 	const canUndoPlacement = isMyPlacementTurn && placementDraft.length > 0
 	const canConfirmPlacement =
 		isMyPlacementTurn &&
-		(placementDrafting ? placementStage === 'ready' : !!selection)
+		(placementStage === 'pick_last'
+			? !!pickLast
+			: placementStage === 'ready')
 
 	// Clear build tool + trade panel when we can no longer build — the turn
 	// flips away / we leave main, or a special-build slot passes to someone
@@ -920,11 +909,9 @@ function useGameScreenState(gameId: string) {
 		const res = await undo(game.id)
 		setSubmitting(false)
 		if (res.error) notify('Undo failed', res.error)
-		else {
-			// The board state the tools were selected against is gone.
-			setBuildTool(null)
-			setSelection(null)
-		}
+		// The board state the tool was selected against is gone. Nothing to
+		// clear for placement — it holds no undoable action.
+		else setBuildTool(null)
 	}
 
 	async function onBuildSuperCity(vertex: string, swapDelta: number) {
@@ -961,11 +948,12 @@ function useGameScreenState(gameId: string) {
 		setBuildTool(null)
 	}
 
-	// A board tap during placement. On the drafting step it appends to the local
-	// turn; the two single-piece steps keep the old one-selection behaviour.
+	// A board tap during placement: it appends to the locally-drafted turn, or
+	// — on `pick_last`, where the pieces are already down — nominates one of
+	// the tapper's own two settlements.
 	function onPlacementSelect(s: PlacementSelection) {
-		if (!placementDrafting) {
-			setSelection(s)
+		if (placementStage === 'pick_last') {
+			if (s.kind === 'settlement') setPickLast(s.vertex)
 			return
 		}
 		setPlacementDraft((draft) => {
@@ -991,20 +979,18 @@ function useGameScreenState(gameId: string) {
 
 	async function onConfirm() {
 		if (!game || gameState?.phase.kind !== 'initial_placement') return
-		const step = gameState.phase.step
 		const pairs = placementDraft.flatMap((e) =>
 			e.edge === undefined ? [] : [{ vertex: e.vertex, edge: e.edge }]
 		)
 
-		// Each guard is the condition the confirm button is disabled on, so a
+		// Both guards are the condition the confirm button is disabled on, so a
 		// stray call can't half-submit a turn.
 		let submit: null | (() => Promise<{ error: string | null }>) = null
-		if (step === 'settlement' && pairs.length === placementPairs)
+		if (gameState.phase.step === 'pick_last') {
+			if (pickLast) submit = () => chooseLastSettlement(game.id, pickLast)
+		} else if (pairs.length === placementPairs) {
 			submit = () => placeStart(game.id, pairs)
-		else if (step === 'pick_last' && selection?.kind === 'settlement')
-			submit = () => chooseLastSettlement(game.id, selection.vertex)
-		else if (step === 'road' && selection?.kind === 'road')
-			submit = () => placeRoad(game.id, selection.edge)
+		}
 		if (!submit) return
 
 		setSubmitting(true)
@@ -1014,7 +1000,7 @@ function useGameScreenState(gameId: string) {
 			notify('Placement failed', res.error)
 			return
 		}
-		setSelection(null)
+		setPickLast(null)
 		setPlacementDraft([])
 	}
 
@@ -1552,7 +1538,7 @@ function useGameScreenState(gameId: string) {
 
 		// --- Local UI state --------------------------------------------
 		submitting,
-		selection,
+		pickLast,
 		placementDraft,
 		placementPairs,
 		placementStage,

@@ -15,5 +15,3 @@ _Nomad: getting resources even without being on desert. Also need to show roll_
 _Curse of decadence: missing city icon is bad_
 
 Notifications for friend requests, game requests, it's your turn, etc
-
-Once no game is left sitting at `initial_placement` `step: 'road'` (check with the query in `.claude/specs/combined-placement-step.md` → "Cleanup, later"), delete the per-piece placement flow: `place_settlement` / `place_road` server-side, `placeRoad` in the store, the `'road'` branches in `PlacementLayer` / `PlacementHeader` / `confirmLabel` / `spectatorStatus`, and `placementDrafting` on the game screen

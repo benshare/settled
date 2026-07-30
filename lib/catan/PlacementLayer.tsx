@@ -14,9 +14,8 @@ import { PulsingDot, PulsingRing } from './PulsingDot'
 import type { GameState } from './types'
 import { VertexPiece } from './VertexPiece'
 
-// The single-piece selection of the two steps that still take one: `pick_last`,
-// and the legacy `road` step a game can be left on by an older client or by the
-// timeout sweep.
+// One board tap: a settlement spot, a road edge, or — on the `pick_last` step
+// — one of the tapper's own two settlements.
 export type PlacementSelection =
 	{ kind: 'settlement'; vertex: Vertex } | { kind: 'road'; edge: Edge }
 
@@ -39,7 +38,7 @@ export function PlacementLayer({
 	vertexPositions,
 	draft,
 	pairsExpected,
-	selection,
+	pickLast,
 	onSelect,
 }: {
 	state: GameState
@@ -48,7 +47,9 @@ export function PlacementLayer({
 	vertexPositions: Record<Vertex, { x: number; y: number }>
 	draft: readonly PlacementDraftEntry[]
 	pairsExpected: 1 | 2
-	selection: PlacementSelection | null
+	// The settlement nominated on the `pick_last` step, pre-seeded with the
+	// round-2 one. Unused on the drafting step.
+	pickLast: Vertex | null
 	onSelect: (s: PlacementSelection) => void
 }) {
 	if (state.phase.kind !== 'initial_placement') return null
@@ -65,9 +66,7 @@ export function PlacementLayer({
 			<G>
 				{mine.map((v) => {
 					const p = vertexPositions[v]
-					const isSelected =
-						selection?.kind === 'settlement' &&
-						selection.vertex === v
+					const isSelected = pickLast === v
 					return (
 						<Fragment key={v}>
 							{isSelected ? (
@@ -100,32 +99,6 @@ export function PlacementLayer({
 						</Fragment>
 					)
 				})}
-			</G>
-		)
-	}
-
-	// A turn left mid-way by an older client or by the timeout sweep: one edge,
-	// one confirm, exactly as before.
-	if (step === 'road') {
-		const selected = selection?.kind === 'road' ? selection.edge : null
-		return (
-			<G>
-				<RoadSpots
-					edges={validRoadEdges(state, meIdx)}
-					selected={selected}
-					layoutS={layoutS}
-					color={color}
-					vertexPositions={vertexPositions}
-					onSelect={onSelect}
-				/>
-				{selected && (
-					<RoadGhost
-						edge={selected}
-						layoutS={layoutS}
-						meIdx={meIdx}
-						vertexPositions={vertexPositions}
-					/>
-				)}
 			</G>
 		)
 	}
@@ -188,64 +161,34 @@ export function PlacementLayer({
 					)
 				})}
 
-			{stage === 'road' && (
-				<RoadSpots
-					edges={validRoadEdges(drafted, meIdx)}
-					selected={null}
-					layoutS={layoutS}
-					color={color}
-					vertexPositions={vertexPositions}
-					onSelect={onSelect}
-				/>
-			)}
-		</G>
-	)
-}
-
-function RoadSpots({
-	edges,
-	selected,
-	layoutS,
-	color,
-	vertexPositions,
-	onSelect,
-}: {
-	edges: Edge[]
-	selected: Edge | null
-	layoutS: number
-	color: string
-	vertexPositions: Record<Vertex, { x: number; y: number }>
-	onSelect: (s: PlacementSelection) => void
-}) {
-	return (
-		<>
-			{edges.map((e) => {
-				const [va, vb] = edgeEndpoints(e)
-				const pa = vertexPositions[va]
-				const pb = vertexPositions[vb]
-				const mx = (pa.x + pb.x) / 2
-				const my = (pa.y + pb.y) / 2
-				return (
-					<Fragment key={e}>
-						{selected !== e && (
+			{stage === 'road' &&
+				validRoadEdges(drafted, meIdx).map((e) => {
+					const [va, vb] = edgeEndpoints(e)
+					const pa = vertexPositions[va]
+					const pb = vertexPositions[vb]
+					const mx = (pa.x + pb.x) / 2
+					const my = (pa.y + pb.y) / 2
+					return (
+						<Fragment key={e}>
 							<PulsingDot
 								cx={mx}
 								cy={my}
 								r={layoutS * 0.2}
 								color={color}
 							/>
-						)}
-						<Circle
-							cx={mx}
-							cy={my}
-							r={layoutS * 0.42}
-							fill="transparent"
-							onPress={() => onSelect({ kind: 'road', edge: e })}
-						/>
-					</Fragment>
-				)
-			})}
-		</>
+							<Circle
+								cx={mx}
+								cy={my}
+								r={layoutS * 0.42}
+								fill="transparent"
+								onPress={() =>
+									onSelect({ kind: 'road', edge: e })
+								}
+							/>
+						</Fragment>
+					)
+				})}
+		</G>
 	)
 }
 

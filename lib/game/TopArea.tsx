@@ -459,15 +459,12 @@ function PlacementHeader({
 			? 'You'
 			: (profilesById[currentId]?.username ?? 'Player')
 
-	const step = gameState.phase.step
 	const waitingFor =
-		step === 'pick_last'
+		gameState.phase.step === 'pick_last'
 			? 'choose their starting settlement'
-			: step === 'road'
-				? 'place a road'
-				: pairs === 2
-					? 'place both their settlements and roads'
-					: 'place a settlement and road'
+			: pairs === 2
+				? 'place both their settlements and roads'
+				: 'place a settlement and road'
 	const message = !isMyTurn
 		? `Waiting for ${currentName} to ${waitingFor}`
 		: stage === 'pick_last'
@@ -670,14 +667,10 @@ function spectatorStatus(
 		case 'select_bonus':
 			return 'Players are choosing bonuses'
 		case 'initial_placement':
-			// A whole turn is one step now, so 'settlement' covers the road
-			// too; 'road' is only a turn left mid-way (older client, or the
-			// timeout sweep stepping through it).
+			// A whole turn is one step, so 'settlement' covers the road too.
 			return phase.step === 'pick_last'
 				? `${current} is choosing their starting settlement`
-				: phase.step === 'road'
-					? `${current} is placing a road`
-					: `${current} is placing a settlement and road`
+				: `${current} is placing a settlement and road`
 		case 'post_placement':
 			return 'Players are setting up their bonuses'
 		case 'roll':
