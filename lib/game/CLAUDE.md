@@ -64,7 +64,10 @@ app/game/[id].tsx
   and on its own row during `post_placement` (where `MainLoopBar` doesn't
   render at all, so the fencer's tokens and the explorer's roads would
   otherwise have nowhere to hang it). Both are gated on the context's
-  `canUndo` — see the undo rule below.
+  `canUndo` — see the undo rule below. It also carries a **third, unrelated**
+  arrow, left of the placement confirm: that one is gated on
+  `canUndoPlacement` and pops a locally-drafted piece — see the placement rule
+  below.
 - `gameScreenShared.tsx` — the few things both menu zones render (`DieFaceView`,
   `HonkButton`, `UndoButton`, the bar styles, `isWeb`), so neither has to
   import the other. `UndoButton` lives here rather than with the two bottom-zone
@@ -118,6 +121,21 @@ app/game/[id].tsx
   consequence — only a legibility one.
 - **A zone early-returns on `!game`.** The shell already gates on it, but the
   guard is what narrows the type for the rest of the file.
+- **A placement turn is drafted locally, so `phase.step` is not the stage.**
+  `placementDraft` accumulates a settlement, its road, and — for the seat that
+  places both back-to-back — a second pair, and only the confirm sends
+  anything (`place_start`). `placementStage` on the context is what every
+  placement affordance reads: the server's `step` stays `'settlement'` for the
+  whole turn, so reading it instead shows the wrong instruction from the second
+  tap onwards. The one thing `step` still decides is **which flow is running** —
+  `placementDrafting` — because a game left mid-turn by an older client or by
+  the timeout sweep sits at `'road'` and takes the old one-piece-per-confirm
+  path through `selection`. The stage alone can't tell those apart: a legacy
+  `road` step and the drafting road stage read the same.
+- **The placement arrow is not the undo arrow.** `canUndoPlacement` pops the
+  last drafted piece — pure local state, nothing has reached the server. It has
+  no relationship to `canUndo` / `gameState.undo` below, and placement is not
+  an undoable action.
 - **`canUndo` is read off `gameState.undo`, never derived from the event log.**
   The edge function stashes a pre-action snapshot on `game_states.undo` for the
   actions it considers undoable, and that column _is_ the availability signal —

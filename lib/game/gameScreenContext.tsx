@@ -38,6 +38,10 @@ import { curseBuildReason } from '@/lib/catan/curses'
 import { canBuyDevCard } from '@/lib/catan/dev'
 import type { DevPlayPayload } from '@/lib/catan/DevCardHand'
 import { useGame } from '@/lib/catan/gameContext'
+import {
+	placementPairsExpected,
+	type PlacementDraftEntry,
+} from '@/lib/catan/placement'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { useSwitchableGames } from '@/lib/catan/switchableGames'
 import { visibleOfferFor } from '@/lib/catan/TradeBanner'
@@ -66,6 +70,12 @@ import { Alert, Platform } from 'react-native'
 // How long a `stolen` event waits for the victim's players[] row to arrive
 // before we give up on recovering the resource and skip the animation.
 const STEAL_DIFF_GRACE_MS = 5000
+
+// What the placement board is waiting on. The first three are stages of one
+// locally-drafted turn ('ready' = every piece chosen, awaiting confirm); the
+// last is the server's own step. `null` outside initial placement.
+export type PlacementStage =
+	'settlement' | 'road' | 'ready' | 'pick_last' | null
 
 type GameScreenValue = ReturnType<typeof useGameScreenState>
 
@@ -104,7 +114,9 @@ function useGameScreenState(gameId: string) {
 	const switchableGames = useSwitchableGames()
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const pickBonus = useGamesStore((s) => s.pickBonus)
-	const placeSettlement = useGamesStore((s) => s.placeSettlement)
+	const placeStart = useGamesStore((s) => s.placeStart)
+	// Only for a turn left mid-way by an older client or by the timeout sweep;
+	// a whole turn goes through `placeStart`.
 	const placeRoad = useGamesStore((s) => s.placeRoad)
 	const chooseLastSettlement = useGamesStore((s) => s.chooseLastSettlement)
 	const roll = useGamesStore((s) => s.roll)
@@ -148,6 +160,14 @@ function useGameScreenState(gameId: string) {
 	const setForfeit = useGamesStore((s) => s.setForfeit)
 	const setEndVote = useGamesStore((s) => s.setEndVote)
 
+	// The placement turn being drafted locally: a settlement, its road, and a
+	// second pair for the seat that places both back-to-back. Nothing is sent
+	// until the player confirms, which is what makes taking a piece back free.
+	// `selection` is the single-piece pick of the two steps that still take one
+	// (`pick_last`, and the legacy `road` step).
+	const [placementDraft, setPlacementDraft] = useState<PlacementDraftEntry[]>(
+		[]
+	)
 	const [selection, setSelection] = useState<PlacementSelection | null>(null)
 	const [submitting, setSubmitting] = useState(false)
 	const [buildTool, setBuildTool] = useState<BuildKind | 'super_city' | null>(
@@ -269,7 +289,43 @@ function useGameScreenState(gameId: string) {
 		setSelection(
 			pickLastSeed ? { kind: 'settlement', vertex: pickLastSeed } : null
 		)
+		setPlacementDraft([])
 	}, [placementKey, pickLastSeed])
+
+	// How many settlement+road pairs this turn submits — two for the seat the
+	// snake order hands both of its turns to back-to-back.
+	const placementPairs: 1 | 2 =
+		gameState?.phase.kind === 'initial_placement' && game
+			? placementPairsExpected(
+					gameState.phase.round,
+					meIdx,
+					game.player_order.length
+				)
+			: 1
+	// True while a whole turn is being drafted locally. The other two steps are
+	// a single server-side piece each and keep the old `selection` behaviour —
+	// which is why the stage alone can't be the test: a legacy `road` step and
+	// the drafting road stage read the same.
+	const placementDrafting =
+		gameState?.phase.kind === 'initial_placement' &&
+		gameState.phase.step === 'settlement'
+	// The stage is a local derivation, not a server field: `phase.step` stays
+	// 'settlement' for the whole of a drafted turn.
+	const openPair = placementDraft[placementDraft.length - 1]
+	const placementStage: PlacementStage =
+		gameState?.phase.kind !== 'initial_placement'
+			? null
+			: !placementDrafting
+				? gameState.phase.step
+				: openPair && openPair.edge === undefined
+					? 'road'
+					: placementDraft.length < placementPairs
+						? 'settlement'
+						: 'ready'
+	const canUndoPlacement = isMyPlacementTurn && placementDraft.length > 0
+	const canConfirmPlacement =
+		isMyPlacementTurn &&
+		(placementDrafting ? placementStage === 'ready' : !!selection)
 
 	// Clear build tool + trade panel when we can no longer build — the turn
 	// flips away / we leave main, or a special-build slot passes to someone
@@ -796,24 +852,61 @@ function useGameScreenState(gameId: string) {
 		setBuildTool(null)
 	}
 
+	// A board tap during placement. On the drafting step it appends to the local
+	// turn; the two single-piece steps keep the old one-selection behaviour.
+	function onPlacementSelect(s: PlacementSelection) {
+		if (!placementDrafting) {
+			setSelection(s)
+			return
+		}
+		setPlacementDraft((draft) => {
+			if (s.kind === 'settlement') return [...draft, { vertex: s.vertex }]
+			const open = draft[draft.length - 1]
+			if (!open || open.edge !== undefined) return draft
+			return [...draft.slice(0, -1), { ...open, edge: s.edge }]
+		})
+	}
+
+	// Takes back the last piece drafted — a road returns to road-picking, a
+	// settlement to settlement-picking. Nothing has been sent, so this is local
+	// state and not the server's undo.
+	function onUndoPlacement() {
+		setPlacementDraft((draft) => {
+			const open = draft[draft.length - 1]
+			if (!open) return draft
+			return open.edge === undefined
+				? draft.slice(0, -1)
+				: [...draft.slice(0, -1), { vertex: open.vertex }]
+		})
+	}
+
 	async function onConfirm() {
-		if (!selection || !game) return
-		const pickingLast =
-			gameState?.phase.kind === 'initial_placement' &&
-			gameState.phase.step === 'pick_last'
+		if (!game || gameState?.phase.kind !== 'initial_placement') return
+		const step = gameState.phase.step
+		const pairs = placementDraft.flatMap((e) =>
+			e.edge === undefined ? [] : [{ vertex: e.vertex, edge: e.edge }]
+		)
+
+		// Each guard is the condition the confirm button is disabled on, so a
+		// stray call can't half-submit a turn.
+		let submit: null | (() => Promise<{ error: string | null }>) = null
+		if (step === 'settlement' && pairs.length === placementPairs)
+			submit = () => placeStart(game.id, pairs)
+		else if (step === 'pick_last' && selection?.kind === 'settlement')
+			submit = () => chooseLastSettlement(game.id, selection.vertex)
+		else if (step === 'road' && selection?.kind === 'road')
+			submit = () => placeRoad(game.id, selection.edge)
+		if (!submit) return
+
 		setSubmitting(true)
-		const res =
-			pickingLast && selection.kind === 'settlement'
-				? await chooseLastSettlement(game.id, selection.vertex)
-				: selection.kind === 'settlement'
-					? await placeSettlement(game.id, selection.vertex)
-					: await placeRoad(game.id, selection.edge)
+		const res = await submit()
 		setSubmitting(false)
 		if (res.error) {
 			notify('Placement failed', res.error)
 			return
 		}
 		setSelection(null)
+		setPlacementDraft([])
 	}
 
 	async function onRoll() {
@@ -1327,7 +1420,11 @@ function useGameScreenState(gameId: string) {
 		// --- Local UI state --------------------------------------------
 		submitting,
 		selection,
-		setSelection,
+		placementDraft,
+		placementPairs,
+		placementStage,
+		canUndoPlacement,
+		canConfirmPlacement,
 		buildTool,
 		tradePanelOpen,
 		setTradePanelOpen,
@@ -1382,6 +1479,8 @@ function useGameScreenState(gameId: string) {
 		onSkipMagic,
 		onUndo,
 		onConfirmMetropolitanCost,
+		onPlacementSelect,
+		onUndoPlacement,
 		onConfirm,
 		onRoll,
 		onConfirmRoll,

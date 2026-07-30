@@ -31,6 +31,7 @@ import {
 	computeVertexPositions,
 } from './layout'
 import { playerColors } from './palette'
+import { type PlacementDraftEntry } from './placement'
 import { PlacementLayer, type PlacementSelection } from './PlacementLayer'
 import { PortBadge } from './PortBadge'
 import { RobberLayer } from './RobberLayer'
@@ -42,6 +43,11 @@ import { HauntSpotMarker, VertexPiece } from './VertexPiece'
 // a purely visual board (as during other phases or for spectators).
 export type BoardInteraction = {
 	meIdx: number
+	// The turn being drafted locally — settlement, its road, and a second pair
+	// for the seat that places both back-to-back. Nothing here has been sent.
+	draft: readonly PlacementDraftEntry[]
+	pairsExpected: 1 | 2
+	// The single-piece selection of the `pick_last` and legacy `road` steps.
 	selection: PlacementSelection | null
 	onSelect: (s: PlacementSelection) => void
 }
@@ -343,6 +349,8 @@ function BoardSvg({
 						meIdx={interaction.meIdx}
 						layoutS={layout.s}
 						vertexPositions={vertexPositions}
+						draft={interaction.draft}
+						pairsExpected={interaction.pairsExpected}
 						selection={interaction.selection}
 						onSelect={interaction.onSelect}
 					/>

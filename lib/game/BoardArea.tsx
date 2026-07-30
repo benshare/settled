@@ -46,7 +46,9 @@ export function BoardArea() {
 		isSpectator,
 		submitting,
 		selection,
-		setSelection,
+		placementDraft,
+		placementPairs,
+		onPlacementSelect,
 		inPlacement,
 		isMyPlacementTurn,
 		isCurrentPlayer,
@@ -185,8 +187,10 @@ export function BoardArea() {
 						inPlacement && isMyPlacementTurn
 							? {
 									meIdx,
+									draft: placementDraft,
+									pairsExpected: placementPairs,
 									selection,
-									onSelect: setSelection,
+									onSelect: onPlacementSelect,
 								}
 							: undefined
 					}

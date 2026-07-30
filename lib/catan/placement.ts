@@ -41,6 +41,18 @@ export function isDoublePlacementSeat(
 	return playerIdx === playerCount - 1
 }
 
+// How many settlement+road pairs the seat submits in one go. The snake order
+// gives seat N-1 both of its turns back-to-back, so on its round-1 turn it
+// chooses all four pieces at once; everyone else chooses one pair per turn.
+// Mirrored in the edge function, which validates the submitted count against it.
+export function placementPairsExpected(
+	round: 1 | 2,
+	playerIdx: number,
+	playerCount: number
+): 1 | 2 {
+	return round === 1 && isDoublePlacementSeat(playerIdx, playerCount) ? 2 : 1
+}
+
 // Advance one placement step (settlement+road is one step) from the given
 // round/turn. Returns null once round 2's last placement is complete, which
 // is the signal to transition out of initial placement.
@@ -163,6 +175,42 @@ export function isValidRoadEdge(
 	if (!boardFor(state.variant).adjacentEdges[target].includes(edge))
 		return false
 	return !edgeStateOf(state, edge).occupied
+}
+
+// --- Local drafts -----------------------------------------------------------
+
+// One settlement, and the road placed from it once it's been chosen. A whole
+// placement turn is one of these — two for the seat that places back-to-back.
+export type PlacementDraftEntry = { vertex: Vertex; edge?: Edge }
+
+// The board as it would be with the draft applied, so validity for a later
+// piece is computed against the earlier ones: the second settlement must
+// respect the first's distance footprint, and its road must attach to it
+// rather than to the first. Never persisted — the server applies the same
+// pairs itself when the draft is submitted.
+export function applyPlacementDraft(
+	state: GameState,
+	playerIdx: number,
+	draft: readonly PlacementDraftEntry[]
+): GameState {
+	if (draft.length === 0) return state
+	const vertices = { ...state.vertices }
+	const edges = { ...state.edges }
+	for (const entry of draft) {
+		vertices[entry.vertex] = {
+			occupied: true,
+			player: playerIdx,
+			building: 'settlement',
+			placedTurn: state.round,
+		}
+		if (entry.edge === undefined) continue
+		edges[entry.edge] = {
+			occupied: true,
+			player: playerIdx,
+			placedTurn: state.round,
+		}
+	}
+	return { ...state, vertices, edges }
 }
 
 // --- Starting resources -----------------------------------------------------

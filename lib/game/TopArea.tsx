@@ -29,7 +29,7 @@ import type { Profile } from '@/lib/stores/useProfileStore'
 import { Button } from '@/lib/modules/Button'
 import { colors, font, spacing } from '@/lib/theme'
 import { StyleSheet, Text, View } from 'react-native'
-import { useGameScreen } from './gameScreenContext'
+import { useGameScreen, type PlacementStage } from './gameScreenContext'
 import {
 	HonkButton,
 	DieFaceView,
@@ -56,6 +56,8 @@ export function TopArea() {
 		inRobberFlow,
 		inGameOver,
 		isMyPlacementTurn,
+		placementStage,
+		placementPairs,
 		buildTool,
 		buildEnabled,
 		buildCurseHints,
@@ -132,6 +134,8 @@ export function TopArea() {
 					gameState={gameState}
 					meIdx={meIdx}
 					isMyTurn={isMyPlacementTurn}
+					stage={placementStage}
+					pairs={placementPairs}
 					profilesById={profilesById}
 				/>
 			)}
@@ -442,17 +446,25 @@ export function TopArea() {
 	)
 }
 
+// `stage` is the local drafting stage for the turn-holder; everyone else sees
+// only what the server says, which for a drafted turn is the whole turn — the
+// pieces are chosen on the actor's device, so nobody else can see how far in
+// they are.
 function PlacementHeader({
 	game,
 	gameState,
 	meIdx,
 	isMyTurn,
+	stage,
+	pairs,
 	profilesById,
 }: {
 	game: Game
 	gameState: GameState
 	meIdx: number
 	isMyTurn: boolean
+	stage: PlacementStage
+	pairs: 1 | 2
 	profilesById: Record<string, Profile>
 }) {
 	if (gameState.phase.kind !== 'initial_placement') return null
@@ -464,14 +476,21 @@ function PlacementHeader({
 			: (profilesById[currentId]?.username ?? 'Player')
 
 	const step = gameState.phase.step
-	const message =
+	const waitingFor =
 		step === 'pick_last'
-			? isMyTurn
-				? 'Your turn — choose the settlement you placed last'
-				: `Waiting for ${currentName} to choose their starting settlement`
-			: isMyTurn
-				? `Your turn — place ${prefix(step)} ${step}`
-				: `Waiting for ${currentName} to place ${prefix(step)} ${step}`
+			? 'choose their starting settlement'
+			: step === 'road'
+				? 'place a road'
+				: pairs === 2
+					? 'place both their settlements and roads'
+					: 'place a settlement and road'
+	const message = !isMyTurn
+		? `Waiting for ${currentName} to ${waitingFor}`
+		: stage === 'pick_last'
+			? 'Your turn — choose the settlement you placed last'
+			: stage === 'ready'
+				? 'Your turn — confirm your placements'
+				: `Your turn — place ${prefix(stage ?? '')} ${stage}`
 
 	return (
 		<View style={styles.statusWrap}>
@@ -667,9 +686,14 @@ function spectatorStatus(
 		case 'select_bonus':
 			return 'Players are choosing bonuses'
 		case 'initial_placement':
+			// A whole turn is one step now, so 'settlement' covers the road
+			// too; 'road' is only a turn left mid-way (older client, or the
+			// timeout sweep stepping through it).
 			return phase.step === 'pick_last'
 				? `${current} is choosing their starting settlement`
-				: `${current} is placing ${prefix(phase.step)} ${phase.step}`
+				: phase.step === 'road'
+					? `${current} is placing a road`
+					: `${current} is placing a settlement and road`
 		case 'post_placement':
 			return 'Players are setting up their bonuses'
 		case 'roll':
