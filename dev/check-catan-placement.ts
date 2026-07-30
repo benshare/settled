@@ -14,8 +14,10 @@ import {
 } from '../lib/catan/board'
 import { initialGameState } from '../lib/catan/generate'
 import {
+	applyPlacementDraft,
 	isDoublePlacementSeat,
 	isValidRoadEdge,
+	placementPairsExpected,
 	isValidSettlementVertex,
 	nextPlacementTurn,
 	ownSettlementVertices,
@@ -490,6 +492,91 @@ function testValidSettlementExcludesAllNeighbors() {
 	)
 }
 
+// A whole turn is chosen locally before it's sent, so the second pair's valid
+// spots have to be computed against the first pair applied.
+function testApplyPlacementDraft() {
+	const s0 = initialGameState('standard', 3, {
+		bonuses: false,
+		bonusSets: ['1'],
+		bannedCombos: true,
+		bonusCount: 2,
+		curseCount: 1,
+		devCards: false,
+		numberLayout: 'random',
+		honk: true,
+		friendlyRobber: false,
+		limitMonopoly: false,
+		tradeMode: 'automatic',
+		spectators: true,
+		timeout: null,
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
+	})
+
+	// Settlement only: the road step's targets are that settlement's edges.
+	const firstEdge = adjacentEdges['3F'][0] as Edge
+	const afterSettlement = applyPlacementDraft(s0, 2, [{ vertex: '3F' }])
+	assertVerticesEqual(
+		validRoadEdges(afterSettlement, 2),
+		adjacentEdges['3F'] as Vertex[] as Edge[],
+		'road targets = the drafted settlement’s edges'
+	)
+
+	// Pair applied: the distance rule sees the drafted settlement.
+	const afterPair = applyPlacementDraft(s0, 2, [
+		{ vertex: '3F', edge: firstEdge },
+	])
+	assert(
+		!isValidSettlementVertex(afterPair, '3F', 2),
+		'drafted settlement occupies its vertex'
+	)
+	for (const n of neighborVertices['3F']) {
+		assert(
+			!isValidSettlementVertex(afterPair, n as Vertex, 2),
+			`neighbor ${n} blocked by the drafted settlement`
+		)
+	}
+
+	// Second pair: its road attaches to the second settlement, not the first.
+	const blocked = new Set<Vertex>([
+		'3F',
+		...(neighborVertices['3F'] as readonly Vertex[]),
+	])
+	const second = VERTICES.find((v) => !blocked.has(v))
+	assert(second, 'need a far vertex')
+	const afterSecond = applyPlacementDraft(s0, 2, [
+		{ vertex: '3F', edge: firstEdge },
+		{ vertex: second },
+	])
+	assertVerticesEqual(
+		validRoadEdges(afterSecond, 2),
+		adjacentEdges[second] as Vertex[] as Edge[],
+		'second road targets the second settlement'
+	)
+
+	// Nothing drafted leaves the state alone, so an untouched turn renders
+	// exactly what the server sent.
+	equal(applyPlacementDraft(s0, 2, []), s0, 'empty draft is identity')
+}
+
+// Only seat N-1 submits two pairs, and only on its round-1 turn — its round-2
+// turn is the same submission.
+function testPlacementPairsExpected() {
+	for (const n of [2, 3, 4, 5, 6]) {
+		for (let i = 0; i < n; i++) {
+			equal(
+				placementPairsExpected(1, i, n),
+				i === n - 1 ? 2 : 1,
+				`round 1, seat ${i} of ${n}`
+			)
+			equal(placementPairsExpected(2, i, n), 1, `round 2, seat ${i}`)
+		}
+	}
+}
+
 // --- Run ------------------------------------------------------------------
 
 const tests: [string, () => void][] = [
@@ -507,6 +594,8 @@ const tests: [string, () => void][] = [
 	['double-placement seat', testDoublePlacementSeat],
 	['own settlement vertices', testOwnSettlementVertices],
 	['pick_last log swap', testSwapPlacementPairs],
+	['local draft simulation', testApplyPlacementDraft],
+	['pairs expected per turn', testPlacementPairsExpected],
 ]
 
 for (const [name, fn] of tests) {

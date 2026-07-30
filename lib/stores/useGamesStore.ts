@@ -418,7 +418,15 @@ type GamesStore = {
 		r2: Resource
 	) => Promise<ActionResult>
 
-	placeSettlement: (gameId: string, vertex: string) => Promise<ActionResult>
+	// A whole placement turn at once: one settlement+road pair, or two for the
+	// seat that places both of its settlements back-to-back.
+	placeStart: (
+		gameId: string,
+		placements: { vertex: string; edge: string }[]
+	) => Promise<ActionResult>
+	// Only for a turn left mid-way by an older client or by the timeout sweep's
+	// piece-by-piece auto-actions — a whole turn goes through `placeStart`.
+	// (The settlement half has no such path, so it has no wrapper here.)
 	placeRoad: (gameId: string, edge: string) => Promise<ActionResult>
 	// Only the seat that places both starting settlements back-to-back is ever
 	// asked this; `vertex` is the one it nominates as placed last.
@@ -860,10 +868,10 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return { error: null }
 	},
 
-	async placeSettlement(gameId, vertex) {
+	async placeStart(gameId, placements) {
 		return callGameService(
-			{ action: 'place_settlement', game_id: gameId, vertex },
-			"Couldn't place settlement"
+			{ action: 'place_start', game_id: gameId, placements },
+			"Couldn't place"
 		)
 	},
 

@@ -13,7 +13,6 @@ import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { canShepherdSwap, ritualCardCost } from '@/lib/catan/bonus'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
-import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
 import { ShepherdSwapPicker } from '@/lib/catan/ShepherdSwapPicker'
@@ -25,7 +24,7 @@ import type { Profile } from '@/lib/stores/useProfileStore'
 import { colors, font, radius, spacing } from '@/lib/theme'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
-import { useGameScreen } from './gameScreenContext'
+import { useGameScreen, type PlacementStage } from './gameScreenContext'
 import {
 	DieFaceView,
 	HonkButton,
@@ -51,6 +50,12 @@ export function BottomArea() {
 		isSpectator,
 		submitting,
 		selection,
+		placementDraft,
+		placementPairs,
+		placementStage,
+		canUndoPlacement,
+		canConfirmPlacement,
+		onUndoPlacement,
 		inPlacement,
 		isMyPlacementTurn,
 		isMyActiveTurn,
@@ -87,13 +92,29 @@ export function BottomArea() {
 		<>
 			{inPlacement && isMyPlacementTurn && (
 				<View style={sharedStyles.actionBar}>
-					<Button
-						onPress={onConfirm}
-						disabled={!selection}
-						loading={submitting}
-					>
-						{confirmLabel(gameState, selection)}
-					</Button>
+					<View style={styles.placementRow}>
+						{/* Takes back the last piece chosen. Nothing has been
+						    sent yet, so this is local, not the server's undo. */}
+						{canUndoPlacement && (
+							<UndoButton
+								submitting={submitting}
+								onPress={onUndoPlacement}
+							/>
+						)}
+						<Button
+							style={styles.placementConfirm}
+							onPress={onConfirm}
+							disabled={!canConfirmPlacement}
+							loading={submitting}
+						>
+							{confirmLabel(
+								placementStage,
+								placementPairs,
+								placementDraft.length,
+								!!selection
+							)}
+						</Button>
+					</View>
 				</View>
 			)}
 
@@ -443,24 +464,41 @@ function MainLoopBar({
 	)
 }
 
+// The placement bar's one button: an instruction until the step's choice is
+// complete, then the confirm. `pairs` is 2 only for the seat that places both
+// settlements back-to-back, whose whole four-piece turn is one confirm.
 function confirmLabel(
-	gameState: GameState | undefined,
-	selection: PlacementSelection | null
+	stage: PlacementStage,
+	pairs: 1 | 2,
+	drafted: number,
+	hasSelection: boolean
 ): string {
-	const step =
-		gameState?.phase.kind === 'initial_placement'
-			? gameState.phase.step
-			: null
-	if (!selection) {
-		if (step === 'settlement') return 'Tap a spot to place settlement'
-		if (step === 'road') return 'Tap an edge to place road'
-		if (step === 'pick_last') return 'Tap the settlement you placed last'
-		return 'Select a spot'
+	switch (stage) {
+		case 'settlement':
+			return drafted === 1
+				? 'Tap a spot to place your second settlement'
+				: 'Tap a spot to place settlement'
+		case 'road':
+			// An empty draft here is the legacy per-piece step, where the road
+			// is chosen and confirmed on its own.
+			if (drafted === 0)
+				return hasSelection
+					? 'Confirm road'
+					: 'Tap an edge to place road'
+			return drafted === 2
+				? 'Tap an edge to place your second road'
+				: 'Tap an edge to place road'
+		case 'ready':
+			return pairs === 2
+				? 'Confirm both placements'
+				: 'Confirm settlement and road'
+		case 'pick_last':
+			return hasSelection
+				? 'Confirm starting settlement'
+				: 'Tap the settlement you placed last'
+		default:
+			return 'Select a spot'
 	}
-	if (step === 'pick_last') return 'Confirm starting settlement'
-	return selection.kind === 'settlement'
-		? 'Confirm settlement'
-		: 'Confirm road'
 }
 
 // One of the choose-of-two gambler's pending rolls: the pair as dice faces
@@ -541,6 +579,16 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: spacing.xs,
+	},
+	// The undo arrow sits left of the confirm, which takes the rest of the bar
+	// — the same 52pt row the main-loop bar uses.
+	placementRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+	},
+	placementConfirm: {
+		flex: 1,
 	},
 	undoRow: {
 		flexDirection: 'row',
