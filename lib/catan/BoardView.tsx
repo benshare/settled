@@ -35,8 +35,8 @@ import { PlacementLayer, type PlacementSelection } from './PlacementLayer'
 import { PortBadge } from './PortBadge'
 import { RobberLayer } from './RobberLayer'
 import { RobberPiece } from './RobberPiece'
-import { edgeStateOf, type GameState } from './types'
-import { VertexPiece } from './VertexPiece'
+import { edgeStateOf, vertexStateOf, type GameState } from './types'
+import { HauntSpotMarker, VertexPiece } from './VertexPiece'
 
 // Interaction bundles everything the placement overlay needs. Omit to render
 // a purely visual board (as during other phases or for spectators).
@@ -76,6 +76,7 @@ const MAX_SCALE = 4
 
 export function BoardView({
 	state,
+	viewerIdx,
 	interaction,
 	build,
 	robber,
@@ -83,6 +84,9 @@ export function BoardView({
 	robberDormant,
 }: {
 	state: GameState
+	// The seat watching the board (-1 for a spectator). Purely for information
+	// only that seat may see — today, a haunt player's own secret spots.
+	viewerIdx?: number
 	interaction?: BoardInteraction
 	build?: BuildInteraction
 	robber?: RobberInteraction
@@ -161,6 +165,7 @@ export function BoardView({
 						<Animated.View style={[{ flex: 1 }, animatedStyle]}>
 							<BoardSvg
 								state={state}
+								viewerIdx={viewerIdx}
 								boxW={box.w}
 								boxH={box.h}
 								interaction={interaction}
@@ -179,6 +184,7 @@ export function BoardView({
 
 function BoardSvg({
 	state,
+	viewerIdx,
 	boxW,
 	boxH,
 	interaction,
@@ -188,6 +194,7 @@ function BoardSvg({
 	robberDormant,
 }: {
 	state: GameState
+	viewerIdx?: number
 	boxW: number
 	boxH: number
 	interaction?: BoardInteraction
@@ -285,6 +292,22 @@ function BoardSvg({
 						/>
 					)
 				})}
+				{viewerIdx !== undefined &&
+					viewerIdx >= 0 &&
+					(state.players[viewerIdx]?.hauntSpots ?? []).map((v) => {
+						if (vertexStateOf(state, v).occupied) return null
+						const pos = vertexPositions[v]
+						if (!pos) return null
+						return (
+							<HauntSpotMarker
+								key={`haunt-${v}`}
+								cx={pos.x}
+								cy={pos.y}
+								size={layout.s}
+								player={viewerIdx}
+							/>
+						)
+					})}
 				{(() => {
 					const robberHex = layout.hexes.find(
 						(h) => h.id === state.robber

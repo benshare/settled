@@ -14,7 +14,7 @@ import { validSettlementVertices } from './placement'
 import { playerColors } from './palette'
 import { PulsingDot } from './PulsingDot'
 import { edgeStateOf, type GameState } from './types'
-import { VertexPiece } from './VertexPiece'
+import { HauntSpotMarker, VertexPiece } from './VertexPiece'
 
 // `super_city` is the metropolitan upgrade (cities → super_city). It uses
 // the build-bar pulse layer the same way as the standard kinds, but is gated
@@ -137,11 +137,10 @@ export function BuildLayer({
 					return (
 						<Fragment key={v}>
 							{isPicked ? (
-								<VertexPiece
+								<HauntSpotMarker
 									cx={p.x}
 									cy={p.y}
 									size={layoutS}
-									building="ghost"
 									player={meIdx}
 								/>
 							) : (

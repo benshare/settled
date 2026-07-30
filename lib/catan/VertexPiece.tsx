@@ -47,6 +47,37 @@ export function VertexPiece({
 	return <City cx={cx} cy={cy} size={size} color={color} stroke={stroke} />
 }
 
+// A haunt player's own secret spot, before anything has spawned there. Only
+// ever rendered for the player who picked it (see `BoardView`'s `viewerIdx`).
+// Deliberately fainter than the ghost it may become: an empty player-coloured
+// outline rather than a filled, dark-outlined piece, so a reserved spot never
+// reads as something already on the board.
+export function HauntSpotMarker({
+	cx,
+	cy,
+	size,
+	player,
+}: {
+	cx: number
+	cy: number
+	size: number
+	player: number
+}) {
+	const color = playerColors[player] ?? playerColors[0]
+	return (
+		<Polygon
+			points={settlementPoints(cx, cy, size)}
+			fill={color}
+			fillOpacity={0.12}
+			stroke={color}
+			strokeOpacity={0.75}
+			strokeWidth={Math.max(1, size * 0.03)}
+			strokeDasharray={`${size * 0.05},${size * 0.045}`}
+			strokeLinejoin="round"
+		/>
+	)
+}
+
 // A ghost (haunt bonus) reads as a spectral settlement: same silhouette as a
 // settlement, drawn translucent with a dashed outline so it's clearly a
 // non-scoring, non-solid piece.
@@ -63,22 +94,9 @@ function Ghost({
 	color: string
 	stroke: number
 }) {
-	const h = size * 0.42
-	const w = size * 0.36
-	const roof = h * 0.4
-	const top = cy - h / 2
-	const bot = cy + h / 2
-	const eave = top + roof
-	const points = [
-		[cx, top],
-		[cx + w / 2, eave],
-		[cx + w / 2, bot],
-		[cx - w / 2, bot],
-		[cx - w / 2, eave],
-	]
 	return (
 		<Polygon
-			points={points.map((p) => p.join(',')).join(' ')}
+			points={settlementPoints(cx, cy, size)}
 			fill={color}
 			fillOpacity={0.35}
 			stroke={pieceStroke}
@@ -87,6 +105,26 @@ function Ghost({
 			strokeLinejoin="round"
 		/>
 	)
+}
+
+// The settlement silhouette — a house — shared by the settlement, the ghost,
+// and the haunt-spot marker, which differ only in how they're painted.
+function settlementPoints(cx: number, cy: number, size: number): string {
+	const h = size * 0.42
+	const w = size * 0.36
+	const roof = h * 0.4
+	const top = cy - h / 2
+	const bot = cy + h / 2
+	const eave = top + roof
+	return [
+		[cx, top],
+		[cx + w / 2, eave],
+		[cx + w / 2, bot],
+		[cx - w / 2, bot],
+		[cx - w / 2, eave],
+	]
+		.map((p) => p.join(','))
+		.join(' ')
 }
 
 function Settlement({
@@ -102,22 +140,9 @@ function Settlement({
 	color: string
 	stroke: number
 }) {
-	const h = size * 0.42
-	const w = size * 0.36
-	const roof = h * 0.4
-	const top = cy - h / 2
-	const bot = cy + h / 2
-	const eave = top + roof
-	const points = [
-		[cx, top],
-		[cx + w / 2, eave],
-		[cx + w / 2, bot],
-		[cx - w / 2, bot],
-		[cx - w / 2, eave],
-	]
 	return (
 		<Polygon
-			points={points.map((p) => p.join(',')).join(' ')}
+			points={settlementPoints(cx, cy, size)}
 			fill={color}
 			stroke={pieceStroke}
 			strokeWidth={stroke}

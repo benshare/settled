@@ -176,6 +176,7 @@ export function BoardArea() {
 			{gameState ? (
 				<BoardView
 					state={gameState}
+					viewerIdx={meIdx}
 					robberDormant={robberIsDormant(
 						gameState.players,
 						(game.events ?? []) as GameEvent[]
