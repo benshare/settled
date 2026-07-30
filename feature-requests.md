@@ -1,7 +1,7 @@
-Show structures remaining
 Trade improvements
-Don't select medium, just cards
-Allow doing in both directions until balanced
+
+- Don't select medium, just cards
+- Allow doing in both directions until balanced
 
 Allow for banning specific boons/curses
 Allow honking everywhere

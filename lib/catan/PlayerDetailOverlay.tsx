@@ -1,7 +1,8 @@
 // Modal overlay rendered when the user taps a player card in the strip.
-// Shows the player's avatar + name, their point/card totals, and — if the
-// game is running with bonuses — the full bonus and curse cards they hold,
-// plus an investor's set-aside investment tokens (public to the whole table).
+// Shows the player's avatar + name, their point/card totals, what's left in
+// their piece supply, and — if the game is running with bonuses — the full
+// bonus and curse cards they hold, plus an investor's set-aside investment
+// tokens (public to the whole table).
 
 import { Avatar } from '@/lib/modules/Avatar'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
@@ -10,13 +11,27 @@ import { Modal } from '../modules/Modal'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES } from './board'
-import { INVEST_TRIO, INVESTOR_MAX_TOKENS } from './bonus'
+import {
+	INVEST_TRIO,
+	INVESTOR_MAX_TOKENS,
+	METROPOLITAN_SUPER_CITY_CAP,
+	superCityCount,
+} from './bonus'
 import {
 	bonusById,
 	bonusDescriptionFor,
 	curseById,
 	curseDescriptionFor,
 } from './bonuses'
+import {
+	cityCountFor,
+	curseOf,
+	maxCitiesFor,
+	maxRoadsFor,
+	maxSettlementsFor,
+	roadCountFor,
+	settlementCountFor,
+} from './curses'
 import { knightsPlayed } from './dev'
 import { longestRoadFor } from './longestRoad'
 import { playerColors } from './palette'
@@ -166,6 +181,14 @@ function Body({
 				/>
 			</View>
 
+			<View style={styles.piecesWrap}>
+				<PiecesBlock
+					gameState={gameState}
+					playerIdx={playerIdx}
+					color={color}
+				/>
+			</View>
+
 			{showBonuses && (
 				<View style={styles.cardsColumn}>
 					{bonus ? (
@@ -285,6 +308,102 @@ function RoadChip({
 			/>
 			<Text style={[styles.chipValue, { color: tint }]}>{length}</Text>
 			<Text style={[styles.chipLabel, { color: tint }]}>Road</Text>
+		</View>
+	)
+}
+
+// What's left of the player's supply, read through the same helpers the build
+// gates use — so a curse that shrinks a cap (compaction, decadence, elitism) is
+// reflected here without this file knowing which curses those are. Public
+// either way: every piece it counts is already visible on the board.
+function PiecesBlock({
+	gameState,
+	playerIdx,
+	color,
+}: {
+	gameState: GameState
+	playerIdx: number
+	color: string
+}) {
+	const curse = curseOf(gameState, playerIdx)
+	const cities = cityCountFor(gameState, playerIdx)
+	const isMetropolitan =
+		gameState.players[playerIdx]?.bonus === 'metropolitan'
+	return (
+		<View style={styles.piecesBlock}>
+			<View style={styles.piecesHeader}>
+				<MaterialCommunityIcons
+					name="cube-outline"
+					size={16}
+					color={colors.textSecondary}
+				/>
+				<Text style={styles.piecesTitle}>Pieces left</Text>
+			</View>
+			<View style={styles.piecesRow}>
+				<PieceCount
+					icon="road-variant"
+					label="Roads"
+					color={color}
+					used={roadCountFor(gameState, playerIdx)}
+					cap={maxRoadsFor(curse)}
+				/>
+				<PieceCount
+					icon="home-outline"
+					label="Settlements"
+					color={color}
+					used={settlementCountFor(gameState, playerIdx)}
+					cap={maxSettlementsFor(curse, cities)}
+				/>
+				<PieceCount
+					icon="city"
+					label="Cities"
+					color={color}
+					used={cities}
+					cap={maxCitiesFor(curse)}
+				/>
+				{/* A super city is its own one-piece supply, and upgrading a city
+				    into one hands a city back — so without this the city count
+				    would tick up for no visible reason. */}
+				{isMetropolitan && (
+					<PieceCount
+						icon="castle"
+						label="Super city"
+						color={color}
+						used={superCityCount(gameState, playerIdx)}
+						cap={METROPOLITAN_SUPER_CITY_CAP}
+					/>
+				)}
+			</View>
+		</View>
+	)
+}
+
+function PieceCount({
+	icon,
+	label,
+	color,
+	used,
+	cap,
+}: {
+	icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']
+	label: string
+	color: string
+	used: number
+	cap: number
+}) {
+	const left = Math.max(0, cap - used)
+	return (
+		<View style={styles.piece}>
+			<MaterialCommunityIcons
+				name={icon}
+				size={20}
+				color={left === 0 ? colors.textMuted : color}
+			/>
+			<Text style={styles.pieceValue}>
+				{left}
+				<Text style={styles.pieceCap}> / {cap}</Text>
+			</Text>
+			<Text style={styles.pieceLabel}>{label}</Text>
 		</View>
 	)
 }
@@ -465,6 +584,54 @@ const styles = StyleSheet.create({
 	chipLabel: {
 		fontSize: font.sm,
 		color: colors.textMuted,
+	},
+	piecesWrap: {
+		paddingHorizontal: spacing.md,
+		paddingBottom: spacing.sm,
+	},
+	piecesBlock: {
+		borderWidth: 1,
+		borderColor: colors.border,
+		borderRadius: radius.md,
+		backgroundColor: colors.card,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+		gap: spacing.xs,
+	},
+	piecesHeader: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.xs,
+	},
+	piecesTitle: {
+		fontSize: font.sm,
+		fontWeight: '700',
+		color: colors.textSecondary,
+		textTransform: 'uppercase',
+		letterSpacing: 0.5,
+	},
+	piecesRow: {
+		flexDirection: 'row',
+	},
+	piece: {
+		flex: 1,
+		alignItems: 'center',
+		gap: 2,
+	},
+	pieceValue: {
+		fontSize: font.md,
+		fontWeight: '700',
+		color: colors.text,
+	},
+	pieceCap: {
+		fontSize: font.sm,
+		fontWeight: '400',
+		color: colors.textMuted,
+	},
+	pieceLabel: {
+		fontSize: font.xs,
+		color: colors.textMuted,
+		textAlign: 'center',
 	},
 	cardsColumn: {
 		paddingHorizontal: spacing.md,
