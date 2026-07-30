@@ -599,7 +599,7 @@ export type Phase =
 	// top-level field (and a DB column). It's always cleared when leaving main.
 	| { kind: 'main'; roll: DiceRoll; trade: TradeOffer | null }
 	// Scout dev-card peek. After the buy commits, the buyer sees the top
-	// up-to-3 cards and picks one. The other two return to the bottom of
+	// up-to-2 cards and picks one. The other returns to the bottom of
 	// the deck in their drawn order. `cards` is the drawn slice (top-most
 	// first); `owner` is the buying player. `resume` also accepts a
 	// `special_build` snapshot, since a scout may buy in their special-build

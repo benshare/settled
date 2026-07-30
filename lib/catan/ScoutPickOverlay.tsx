@@ -1,5 +1,5 @@
 // Modal shown to a scout-bonus buyer after they purchase a dev card. Up to
-// 3 cards are revealed face-up; the buyer picks one and the rest go to the
+// 2 cards are revealed face-up; the buyer picks one and the rest go to the
 // bottom of the deck in their drawn order.
 
 import { Ionicons } from '@expo/vector-icons'
@@ -30,12 +30,8 @@ export function ScoutPickOverlay({
 			dismissOnBackdropPress={false}
 			contentStyle={styles.sheet}
 		>
-			<Text style={styles.title}>Scout: peek 3 dev cards</Text>
-			<Text style={styles.subtitle}>
-				Pick one to add to your hand. The other{' '}
-				{Math.max(0, cards.length - 1)} go to the bottom of the deck in
-				their drawn order.
-			</Text>
+			<Text style={styles.title}>Scout: peek 2 dev cards</Text>
+			<Text style={styles.subtitle}>{subtitleFor(cards.length)}</Text>
 			<View style={styles.row}>
 				{cards.map((id, idx) => (
 					<ScoutCard
@@ -56,6 +52,15 @@ export function ScoutPickOverlay({
 			</Button>
 		</Modal>
 	)
+}
+
+// The peek is clamped to the deck size, so a near-empty deck can reveal
+// fewer than SCOUT_PEEK_SIZE cards.
+function subtitleFor(count: number) {
+	if (count <= 1) return 'Take this card to add it to your hand.'
+	if (count === 2)
+		return 'Pick one to add to your hand. The other goes to the bottom of the deck.'
+	return `Pick one to add to your hand. The other ${count - 1} go to the bottom of the deck in their drawn order.`
 }
 
 function ScoutCard({

@@ -37,7 +37,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'scout',
 		title: 'Scout',
 		description:
-			'When buying a development card, you may replace one of the required resources with a second copy of one of the others. Then, instead of taking the top card, draw the top three. Choose one and place the other two on the bottom of the deck.',
+			'When buying a development card, you may replace one of the required resources with a second copy of one of the others. Then, instead of taking the top card, draw the top two. Choose one and place the other on the bottom of the deck.',
 		icon: 'eye-outline',
 		set: '2',
 	},

@@ -182,7 +182,7 @@ export function TopArea() {
 							{profilesById[
 								game.player_order[gameState.phase.owner]
 							]?.username ?? 'Player'}{' '}
-							to choose 1 of 3 peeked dev cards…
+							to choose 1 of 2 peeked dev cards…
 						</Text>
 					</View>
 				)}

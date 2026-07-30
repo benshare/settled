@@ -2953,7 +2953,7 @@ function canScoutAffordDevCard(hand: ResourceHand): boolean {
 	return false
 }
 
-const SCOUT_PEEK_SIZE = 3
+const SCOUT_PEEK_SIZE = 2
 
 const ROAD_REFUND: ResourceHand = {
 	brick: 1,
@@ -8126,7 +8126,7 @@ async function handleBuyDevCard(
 
 	const devSpend = costSize(cost)
 
-	// Scout: peek at the top up-to-3 cards rather than committing the top.
+	// Scout: peek at the top up-to-2 cards rather than committing the top.
 	// The buyer enters the scout_pick sub-phase to choose one; the rest
 	// flush back to the bottom in their drawn order on confirm.
 	if (bonusOf(state, meIdx) === 'scout') {

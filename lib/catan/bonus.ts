@@ -556,7 +556,7 @@ export function canScoutAffordDevCard(hand: ResourceHand): boolean {
 
 // Sentinel for the maximum number of cards a scout can peek at when buying.
 // Caller clamps to deck size.
-export const SCOUT_PEEK_SIZE = 3
+export const SCOUT_PEEK_SIZE = 2
 
 // --- Accountant -------------------------------------------------------------
 //
