@@ -375,6 +375,11 @@ deno_version = 2
 [functions.game-service]
 verify_jwt = false
 
+# The reviewer bypass calls this with no session at all, so there is no user
+# JWT to verify. It authorizes on the REVIEWER_KEY header instead.
+[functions.reviewer-login]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

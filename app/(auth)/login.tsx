@@ -21,12 +21,12 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 const DEV_TEST_USERNAMES = ['ben', 'testuser1', 'testuser2', 'testuser3']
 const DEV_TEST_PASSWORD = 'testpassword'
 
-// App Store reviewer bypass: typing this phone number signs in as the
-// dedicated reviewer account (seeded by dev/seed-appstore-user.mjs) without
-// sending an SMS. Active in release builds.
+// App Store reviewer bypass: typing this phone number signs in as ben's
+// account without sending an SMS. The `reviewer-login` edge function mints the
+// session server-side and hands back tokens; no credential for the account
+// exists in this bundle. Active in release builds.
 const REVIEWER_PHONE_DIGITS = '1234567890'
-const REVIEWER_PHONE = '+11234567890'
-const REVIEWER_PASSWORD = 'testpassword'
+const REVIEWER_KEY = 'a2f6f1c4-reviewer-settled-2c9b7d3e'
 
 export default function LoginScreen() {
 	const [phone, setPhone] = useState('')
@@ -80,18 +80,30 @@ export default function LoginScreen() {
 		setError(null)
 
 		if (digits === REVIEWER_PHONE_DIGITS) {
-			const { data, error } = await supabase.auth.signInWithPassword({
-				phone: REVIEWER_PHONE,
-				password: REVIEWER_PASSWORD,
-			})
-			if (error || !data.session?.user) {
+			const { data, error } = await supabase.functions.invoke(
+				'reviewer-login',
+				{ headers: { 'x-reviewer-key': REVIEWER_KEY } }
+			)
+			if (error || !data?.access_token) {
 				setLoading(false)
-				setError(error?.message ?? 'reviewer sign-in failed')
+				setError(
+					error?.message ?? data?.error ?? 'reviewer sign-in failed'
+				)
+				return
+			}
+			const { data: sessionData, error: sessionError } =
+				await supabase.auth.setSession({
+					access_token: data.access_token,
+					refresh_token: data.refresh_token,
+				})
+			if (sessionError || !sessionData.session?.user) {
+				setLoading(false)
+				setError(sessionError?.message ?? 'reviewer sign-in failed')
 				return
 			}
 			const profile = await useProfileStore
 				.getState()
-				.loadProfile(data.session.user.id)
+				.loadProfile(sessionData.session.user.id)
 			setLoading(false)
 			if (profile) {
 				router.replace('/(app)/games')

@@ -21,6 +21,16 @@ node --env-file=.env dev/seed-test-users.mjs 10
 node --env-file=.env dev/seed-test-users.mjs 5 --request-to=myrealusername
 ```
 
+### `seed-reviewer-login.mjs`
+
+Re-pairs the account behind the App Store reviewer bypass (typing `1234567890` on the login screen) with the password the `reviewer-login` edge function signs in with. Sets a fresh random password on the account and pushes the same value to the function's `REVIEWER_PASSWORD` secret, so the two can't drift.
+
+Only run this if the bypass has started failing — an admin password change revokes every session on that account, i.e. it signs the owner out on their own devices.
+
+```sh
+node --env-file=.env dev/seed-reviewer-login.mjs
+```
+
 ### `clear-test-users.mjs`
 
 Deletes every auth user whose profile username starts with `testuser`. Because `profiles.id` cascades from `auth.users` and `friends` / `friend_requests` cascade from `profiles`, one delete wipes everything.
