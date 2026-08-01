@@ -71,6 +71,14 @@ import { Alert, Platform } from 'react-native'
 // before we give up on recovering the resource and skip the animation.
 const STEAL_DIFF_GRACE_MS = 5000
 
+// Each event-driven animation (steal, nomad, fortune teller) keeps a cursor
+// into `games.events` so it fires only on events that land while the game is
+// open. The cursor carries the game it belongs to because the header's tab
+// strip switches games without remounting this provider — an untagged count
+// survives the switch, and every event past it in the new game's log reads as
+// new, replaying the whole game's animations back-to-back on load.
+type EventCursor = { gameId: string; count: number } | null
+
 // What the placement board is waiting on. The first three are stages of one
 // locally-drafted turn ('ready' = every piece chosen, awaiting confirm); the
 // last is the server's own step. `null` outside initial placement.
@@ -398,7 +406,7 @@ function useGameScreenState(gameId: string) {
 		meIsThief: boolean
 	} | null>(null)
 	const prevPlayersRef = useRef<PlayerState[] | undefined>(undefined)
-	const lastSeenEventCountRef = useRef<number | null>(null)
+	const lastSeenEventCountRef = useRef<EventCursor>(null)
 	// A `stolen` event whose resource we couldn't recover yet. `games` and
 	// `game_states` are separate realtime rows, so the players[] update can
 	// land either side of the event. If it lands *first*, our snapshot is
@@ -415,19 +423,27 @@ function useGameScreenState(gameId: string) {
 		const events = (game.events ?? []) as GameEvent[]
 		const players = gameState.players
 
-		if (lastSeenEventCountRef.current === null) {
-			lastSeenEventCountRef.current = events.length
+		if (lastSeenEventCountRef.current?.gameId !== game.id) {
+			lastSeenEventCountRef.current = {
+				gameId: game.id,
+				count: events.length,
+			}
 			prevPlayersRef.current = players
+			pendingStealRef.current = null
+			setStealAnim(null)
 			return
 		}
 
-		const newEvents = events.slice(lastSeenEventCountRef.current)
+		const newEvents = events.slice(lastSeenEventCountRef.current.count)
 		const stealEvent = newEvents.find(
 			(e): e is Extract<GameEvent, { kind: 'stolen' }> =>
 				e?.kind === 'stolen' &&
 				(e.thief === meIdx || e.victim === meIdx)
 		)
-		lastSeenEventCountRef.current = events.length
+		lastSeenEventCountRef.current = {
+			gameId: game.id,
+			count: events.length,
+		}
 
 		// Snapshot taken before this render's players[] is adopted, so it's
 		// the pre-steal hand whenever the event arrived first.
@@ -489,16 +505,20 @@ function useGameScreenState(gameId: string) {
 			meIsNomad: boolean
 		}[]
 	>([])
-	const lastSeenNomadIndexRef = useRef<number | null>(null)
+	const lastSeenNomadIndexRef = useRef<EventCursor>(null)
 	useEffect(() => {
 		if (!game) return
 		const events = (game.events ?? []) as GameEvent[]
-		if (lastSeenNomadIndexRef.current === null) {
-			lastSeenNomadIndexRef.current = events.length
+		if (lastSeenNomadIndexRef.current?.gameId !== game.id) {
+			lastSeenNomadIndexRef.current = {
+				gameId: game.id,
+				count: events.length,
+			}
+			setNomadAnimQueue([])
 			return
 		}
-		if (events.length === lastSeenNomadIndexRef.current) return
-		const firstNew = lastSeenNomadIndexRef.current
+		if (events.length === lastSeenNomadIndexRef.current.count) return
+		const firstNew = lastSeenNomadIndexRef.current.count
 		const newEvents = events.slice(firstNew)
 		const queued: typeof nomadAnimQueue = []
 		for (const [i, e] of newEvents.entries()) {
@@ -515,7 +535,10 @@ function useGameScreenState(gameId: string) {
 				meIsNomad: e.player === meIdx,
 			})
 		}
-		lastSeenNomadIndexRef.current = events.length
+		lastSeenNomadIndexRef.current = {
+			gameId: game.id,
+			count: events.length,
+		}
 		if (queued.length > 0) setNomadAnimQueue((q) => [...q, ...queued])
 	}, [game, meIdx, profilesById])
 	const nomadAnim = nomadAnimQueue[0] ?? null
@@ -535,16 +558,20 @@ function useGameScreenState(gameId: string) {
 			meIsFortuneTeller: boolean
 		}[]
 	>([])
-	const lastSeenFtIndexRef = useRef<number | null>(null)
+	const lastSeenFtIndexRef = useRef<EventCursor>(null)
 	useEffect(() => {
 		if (!game) return
 		const events = (game.events ?? []) as GameEvent[]
-		if (lastSeenFtIndexRef.current === null) {
-			lastSeenFtIndexRef.current = events.length
+		if (lastSeenFtIndexRef.current?.gameId !== game.id) {
+			lastSeenFtIndexRef.current = {
+				gameId: game.id,
+				count: events.length,
+			}
+			setFtAnimQueue([])
 			return
 		}
-		if (events.length === lastSeenFtIndexRef.current) return
-		const newEvents = events.slice(lastSeenFtIndexRef.current)
+		if (events.length === lastSeenFtIndexRef.current.count) return
+		const newEvents = events.slice(lastSeenFtIndexRef.current.count)
 		const queued: typeof ftAnimQueue = []
 		for (const e of newEvents) {
 			if (e?.kind !== 'fortune_teller_roll') continue
@@ -564,7 +591,7 @@ function useGameScreenState(gameId: string) {
 				meIsFortuneTeller: e.player === meIdx,
 			})
 		}
-		lastSeenFtIndexRef.current = events.length
+		lastSeenFtIndexRef.current = { gameId: game.id, count: events.length }
 		if (queued.length > 0) setFtAnimQueue((q) => [...q, ...queued])
 	}, [game, meIdx, profilesById])
 	const ftAnim = ftAnimQueue[0] ?? null

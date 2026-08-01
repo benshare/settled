@@ -121,6 +121,17 @@ app/game/[id].tsx
   consequence — only a legibility one.
 - **A zone early-returns on `!game`.** The shell already gates on it, but the
   guard is what narrows the type for the rest of the file.
+- **An event-driven animation's cursor is tagged with its game.** The steal,
+  nomad and fortune-teller animations fire on events that appear past a
+  remembered position in `games.events`. The provider survives a tab switch, so
+  a bare count carries into the next game and everything past it in that game's
+  log reads as newly arrived — the whole game's animations replay in sequence
+  the moment it loads. Each cursor is an `EventCursor` (`{ gameId, count }`)
+  compared against `game.id`, and a mismatch re-seeds the cursor and drops any
+  queued animation rather than emitting one. Compare against **`game.id`, not
+  the `gameId` prop**: `useGame()` serves the outgoing game's row for one render
+  after the param changes, and a cursor re-seeded on that render would be
+  measuring the old log.
 - **A placement turn is drafted locally, so `phase.step` is not the stage.**
   `placementDraft` accumulates a settlement, its road, and — for the seat that
   places both back-to-back — a second pair, and only the confirm sends
