@@ -132,6 +132,26 @@ app/game/[id].tsx
   the `gameId` prop**: `useGame()` serves the outgoing game's row for one render
   after the param changes, and a cursor re-seeded on that render would be
   measuring the old log.
+- **A reveal animation holds the viewer's hand, it does not delay the state.**
+  The steal, nomad and fortune-teller animations all fire _after_ the resource
+  has reached the hand — the steal one recovers which resource it was by
+  diffing the hand, so it cannot fire any earlier — and their backdrop is
+  translucent, so the card is legible under the roulette that is about to
+  reveal it. Each animation that moves the viewer's own hand registers the hand
+  as it stood before (`heldHands`, keyed the same way the animation is), and
+  `displayHand` renders that until the animation dismisses. **The bottom bar's
+  fanned `ResourceHand` is the only surface that takes `displayHand`**; every
+  other seat is shown as a card count, which never gave the resource away, and
+  everything else — affordability, build enablement, the trade panel — reads
+  the live `myHand`, so a hold can never disable a build the player can
+  actually make. A hold counts only while its own animation is in flight, so a
+  stranded entry can't leave the hand showing stale cards. Delaying the write
+  server-side is not the alternative: `game_states` is authoritative for every
+  client, and the steal animation needs the applied state to exist. The one
+  case it can't cover is the `game_states` row landing a render _before_
+  `games.events`, where the pre-event hand is already gone by the time the
+  event names it — the same ordering that already stops the steal animation
+  firing at all.
 - **A placement turn is drafted locally, so `phase.step` is not the stage.**
   `placementDraft` accumulates a settlement, its road, and — for the seat that
   places both back-to-back — a second pair, and only the confirm sends

@@ -58,6 +58,7 @@ import {
 } from '@/lib/stores/useGamesStore'
 import {
 	createContext,
+	useCallback,
 	useContext,
 	useEffect,
 	useMemo,
@@ -391,6 +392,41 @@ function useGameScreenState(gameId: string) {
 		setPendingConfirm(null)
 	}, [confirmScopeKey])
 
+	// --- Held hand ---------------------------------------------------------
+	// The three reveal animations below all fire *after* the resource has
+	// reached the hand — the steal one recovers which resource it was by
+	// diffing the hand, so it cannot fire any earlier — and their backdrop is
+	// translucent, so the card sits legible under the roulette that is about to
+	// reveal it. Each animation that moves the viewer's own hand therefore
+	// registers the hand as it stood before, keyed the same way the animation
+	// is; the fanned hand renders that until the animation dismisses.
+	//
+	// Only the viewer's own hand needs this. Every other seat is shown as a
+	// card count, which never gave the resource away.
+	const [heldHands, setHeldHands] = useState<
+		{ key: string; hand: ResourceHandType }[]
+	>([])
+	useEffect(() => {
+		setHeldHands([])
+	}, [game?.id])
+	const holdMyHand = useCallback(
+		(key: string, hand: ResourceHandType | undefined) => {
+			if (!hand) return
+			setHeldHands((h) => [...h, { key, hand }])
+		},
+		[]
+	)
+	const releaseHold = useCallback((key: string | undefined) => {
+		if (!key) return
+		setHeldHands((h) => h.filter((entry) => entry.key !== key))
+	}, [])
+	// The viewer's hand as it stood before this render adopted a new state row —
+	// what the nomad and fortune-teller animations hold, since (unlike the
+	// steal) their events carry no pre-state to reconstruct it from. Advanced by
+	// an effect declared *after* all three animation effects, so they read the
+	// previous render's value rather than one they just moved past.
+	const prevMyHandRef = useRef<ResourceHandType | undefined>(undefined)
+
 	// --- Steal animation ---------------------------------------------------
 	// Detect the moment a `stolen` event lands on the events log involving me
 	// (as thief or victim). The resource isn't in the event itself — we recover
@@ -477,20 +513,39 @@ function useGameScreenState(gameId: string) {
 			profilesById[game.player_order[pending.event.victim]]?.username ??
 			'Player'
 
+		const key =
+			pending.event.at +
+			':' +
+			pending.event.thief +
+			':' +
+			pending.event.victim
+		const meIsThief = pending.event.thief === meIdx
+
 		setStealAnim({
-			key:
-				pending.event.at +
-				':' +
-				pending.event.thief +
-				':' +
-				pending.event.victim,
+			key,
 			preHand: pending.preHand,
 			stolen,
 			thiefName,
 			victimName,
-			meIsThief: pending.event.thief === meIdx,
+			meIsThief,
 		})
-	}, [game, gameState, meIdx, profilesById])
+		// The diff only resolves once players[] carries the steal, so the
+		// viewer's hand already shows it either way: a victim's pre-steal hand
+		// is `preHand`, and a thief's is what they hold now less the card they
+		// just took.
+		if (meIsThief) {
+			const mine = players[meIdx]?.resources
+			holdMyHand(
+				key,
+				mine && {
+					...mine,
+					[stolen]: Math.max(0, (mine[stolen] ?? 0) - 1),
+				}
+			)
+		} else {
+			holdMyHand(key, pending.preHand)
+		}
+	}, [game, gameState, meIdx, profilesById, holdMyHand])
 
 	// --- Nomad animation ---------------------------------------------------
 	// `nomad_produce` events are already self-describing (resource + count
@@ -525,22 +580,24 @@ function useGameScreenState(gameId: string) {
 			if (e?.kind !== 'nomad_produce') continue
 			const playerName =
 				profilesById[game.player_order[e.player]]?.username ?? 'Player'
+			// Event index, not timestamp — a nomad on two deserts produces
+			// two events that can share a millisecond.
+			const key = firstNew + i + ':' + e.player
 			queued.push({
-				// Event index, not timestamp — a nomad on two deserts produces
-				// two events that can share a millisecond.
-				key: firstNew + i + ':' + e.player,
+				key,
 				produced: e.resource,
 				count: e.count,
 				playerName,
 				meIsNomad: e.player === meIdx,
 			})
+			if (e.player === meIdx) holdMyHand(key, prevMyHandRef.current)
 		}
 		lastSeenNomadIndexRef.current = {
 			gameId: game.id,
 			count: events.length,
 		}
 		if (queued.length > 0) setNomadAnimQueue((q) => [...q, ...queued])
-	}, [game, meIdx, profilesById])
+	}, [game, meIdx, profilesById, holdMyHand])
 	const nomadAnim = nomadAnimQueue[0] ?? null
 
 	// --- Fortune teller animation ------------------------------------------
@@ -582,19 +639,27 @@ function useGameScreenState(gameId: string) {
 			if (gainCount <= 0) continue
 			const playerName =
 				profilesById[game.player_order[e.player]]?.username ?? 'Player'
+			const key = e.at + ':' + e.player
 			queued.push({
-				key: e.at + ':' + e.player,
+				key,
 				dice: e.dice,
 				total: e.total,
 				gain: e.gain,
 				playerName,
 				meIsFortuneTeller: e.player === meIdx,
 			})
+			if (e.player === meIdx) holdMyHand(key, prevMyHandRef.current)
 		}
 		lastSeenFtIndexRef.current = { gameId: game.id, count: events.length }
 		if (queued.length > 0) setFtAnimQueue((q) => [...q, ...queued])
-	}, [game, meIdx, profilesById])
+	}, [game, meIdx, profilesById, holdMyHand])
 	const ftAnim = ftAnimQueue[0] ?? null
+
+	// Declared after all three animation effects on purpose: they read this to
+	// learn the hand as it stood *before* the state row they are reacting to.
+	useEffect(() => {
+		prevMyHandRef.current = gameState?.players[meIdx]?.resources
+	}, [gameState, meIdx])
 
 	const inBonusSelection =
 		game?.status === 'placement' && gameState?.phase.kind === 'select_bonus'
@@ -664,6 +729,18 @@ function useGameScreenState(gameId: string) {
 	// cost (standard or bricklayer alt), AND there is at least one valid
 	// spot on the board.
 	const myHand = gameState?.players[meIdx]?.resources ?? null
+	// What the fanned hand renders — `myHand` less anything a reveal animation
+	// is still sitting on. A hold counts only while its own animation is in
+	// flight, so a stranded entry can never leave the hand showing stale cards.
+	// Everything else, affordability included, reads the live `myHand`, so a
+	// hold can never disable a build the player can actually make.
+	const liveAnimKeys = [
+		stealAnim?.key,
+		...nomadAnimQueue.map((a) => a.key),
+		...ftAnimQueue.map((a) => a.key),
+	]
+	const displayHand =
+		heldHands.find((h) => liveAnimKeys.includes(h.key))?.hand ?? myHand
 	const myPlayer = gameState && meIdx >= 0 ? gameState.players[meIdx] : null
 	// Hand-set on the player row for testing; unlocks the force-roll picker.
 	const isDev = myPlayer?.dev === true
@@ -1397,6 +1474,7 @@ function useGameScreenState(gameId: string) {
 		meId: user?.id,
 		meIdx,
 		myHand,
+		displayHand,
 		myPlayer,
 		isDev,
 		devRollTotal,
@@ -1481,12 +1559,23 @@ function useGameScreenState(gameId: string) {
 		setMetroPending,
 
 		// --- Animations -------------------------------------------------
+		// Each dismiss releases the animation's hold on the fanned hand, so the
+		// card appears as the reveal ends rather than before it starts.
 		stealAnim,
-		dismissStealAnim: () => setStealAnim(null),
+		dismissStealAnim: () => {
+			releaseHold(stealAnim?.key)
+			setStealAnim(null)
+		},
 		nomadAnim,
-		dismissNomadAnim: () => setNomadAnimQueue((q) => q.slice(1)),
+		dismissNomadAnim: () => {
+			releaseHold(nomadAnim?.key)
+			setNomadAnimQueue((q) => q.slice(1))
+		},
 		ftAnim,
-		dismissFtAnim: () => setFtAnimQueue((q) => q.slice(1)),
+		dismissFtAnim: () => {
+			releaseHold(ftAnim?.key)
+			setFtAnimQueue((q) => q.slice(1))
+		},
 
 		// --- Actions ----------------------------------------------------
 		onPickBonus,

@@ -42,6 +42,7 @@ export function BottomArea() {
 		gameState,
 		meIdx,
 		myHand,
+		displayHand,
 		myPlayer,
 		isDev,
 		devRollTotal,
@@ -197,8 +198,14 @@ export function BottomArea() {
 				meIdx >= 0 &&
 				gameState.players[meIdx] && (
 					<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
+						{/* `displayHand`, not the live hand: a card a reveal
+						    animation is still working up to stays hidden until
+						    it lands. See gameScreenContext.tsx. */}
 						<ResourceHand
-							hand={gameState.players[meIdx].resources}
+							hand={
+								displayHand ??
+								gameState.players[meIdx].resources
+							}
 						/>
 						{gameState.config.devCards && (
 							<DevCardHand
