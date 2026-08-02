@@ -12,9 +12,12 @@ import {
 import {
 	BUILD_COSTS,
 	canAfford,
+	canAffordFenceRoad,
 	deductHand,
+	fencePayChoice,
 	isValidBuildCityVertex,
 	isValidBuildRoadEdge,
+	payableBuildRoadEdges,
 	validBuildCityVertices,
 	validBuildRoadEdges,
 	validBuildSettlementVertices,
@@ -275,6 +278,78 @@ function testCityValidity() {
 	)
 }
 
+// A fencer's own reserved edge costs 1 Wood *or* 1 Brick, so a single card of
+// either narrows them to those edges instead of blocking the build outright.
+function testFencerPayableRoads() {
+	let s = initialGameState('standard', 3, {
+		bonuses: true,
+		bonusSets: ['3'],
+		bannedCombos: true,
+		bonusCount: 2,
+		curseCount: 1,
+		devCards: false,
+		numberLayout: 'random',
+		honk: true,
+		friendlyRobber: false,
+		limitMonopoly: false,
+		tradeMode: 'automatic',
+		spectators: true,
+		timeout: null,
+		extraBuild: {
+			enabled: false,
+			buildPhases: 'every',
+			moreThanSeven: false,
+		},
+	})
+	s = placeSettlement(s, '3F', 0)
+	const fenced = adjacentEdges['3F'][0] as Edge
+	s = { ...s, fenceTokens: { [fenced]: 0 } }
+	const withHand = (
+		h: ResourceHand,
+		bonus: 'fencer' | 'smith'
+	): GameState => ({
+		...s,
+		players: s.players.map((p, i) =>
+			i === 0 ? { ...p, bonus, resources: h } : p
+		),
+	})
+
+	const both = withHand(hand({ wood: 1, brick: 1 }), 'fencer')
+	equal(
+		payableBuildRoadEdges(both, 0).length,
+		validBuildRoadEdges(both, 0).length,
+		'full cost in hand keeps every legal edge'
+	)
+	assert(fencePayChoice(both.players[0]), 'both cards is a real choice')
+
+	const woodOnly = withHand(hand({ wood: 1 }), 'fencer')
+	assert(
+		canAffordFenceRoad(woodOnly.players[0]),
+		'1 wood covers a fence road'
+	)
+	assert(!fencePayChoice(woodOnly.players[0]), 'one card is no choice')
+	equal(payableBuildRoadEdges(woodOnly, 0).length, 1, 'wood-only: fence only')
+	equal(payableBuildRoadEdges(woodOnly, 0)[0], fenced, 'and it is the fence')
+
+	const brickOnly = withHand(hand({ brick: 2 }), 'fencer')
+	equal(
+		payableBuildRoadEdges(brickOnly, 0)[0],
+		fenced,
+		'brick-only: fence only'
+	)
+
+	equal(
+		payableBuildRoadEdges(withHand(hand({ sheep: 3 }), 'fencer'), 0).length,
+		0,
+		'neither card: nothing payable'
+	)
+	equal(
+		payableBuildRoadEdges(withHand(hand({ wood: 1 }), 'smith'), 0).length,
+		0,
+		'non-fencer gets no discount on a reserved edge'
+	)
+}
+
 // --- Run ------------------------------------------------------------------
 
 const tests: [string, () => void][] = [
@@ -288,6 +363,7 @@ const tests: [string, () => void][] = [
 	['settlement validity + distance rule', testSettlementValidity],
 	['settlement needs connected road', testSettlementNeedsRoad],
 	['city validity', testCityValidity],
+	['fencer payable road edges', testFencerPayableRoads],
 ]
 
 for (const [name, fn] of tests) {

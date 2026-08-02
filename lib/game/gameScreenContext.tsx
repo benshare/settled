@@ -22,7 +22,9 @@ import {
 import {
 	canAffordPurchase,
 	canAffordMetropolitanCost,
+	fencePayChoice,
 	handSize,
+	payableBuildRoadEdges,
 	shouldUseBricklayer,
 	smithSwapFor,
 	validBuildCityVertices,
@@ -195,6 +197,9 @@ function useGameScreenState(gameId: string) {
 		| { kind: 'super_city'; vertex: string }
 		| null
 	>(null)
+	// A fencer's road on one of their own reserved edges, held until they pick
+	// which single card (Wood or Brick) pays for it.
+	const [fencePending, setFencePending] = useState<string | null>(null)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		run: () => void | Promise<void>
@@ -1174,6 +1179,20 @@ function useGameScreenState(gameId: string) {
 			setMetroPending({ kind: sel.kind, vertex: sel.vertex })
 			return
 		}
+		// Fencer: a paid road on one of their own reserved edges costs a single
+		// card, so when they hold both Wood and Brick the picker decides which.
+		// Road Building's free placements skip it — nothing is spent.
+		if (
+			sel.kind === 'road' &&
+			gameState &&
+			gameState.phase.kind !== 'road_building' &&
+			myPlayer &&
+			fencePayChoice(myPlayer) &&
+			fenceOwner(gameState, sel.edge) === meIdx
+		) {
+			setFencePending(sel.edge)
+			return
+		}
 		// At this point sel is one of road/settlement/city (the non-
 		// metropolitan branch). Narrow for confirmAction + commitBuild.
 		if (sel.kind === 'super_city') return
@@ -1192,7 +1211,10 @@ function useGameScreenState(gameId: string) {
 			| { kind: 'super_city' }
 			| { kind: 'fence_token' }
 			| { kind: 'haunt_spot' }
-		>
+		>,
+		// Fencer only: which card pays for a road on their own reserved edge.
+		// Omitted when the hand leaves no choice — the lone card is used.
+		fencePay?: 'wood' | 'brick'
 	) {
 		if (!game || !gameState) return
 		setSubmitting(true)
@@ -1217,7 +1239,8 @@ function useGameScreenState(gameId: string) {
 			res = onOwnFence
 				? await buildRoad(game.id, sel.edge, {
 						fencePay:
-							myPlayer!.resources.wood > 0 ? 'wood' : 'brick',
+							fencePay ??
+							(myPlayer!.resources.wood > 0 ? 'wood' : 'brick'),
 					})
 				: await buildRoad(game.id, sel.edge, buildOpts('road'))
 		} else if (sel.kind === 'settlement') {
@@ -1235,6 +1258,14 @@ function useGameScreenState(gameId: string) {
 			return
 		}
 		setBuildTool(null)
+		setFencePending(null)
+	}
+
+	// The fencer's Wood-or-Brick pick commits the held road directly — the
+	// picker stands in for the confirm bar, as metropolitan's does.
+	async function onConfirmFenceCost(pay: 'wood' | 'brick') {
+		if (!fencePending) return
+		await commitBuild({ kind: 'road', edge: fencePending }, pay)
 	}
 
 	async function onDiscard(selection: ResourceHandType) {
@@ -1366,11 +1397,13 @@ function useGameScreenState(gameId: string) {
 		dev_card: true,
 	}
 	const buildEnabled = {
+		// A fencer holding only Wood or only Brick can still build — but only on
+		// their own reserved edges, so gate on the payable set rather than the
+		// standard cost.
 		road:
 			canBuildBasic &&
-			!!myPlayer &&
-			canAffordPurchase(myPlayer, 'road') &&
-			hasLegalTarget.road,
+			!!gameState &&
+			payableBuildRoadEdges(gameState, meIdx).length > 0,
 		settlement:
 			canBuildBasic &&
 			!!myPlayer &&
@@ -1557,6 +1590,8 @@ function useGameScreenState(gameId: string) {
 		setInvestOpen,
 		metroPending,
 		setMetroPending,
+		fencePending,
+		setFencePending,
 
 		// --- Animations -------------------------------------------------
 		// Each dismiss releases the animation's hold on the fanned hand, so the
@@ -1595,6 +1630,7 @@ function useGameScreenState(gameId: string) {
 		onSkipMagic,
 		onUndo,
 		onConfirmMetropolitanCost,
+		onConfirmFenceCost,
 		onPlacementSelect,
 		onUndoPlacement,
 		onConfirm,

@@ -2311,11 +2311,7 @@ function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
 	if (!p) return false
 	if (state.config.extraBuild?.moreThanSeven && handSize(p.resources) <= 7)
 		return false
-	if (
-		canAffordAnyCost(p, BUILD_COSTS.road) &&
-		hasLegalRoadPlacement(state, idx)
-	)
-		return true
+	if (payableBuildRoadEdges(state, idx).length > 0) return true
 	if (
 		canAffordAnyCost(p, BUILD_COSTS.settlement) &&
 		boardFor(state.variant).vertices.some((v) =>
@@ -2641,6 +2637,21 @@ function validBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
 
 function hasLegalRoadPlacement(state: GameState, meIdx: number): boolean {
 	return validBuildRoadEdges(state, meIdx).length > 0
+}
+
+// Legal road targets `meIdx` can actually pay for. A fencer holding only one of
+// Wood/Brick is narrowed to their own reserved edges, where a single card
+// covers the build. Mirror of build.payableBuildRoadEdges.
+function payableBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
+	const p = state.players[meIdx]
+	if (!p) return []
+	if (canAffordAnyCost(p, BUILD_COSTS.road))
+		return validBuildRoadEdges(state, meIdx)
+	if (p.bonus === 'fencer' && (p.resources.wood > 0 || p.resources.brick > 0))
+		return validBuildRoadEdges(state, meIdx).filter(
+			(e) => fenceOwner(state, e) === meIdx
+		)
+	return []
 }
 
 // --- Longest Road (must match lib/catan/longestRoad) -----------------------
@@ -7163,7 +7174,15 @@ async function handleBuildRoad(
 			meP.bonus === 'fencer' && fenceOwner(state, edge) === meIdx
 		let cost: ResourceHand | null
 		if (onOwnFence) {
-			const pay = body.fence_pay === 'brick' ? 'brick' : 'wood'
+			const want = body.fence_pay === 'brick' ? 'brick' : 'wood'
+			// Fall back to the other card when the requested one isn't in hand:
+			// a fencer holding only one of the two has no choice to express.
+			const pay =
+				meP.resources[want] > 0
+					? want
+					: want === 'wood'
+						? 'brick'
+						: 'wood'
 			cost = fenceRoadCost(pay)
 			if (!canAfford(meP.resources, cost))
 				return err(400, 'insufficient resources')

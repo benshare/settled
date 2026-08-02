@@ -15,6 +15,7 @@ import {
 	BRICKLAYER_COST,
 	canBuildMoreSuperCities,
 	canScoutAffordDevCard,
+	fenceOwner,
 	isFenceReservedAgainst,
 	isGhost,
 	metropolitanCityCost,
@@ -274,6 +275,43 @@ export function validBuildRoadEdges(
 	return out
 }
 
+// A road on the fencer's OWN reserved edge costs 1 Wood *or* 1 Brick, so a
+// single card of either kind is enough to build there.
+export function canAffordFenceRoad(p: PlayerState): boolean {
+	return (
+		p.bonus === 'fencer' && (p.resources.wood > 0 || p.resources.brick > 0)
+	)
+}
+
+// Does the fencer have both halves of the fence cost, i.e. a real choice of
+// which card to spend? (The picker only opens when they do.)
+export function fencePayChoice(p: PlayerState): boolean {
+	return p.bonus === 'fencer' && p.resources.wood > 0 && p.resources.brick > 0
+}
+
+// The player's own reserved edges that are legal road targets right now.
+export function ownFenceRoadEdges(state: GameState, playerIdx: number): Edge[] {
+	return validBuildRoadEdges(state, playerIdx).filter(
+		(e) => fenceOwner(state, e) === playerIdx
+	)
+}
+
+// Legal road targets the player can actually PAY for. Same as
+// `validBuildRoadEdges` once the standard cost is affordable; a fencer holding
+// only one of Wood/Brick is narrowed to their own reserved edges, where that
+// single card covers the build.
+export function payableBuildRoadEdges(
+	state: GameState,
+	playerIdx: number
+): Edge[] {
+	const p = state.players[playerIdx]
+	if (!p) return []
+	if (canAffordPurchase(p, 'road'))
+		return validBuildRoadEdges(state, playerIdx)
+	if (canAffordFenceRoad(p)) return ownFenceRoadEdges(state, playerIdx)
+	return []
+}
+
 // --- Settlements ------------------------------------------------------------
 
 export function isValidBuildSettlementVertex(
@@ -404,11 +442,7 @@ export function canTakeSpecialBuildAction(
 	const p = state.players[idx]
 	if (!p) return false
 	if (state.config.extraBuild.moreThanSeven && handSize(p) <= 7) return false
-	if (
-		canAffordPurchase(p, 'road') &&
-		validBuildRoadEdges(state, idx).length > 0
-	)
-		return true
+	if (payableBuildRoadEdges(state, idx).length > 0) return true
 	if (
 		canAffordPurchase(p, 'settlement') &&
 		validBuildSettlementVertices(state, idx).length > 0

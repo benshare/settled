@@ -18,6 +18,7 @@ import { CurioPickOverlay } from '@/lib/catan/CurioPickOverlay'
 import { ForgerPickOverlay } from '@/lib/catan/ForgerPickOverlay'
 import { ChatButton } from '@/lib/catan/GameChat'
 import { MagicianPickOverlay } from '@/lib/catan/MagicianPickOverlay'
+import { FenceCostPicker } from '@/lib/catan/FenceCostPicker'
 import { MetropolitanCostPicker } from '@/lib/catan/MetropolitanCostPicker'
 import { ScoutPickOverlay } from '@/lib/catan/ScoutPickOverlay'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
@@ -69,6 +70,8 @@ export function BoardArea() {
 		setBonusPaneCollapsed,
 		metroPending,
 		setMetroPending,
+		fencePending,
+		setFencePending,
 		forgerMustMove,
 		forgerTokenFrom,
 		onBuildSpotSelect,
@@ -86,6 +89,7 @@ export function BoardArea() {
 		onCastMagic,
 		onSkipMagic,
 		onConfirmMetropolitanCost,
+		onConfirmFenceCost,
 	} = useGameScreen()
 
 	if (!game) return null
@@ -157,6 +161,15 @@ export function BoardArea() {
 					submitting={submitting}
 					onCancel={() => setMetroPending(null)}
 					onConfirm={onConfirmMetropolitanCost}
+				/>
+			)}
+
+			{fencePending && myHand && (
+				<FenceCostPicker
+					hand={myHand}
+					submitting={submitting}
+					onCancel={() => setFencePending(null)}
+					onConfirm={onConfirmFenceCost}
 				/>
 			)}
 

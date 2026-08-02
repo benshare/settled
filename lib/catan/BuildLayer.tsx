@@ -3,6 +3,7 @@ import { Circle, G } from 'react-native-svg'
 import { boardFor, edgeEndpoints, type Edge, type Vertex } from './board'
 import { fenceOwner } from './bonus'
 import {
+	payableBuildRoadEdges,
 	validBuildCityVertices,
 	validBuildRoadEdges,
 	validBuildSettlementVertices,
@@ -168,7 +169,13 @@ export function BuildLayer({
 	}
 
 	if (tool === 'road' || tool === 'explorer_road') {
-		const valids = validBuildRoadEdges(state, meIdx)
+		// Free roads (explorer, Road Building) ignore the hand; a paid road is
+		// narrowed to what the player can cover — which for a fencer holding
+		// only Wood or only Brick is just their own reserved edges.
+		const free = tool === 'explorer_road' || inRoadBuilding
+		const valids = free
+			? validBuildRoadEdges(state, meIdx)
+			: payableBuildRoadEdges(state, meIdx)
 		const pickKind = tool
 		const pendingEdge = pending?.kind === 'road' ? pending.edge : null
 		return (
