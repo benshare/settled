@@ -47,7 +47,8 @@ app/game/[id].tsx
   store action. This is where a new action or a new piece of screen state goes.
 - `TopArea.tsx` — the top menu zone: `PlayerStrip`, the status lines, the
   build/trade bar, and the phase bars that replace it (`RobberStatus`,
-  `RoadBuildingStatus`, `SpecialBuildBar`, `DiscardBar`). Owns
+  `RoadBuildingStatus`, `SpecialBuildBar`). A discard is composed in the bottom
+  zone, so this zone's only part in it is `RobberStatus`'s line. Owns
   `spectatorStatus()` and `PlacementHeader`. `SpecialBuildBar` carries the
   third `UndoButton` placement, left of **Done building** — a special builder
   builds out of turn, so their arrow can't hang off `MainLoopBar`.
@@ -55,6 +56,11 @@ app/game/[id].tsx
   the inline `ConfirmBar`.
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and
   the viewer's own hand (`ResourceHand` / `DevCardHand` / `KnightTapBar`).
+  While the viewer owes a discard, `DiscardPanel` **replaces** the hand (and
+  hides the dev cards / knight bar) rather than being a bar of its own — the
+  cards are picked by tapping the hand itself, so the composer has to be where
+  the hand is. It reads the live hand, not `displayHand`: the cards it selects
+  are real, so a reveal animation must not hide one from the picker.
   `MainLoopBar` also shows `DevRollPicker` beside the Roll button for a
   `dev`-flagged seat — see the admin-testing section of `lib/catan/CLAUDE.md`.
   It is the one affordance here that takes props rather than reading the

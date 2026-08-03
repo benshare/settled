@@ -9,7 +9,6 @@
 import { AccountantPicker } from '@/lib/catan/AccountantPicker'
 import { investorTokenCount } from '@/lib/catan/bonus'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
-import { DiscardBar } from '@/lib/catan/DiscardBar'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
@@ -80,7 +79,6 @@ export function TopArea() {
 		onTradePress,
 		onBuyDevCard,
 		onBuyCarpenterVP,
-		onDiscard,
 		canUndo,
 		onEndSpecialBuild,
 		onHonk,
@@ -273,20 +271,6 @@ export function TopArea() {
 								profilesById={profilesById}
 							/>
 						)}
-						{gameState.phase.kind === 'discard' &&
-							meIdx >= 0 &&
-							gameState.phase.pending[meIdx] !== undefined && (
-								<DiscardBar
-									hand={gameState.players[meIdx].resources}
-									required={gameState.phase.pending[meIdx]!}
-									submitting={submitting}
-									isShepherd={
-										gameState.players[meIdx]?.bonus ===
-										'shepherd'
-									}
-									onSubmit={onDiscard}
-								/>
-							)}
 						{gameState.phase.kind === 'special_build' && (
 							<SpecialBuildBar
 								game={game}

@@ -11,6 +11,7 @@
 
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
+import { DiscardPanel } from '@/lib/catan/DiscardPanel'
 import { canShepherdSwap, ritualCardCost } from '@/lib/catan/bonus'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
@@ -84,10 +85,19 @@ export function BottomArea() {
 		onTapKnight,
 		onRitualRoll,
 		onShepherdSwap,
+		onDiscard,
 		onUndo,
 	} = useGameScreen()
 
 	if (!game) return null
+
+	// How many cards the viewer still owes on a 7. The discard is composed out
+	// of the hand itself, so it takes the hand's place in this zone rather than
+	// sitting in a bar of its own.
+	const owedDiscard =
+		gameState?.phase.kind === 'discard' && meIdx >= 0
+			? (gameState.phase.pending[meIdx] ?? null)
+			: null
 
 	return (
 		<>
@@ -198,16 +208,33 @@ export function BottomArea() {
 				meIdx >= 0 &&
 				gameState.players[meIdx] && (
 					<Animated.View entering={PANEL_IN} exiting={PANEL_OUT}>
-						{/* `displayHand`, not the live hand: a card a reveal
-						    animation is still working up to stays hidden until
-						    it lands. See gameScreenContext.tsx. */}
-						<ResourceHand
-							hand={
-								displayHand ??
-								gameState.players[meIdx].resources
-							}
-						/>
-						{gameState.config.devCards && (
+						{/* A discard is chosen by tapping the hand, so the
+						    composer replaces it rather than stacking above it.
+						    It reads the live hand — the cards it selects are
+						    real, so a reveal animation must not hide one. */}
+						{owedDiscard !== null ? (
+							<DiscardPanel
+								hand={gameState.players[meIdx].resources}
+								required={owedDiscard}
+								submitting={submitting}
+								isShepherd={
+									gameState.players[meIdx].bonus ===
+									'shepherd'
+								}
+								onSubmit={onDiscard}
+							/>
+						) : (
+							/* `displayHand`, not the live hand: a card a reveal
+							   animation is still working up to stays hidden
+							   until it lands. See gameScreenContext.tsx. */
+							<ResourceHand
+								hand={
+									displayHand ??
+									gameState.players[meIdx].resources
+								}
+							/>
+						)}
+						{owedDiscard === null && gameState.config.devCards && (
 							<DevCardHand
 								entries={gameState.players[meIdx].devCards}
 								round={gameState.round}
@@ -224,19 +251,20 @@ export function BottomArea() {
 								onPlay={onPlayDevCard}
 							/>
 						)}
-						{myPlayer?.bonus === 'veteran' && (
-							<KnightTapBar
-								untappedKnights={
-									(myPlayer.devCardsPlayed.knight ?? 0) -
-									(myPlayer.tappedKnights ?? 0)
-								}
-								enabled={
-									isMyActiveTurn &&
-									gameState.phase.kind === 'main'
-								}
-								onTap={onTapKnight}
-							/>
-						)}
+						{owedDiscard === null &&
+							myPlayer?.bonus === 'veteran' && (
+								<KnightTapBar
+									untappedKnights={
+										(myPlayer.devCardsPlayed.knight ?? 0) -
+										(myPlayer.tappedKnights ?? 0)
+									}
+									enabled={
+										isMyActiveTurn &&
+										gameState.phase.kind === 'main'
+									}
+									onTap={onTapKnight}
+								/>
+							)}
 					</Animated.View>
 				)}
 
