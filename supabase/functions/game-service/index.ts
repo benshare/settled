@@ -8397,8 +8397,10 @@ async function handleBuyDevCard(
 
 	// Scout: peek at the top up-to-2 cards rather than committing the top.
 	// The buyer enters the scout_pick sub-phase to choose one; the rest
-	// flush back to the bottom in their drawn order on confirm.
-	if (bonusOf(state, meIdx) === 'scout') {
+	// flush back to the bottom in their drawn order on confirm. A deck down to
+	// its last card offers no choice, so it falls through to the ordinary buy
+	// below — the scout takes it as anyone would, with no peek to log.
+	if (bonusOf(state, meIdx) === 'scout' && state.devDeck.length > 1) {
 		const peekCount = Math.min(SCOUT_PEEK_SIZE, state.devDeck.length)
 		const peek = state.devDeck.slice(0, peekCount)
 		// Deck is rewritten only on confirm. We cannot leave the cards in

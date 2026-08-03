@@ -1,12 +1,14 @@
-// Modal shown to a scout-bonus buyer after they purchase a dev card. Up to
-// 2 cards are revealed face-up; the buyer picks one and the rest go to the
-// bottom of the deck in their drawn order.
+// Modal shown to a scout-bonus buyer after they purchase a dev card. 2 cards
+// are revealed face-up; the buyer picks one and the rest go to the bottom of
+// the deck in their drawn order. A deck down to its last card never opens this
+// — the server hands that card over as an ordinary buy, since there is nothing
+// to choose between.
 
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
+import { MinimizableModal } from '../modules/MinimizableModal'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { DEV_CARD_POOL, type DevCardId } from './devCards'
@@ -25,13 +27,12 @@ export function ScoutPickOverlay({
 	const [pick, setPick] = useState<number | null>(null)
 
 	return (
-		<Modal
-			visible
+		<MinimizableModal
+			title="Scout selection"
 			dismissOnBackdropPress={false}
 			contentStyle={styles.sheet}
 		>
-			<Text style={styles.title}>Scout: peek 2 dev cards</Text>
-			<Text style={styles.subtitle}>{subtitleFor(cards.length)}</Text>
+			<Text style={styles.subtitle}>Which dev card do you want?</Text>
 			<View style={styles.row}>
 				{cards.map((id, idx) => (
 					<ScoutCard
@@ -50,17 +51,8 @@ export function ScoutPickOverlay({
 			>
 				Take this card
 			</Button>
-		</Modal>
+		</MinimizableModal>
 	)
-}
-
-// The peek is clamped to the deck size, so a near-empty deck can reveal
-// fewer than SCOUT_PEEK_SIZE cards.
-function subtitleFor(count: number) {
-	if (count <= 1) return 'Take this card to add it to your hand.'
-	if (count === 2)
-		return 'Pick one to add to your hand. The other goes to the bottom of the deck.'
-	return `Pick one to add to your hand. The other ${count - 1} go to the bottom of the deck in their drawn order.`
 }
 
 function ScoutCard({
@@ -94,17 +86,7 @@ function ScoutCard({
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
 		sheet: {
-			width: '100%',
 			maxWidth: 460,
-			backgroundColor: colors.card,
-			borderRadius: radius.md,
-			padding: spacing.lg,
-			gap: spacing.md,
-		},
-		title: {
-			fontSize: font.lg,
-			fontWeight: '700',
-			color: colors.text,
 		},
 		subtitle: {
 			fontSize: font.sm,
