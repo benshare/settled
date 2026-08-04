@@ -19,7 +19,7 @@ import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Sortable, { type SortableGridRenderItem } from 'react-native-sortables'
@@ -47,6 +47,19 @@ export default function PlayerColorsScreen() {
 		ranked ? fill(stored) : [...DEFAULT_COLOR_ORDER]
 	)
 	const [error, setError] = useState<string | null>(null)
+
+	// The profile can land after this screen mounts (a cold start, or a resync),
+	// which would otherwise leave the list on its seeded order while the header
+	// already reads "Ranked". Compared by value, not identity: an optimistic
+	// save writes the store first, and re-seeding from it mid-animation would
+	// yank the row out from under the drag that caused it.
+	const storedKey = stored.join()
+	useEffect(() => {
+		const next = stored.length > 0 ? fill(stored) : [...DEFAULT_COLOR_ORDER]
+		setOrder((prev) => (prev.join() === next.join() ? prev : next))
+		// `stored` is rebuilt each render; `storedKey` is its value identity.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [storedKey])
 
 	const save = useCallback(
 		async (next: ColorId[]) => {
