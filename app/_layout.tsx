@@ -10,6 +10,7 @@ import { StatusBar } from 'expo-status-bar'
 import * as Updates from 'expo-updates'
 import { useEffect, useState } from 'react'
 import { Image, Platform, Text, View } from 'react-native'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import 'react-native-reanimated'
 
 // Desktop browsers stretch the native layout to the full viewport, which
@@ -26,13 +27,19 @@ export const unstable_settings = {
 
 SplashScreen.preventAutoHideAsync()
 
+// The gesture root wraps everything, above RootNav's loading-screen early
+// return, so every branch of the tree is covered. Components that need
+// gestures (the board, the color ranking list) rely on this one rather than
+// mounting their own.
 export default function RootLayout() {
 	return (
-		<ThemeProvider>
-			<AuthProvider>
-				<RootNav />
-			</AuthProvider>
-		</ThemeProvider>
+		<GestureHandlerRootView style={{ flex: 1 }}>
+			<ThemeProvider>
+				<AuthProvider>
+					<RootNav />
+				</AuthProvider>
+			</ThemeProvider>
+		</GestureHandlerRootView>
 	)
 }
 

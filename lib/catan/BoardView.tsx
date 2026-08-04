@@ -1,10 +1,6 @@
 import { useState } from 'react'
 import { type LayoutChangeEvent, View } from 'react-native'
-import {
-	Gesture,
-	GestureDetector,
-	GestureHandlerRootView,
-} from 'react-native-gesture-handler'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
 	useAnimatedStyle,
 	useSharedValue,
@@ -164,7 +160,7 @@ export function BoardView({
 	}))
 
 	return (
-		<GestureHandlerRootView style={{ flex: 1, width: '100%' }}>
+		<View style={{ flex: 1, width: '100%' }}>
 			<View style={{ flex: 1, overflow: 'hidden' }} onLayout={onLayout}>
 				{box && box.w > 0 && box.h > 0 && (
 					<GestureDetector gesture={gesture}>
@@ -184,7 +180,7 @@ export function BoardView({
 					</GestureDetector>
 				)}
 			</View>
-		</GestureHandlerRootView>
+		</View>
 	)
 }
 
