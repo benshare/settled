@@ -32,7 +32,6 @@ import {
 	type BonusId,
 	type CurseId,
 } from './bonuses'
-import { playerColors } from './palette'
 import {
 	gameSizeFor,
 	handChosenCurse,
@@ -53,6 +52,9 @@ export type BonusSelectionProps = {
 	meIdx: number
 	profilesById: Record<string, Profile>
 	phaseHands: Record<number, SelectBonusHand>
+	// Each seat's color, in seat order. Resolved once in `gameContext`
+	// (`useGame().seatColors`) so this can't disagree with the board.
+	seatColors: readonly string[]
 }
 
 export function BonusSelection({
@@ -66,6 +68,7 @@ export function BonusSelection({
 	meIdx,
 	profilesById,
 	phaseHands,
+	seatColors,
 }: BonusSelectionProps) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
@@ -258,6 +261,7 @@ export function BonusSelection({
 							meIdx={meIdx}
 							profilesById={profilesById}
 							phaseHands={phaseHands}
+							seatColors={seatColors}
 							styles={styles}
 							colors={colors}
 						/>
@@ -365,6 +369,7 @@ function PlayOrderFooter({
 	meIdx,
 	profilesById,
 	phaseHands,
+	seatColors,
 	styles,
 	colors,
 }: {
@@ -372,6 +377,9 @@ function PlayOrderFooter({
 	meIdx: number
 	profilesById: Record<string, Profile>
 	phaseHands: Record<number, SelectBonusHand>
+	// Each seat's color, in seat order. Resolved once in `gameContext`
+	// (`useGame().seatColors`) so this can't disagree with the board.
+	seatColors: readonly string[]
 	styles: ReturnType<typeof makeStyles>
 	colors: ColorScheme
 }) {
@@ -383,7 +391,7 @@ function PlayOrderFooter({
 					const profile = profilesById[uid]
 					const name =
 						i === meIdx ? 'You' : (profile?.username ?? 'Player')
-					const color = playerColors[i] ?? playerColors[0]
+					const color = seatColors[i] ?? colors.textMuted
 					const playerHand = phaseHands[i]
 					const picked = playerHand?.chosen != null
 					return (

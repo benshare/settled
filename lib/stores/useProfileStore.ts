@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ColorId } from '../catan/colors'
 import { isTimeoutOption, type TimeoutOption } from '../catan/timeout'
 import {
 	clampCardCount,
@@ -140,7 +141,7 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 }
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating, color_prefs'
 
 type UpdateResult = { error: string | null }
 
@@ -153,6 +154,11 @@ type ProfileStore = {
 	updateAvatarPath: (path: string | null) => Promise<UpdateResult>
 	updateGameDefaults: (defaults: GameDefaults) => Promise<UpdateResult>
 	updateNotificationPrefs: (prefs: NotificationPrefs) => Promise<UpdateResult>
+	// The player's color ranking, best first. `[]` means no preference, which
+	// the resolver answers with a random color — it is not shorthand for the
+	// default order. Optimistic, like `setSpectating`: the screen is direct
+	// manipulation with no Save button, so the write reverts on failure.
+	updateColorPrefs: (order: ColorId[]) => Promise<UpdateResult>
 	// Games the viewer is actively spectating — the subset of watchable games
 	// that get a header tab. Optimistic: the tab appears/disappears at once and
 	// the write reverts the array on failure. See `.claude/specs/spectating.md`.
@@ -262,6 +268,32 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 			.single()
 
 		if (error) {
+			return { error: error.message || 'Something went wrong' }
+		}
+
+		set({ profile: data as Profile })
+		return { error: null }
+	},
+
+	async updateColorPrefs(order) {
+		const current = get().profile
+		if (!current) return { error: 'No profile loaded' }
+
+		const previous = current.color_prefs
+		set({ profile: { ...current, color_prefs: order } })
+
+		const { data, error } = await supabase
+			.from('profiles')
+			.update({ color_prefs: order })
+			.eq('id', current.id)
+			.select(PROFILE_COLS)
+			.single()
+
+		if (error) {
+			const latest = get().profile
+			// Only roll back if nothing newer has landed in the meantime.
+			if (latest && latest.color_prefs === order)
+				set({ profile: { ...latest, color_prefs: previous } })
 			return { error: error.message || 'Something went wrong' }
 		}
 

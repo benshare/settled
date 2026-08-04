@@ -17,7 +17,7 @@ type GameRow = Database['public']['Tables']['games']['Row']
 type GameRequestRow = Database['public']['Tables']['game_requests']['Row']
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating, color_prefs'
 
 let requestsChannel: RealtimeChannel | null = null
 let gamesChannel: RealtimeChannel | null = null

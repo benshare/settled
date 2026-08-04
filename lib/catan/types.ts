@@ -8,6 +8,7 @@ import type {
 	VertexBuilding,
 } from './board'
 import type { BonusId, CurseId } from './bonuses'
+import type { ColorId } from './colors'
 import type { DevCardId } from './devCards'
 import { isTimeoutOption, timeoutLabel, type TimeoutOption } from './timeout'
 
@@ -693,6 +694,12 @@ export type GameState = {
 	// the owner finally builds the road. Sparse — absent when no fencer plays.
 	fenceTokens?: Partial<Record<Edge, number>>
 	config: GameConfig
+	// One color per seat, in seat order. Like `config` this is persisted on the
+	// `games` row (`games.colors`) rather than on `game_states` — it is
+	// immutable metadata written once at creation, resolved there from every
+	// player's ranking. `gameContext.tsx` joins the two rows. Read it through
+	// `seatColor` in `palette.ts` rather than indexing the palette by seat.
+	colors: ColorId[]
 	// Top = index 0. Edge function splices from the front on buy. `[]` when
 	// config.devCards is off.
 	devDeck: DevCardId[]

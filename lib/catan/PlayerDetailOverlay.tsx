@@ -34,7 +34,7 @@ import {
 } from './curses'
 import { knightsPlayed } from './dev'
 import { longestRoadFor } from './longestRoad'
-import { playerColors } from './palette'
+import { seatColor } from './palette'
 import { CardFan, type CardFanEntry } from './ResourceHand'
 import { gameSizeFor, type GameState, type PlayerState } from './types'
 
@@ -109,7 +109,7 @@ function Body({
 	const uid = playerOrder[playerIdx]
 	const profile = profilesById[uid]
 	const name = playerIdx === meIdx ? 'You' : (profile?.username ?? 'Player')
-	const color = playerColors[playerIdx] ?? playerColors[0]
+	const color = seatColor(gameState, playerIdx)
 	const player = gameState.players[playerIdx]
 	const cards = sumResources(player?.resources)
 	const bonus = player?.bonus ? bonusById(player.bonus) : undefined

@@ -45,6 +45,9 @@ function rowToState(row: Record<string, unknown>): GameState {
 		fenceTokens:
 			(row.fence_tokens as GameState['fenceTokens']) ?? undefined,
 		config: row.config as GameState['config'],
+		// Nothing this script derives reads colors; it only needs the field to
+		// satisfy GameState.
+		colors: [],
 		devDeck: (row.dev_deck as GameState['devDeck']) ?? [],
 		largestArmy: (row.largest_army as GameState['largestArmy']) ?? null,
 		longestRoad: (row.longest_road as GameState['longestRoad']) ?? null,

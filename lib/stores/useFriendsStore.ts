@@ -10,7 +10,7 @@ type FriendRequest = Database['public']['Tables']['friend_requests']['Row']
 type FriendRow = Database['public']['Tables']['friends']['Row']
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating, color_prefs'
 
 // In production builds, exclude profiles flagged `dev = true` from user-facing
 // lists. See lib/stores/CLAUDE.md for the full convention.

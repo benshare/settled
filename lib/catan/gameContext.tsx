@@ -20,11 +20,13 @@ import {
 	type ReactNode,
 } from 'react'
 import { totalVP } from './dev'
+import { parseGameColors } from './colors'
+import { seatColors } from './palette'
 import { parseGameConfig, type GameState } from './types'
 
 // What the game_states row carries. `config` lives on the games row, so a
 // GameState is only complete once the two are joined — see `gameState` below.
-type BoardState = Omit<GameState, 'config'>
+type BoardState = Omit<GameState, 'config' | 'colors'>
 
 export type GameContextValue = {
 	game: Game | undefined
@@ -39,6 +41,11 @@ export type GameContextValue = {
 	// PlayerDetailOverlay / GameOverOverlay can't drift on the calculation.
 	publicVP: number[]
 	selfVP: number[]
+	// Each seat's color as a hex string, in seat order. Centralized here for
+	// the same reason the VP totals are: the presentational components that
+	// take colors as props (ActionLog, GameChat, the bars) have no GameState
+	// to resolve them from, and must not disagree with the board.
+	seatColors: string[]
 	// True when the viewer is watching a game they aren't seated at. False
 	// until `game` resolves, so a spectator never briefly renders as a player.
 	// Every consumer reads it from here rather than re-deriving, so the board
@@ -248,12 +255,19 @@ export function GameProvider({
 
 	// The two rows are fetched independently and land in either order, so the
 	// board is only a usable GameState once both are in. Everything downstream
-	// reads `state.config`, so publishing the board without it would hand
-	// consumers a half-built object during the gap.
+	// reads `state.config` and `state.colors`, so publishing the board without
+	// them would hand consumers a half-built object during the gap.
 	const gameState = useMemo<GameState | undefined>(
 		() =>
 			boardState && game
-				? { ...boardState, config: parseGameConfig(game.config) }
+				? {
+						...boardState,
+						config: parseGameConfig(game.config),
+						colors: parseGameColors(
+							game.colors,
+							game.player_order.length
+						),
+					}
 				: undefined,
 		[boardState, game]
 	)
@@ -302,6 +316,11 @@ export function GameProvider({
 		return { publicVP: pub, selfVP: self }
 	}, [gameState])
 
+	const seatHexes = useMemo(
+		() => (gameState ? seatColors(gameState) : []),
+		[gameState]
+	)
+
 	const value = useMemo<GameContextValue>(
 		() => ({
 			game,
@@ -309,6 +328,7 @@ export function GameProvider({
 			ready: storeReady && stateLoaded,
 			publicVP,
 			selfVP,
+			seatColors: seatHexes,
 			isSpectator,
 			watcherIds,
 		}),
@@ -319,6 +339,7 @@ export function GameProvider({
 			stateLoaded,
 			publicVP,
 			selfVP,
+			seatHexes,
 			isSpectator,
 			watcherIds,
 		]

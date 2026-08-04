@@ -5,7 +5,6 @@ import { Ionicons } from '@expo/vector-icons'
 import { Tooltip } from '../modules/Tooltip'
 import type { BuildKind } from './build'
 import type { CurseHint } from './curses'
-import { playerColors } from './palette'
 
 type BuildOption = {
 	key: BuildKind | 'dev_card'
@@ -27,7 +26,7 @@ export function BuildTradeBar({
 	active,
 	enabled,
 	curseHints,
-	meIdx,
+	color,
 	tradeEnabled,
 	tradeActive,
 	devCardsEnabled,
@@ -50,7 +49,7 @@ export function BuildTradeBar({
 	// and a tooltip with the reason, even if the button is also disabled for
 	// unrelated reasons (resources / turn / phase).
 	curseHints?: BuildCurseHints
-	meIdx: number
+	color: string
 	tradeEnabled: boolean
 	tradeActive: boolean
 	// Config gate: when the game wasn't created with dev cards, the button
@@ -77,7 +76,6 @@ export function BuildTradeBar({
 	onAccountant?: () => void
 	onInvest?: () => void
 }) {
-	const color = playerColors[meIdx] ?? playerColors[0]
 	const tradeInteractive = tradeEnabled || tradeActive
 	const options = devCardsEnabled
 		? BUILD_OPTIONS
@@ -96,7 +94,7 @@ export function BuildTradeBar({
 								opt.key !== 'dev_card' && active === opt.key
 							}
 							curseHint={curseHints?.[opt.key]}
-							meIdx={meIdx}
+							color={color}
 							onPress={() => {
 								if (opt.key === 'dev_card') {
 									onBuyDevCard()
@@ -116,7 +114,7 @@ export function BuildTradeBar({
 						<SuperCityButton
 							enabled={superCityEnabled}
 							active={!!superCityActive}
-							meIdx={meIdx}
+							color={color}
 							onPress={() => onSelectSuperCity?.()}
 						/>
 					)}
@@ -171,17 +169,16 @@ function BuildIconButton({
 	enabled,
 	active,
 	curseHint,
-	meIdx,
+	color,
 	onPress,
 }: {
 	option: BuildOption
 	enabled: boolean
 	active: boolean
 	curseHint: CurseHint | undefined
-	meIdx: number
+	color: string
 	onPress: () => void
 }) {
-	const color = playerColors[meIdx] ?? playerColors[0]
 	// A curse hint means the action is currently blocked by the player's
 	// curse, so the button must be non-interactive regardless of other
 	// enablement signals.
@@ -274,15 +271,14 @@ function CarpenterVPButton({
 function SuperCityButton({
 	enabled,
 	active,
-	meIdx,
+	color,
 	onPress,
 }: {
 	enabled: boolean
 	active: boolean
-	meIdx: number
+	color: string
 	onPress: () => void
 }) {
-	const color = playerColors[meIdx] ?? playerColors[0]
 	const interactive = enabled || active
 	return (
 		<Pressable

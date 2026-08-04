@@ -1,5 +1,5 @@
 import { Polygon } from 'react-native-svg'
-import { pieceStroke, playerColors } from './palette'
+import { pieceStroke } from './palette'
 import type { VertexBuilding } from './board'
 
 export function VertexPiece({
@@ -7,15 +7,14 @@ export function VertexPiece({
 	cy,
 	size,
 	building,
-	player,
+	color,
 }: {
 	cx: number
 	cy: number
 	size: number
 	building: VertexBuilding
-	player: number
+	color: string
 }) {
-	const color = playerColors[player] ?? playerColors[0]
 	const stroke = Math.max(1, size * 0.04)
 	if (building === 'settlement') {
 		return (
@@ -56,14 +55,13 @@ export function HauntSpotMarker({
 	cx,
 	cy,
 	size,
-	player,
+	color,
 }: {
 	cx: number
 	cy: number
 	size: number
-	player: number
+	color: string
 }) {
-	const color = playerColors[player] ?? playerColors[0]
 	return (
 		<Polygon
 			points={settlementPoints(cx, cy, size)}

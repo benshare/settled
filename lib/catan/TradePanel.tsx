@@ -12,7 +12,7 @@ import type { Profile } from '../stores/useProfileStore'
 import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
-import { playerColors } from './palette'
+import { seatColor } from './palette'
 import {
 	availableBankOptions,
 	bankPartitionFor,
@@ -185,7 +185,7 @@ export function TradePanel({
 						<PlayerChip
 							key={i}
 							label={profile?.username ?? `P${i + 1}`}
-							color={playerColors[i] ?? playerColors[0]}
+							color={seatColor(state, i)}
 							active={addressed.includes(i)}
 							onPress={() => toggle(i)}
 						/>

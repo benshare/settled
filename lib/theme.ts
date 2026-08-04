@@ -1,4 +1,5 @@
 import type { Resource } from './catan/board'
+import type { ColorId } from './catan/colors'
 
 // --- Themed palette ----------------------------------------------------------
 // Warm, earthy, tabletop-friendly palette that meshes with the Catan board
@@ -132,16 +133,18 @@ export const catanColors = {
 
 	hotNumbers: new Set([6, 8]) as ReadonlySet<number>,
 
-	// Seats 5 and 6 are the 5–6 player extension's green and brown. Green is
-	// pulled brighter than the wood hex (#1F7A3A) so pieces stay legible on it.
-	players: [
-		'#D32F2F',
-		'#1565C0',
-		'#F57C00',
-		'#FFFFFF',
-		'#43A047',
-		'#6D4C41',
-	] as const,
+	// Keyed by ColorId rather than seat index — which color a seat gets is a
+	// property of the game (`games.colors`), not of the palette. Green and
+	// brown are the 5–6 player extension's; green is pulled brighter than the
+	// wood hex (#1F7A3A) so pieces stay legible on it.
+	players: {
+		red: '#D32F2F',
+		blue: '#1565C0',
+		orange: '#F57C00',
+		white: '#FFFFFF',
+		green: '#43A047',
+		brown: '#6D4C41',
+	} as Record<ColorId, string>,
 
 	pieceStroke: '#2B2B2B',
 }

@@ -9,19 +9,22 @@ import { Button } from '../modules/Button'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Hex } from './board'
-import { playerColors, resourceColor } from './palette'
+import { resourceColor } from './palette'
 import type { ResourceHand } from './types'
 
 export function ForgerPickOverlay({
 	hex,
 	gainsByCandidate,
 	playerNames,
+	seatColors,
 	submitting,
 	onConfirm,
 }: {
 	hex: Hex
 	gainsByCandidate: Record<number, ResourceHand>
 	playerNames: Record<number, string>
+	// Each seat's color, in seat order. From `useGame().seatColors`.
+	seatColors: readonly string[]
 	submitting: boolean
 	onConfirm: (target: number) => void
 }) {
@@ -46,7 +49,7 @@ export function ForgerPickOverlay({
 					<CandidateRow
 						key={idx}
 						name={playerNames[idx] ?? `Player ${idx + 1}`}
-						idx={idx}
+						color={seatColors[idx] ?? colors.textMuted}
 						gain={gainsByCandidate[idx]}
 						picked={pick === idx}
 						onPress={() => setPick(idx)}
@@ -67,20 +70,19 @@ export function ForgerPickOverlay({
 
 function CandidateRow({
 	name,
-	idx,
+	color,
 	gain,
 	picked,
 	onPress,
 	styles,
 }: {
 	name: string
-	idx: number
+	color: string
 	gain: ResourceHand
 	picked: boolean
 	onPress: () => void
 	styles: ReturnType<typeof makeStyles>
 }) {
-	const color = playerColors[idx] ?? playerColors[0]
 	return (
 		<Pressable
 			onPress={onPress}

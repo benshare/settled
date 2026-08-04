@@ -3,7 +3,7 @@ import { Circle, G } from 'react-native-svg'
 import { hexesAdjacentTo } from './bonus'
 import { type Hex } from './board'
 import type { HexLayout } from './layout'
-import { playerColors, tokenFace, tokenRing } from './palette'
+import { seatColor, tokenFace, tokenRing } from './palette'
 import { PulsingDot } from './PulsingDot'
 import type { GameState } from './types'
 
@@ -27,7 +27,7 @@ export function ForgerMoveLayer({
 	onMove: (hex: Hex) => void
 }) {
 	const targets = new Set<Hex>(hexesAdjacentTo(from, state.variant))
-	const color = playerColors[meIdx] ?? playerColors[0]
+	const color = seatColor(state, meIdx)
 	// Same reason as RobberLayer: the desert has no NumberToken, so a pulse
 	// there would read as a solid blob rather than a halo around an anchor.
 	const tokenR = layoutS * 0.42

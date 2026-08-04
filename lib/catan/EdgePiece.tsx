@@ -1,5 +1,5 @@
 import { Rect } from 'react-native-svg'
-import { pieceStroke, playerColors } from './palette'
+import { pieceStroke } from './palette'
 
 export function EdgePiece({
 	x1,
@@ -7,16 +7,15 @@ export function EdgePiece({
 	x2,
 	y2,
 	size,
-	player,
+	color,
 }: {
 	x1: number
 	y1: number
 	x2: number
 	y2: number
 	size: number
-	player: number
+	color: string
 }) {
-	const color = playerColors[player] ?? playerColors[0]
 	const mx = (x1 + x2) / 2
 	const my = (y1 + y2) / 2
 	const angleDeg = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI

@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { Circle, G } from 'react-native-svg'
 import { edgeEndpoints, type Edge, type Vertex } from './board'
 import { EdgePiece } from './EdgePiece'
-import { pieceStroke, playerColors } from './palette'
+import { pieceStroke, seatColor } from './palette'
 import {
 	applyPlacementDraft,
 	ownSettlementVertices,
@@ -54,7 +54,7 @@ export function PlacementLayer({
 }) {
 	if (state.phase.kind !== 'initial_placement') return null
 	const step = state.phase.step
-	const color = playerColors[meIdx] ?? playerColors[0]
+	const color = seatColor(state, meIdx)
 
 	// The back-to-back seat nominating which settlement it placed last. Both of
 	// its settlements are already on the board, so the affordance rings the
@@ -123,14 +123,14 @@ export function PlacementLayer({
 							cy={vertexPositions[entry.vertex].y}
 							size={layoutS}
 							building="settlement"
-							player={meIdx}
+							color={color}
 						/>
 					</G>
 					{entry.edge !== undefined && (
 						<RoadGhost
 							edge={entry.edge}
 							layoutS={layoutS}
-							meIdx={meIdx}
+							color={color}
 							vertexPositions={vertexPositions}
 						/>
 					)}
@@ -195,12 +195,12 @@ export function PlacementLayer({
 function RoadGhost({
 	edge,
 	layoutS,
-	meIdx,
+	color,
 	vertexPositions,
 }: {
 	edge: Edge
 	layoutS: number
-	meIdx: number
+	color: string
 	vertexPositions: Record<Vertex, { x: number; y: number }>
 }) {
 	const [va, vb] = edgeEndpoints(edge)
@@ -214,7 +214,7 @@ function RoadGhost({
 				x2={pb.x}
 				y2={pb.y}
 				size={layoutS}
-				player={meIdx}
+				color={color}
 			/>
 		</G>
 	)

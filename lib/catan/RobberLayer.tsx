@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { Circle, G } from 'react-native-svg'
 import { boardFor, type Hex, type Vertex } from './board'
 import type { HexLayout } from './layout'
-import { playerColors, tokenFace, tokenRing } from './palette'
+import { seatColor, tokenFace, tokenRing } from './palette'
 import { PulsingDot } from './PulsingDot'
 import { validRobberHexes } from './robber'
 import type { GameState } from './types'
@@ -31,7 +31,7 @@ export function RobberLayer({
 	const phase = state.phase
 	if (phase.kind === 'move_robber') {
 		const valids = new Set<Hex>(validRobberHexes(state))
-		const color = playerColors[meIdx] ?? playerColors[0]
+		const color = seatColor(state, meIdx)
 		// The desert has no NumberToken, so a pulse rendered there would read
 		// as a solid blob rather than a halo-around-an-anchor like every other
 		// valid hex. Render a blank token-shaped backdrop first so the pulse
@@ -78,7 +78,7 @@ export function RobberLayer({
 	}
 
 	if (phase.kind === 'steal') {
-		const color = playerColors[meIdx] ?? playerColors[0]
+		const color = seatColor(state, meIdx)
 		const candidateSet = new Set(phase.candidates)
 		const adjacentVertices = boardFor(state.variant).adjacentVertices
 		return (

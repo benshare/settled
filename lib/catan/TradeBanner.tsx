@@ -5,7 +5,7 @@ import { Button } from '../modules/Button'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, shadow, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
-import { playerColors, resourceColor } from './palette'
+import { resourceColor } from './palette'
 import {
 	acceptedByOf,
 	canAfford,
@@ -38,6 +38,7 @@ export function TradeBanner({
 	players,
 	playerOrder,
 	profilesById,
+	seatColors,
 	submitting,
 	onAccept,
 	onConfirm,
@@ -51,6 +52,9 @@ export function TradeBanner({
 	players: PlayerState[]
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
+	// Each seat's color, in seat order. Resolved once in `gameContext`
+	// (`useGame().seatColors`) so this can't disagree with the board.
+	seatColors: readonly string[]
 	submitting: boolean
 	onAccept: () => void
 	// Confirm mode: proposer executes the swap with `accepterIdx`.
@@ -59,7 +63,7 @@ export function TradeBanner({
 	onReject: () => void
 }) {
 	const playerCount = playerOrder.length
-	const fromColor = playerColors[offer.from] ?? playerColors[0]
+	const fromColor = seatColors[offer.from] ?? colors.textMuted
 	const fromProfile = profilesById[playerOrder[offer.from]]
 	const fromName =
 		meIdx === offer.from ? 'You' : (fromProfile?.username ?? 'Player')
@@ -127,7 +131,7 @@ export function TradeBanner({
 									profilesById[playerOrder[idx]]?.username ??
 									`P${idx + 1}`
 								const color =
-									playerColors[idx] ?? playerColors[0]
+									seatColors[idx] ?? colors.textMuted
 								const affordable = canAfford(
 									players[idx]?.resources ?? EMPTY_RESOURCES,
 									offer.receive

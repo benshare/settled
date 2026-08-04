@@ -41,6 +41,7 @@ export function BoardArea() {
 		game,
 		gameState,
 		meIdx,
+		seatColors,
 		myHand,
 		myPlayer,
 		profilesById,
@@ -124,6 +125,7 @@ export function BoardArea() {
 						gainsByCandidate={
 							gameState.phase.queue[0].gainsByCandidate
 						}
+						seatColors={seatColors}
 						playerNames={Object.fromEntries(
 							game.player_order.map((uid, i) => [
 								i,
@@ -177,6 +179,7 @@ export function BoardArea() {
 				<TradeBanner
 					offer={liveOffer}
 					meIdx={meIdx}
+					seatColors={seatColors}
 					myHand={myHand}
 					players={gameState?.players ?? []}
 					playerOrder={game.player_order}
@@ -272,6 +275,7 @@ export function BoardArea() {
 					playerOrder={game.player_order}
 					profilesById={profilesById}
 					meIdx={meIdx}
+					seatColors={seatColors}
 				/>
 			)}
 			{gameState && (!inBonusSelection || isSpectator) && <ChatButton />}
@@ -293,6 +297,7 @@ export function BoardArea() {
 				<View style={styles.bonusPaneFloat}>
 					<BonusSelection
 						hand={bonusSelectionData.myHand}
+						seatColors={seatColors}
 						waitingOn={bonusSelectionData.waitingOn}
 						submitting={submitting}
 						collapsed={bonusPaneCollapsed}

@@ -1,3 +1,4 @@
+import { DEFAULT_COLOR_ORDER } from './colors'
 import {
 	boardFor,
 	RESOURCES,
@@ -386,6 +387,11 @@ export function initialGameState(
 		robber: desert,
 		ports: generatePorts(variant),
 		config,
+		// Only the check scripts reach this function — a real game's colors
+		// are resolved from every player's ranking in `handleRespond`, so
+		// there is nothing to resolve here. Default order keeps the seats
+		// distinguishable.
+		colors: DEFAULT_COLOR_ORDER.slice(0, playerCount),
 		devDeck: config.devCards ? buildInitialDevDeck(Math.random) : [],
 		largestArmy: null,
 		longestRoad: null,

@@ -102,6 +102,7 @@ function Game() {
 		profilesById,
 		displayVP,
 		publicVP,
+		seatColors,
 		boardTop,
 		setBoardTop,
 		inGameOver,
@@ -243,6 +244,7 @@ function Game() {
 				topOffset={boardTop}
 				playerOrder={game.player_order}
 				profilesById={profilesById}
+				seatColors={seatColors}
 				meId={meId}
 			/>
 

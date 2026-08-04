@@ -12,7 +12,7 @@ import {
 } from './build'
 import { EdgePiece } from './EdgePiece'
 import { validSettlementVertices } from './placement'
-import { playerColors } from './palette'
+import { seatColor } from './palette'
 import { PulsingDot } from './PulsingDot'
 import { edgeStateOf, type GameState } from './types'
 import { HauntSpotMarker, VertexPiece } from './VertexPiece'
@@ -91,7 +91,7 @@ export function BuildLayer({
 	} else {
 		if (!inMain && !inSpecialBuild) return null
 	}
-	const color = playerColors[meIdx] ?? playerColors[0]
+	const color = seatColor(state, meIdx)
 
 	if (tool === 'fence_token') {
 		const valids = fenceableEdges(state)
@@ -142,7 +142,7 @@ export function BuildLayer({
 									cx={p.x}
 									cy={p.y}
 									size={layoutS}
-									player={meIdx}
+									color={color}
 								/>
 							) : (
 								<PulsingDot
@@ -196,7 +196,7 @@ export function BuildLayer({
 									x2={pb.x}
 									y2={pb.y}
 									size={layoutS}
-									player={meIdx}
+									color={color}
 								/>
 							) : (
 								<PulsingDot
@@ -247,7 +247,7 @@ export function BuildLayer({
 								cy={p.y}
 								size={layoutS}
 								building={tool}
-								player={meIdx}
+								color={color}
 							/>
 						) : (
 							<PulsingDot

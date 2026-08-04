@@ -26,7 +26,7 @@ import {
 	computePortLayout,
 	computeVertexPositions,
 } from './layout'
-import { playerColors } from './palette'
+import { seatColor } from './palette'
 import { type PlacementDraftEntry } from './placement'
 import { PlacementLayer, type PlacementSelection } from './PlacementLayer'
 import { PortBadge } from './PortBadge'
@@ -255,7 +255,7 @@ function BoardSvg({
 							x2={pb.x}
 							y2={pb.y}
 							size={layout.s}
-							player={es.player}
+							color={seatColor(state, es.player)}
 						/>
 					)
 				})}
@@ -275,7 +275,7 @@ function BoardSvg({
 								x2={pb.x}
 								y2={pb.y}
 								size={layout.s}
-								player={player}
+								color={seatColor(state, player)}
 							/>
 						)
 					}
@@ -290,7 +290,7 @@ function BoardSvg({
 							cy={pos.y}
 							size={layout.s}
 							building={vs.building}
-							player={vs.player}
+							color={seatColor(state, vs.player)}
 						/>
 					)
 				})}
@@ -306,7 +306,7 @@ function BoardSvg({
 								cx={pos.x}
 								cy={pos.y}
 								size={layout.s}
-								player={viewerIdx}
+								color={seatColor(state, viewerIdx)}
 							/>
 						)
 					})}
@@ -335,7 +335,7 @@ function BoardSvg({
 							cx={hex.cx}
 							cy={hex.cy}
 							size={layout.s}
-							color={playerColors[i] ?? playerColors[0]}
+							color={seatColor(state, i)}
 						/>
 					)
 				})}

@@ -11,6 +11,7 @@ import { investorTokenCount } from '@/lib/catan/bonus'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
+import { seatColor } from '@/lib/catan/palette'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import {
 	ExplorerStatusBanner,
@@ -217,7 +218,7 @@ export function TopArea() {
 								active={buildTool}
 								enabled={buildEnabled}
 								curseHints={buildCurseHints}
-								meIdx={meIdx}
+								color={seatColor(gameState, meIdx)}
 								tradeEnabled={tradeButtonEnabled}
 								tradeActive={tradeButtonActive}
 								devCardsEnabled={!!gameState.config.devCards}

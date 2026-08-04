@@ -7,7 +7,7 @@ const isWeb = Platform.OS === 'web'
 import { bonusById, curseById } from './bonuses'
 import { knightsPlayed } from './dev'
 import { longestRoadFor } from './longestRoad'
-import { playerColors, resourceColor } from './palette'
+import { resourceColor, seatColor } from './palette'
 import { formatRemaining, pendingSeats } from './timeout'
 import type { GameState } from './types'
 import { useCountdown } from './useCountdown'
@@ -61,7 +61,7 @@ export function PlayerStrip({
 	return (
 		<View style={styles.row}>
 			{playerOrder.map((uid, i) => {
-				const color = playerColors[i] ?? playerColors[0]
+				const color = seatColor(gameState, i)
 				const profile = profilesById[uid]
 				const name =
 					i === meIdx ? 'You' : (profile?.username ?? 'Player')

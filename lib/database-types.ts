@@ -326,6 +326,7 @@ export type Database = {
       }
       games: {
         Row: {
+          colors: string[]
           config: Json
           created_at: string
           current_turn: number | null
@@ -342,6 +343,7 @@ export type Database = {
           winner: number | null
         }
         Insert: {
+          colors?: string[]
           config: Json
           created_at?: string
           current_turn?: number | null
@@ -358,6 +360,7 @@ export type Database = {
           winner?: number | null
         }
         Update: {
+          colors?: string[]
           config?: Json
           created_at?: string
           current_turn?: number | null
@@ -378,6 +381,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_path: string | null
+          color_prefs: Json
           created_at: string
           dev: boolean
           game_defaults: Json
@@ -389,6 +393,7 @@ export type Database = {
         }
         Insert: {
           avatar_path?: string | null
+          color_prefs?: Json
           created_at?: string
           dev?: boolean
           game_defaults?: Json
@@ -400,6 +405,7 @@ export type Database = {
         }
         Update: {
           avatar_path?: string | null
+          color_prefs?: Json
           created_at?: string
           dev?: boolean
           game_defaults?: Json

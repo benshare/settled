@@ -4,7 +4,6 @@
 // as "claimed, not built".
 
 import { Circle, Line } from 'react-native-svg'
-import { playerColors } from './palette'
 
 export function FenceTokenPiece({
 	x1,
@@ -12,16 +11,15 @@ export function FenceTokenPiece({
 	x2,
 	y2,
 	size,
-	player,
+	color,
 }: {
 	x1: number
 	y1: number
 	x2: number
 	y2: number
 	size: number
-	player: number
+	color: string
 }) {
-	const color = playerColors[player] ?? playerColors[0]
 	const mx = (x1 + x2) / 2
 	const my = (y1 + y2) / 2
 	return (

@@ -29,7 +29,7 @@ import { populistBonusVPFor } from './bonus'
 import { knightsPlayed } from './dev'
 import { gameHighlights, rollDistribution, type Highlight } from './gameStats'
 import { longestRoadFor } from './longestRoad'
-import { playerColors } from './palette'
+import { seatColor } from './palette'
 import type { GameState } from './types'
 
 export type GameOverOverlayProps = {
@@ -109,6 +109,8 @@ export function GameOverOverlay({
 		i === meIdx
 			? 'You'
 			: (profilesById[playerOrder[i]]?.username ?? 'Player')
+	const seatColors = gameState.colors.map((_, i) => seatColor(gameState, i))
+	const colorFor = (i: number) => seatColor(gameState, i)
 
 	return (
 		<Modal
@@ -129,6 +131,7 @@ export function GameOverOverlay({
 				playerOrder={playerOrder}
 				meIdx={meIdx}
 				profilesById={profilesById}
+				seatColors={seatColors}
 				canceled={canceled}
 				wonByForfeit={wonByForfeit}
 			/>
@@ -149,6 +152,7 @@ export function GameOverOverlay({
 					events={events}
 					playerCount={playerOrder.length}
 					nameFor={nameFor}
+					colorFor={colorFor}
 				/>
 			)}
 			<View style={styles.buttons}>
@@ -207,6 +211,7 @@ function Header({
 	playerOrder,
 	meIdx,
 	profilesById,
+	seatColors,
 	canceled,
 	wonByForfeit,
 }: {
@@ -214,6 +219,8 @@ function Header({
 	playerOrder: string[]
 	meIdx: number
 	profilesById: Record<string, Profile>
+	// Each seat's color, in seat order — see `useGame().seatColors`.
+	seatColors: readonly string[]
 	canceled: boolean
 	wonByForfeit: boolean
 }) {
@@ -231,7 +238,7 @@ function Header({
 
 	const uid = playerOrder[winnerIdx]
 	const profile = profilesById[uid]
-	const color = playerColors[winnerIdx] ?? playerColors[0]
+	const color = seatColors[winnerIdx] ?? colors.textMuted
 	const name = winnerIdx === meIdx ? 'You' : (profile?.username ?? 'Player')
 	return (
 		<View style={styles.header}>
@@ -274,7 +281,7 @@ function Scoreboard({
 		return {
 			i,
 			name,
-			color: playerColors[i] ?? playerColors[0],
+			color: seatColor(gameState, i),
 			breakdown: breakdownFor(gameState, i),
 			total,
 			publicTotal,
@@ -402,10 +409,12 @@ function Highlights({
 	events,
 	playerCount,
 	nameFor,
+	colorFor,
 }: {
 	events: GameEvent[]
 	playerCount: number
 	nameFor: (i: number) => string
+	colorFor: (i: number) => string
 }) {
 	const highlights = gameHighlights(events, playerCount)
 	return (
@@ -414,7 +423,12 @@ function Highlights({
 			contentContainerStyle={styles.scrollInner}
 		>
 			{highlights.map((h) => (
-				<HighlightCard key={h.key} highlight={h} nameFor={nameFor} />
+				<HighlightCard
+					key={h.key}
+					highlight={h}
+					nameFor={nameFor}
+					colorFor={colorFor}
+				/>
 			))}
 		</ScrollView>
 	)
@@ -423,9 +437,11 @@ function Highlights({
 function HighlightCard({
 	highlight,
 	nameFor,
+	colorFor,
 }: {
 	highlight: Highlight
 	nameFor: (i: number) => string
+	colorFor: (i: number) => string
 }) {
 	const { title, subtitle, icon, winners, value, unit, valueLabel } =
 		highlight
@@ -454,9 +470,7 @@ function HighlightCard({
 									style={[
 										styles.dot,
 										{
-											backgroundColor:
-												playerColors[i] ??
-												playerColors[0],
+											backgroundColor: colorFor(i),
 										},
 									]}
 								/>

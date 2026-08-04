@@ -14,7 +14,6 @@ import type { ResourceHand } from './types'
 import { RESOURCES, type Resource } from './board'
 import { bonusById, curseById } from './bonuses'
 import { devCardById } from './devCards'
-import { playerColors } from './palette'
 
 const RESOURCE_LABELS: Record<Resource, string> = {
 	wood: 'wood',
@@ -128,11 +127,15 @@ export function ActionLog({
 	playerOrder,
 	profilesById,
 	meIdx,
+	seatColors,
 }: {
 	events: GameEvent[]
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	meIdx: number
+	// Each seat's color, in seat order. Resolved once in `gameContext`
+	// (`useGame().seatColors`) so this can't disagree with the board.
+	seatColors: readonly string[]
 }) {
 	const [open, setOpen] = useState(false)
 	const [filter, setFilter] = useState<Filter>('all')
@@ -248,6 +251,12 @@ export function ActionLog({
 						<LogRow
 							key={key}
 							line={line}
+							color={
+								line.player === null
+									? colors.textMuted
+									: (seatColors[line.player] ??
+										colors.textMuted)
+							}
 							expanded={expanded.has(key)}
 							onToggle={() => toggle(key)}
 						/>
@@ -260,26 +269,17 @@ export function ActionLog({
 
 function LogRow({
 	line,
+	color,
 	expanded,
 	onToggle,
 }: {
 	line: LogLine
+	// The seat's color, or the muted tone for a table-wide event.
+	color: string
 	expanded: boolean
 	onToggle: () => void
 }) {
-	const dot = (
-		<View
-			style={[
-				styles.dot,
-				{
-					backgroundColor:
-						line.player === null
-							? colors.textMuted
-							: (playerColors[line.player] ?? playerColors[0]),
-				},
-			]}
-		/>
-	)
+	const dot = <View style={[styles.dot, { backgroundColor: color }]} />
 
 	if (!line.detail) {
 		return (

@@ -121,7 +121,15 @@ export function GameScreenProvider({
 
 function useGameScreenState(gameId: string) {
 	const { user } = useAuth()
-	const { game, gameState, ready, publicVP, selfVP, isSpectator } = useGame()
+	const {
+		game,
+		gameState,
+		ready,
+		publicVP,
+		selfVP,
+		seatColors,
+		isSpectator,
+	} = useGame()
 	const switchableGames = useSwitchableGames()
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const pickBonus = useGamesStore((s) => s.pickBonus)
@@ -1502,6 +1510,7 @@ function useGameScreenState(gameId: string) {
 		publicVP,
 		selfVP,
 		displayVP,
+		seatColors,
 
 		// --- Phase flags -----------------------------------------------
 		isCurrentPlayer,

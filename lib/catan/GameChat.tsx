@@ -36,7 +36,6 @@ import { useGamesStore } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, shadow, spacing, z } from '../theme'
 import { CHAT_MAX_CHARS, useChat, type ChatMessage } from './chatContext'
-import { playerColors } from './palette'
 
 // Translucent so the board stays faintly visible behind the conversation. The
 // 0.9 is a product requirement, not an arbitrary style value.
@@ -99,6 +98,7 @@ export function ChatPanel({
 	topOffset,
 	playerOrder,
 	profilesById,
+	seatColors,
 	meId,
 }: {
 	// Game area's y within the screen root, measured by the game screen. The
@@ -107,6 +107,9 @@ export function ChatPanel({
 	topOffset: number
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
+	// Each seat's color, in seat order. Resolved once in `gameContext`
+	// (`useGame().seatColors`) so this can't disagree with the board.
+	seatColors: readonly string[]
 	meId: string | undefined
 }) {
 	const { open, setOpen, messages, send, sending, typingIds, noteTyping } =
@@ -249,6 +252,7 @@ export function ChatPanel({
 						inverted={inverted}
 						playerOrder={playerOrder}
 						profilesById={profilesById}
+						seatColors={seatColors}
 						meId={meId}
 					/>
 
@@ -276,12 +280,16 @@ function ChatBody({
 	inverted,
 	playerOrder,
 	profilesById,
+	seatColors,
 	meId,
 }: {
 	messages: ChatMessage[] | undefined
 	inverted: ChatMessage[]
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
+	// Each seat's color, in seat order. Resolved once in `gameContext`
+	// (`useGame().seatColors`) so this can't disagree with the board.
+	seatColors: readonly string[]
 	meId: string | undefined
 }) {
 	if (messages === undefined) {
@@ -316,6 +324,7 @@ function ChatBody({
 					startsRun={inverted[index + 1]?.sender !== item.sender}
 					playerOrder={playerOrder}
 					profilesById={profilesById}
+					seatColors={seatColors}
 					meId={meId}
 				/>
 			)}
@@ -455,6 +464,7 @@ function MessageRow({
 	startsRun,
 	playerOrder,
 	profilesById,
+	seatColors,
 	meId,
 }: {
 	message: ChatMessage
@@ -463,6 +473,9 @@ function MessageRow({
 	startsRun: boolean
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
+	// Each seat's color, in seat order. Resolved once in `gameContext`
+	// (`useGame().seatColors`) so this can't disagree with the board.
+	seatColors: readonly string[]
 	meId: string | undefined
 }) {
 	const mine = message.sender === meId
@@ -491,7 +504,7 @@ function MessageRow({
 							{
 								color:
 									seat >= 0
-										? (playerColors[seat] ??
+										? (seatColors[seat] ??
 											colors.textSecondary)
 										: colors.textSecondary,
 							},
