@@ -12,28 +12,17 @@ import type { Profile } from '../stores/useProfileStore'
 import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
-import {
-	isValidMerchantAddon,
-	singleGiveResource,
-	type MerchantAddon,
-} from './bonus'
-import { playerColors, resourceColor } from './palette'
+import { playerColors } from './palette'
 import {
 	availableBankOptions,
+	bankPartitionFor,
 	bankSurchargeFor,
-	effectiveBankRatioFor,
-	isValidBankTradeShape,
 	lockedGiveResource,
 	ratioOf,
 } from './ports'
 import { CardFan, type CardFanEntry } from './ResourceHand'
 import { canAfford, emptyHand, isValidTradeShape } from './trade'
 import type { BankKind, GameState, ResourceHand } from './types'
-
-type Mode =
-	| { kind: 'player' }
-	| { kind: 'bank_select' } // picking which ratio / port to use
-	| { kind: 'bank_compose'; choice: BankKind }
 
 const SHADOW_ENTRIES: CardFanEntry[] = RESOURCES.map((r) => ({
 	resource: r,
@@ -57,10 +46,12 @@ function remainingEntries(
 	}))
 }
 
-// Form that replaces the main action bar when the proposer is composing a
-// trade. Player-trade mode is the default; a Bank button switches into a
-// two-step bank-trade flow. Both the player and bank composers render the
-// trade as two side-by-side hands (give / receive) — see TradeSidePanel.
+// The form that replaces the viewer's hand while they're composing a trade.
+// There is one proposal, not one per destination: the same give/receive pair
+// is what gets offered to the players they've toggled on and what the bank is
+// asked to take. The player never picks a port or a ratio — the bank button
+// enables exactly when `bankPartitionFor` can pay for the proposal out of the
+// rates they have access to, in any combination.
 export function TradePanel({
 	meIdx,
 	myHand,
@@ -79,111 +70,7 @@ export function TradePanel({
 	profilesById: Record<string, Profile>
 	submitting: boolean
 	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
-	onSendBank: (
-		give: ResourceHand,
-		receive: ResourceHand,
-		merchant?: MerchantAddon
-	) => void
-	onCancel: () => void
-}) {
-	const bankOptions = useMemo(
-		() => availableBankOptions(state, meIdx),
-		[state, meIdx]
-	)
-	// Provinciality's small-table version prices itself into the ratio rather
-	// than the option list, so every ratio shown and charged below adds this.
-	const surcharge = useMemo(
-		() => bankSurchargeFor(state, meIdx),
-		[state, meIdx]
-	)
-
-	const [mode, setMode] = useState<Mode>({ kind: 'player' })
-
-	function startBank() {
-		// No options at all — the expanded-table provinciality curse closes
-		// the bank outright. The button is disabled, so this is belt-and-braces.
-		if (bankOptions.length === 0) return
-		// If the only option is 4:1 (no ports), skip the selector.
-		if (bankOptions.length === 1) {
-			setMode({ kind: 'bank_compose', choice: bankOptions[0] })
-		} else {
-			setMode({ kind: 'bank_select' })
-		}
-	}
-
-	if (mode.kind === 'player') {
-		return (
-			<PlayerTrade
-				meIdx={meIdx}
-				myHand={myHand}
-				playerOrder={playerOrder}
-				profilesById={profilesById}
-				submitting={submitting}
-				onBank={startBank}
-				bankClosed={bankOptions.length === 0}
-				onSend={onSend}
-				onCancel={onCancel}
-			/>
-		)
-	}
-	if (mode.kind === 'bank_select') {
-		return (
-			<BankSelect
-				options={bankOptions}
-				surcharge={surcharge}
-				specialistResource={
-					state.players[meIdx]?.specialistResource ?? null
-				}
-				onPick={(choice) => setMode({ kind: 'bank_compose', choice })}
-				onBack={() => setMode({ kind: 'player' })}
-			/>
-		)
-	}
-	return (
-		<BankCompose
-			choice={mode.choice}
-			surcharge={surcharge}
-			myHand={myHand}
-			specialistResource={
-				state.players[meIdx]?.specialistResource ?? null
-			}
-			isMerchant={state.players[meIdx]?.bonus === 'merchant'}
-			submitting={submitting}
-			onBack={() => {
-				// With multiple ratios, step back to the selector; with only
-				// 4:1 there's no selector, so back returns to player mode.
-				setMode(
-					bankOptions.length > 1
-						? { kind: 'bank_select' }
-						: { kind: 'player' }
-				)
-			}}
-			onCancel={onCancel}
-			onSend={onSendBank}
-		/>
-	)
-}
-
-function PlayerTrade({
-	meIdx,
-	myHand,
-	playerOrder,
-	profilesById,
-	submitting,
-	onBank,
-	bankClosed,
-	onSend,
-	onCancel,
-}: {
-	meIdx: number
-	myHand: ResourceHand
-	playerOrder: string[]
-	profilesById: Record<string, Profile>
-	submitting: boolean
-	onBank: () => void
-	// Provinciality can close the bank outright at a 5-6 player table.
-	bankClosed: boolean
-	onSend: (give: ResourceHand, receive: ResourceHand, to: number[]) => void
+	onSendBank: (give: ResourceHand, receive: ResourceHand) => void
 	onCancel: () => void
 }) {
 	const { height } = useWindowDimensions()
@@ -195,6 +82,15 @@ function PlayerTrade({
 
 	const otherIndices = playerOrder.map((_, i) => i).filter((i) => i !== meIdx)
 	const allSelected = addressed.length === otherIndices.length
+
+	// Empty under the expanded-table Curse of Provinciality, which closes the
+	// bank outright — the one case the button explains itself rather than just
+	// sitting inert.
+	const bankOptions = useMemo(
+		() => availableBankOptions(state, meIdx),
+		[state, meIdx]
+	)
+	const bankClosed = bankOptions.length === 0
 
 	function toggle(idx: number) {
 		setAddressed((prev) =>
@@ -218,13 +114,17 @@ function PlayerTrade({
 		})
 	}
 
-	const shapeValid = isValidTradeShape(give, receive)
-	const canPropose =
-		shapeValid && canAfford(myHand, give) && addressed.length > 0
+	const shapeValid =
+		isValidTradeShape(give, receive) && canAfford(myHand, give)
+	const canPropose = shapeValid && addressed.length > 0
+	// The composer imposes no bank constraint of its own — a player trade has
+	// no ratio, so nothing is disabled to keep the proposal bank-legal. The
+	// button simply lights up when the proposal happens to be payable.
+	const canBank =
+		shapeValid && bankPartitionFor(state, meIdx, give, receive) !== null
 
 	function send() {
-		const to = allSelected ? [] : [...addressed]
-		onSend(give, receive, to)
+		onSend(give, receive, allSelected ? [] : [...addressed])
 	}
 
 	const giveSourceDisabled = RESOURCES.filter((r) => receive[r] > 0)
@@ -235,415 +135,16 @@ function PlayerTrade({
 			<View style={styles.headerRow}>
 				<Text style={styles.heading}>Trade</Text>
 				<Pressable
-					onPress={onBank}
-					disabled={bankClosed}
-					style={({ pressed }) => [
-						styles.bankBtn,
-						bankClosed && styles.bankBtnDisabled,
-						pressed && !bankClosed && styles.pressed,
-					]}
-				>
-					<Ionicons
-						name="business-outline"
-						size={14}
-						color={bankClosed ? colors.textMuted : colors.text}
-					/>
-					<Text
-						style={[
-							styles.bankBtnLabel,
-							bankClosed && styles.bankBtnLabelDisabled,
-						]}
-					>
-						{bankClosed ? 'Bank closed (curse)' : 'Trade with bank'}
-					</Text>
-				</Pressable>
-			</View>
-
-			<ScrollView
-				style={{ maxHeight: Math.round(height * 0.55) }}
-				contentContainerStyle={styles.scrollBody}
-				nestedScrollEnabled
-				showsVerticalScrollIndicator={false}
-			>
-				<View style={styles.panelsRow}>
-					<TradeSidePanel
-						title="You give"
-						tradingEntries={handEntries(give)}
-						onTradingPress={(r) => bumpGive(r, -1)}
-						sourceTitle="From your hand"
-						sourceEntries={remainingEntries(myHand, give)}
-						sourceVariant="solid"
-						sourceShowCount
-						sourceDisabled={giveSourceDisabled}
-						onSourcePress={(r) => bumpGive(r, 1)}
-					/>
-					<TradeSidePanel
-						title="You receive"
-						tradingEntries={handEntries(receive)}
-						onTradingPress={(r) => bumpReceive(r, -1)}
-						sourceTitle="Add a resource"
-						sourceEntries={SHADOW_ENTRIES}
-						sourceVariant="shadow"
-						sourceShowCount={false}
-						sourceDisabled={receiveSourceDisabled}
-						onSourcePress={(r) => bumpReceive(r, 1)}
-					/>
-				</View>
-
-				<Text style={styles.sectionLabel}>To</Text>
-				<View style={styles.chipRow}>
-					{otherIndices.map((i) => {
-						const profile = profilesById[playerOrder[i]]
-						const name = profile?.username ?? `P${i + 1}`
-						const color = playerColors[i] ?? playerColors[0]
-						return (
-							<PlayerChip
-								key={i}
-								label={name}
-								color={color}
-								active={addressed.includes(i)}
-								onPress={() => toggle(i)}
-							/>
-						)
-					})}
-				</View>
-			</ScrollView>
-
-			<View style={styles.buttons}>
-				<Button
-					variant="secondary"
 					onPress={onCancel}
-					style={[styles.cancelBtn, styles.smallBtn]}
-				>
-					Cancel
-				</Button>
-				<Button
-					onPress={send}
-					disabled={!canPropose}
-					loading={submitting}
-					style={[styles.sendBtn, styles.smallBtn]}
-				>
-					Send
-				</Button>
-			</View>
-		</View>
-	)
-}
-
-function BankSelect({
-	options,
-	surcharge,
-	specialistResource,
-	onPick,
-	onBack,
-}: {
-	options: BankKind[]
-	surcharge: number
-	specialistResource: Resource | null
-	onPick: (choice: BankKind) => void
-	onBack: () => void
-}) {
-	return (
-		<View style={styles.wrap}>
-			<View style={styles.headerRow}>
-				<Text style={styles.heading}>Trade with bank</Text>
-				<Pressable
-					onPress={onBack}
 					style={({ pressed }) => [
 						styles.linkBtn,
 						pressed && styles.pressed,
 					]}
 				>
-					<Ionicons
-						name="chevron-back"
-						size={14}
-						color={colors.text}
-					/>
-					<Text style={styles.linkBtnLabel}>Back</Text>
+					<Ionicons name="close" size={14} color={colors.text} />
+					<Text style={styles.linkBtnLabel}>Cancel</Text>
 				</Pressable>
 			</View>
-			<Text style={styles.sectionLabel}>Choose ratio</Text>
-			<View style={styles.optionCol}>
-				{options.map((opt) => (
-					<BankOptionCard
-						key={opt}
-						kind={opt}
-						surcharge={surcharge}
-						specialistResource={specialistResource}
-						onPress={() => onPick(opt)}
-					/>
-				))}
-			</View>
-		</View>
-	)
-}
-
-function BankOptionCard({
-	kind,
-	surcharge,
-	specialistResource,
-	onPress,
-}: {
-	kind: BankKind
-	surcharge: number
-	specialistResource: Resource | null
-	onPress: () => void
-}) {
-	const locked = lockedGiveResource(kind)
-	// The surcharged curse leaves the option list alone and adds to every
-	// ratio, so the card has to name the surcharged rate — a "2:1 port" that
-	// actually charges 3 would be a lie.
-	const baseRatio = ratioOf(kind) + surcharge
-	// Specialist pays one fewer on a port that takes their declared resource.
-	// For a specific 2:1 port that's the locked resource itself → 1:1.
-	const specialtyMatchesLocked = !!locked && specialistResource === locked
-	const ratio = specialtyMatchesLocked
-		? Math.max(1, baseRatio - 1)
-		: baseRatio
-	const cursed = surcharge > 0 ? ' (Curse of Provinciality)' : ''
-	const title = locked
-		? `${baseRatio}:1 ${RESOURCE_LABELS[locked]} port${cursed}`
-		: kind === '3:1'
-			? `${baseRatio}:1 generic port${cursed}`
-			: kind === '5:1'
-				? '5:1 bank (Curse of Provinciality)'
-				: `${baseRatio}:1 bank${cursed}`
-	const subtitle = locked
-		? specialtyMatchesLocked
-			? `Specialist: trade ${ratio} ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
-			: `Trade ${baseRatio} ${RESOURCE_LABELS[locked].toLowerCase()} for 1 of anything else.`
-		: kind === '5:1'
-			? 'Under your curse, trade 5 of any one resource for 1 of anything else.'
-			: kind === '3:1'
-				? `Trade ${baseRatio} of any one resource for 1 of anything else.`
-				: `Default rate: trade ${baseRatio} of any one resource for 1 of anything else.`
-	const accent = locked ? resourceColor[locked] : '#CCCCCC'
-	return (
-		<Pressable
-			onPress={onPress}
-			style={({ pressed }) => [
-				styles.optionCard,
-				pressed && styles.pressed,
-			]}
-		>
-			<View
-				style={[
-					styles.optionRatio,
-					{ backgroundColor: accent },
-					!locked && { borderWidth: 1, borderColor: colors.border },
-				]}
-			>
-				<Text style={styles.optionRatioText}>{ratio}:1</Text>
-			</View>
-			<View style={styles.optionBody}>
-				<Text style={styles.optionTitle}>{title}</Text>
-				<Text style={styles.optionSubtitle}>{subtitle}</Text>
-			</View>
-		</Pressable>
-	)
-}
-
-function BankCompose({
-	choice,
-	surcharge,
-	myHand,
-	specialistResource,
-	isMerchant,
-	submitting,
-	onBack,
-	onCancel,
-	onSend,
-}: {
-	choice: BankKind
-	// Extra input per group under provinciality's small-table version; 0 for
-	// everyone else. Folded into every ratio below.
-	surcharge: number
-	myHand: ResourceHand
-	specialistResource: Resource | null
-	isMerchant: boolean
-	submitting: boolean
-	onBack: () => void
-	onCancel: () => void
-	onSend: (
-		give: ResourceHand,
-		receive: ResourceHand,
-		merchant?: MerchantAddon
-	) => void
-}) {
-	const { height } = useWindowDimensions()
-	const [give, setGive] = useState<ResourceHand>(emptyHand)
-	const [receive, setReceive] = useState<ResourceHand>(emptyHand)
-	// Merchant add-on: extra receives paid 1:1 with extra of the single give
-	// resource. Only meaningful when the give is a single resource stack.
-	const [merchantTake, setMerchantTake] = useState<ResourceHand>(emptyHand)
-	const giveRes = singleGiveResource(give)
-	const merchantCount = RESOURCES.reduce((a, r) => a + merchantTake[r], 0)
-	const merchantAvailable =
-		isMerchant && giveRes !== null
-			? myHand[giveRes] - give[giveRes] - merchantCount
-			: 0
-
-	const baseRatio = ratioOf(choice) + surcharge
-	const locked = lockedGiveResource(choice)
-
-	// Recomputes every render so single-resource specialist discount tracks
-	// the current `give`. If the player pivots to a multi-resource give, the
-	// ratio snaps back to the base.
-	const ratio = effectiveBankRatioFor(
-		choice,
-		give,
-		specialistResource,
-		surcharge
-	)
-
-	const giveTotal = RESOURCES.reduce((a, r) => a + give[r], 0)
-	const receiveTotal = RESOURCES.reduce((a, r) => a + receive[r], 0)
-	const groups = ratio > 0 ? giveTotal / ratio : 0
-	const slotsRemaining = Math.max(0, groups - receiveTotal)
-
-	// A give is added one whole group at a time. The increment is the
-	// effective ratio for the hypothetical post-add hand (so the specialist
-	// discount applies only while the give stays a single stack of the
-	// declared resource).
-	function addGive(r: Resource) {
-		setGive((prev) => {
-			if (locked && r !== locked) return prev
-			const hypothetical: ResourceHand = {
-				...prev,
-				[r]: prev[r] + baseRatio,
-			}
-			const effective = effectiveBankRatioFor(
-				choice,
-				hypothetical,
-				specialistResource,
-				surcharge
-			)
-			const remaining = myHand[r] - prev[r]
-			if (remaining < effective) return prev
-			if (receive[r] > 0) return prev
-			return { ...prev, [r]: prev[r] + effective }
-		})
-		setMerchantTake(emptyHand())
-	}
-	// Tapping a give card takes that whole pile back out. Clearing (vs.
-	// removing one group) keeps `give[r] % ratio === 0` valid regardless of
-	// how the specialist discount shifted while it was being built up.
-	// Changing the give also resets the merchant add-on (its input resource
-	// and available count both depend on the give).
-	function clearGive(r: Resource) {
-		setGive((prev) => (prev[r] === 0 ? prev : { ...prev, [r]: 0 }))
-		setMerchantTake(emptyHand())
-	}
-	function addReceive(r: Resource) {
-		setReceive((prev) => {
-			if (slotsRemaining <= 0) return prev
-			if (give[r] > 0) return prev
-			return { ...prev, [r]: prev[r] + 1 }
-		})
-	}
-	function decReceive(r: Resource) {
-		setReceive((prev) => {
-			if (prev[r] <= 0) return prev
-			return { ...prev, [r]: prev[r] - 1 }
-		})
-	}
-	function addMerchantTake(r: Resource) {
-		if (merchantAvailable <= 0) return
-		setMerchantTake((prev) => ({ ...prev, [r]: prev[r] + 1 }))
-	}
-	function clearMerchant() {
-		setMerchantTake(emptyHand())
-	}
-	function reset() {
-		setGive(emptyHand())
-		setReceive(emptyHand())
-		setMerchantTake(emptyHand())
-	}
-
-	const merchantAddon: MerchantAddon | null =
-		isMerchant && giveRes !== null && merchantCount > 0
-			? { resource: giveRes, count: merchantCount, take: merchantTake }
-			: null
-	const merchantValid =
-		merchantAddon === null ||
-		(isValidMerchantAddon(give, merchantAddon) &&
-			myHand[merchantAddon.resource] >=
-				give[merchantAddon.resource] + merchantAddon.count)
-
-	const valid =
-		isValidBankTradeShape(
-			give,
-			receive,
-			choice,
-			specialistResource,
-			false,
-			surcharge
-		) &&
-		canAfford(myHand, give) &&
-		merchantValid
-
-	function giveTappable(r: Resource): boolean {
-		if (locked && r !== locked) return false
-		if (receive[r] > 0) return false
-		const hypothetical: ResourceHand = {
-			...give,
-			[r]: give[r] + baseRatio,
-		}
-		const effective = effectiveBankRatioFor(
-			choice,
-			hypothetical,
-			specialistResource,
-			surcharge
-		)
-		return myHand[r] - give[r] >= effective
-	}
-
-	const giveSourceDisabled = RESOURCES.filter((r) => !giveTappable(r))
-	const receiveSourceDisabled = RESOURCES.filter(
-		(r) => !(slotsRemaining > 0 && give[r] === 0)
-	)
-
-	// Names the surcharged rate, matching BankOptionCard — `baseRatio` already
-	// includes the surcharge.
-	const heading = locked
-		? `${baseRatio}:1 ${RESOURCE_LABELS[locked]} port`
-		: choice === '3:1'
-			? `${baseRatio}:1 generic port`
-			: choice === '5:1'
-				? '5:1 bank (Curse of Provinciality)'
-				: `${baseRatio}:1 bank`
-
-	return (
-		<View style={styles.wrap}>
-			<View style={styles.headerRow}>
-				<Text style={styles.heading}>{heading}</Text>
-				<Pressable
-					onPress={onBack}
-					style={({ pressed }) => [
-						styles.linkBtn,
-						pressed && styles.pressed,
-					]}
-				>
-					<Ionicons
-						name="chevron-back"
-						size={14}
-						color={colors.text}
-					/>
-					<Text style={styles.linkBtnLabel}>Back</Text>
-				</Pressable>
-			</View>
-
-			<Text style={styles.ratioHint}>
-				{locked
-					? specialistResource === locked
-						? `Tap to give ${Math.max(1, baseRatio - 1)} at a time.`
-						: `Tap a card to give ${baseRatio} at a time.`
-					: `Tap a card to give ${baseRatio} at a time${
-							specialistResource
-								? ` (${Math.max(1, baseRatio - 1)} for ${specialistResource})`
-								: ''
-						}.`}
-			</Text>
 
 			<ScrollView
 				style={{ maxHeight: Math.round(height * 0.5) }}
@@ -655,116 +156,68 @@ function BankCompose({
 					<TradeSidePanel
 						title="You give"
 						tradingEntries={handEntries(give)}
-						onTradingPress={clearGive}
-						sourceTitle="From your hand"
+						onTradingPress={(r) => bumpGive(r, -1)}
+						sourceTitle="Your hand"
 						sourceEntries={remainingEntries(myHand, give)}
 						sourceVariant="solid"
 						sourceShowCount
 						sourceDisabled={giveSourceDisabled}
-						onSourcePress={addGive}
+						onSourcePress={(r) => bumpGive(r, 1)}
 					/>
 					<TradeSidePanel
 						title="You receive"
 						tradingEntries={handEntries(receive)}
-						onTradingPress={decReceive}
-						sourceTitle="Add a resource"
+						onTradingPress={(r) => bumpReceive(r, -1)}
+						sourceTitle="Add"
 						sourceEntries={SHADOW_ENTRIES}
 						sourceVariant="shadow"
 						sourceShowCount={false}
 						sourceDisabled={receiveSourceDisabled}
-						onSourcePress={addReceive}
+						onSourcePress={(r) => bumpReceive(r, 1)}
 					/>
 				</View>
 			</ScrollView>
 
-			{isMerchant && giveRes !== null && (
-				<View style={styles.merchantBox}>
-					<Text style={styles.merchantTitle}>
-						Merchant: pay extra {RESOURCE_LABELS[giveRes]} 1:1 (
-						{merchantCount} paid, {Math.max(0, merchantAvailable)}{' '}
-						left)
-					</Text>
-					<View style={styles.merchantRow}>
-						{RESOURCES.map((r) => (
-							<Pressable
-								key={r}
-								disabled={merchantAvailable <= 0}
-								onPress={() => addMerchantTake(r)}
-								style={({ pressed }) => [
-									styles.merchantChip,
-									{ backgroundColor: resourceColor[r] },
-									merchantAvailable <= 0 &&
-										styles.merchantChipDisabled,
-									pressed &&
-										merchantAvailable > 0 &&
-										styles.pressed,
-								]}
-							>
-								<Text style={styles.merchantChipText}>
-									+{merchantTake[r]}
-								</Text>
-							</Pressable>
-						))}
-						{merchantCount > 0 && (
-							<Pressable
-								onPress={clearMerchant}
-								style={({ pressed }) => [
-									styles.linkBtn,
-									pressed && styles.pressed,
-								]}
-							>
-								<Ionicons
-									name="close"
-									size={14}
-									color={colors.text}
-								/>
-							</Pressable>
-						)}
-					</View>
-				</View>
-			)}
-
-			<View style={styles.bankFooterRow}>
-				<Text style={styles.bankSummary}>
-					{giveTotal === 0
-						? `Pick ${ratio} of a resource to start.`
-						: `${giveTotal} → ${receiveTotal} of ${groups} available`}
-				</Text>
-				<Pressable
-					onPress={reset}
-					disabled={giveTotal === 0 && receiveTotal === 0}
-					style={({ pressed }) => [
-						styles.linkBtn,
-						giveTotal === 0 &&
-							receiveTotal === 0 &&
-							styles.linkBtnDisabled,
-						pressed && styles.pressed,
-					]}
-				>
-					<Ionicons name="refresh" size={14} color={colors.text} />
-					<Text style={styles.linkBtnLabel}>Reset</Text>
-				</Pressable>
+			<View style={styles.chipRow}>
+				{otherIndices.map((i) => {
+					const profile = profilesById[playerOrder[i]]
+					return (
+						<PlayerChip
+							key={i}
+							label={profile?.username ?? `P${i + 1}`}
+							color={playerColors[i] ?? playerColors[0]}
+							active={addressed.includes(i)}
+							onPress={() => toggle(i)}
+						/>
+					)
+				})}
 			</View>
 
 			<View style={styles.buttons}>
 				<Button
-					variant="secondary"
-					onPress={onCancel}
-					style={[styles.cancelBtn, styles.smallBtn]}
+					onPress={send}
+					disabled={!canPropose}
+					loading={submitting}
+					style={[styles.actionBtn, styles.smallBtn]}
 				>
-					Cancel
+					Propose trade
 				</Button>
 				<Button
-					onPress={() =>
-						onSend(give, receive, merchantAddon ?? undefined)
-					}
-					disabled={!valid}
+					variant="secondary"
+					onPress={() => onSendBank(give, receive)}
+					disabled={!canBank}
 					loading={submitting}
-					style={[styles.sendBtn, styles.smallBtn]}
+					style={[styles.actionBtn, styles.smallBtn]}
 				>
-					Send
+					{bankClosed ? 'Bank closed' : 'Trade with bank'}
 				</Button>
 			</View>
+
+			{!bankClosed && (
+				<Text style={styles.rateHint}>
+					{rateHint(state, meIdx, bankOptions)}
+				</Text>
+			)}
 		</View>
 	)
 }
@@ -848,12 +301,25 @@ function PlayerChip({
 	)
 }
 
-const RESOURCE_LABELS: Record<Resource, string> = {
-	wood: 'Wood',
-	wheat: 'Wheat',
-	sheep: 'Sheep',
-	brick: 'Brick',
-	ore: 'Ore',
+// Since the player composes freely and the bank either takes the result or
+// doesn't, this line is the only place the rates themselves are named. Ratios
+// are shown surcharged (Curse of Provinciality) so it never quotes a rate the
+// player can't actually get.
+function rateHint(
+	state: GameState,
+	meIdx: number,
+	options: BankKind[]
+): string {
+	const surcharge = bankSurchargeFor(state, meIdx)
+	const parts = options.map((opt) => {
+		const locked = lockedGiveResource(opt)
+		const ratio = ratioOf(opt) + surcharge
+		if (locked) return `${ratio}:1 ${locked}`
+		return opt === '3:1' ? `${ratio}:1 any` : `${ratio}:1 bank`
+	})
+	const specialty = state.players[meIdx]?.specialistResource
+	if (specialty) parts.push(`${specialty} pays 1 fewer`)
+	return `Rates: ${parts.join(' · ')}`
 }
 
 const styles = StyleSheet.create({
@@ -874,37 +340,12 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		color: colors.text,
 	},
-	bankBtn: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: 4,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: 4,
-		borderRadius: radius.full,
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-	},
-	bankBtnDisabled: {
-		backgroundColor: colors.cardAlt,
-	},
-	bankBtnLabel: {
-		fontSize: font.sm,
-		fontWeight: '600',
-		color: colors.text,
-	},
-	bankBtnLabelDisabled: {
-		color: colors.textMuted,
-	},
 	linkBtn: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: 2,
 		paddingHorizontal: spacing.xs,
 		paddingVertical: 4,
-	},
-	linkBtnDisabled: {
-		opacity: 0.35,
 	},
 	linkBtnLabel: {
 		fontSize: font.sm,
@@ -917,11 +358,6 @@ const styles = StyleSheet.create({
 		color: colors.textSecondary,
 		textTransform: 'uppercase',
 		letterSpacing: 0.3,
-	},
-	ratioHint: {
-		fontSize: font.sm,
-		fontWeight: '500',
-		color: colors.textMuted,
 	},
 	scrollBody: {
 		gap: spacing.xs,
@@ -944,44 +380,6 @@ const styles = StyleSheet.create({
 		fontWeight: '600',
 		color: colors.textMuted,
 	},
-	optionCol: {
-		gap: spacing.xs,
-	},
-	optionCard: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.sm,
-		padding: spacing.sm,
-		borderRadius: radius.md,
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-	},
-	optionRatio: {
-		width: 42,
-		height: 42,
-		borderRadius: radius.sm,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	optionRatioText: {
-		fontSize: font.sm,
-		fontWeight: '700',
-		color: '#1A1A1A',
-	},
-	optionBody: {
-		flex: 1,
-		gap: 2,
-	},
-	optionTitle: {
-		fontSize: font.md,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	optionSubtitle: {
-		fontSize: font.sm,
-		color: colors.textSecondary,
-	},
 	chipRow: {
 		flexDirection: 'row',
 		flexWrap: 'wrap',
@@ -1003,66 +401,21 @@ const styles = StyleSheet.create({
 		fontSize: font.sm,
 		color: colors.textSecondary,
 	},
-	bankFooterRow: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		marginTop: spacing.xs,
-	},
-	merchantBox: {
-		marginTop: spacing.xs,
-		padding: spacing.sm,
-		borderRadius: radius.sm,
-		borderWidth: 1,
-		borderColor: colors.border,
-		gap: spacing.xs,
-	},
-	merchantTitle: {
-		fontSize: font.xs,
-		fontWeight: '700',
-		color: colors.textSecondary,
-	},
-	merchantRow: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.xs,
-	},
-	merchantChip: {
-		minWidth: 34,
-		paddingVertical: 4,
-		paddingHorizontal: 8,
-		borderRadius: radius.sm,
-		borderWidth: 1,
-		borderColor: '#2B2B2B',
-		alignItems: 'center',
-	},
-	merchantChipDisabled: {
-		opacity: 0.4,
-	},
-	merchantChipText: {
-		fontSize: font.sm,
-		fontWeight: '800',
-		color: '#1A1A1A',
-	},
-	bankSummary: {
-		fontSize: font.sm,
-		color: colors.textSecondary,
-	},
 	buttons: {
 		flexDirection: 'row',
 		gap: spacing.sm,
-		marginTop: spacing.xs,
 	},
-	cancelBtn: {
+	actionBtn: {
 		flex: 1,
-	},
-	sendBtn: {
-		flex: 2,
 	},
 	smallBtn: {
 		minHeight: 34,
 		paddingVertical: 6,
 		paddingHorizontal: spacing.md,
+	},
+	rateHint: {
+		fontSize: font.xs,
+		color: colors.textMuted,
 	},
 	pressed: {
 		opacity: 0.7,

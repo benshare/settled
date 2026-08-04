@@ -388,8 +388,23 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			const detail: DetailRow[] = [
 				{ label: 'Gave', text: handText(e.give) },
 				{ label: 'Got', text: handText(e.receive) },
-				{ label: 'Rate', text: `${e.ratio}:1` },
 			]
+			// One rate for the whole trade is the common case and reads best;
+			// a mixed give (a 2:1 port alongside the 4:1 bank) needs the
+			// per-resource breakdown to be honest about what it cost.
+			const rateText = e.ratio
+				? `${e.ratio}:1`
+				: e.rates
+					? e.rates
+							.map(
+								(r) =>
+									`${r.ratio * r.groups} ${RESOURCE_LABELS[r.resource]} at ${r.ratio}:1`
+							)
+							.join(' · ')
+					: null
+			if (rateText) detail.push({ label: 'Rate', text: rateText })
+			// Pre-combination events only: the merchant's extras are ordinary
+			// 1:1 groups now, but old rows still carry the side-conversion.
 			if (e.merchant) {
 				detail.push({
 					label: 'Merchant',
@@ -397,9 +412,7 @@ function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				})
 			}
 			return {
-				text: e.merchant
-					? `${who(e.player)} traded with the bank (merchant)`
-					: `${who(e.player)} traded with the bank`,
+				text: `${who(e.player)} traded with the bank`,
 				player: e.player,
 				detail,
 			}

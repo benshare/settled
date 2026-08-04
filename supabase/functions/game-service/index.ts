@@ -201,8 +201,9 @@ type BankTradeBody = {
 	game_id: string
 	give: unknown
 	receive: unknown
-	// Merchant: pay `count` extra of the single give resource for `count`
-	// resources of choice.
+	// Legacy only. Current clients fold the merchant's 1:1 extras straight
+	// into give/receive; a client on an older bundle still sends them apart,
+	// and `handleBankTrade` merges them back before validating.
 	merchant?: {
 		resource: unknown
 		count: unknown
@@ -751,15 +752,6 @@ type TradeOffer = {
 
 type PortKind = '3:1' | Resource
 type Port = { edge: Edge; kind: PortKind }
-type BankKind =
-	| '5:1'
-	| '4:1'
-	| '3:1'
-	| '2:1-brick'
-	| '2:1-wood'
-	| '2:1-sheep'
-	| '2:1-wheat'
-	| '2:1-ore'
 
 // Canonical 9 port slots (matches lib/catan/board.ts PORT_SLOTS).
 const PORT_SLOTS: readonly Edge[] = [
@@ -3642,13 +3634,6 @@ function playerPortKinds(state: GameState, playerIdx: number): Set<PortKind> {
 	return out
 }
 
-function ratioOfBank(kind: BankKind): 2 | 3 | 4 | 5 {
-	if (kind === '5:1') return 5
-	if (kind === '4:1') return 4
-	if (kind === '3:1') return 3
-	return 2
-}
-
 // What the bank offers this player after the `provinciality` curse, which
 // varies by table size. Mirror of lib/catan/ports.ts.
 function bankAccessFor(
@@ -3660,117 +3645,233 @@ function bankAccessFor(
 	return CURSE_SIZE_VARIANTS.provinciality?.[size]?.bankAccess ?? 'flat_5'
 }
 
-// Extra input paid on every ratio — 1 under the small-table version of
-// provinciality, 0 otherwise.
-function bankSurchargeFor(state: GameState, playerIdx: number): number {
-	return bankAccessFor(state, playerIdx) === 'surcharge' ? 1 : 0
-}
-
-// Given a give/receive hand, infer which bank kind the caller is trying to
-// use — highest-quality ratio they can support. Returns null if the hand
-// can't be parsed into any kind the player actually has access to. Under the
-// `provinciality` curse that depends on the table size: 5:1 only, ports at a
-// +1 surcharge, or no bank trade at all.
+// --- Combination bank trades ------------------------------------------------
 //
-// Specialist discount: when the give is a single-resource stack of the
-// player's declared specialty, the divisibility check uses
-// `max(2, baseRatio - 1)` instead of baseRatio.
-function inferBankKind(
+// A bank trade is not priced at one chosen ratio: the give is cut into groups,
+// each group a whole number of cards of one resource at one of the rates that
+// resource is available at, and the number of groups is the number of cards
+// received. So a 2:1 wheat port and the 4:1 bank combine — 2 wheat + 4 wood
+// buys 2 cards. Mirror of lib/catan/ports.ts.
+
+type BankRate = { resource: Resource; ratio: number; groups: number }
+
+// The rates each given resource may be paid at. An empty map means the bank is
+// closed to this player (or they're giving nothing).
+function bankRatesFor(
 	state: GameState,
 	playerIdx: number,
 	give: ResourceHand
-): BankKind | null {
-	const giveResources = RESOURCES.filter((r) => give[r] > 0)
-	if (giveResources.length === 0) return null
-
+): Partial<Record<Resource, number[]>> {
 	const access = bankAccessFor(state, playerIdx)
-	if (access === 'none') return null
-	if (access === 'flat_5') {
-		const allDivBy5 = giveResources.every((r) => give[r] % 5 === 0)
-		return allDivBy5 ? '5:1' : null
-	}
-	const surcharge = access === 'surcharge' ? 1 : 0
+	if (access === 'none') return {}
 
-	const kinds = playerPortKinds(state, playerIdx)
-	const specialistResource =
-		state.players[playerIdx]?.specialistResource ?? null
-
-	// Effective ratio for a give + candidate kind, applying specialist
-	// discount only when give is a single-resource stack of the declared
-	// specialty.
-	const effective = (kind: BankKind) =>
-		effectiveBankRatioFor(kind, give, specialistResource, surcharge)
-
-	// Single-resource give → could be any; prefer 2:1 port for that resource,
-	// then 3:1, then 4:1.
-	if (giveResources.length === 1) {
-		const only = giveResources[0]
-		if (kinds.has(only)) {
-			const kind = `2:1-${only}` as BankKind
-			if (give[only] % effective(kind) === 0) return kind
-		}
-		if (kinds.has('3:1') && give[only] % effective('3:1') === 0)
-			return '3:1'
-		if (give[only] % effective('4:1') === 0) return '4:1'
-		return null
-	}
-
-	// Multi-resource give → can't use a 2:1 specific port. Prefer 3:1 then 4:1.
-	// Specialist discount never applies to multi-resource gives.
-	const allDivBy3 = giveResources.every(
-		(r) => give[r] % effective('3:1') === 0
-	)
-	if (kinds.has('3:1') && allDivBy3) return '3:1'
-	const allDivBy4 = giveResources.every(
-		(r) => give[r] % effective('4:1') === 0
-	)
-	if (allDivBy4) return '4:1'
-	return null
-}
-
-function effectiveBankRatioFor(
-	kind: BankKind,
-	give: ResourceHand,
-	specialistResource: Resource | null,
-	surcharge: number = 0
-): number {
-	const base = ratioOfBank(kind) + surcharge
-	if (!specialistResource) return base
 	const givers = RESOURCES.filter((r) => give[r] > 0)
-	if (givers.length !== 1) return base
-	if (givers[0] !== specialistResource) return base
-	return Math.max(1, base - 1)
+	if (givers.length === 0) return {}
+
+	const out: Partial<Record<Resource, number[]>> = {}
+	if (access === 'flat_5') {
+		for (const r of givers) out[r] = [5]
+		return out
+	}
+
+	const surcharge = access === 'surcharge' ? 1 : 0
+	const kinds = playerPortKinds(state, playerIdx)
+	const p = state.players[playerIdx]
+	const isSmith = p?.bonus === 'smith'
+	// Unchanged from the single-ratio rule: the specialist discount applies
+	// only when the whole give is one stack of their declared resource.
+	const specialty =
+		givers.length === 1 && p?.specialistResource === givers[0]
+			? givers[0]
+			: null
+
+	for (const r of givers) {
+		const ratios: number[] = [4 + surcharge]
+		if (kinds.has('3:1')) ratios.push(3 + surcharge)
+		// A smith may satisfy a brick lock with ore and vice versa, so their
+		// counterpart port counts as this resource's specific port too.
+		const hasSpecific = RESOURCES.some(
+			(locked) =>
+				kinds.has(locked) && smithPortResourceOk(locked, r, isSmith)
+		)
+		if (hasSpecific) ratios.push(2 + surcharge)
+		if (r === specialty) {
+			for (let i = 0; i < ratios.length; i += 1) {
+				ratios[i] = Math.max(1, ratios[i] - 1)
+			}
+		}
+		// Cheapest first: the witness walk prefers the head, so the reported
+		// rates are the most favourable ones the proposal could have used.
+		out[r] = [...new Set(ratios)].sort((a, b) => a - b)
+	}
+	return out
 }
 
-function isValidBankTradeShape(
-	give: ResourceHand,
-	receive: ResourceHand,
-	kind: BankKind,
-	specialistResource: Resource | null = null,
-	isSmith: boolean = false,
-	surcharge: number = 0
-): boolean {
-	const ratio = effectiveBankRatioFor(
-		kind,
-		give,
-		specialistResource,
-		surcharge
+// Which group counts can consume exactly `count` cards, paying only the given
+// ratios. A DP rather than a range check because a rate set has holes: {2, 4}
+// can't make an odd pile at all, and {3, 4} can't make 5.
+function reachableGroupCounts(count: number, ratios: number[]): Set<number>[] {
+	const table: Set<number>[] = Array.from(
+		{ length: count + 1 },
+		() => new Set<number>()
 	)
-	const locked: Resource | null = kind.startsWith('2:1-')
-		? (kind.slice(4) as Resource)
-		: null
+	table[0].add(0)
+	for (let c = 1; c <= count; c += 1) {
+		for (const ratio of ratios) {
+			if (ratio > c) continue
+			for (const g of table[c - ratio]) table[c].add(g + 1)
+		}
+	}
+	return table
+}
+
+// Rebuild one resource's groups for a known group count, taking the cheapest
+// usable rate at each step so the reported partition is deterministic.
+function witnessGroups(
+	count: number,
+	groups: number,
+	ratios: number[],
+	table: Set<number>[]
+): number[] {
+	const parts: number[] = []
+	let c = count
+	let g = groups
+	while (c > 0) {
+		const ratio = ratios.find((r) => r <= c && table[c - r].has(g - 1))
+		if (ratio === undefined) return []
+		parts.push(ratio)
+		c -= ratio
+		g -= 1
+	}
+	return parts
+}
+
+// The merchant pays 1:1 for extra cards of the resource they're already
+// trading, but only alongside a real group — otherwise the rate would be a
+// free card for a card. Single-resource gives only, the same shape the old
+// `merchant` add-on required.
+function merchantAppliesTo(
+	state: GameState,
+	playerIdx: number,
+	give: ResourceHand
+): Resource | null {
+	if (state.players[playerIdx]?.bonus !== 'merchant') return null
+	const givers = RESOURCES.filter((r) => give[r] > 0)
+	return givers.length === 1 ? givers[0] : null
+}
+
+// The partition backing this give/receive, or null if the bank won't take it.
+// A non-null return is both the validity answer and the record of what was
+// charged. Affordability is checked separately by the caller.
+function bankPartitionFor(
+	state: GameState,
+	playerIdx: number,
+	give: ResourceHand,
+	receive: ResourceHand
+): BankRate[] | null {
 	let giveTotal = 0
 	let receiveTotal = 0
 	for (const r of RESOURCES) {
-		if (give[r] < 0 || receive[r] < 0) return false
-		if (give[r] > 0 && receive[r] > 0) return false
-		if (give[r] % ratio !== 0) return false
-		if (give[r] > 0 && !smithPortResourceOk(locked, r, isSmith))
-			return false
+		if (give[r] < 0 || receive[r] < 0) return null
+		if (!Number.isInteger(give[r]) || !Number.isInteger(receive[r]))
+			return null
+		if (give[r] > 0 && receive[r] > 0) return null
 		giveTotal += give[r]
 		receiveTotal += receive[r]
 	}
-	return giveTotal > 0 && giveTotal === ratio * receiveTotal
+	if (giveTotal === 0 || receiveTotal === 0) return null
+
+	const rates = bankRatesFor(state, playerIdx, give)
+	const merchantResource = merchantAppliesTo(state, playerIdx, give)
+
+	// Per resource: the reachable group counts, and the DP table the witness
+	// walk needs. The merchant's 1:1 cards ride on top of a full-price
+	// partition, so they're layered over the table rather than folded into it.
+	type Slot = {
+		resource: Resource
+		count: number
+		ratios: number[]
+		table: Set<number>[]
+		reachable: Map<number, number>
+	}
+	const slots: Slot[] = []
+	for (const r of RESOURCES) {
+		if (give[r] === 0) continue
+		const ratios = rates[r]
+		if (!ratios || ratios.length === 0) return null
+		const table = reachableGroupCounts(give[r], ratios)
+		// group count → how many of the given cards were spent at full price
+		const reachable = new Map<number, number>()
+		for (const g of table[give[r]]) reachable.set(g, give[r])
+		if (r === merchantResource) {
+			for (let spent = 1; spent < give[r]; spent += 1) {
+				const extra = give[r] - spent
+				for (const g of table[spent]) {
+					if (g < 1) continue
+					if (!reachable.has(g + extra))
+						reachable.set(g + extra, spent)
+				}
+			}
+		}
+		if (reachable.size === 0) return null
+		slots.push({ resource: r, count: give[r], ratios, table, reachable })
+	}
+
+	// Combine across resources: running receive total → one representative
+	// per-slot group count that reaches it. Only the total constrains what the
+	// remaining slots can add, so keeping a single representative is lossless.
+	let combos = new Map<number, number[]>([[0, []]])
+	for (const slot of slots) {
+		const groupCounts = [...slot.reachable.keys()].sort((a, b) => a - b)
+		const next = new Map<number, number[]>()
+		for (const [total, picks] of combos) {
+			for (const g of groupCounts) {
+				const sum = total + g
+				if (sum > receiveTotal || next.has(sum)) continue
+				next.set(sum, [...picks, g])
+			}
+		}
+		combos = next
+	}
+
+	const picks = combos.get(receiveTotal)
+	if (!picks) return null
+
+	const out: BankRate[] = []
+	for (let i = 0; i < slots.length; i += 1) {
+		const slot = slots[i]
+		const groups = picks[i]
+		const spent = slot.reachable.get(groups)
+		if (spent === undefined) return null
+		const extra = slot.count - spent
+		const parts = witnessGroups(
+			spent,
+			groups - extra,
+			slot.ratios,
+			slot.table
+		)
+		if (parts.length === 0 && spent > 0) return null
+		const byRatio = new Map<number, number>()
+		for (const ratio of parts)
+			byRatio.set(ratio, (byRatio.get(ratio) ?? 0) + 1)
+		if (extra > 0) byRatio.set(1, (byRatio.get(1) ?? 0) + extra)
+		for (const ratio of [...byRatio.keys()].sort((a, b) => a - b)) {
+			out.push({
+				resource: slot.resource,
+				ratio,
+				groups: byRatio.get(ratio)!,
+			})
+		}
+	}
+	return out
+}
+
+// True when every group was charged the same rate — the common case, and what
+// lets the log keep saying "4:1".
+function uniformRatioOf(rates: BankRate[]): number | null {
+	if (rates.length === 0) return null
+	const first = rates[0].ratio
+	return rates.every((r) => r.ratio === first) ? first : null
 }
 
 function applyBankTradeToPlayer(
@@ -8241,82 +8342,58 @@ async function handleBankTrade(
 		return err(403, 'not your turn')
 	}
 
-	const give = normalizeHand(body.give)
-	const receive = normalizeHand(body.receive)
+	let give = normalizeHand(body.give)
+	let receive = normalizeHand(body.receive)
 	if (!give || !receive) return err(400, 'invalid resource hand')
 
 	const meP = state.players[meIdx]
-	const isSmith = meP.bonus === 'smith'
-	const kind = inferBankKind(state, meIdx, give)
-	if (!kind) return err(400, 'no valid bank ratio for this give hand')
-	const specialistResource = meP.specialistResource ?? null
-	const surcharge = bankSurchargeFor(state, meIdx)
-	if (
-		!isValidBankTradeShape(
-			give,
-			receive,
-			kind,
-			specialistResource,
-			isSmith,
-			surcharge
-		)
-	)
-		return err(400, 'invalid bank trade shape')
 
-	// Merchant: optional 1:1 side-conversion of extra input resource.
-	let merchantAddon: MerchantAddon | null = null
+	// A client on a pre-combination bundle still sends the merchant's 1:1
+	// side-conversion as its own payload. Fold it back into give/receive so it
+	// goes through the same validation as everything else — the merchant's
+	// extras are ordinary 1:1 groups now.
 	if (body.merchant && meP.bonus === 'merchant') {
 		const resource = parseResource(body.merchant.resource)
 		const take = normalizeHand(body.merchant.take)
 		const count = Number(body.merchant.count)
 		if (!resource || !take) return err(400, 'invalid merchant add-on')
-		const addon: MerchantAddon = { resource, count, take }
-		if (!isValidMerchantAddon(give, addon))
+		if (!isValidMerchantAddon(give, { resource, count, take }))
 			return err(400, 'invalid merchant add-on')
-		merchantAddon = addon
+		give = { ...give, [resource]: give[resource] + count }
+		const merged = { ...receive }
+		for (const r of RESOURCES) merged[r] += take[r]
+		receive = merged
 	}
 
-	// Afford the base give plus any merchant extra of the input resource.
-	const totalGive: ResourceHand = { ...give }
-	if (merchantAddon) totalGive[merchantAddon.resource] += merchantAddon.count
-	if (!canAfford(meP.resources, totalGive))
+	// The one authority on whether the bank takes this: a non-null partition
+	// is both the answer and the record of what was charged.
+	const rates = bankPartitionFor(state, meIdx, give, receive)
+	if (!rates) return err(400, 'no valid bank rate for this trade')
+	if (!canAfford(meP.resources, give))
 		return err(400, 'insufficient resources')
 
-	let nextPlayers = applyBankTradeToPlayer(
+	const nextPlayers = applyBankTradeToPlayer(
 		state.players,
 		meIdx,
 		give,
 		receive
 	)
-	if (merchantAddon) {
-		const addon = merchantAddon
-		nextPlayers = nextPlayers.map((p, i) => {
-			if (i !== meIdx) return p
-			const next = { ...p.resources }
-			next[addon.resource] -= addon.count
-			for (const r of RESOURCES) next[r] += addon.take[r]
-			return { ...p, resources: next }
-		})
-	}
 	const { error: stateErr } = await admin
 		.from('game_states')
 		.update({ players: nextPlayers })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
-	const ratio = effectiveBankRatioFor(
-		kind,
-		give,
-		specialistResource,
-		surcharge
-	)
+	// `ratio` survives only for a single-rate trade, which is what keeps the
+	// log's "4:1" row reading the way it always has.
+	const uniform = uniformRatioOf(rates)
 	const event = {
 		kind: 'bank_trade',
 		player: meIdx,
 		give,
 		receive,
-		ratio,
-		merchant: merchantAddon,
+		...(uniform === null ? {} : { ratio: uniform }),
+		rates,
 		at: new Date().toISOString(),
 	}
 	const { error: gameErr } = await admin
@@ -8325,7 +8402,7 @@ async function handleBankTrade(
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
-	return json({ ok: true, ratio })
+	return json({ ok: true, rates })
 }
 
 async function handleBuyDevCard(

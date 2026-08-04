@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { create } from 'zustand'
 import type { Hex, Resource } from '../catan/board'
 import type { MerchantAddon } from '../catan/bonus'
+import type { BankRate } from '../catan/ports'
 import type { BonusId, CurseId } from '../catan/bonuses'
 import type { DevCardId } from '../catan/devCards'
 import type { DiceRoll, GameConfig, ResourceHand } from '../catan/types'
@@ -107,14 +108,17 @@ export type GameEvent =
 			by: number
 			at: string
 	  }
-	// `merchant` is the optional 1:1 side-conversion a merchant rode along
-	// with the trade; absent for everyone else.
+	// A bank trade may mix rates (a 2:1 port and the 4:1 bank in one go), so
+	// `rates` is the partition that paid for it and `ratio` survives only for
+	// the common single-rate case. `merchant` is on pre-combination events
+	// only: the bonus's 1:1 extras are now ordinary groups in `rates`.
 	| {
 			kind: 'bank_trade'
 			player: number
 			give: ResourceHand
 			receive: ResourceHand
-			ratio: 2 | 3 | 4
+			ratio?: number
+			rates?: BankRate[]
 			merchant?: MerchantAddon | null
 			at: string
 	  }
@@ -512,15 +516,14 @@ type GamesStore = {
 		offerId: string,
 		withIdx: number
 	) => Promise<ActionResult>
-	// `merchant`: pay `count` extra of the single give resource for `count`
-	// resources of choice (merchant bonus). Ignored by the edge for non-
-	// merchant players.
+	// The edge infers the rates: any combination of the caller's ports, the
+	// bank, and their specialist / merchant bonuses that pays for the given
+	// give/receive pair. `rates` comes back as the partition it charged.
 	bankTrade: (
 		gameId: string,
 		give: ResourceHand,
-		receive: ResourceHand,
-		merchant?: { resource: Resource; count: number; take: ResourceHand }
-	) => Promise<ActionResult & { ratio?: 2 | 3 | 4 }>
+		receive: ResourceHand
+	) => Promise<ActionResult & { rates?: BankRate[] }>
 
 	buyDevCard: (
 		gameId: string,
@@ -1087,19 +1090,18 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async bankTrade(gameId, give, receive, merchant) {
+	async bankTrade(gameId, give, receive) {
 		const { error, data } = await callGameService(
 			{
 				action: 'bank_trade',
 				game_id: gameId,
 				give,
 				receive,
-				merchant: merchant ?? null,
 			},
 			"Couldn't trade with bank"
 		)
 		if (error) return { error }
-		return { error: null, ratio: data.ratio as 2 | 3 | 4 | undefined }
+		return { error: null, rates: data.rates as BankRate[] | undefined }
 	},
 
 	async buyDevCard(gameId, useBricklayer, scoutSwap, smithSwap) {

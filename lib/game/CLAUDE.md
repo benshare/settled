@@ -56,6 +56,11 @@ app/game/[id].tsx
   the inline `ConfirmBar`.
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and
   the viewer's own hand (`ResourceHand` / `DevCardHand` / `KnightTapBar`).
+  `TradePanel` **replaces** the hand for the same reason `DiscardPanel` does —
+  the give side is composed by tapping the hand itself. It is one composer with
+  two destinations (propose to players / trade with the bank), not a flow: the
+  bank has no ratio picker any more, so `onBankTrade` takes just give/receive.
+  See `lib/catan/CLAUDE.md`.
   While the viewer owes a discard, `DiscardPanel` **replaces** the hand (and
   hides the dev cards / knight bar) rather than being a bar of its own — the
   cards are picked by tapping the hand itself, so the composer has to be where

@@ -1360,16 +1360,11 @@ function useGameScreenState(gameId: string) {
 
 	async function onBankTrade(
 		give: ResourceHandType,
-		receive: ResourceHandType,
-		merchant?: {
-			resource: Resource
-			count: number
-			take: ResourceHandType
-		}
+		receive: ResourceHandType
 	) {
 		if (!game) return
 		setSubmitting(true)
-		const res = await bankTrade(game.id, give, receive, merchant)
+		const res = await bankTrade(game.id, give, receive)
 		setSubmitting(false)
 		if (res.error) notify('Bank trade failed', res.error)
 		else setTradePanelOpen(false)
