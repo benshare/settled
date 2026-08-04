@@ -53,6 +53,7 @@
         "npm:react-native-reanimated@4.5",
         "npm:react-native-safe-area-context@5.7",
         "npm:react-native-screens@~4.26.2",
+        "npm:react-native-sortables@^1.10.0",
         "npm:react-native-svg@15.15.4",
         "npm:react-native-web@0.21",
         "npm:react-native-worklets@0.10.0",

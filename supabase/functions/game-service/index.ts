@@ -1164,6 +1164,94 @@ function gameSizeFor(playerCount: number): GameSize {
 	return playerCount >= 5 ? 'expanded' : 'standard'
 }
 
+// --- Player colors (must match lib/catan/colors.ts) ------------------------
+// Resolved once, in handleRespond, onto `games.colors`. Nothing else on the
+// server reads colors, so this is the whole mirror.
+
+const COLOR_IDS = ['red', 'blue', 'orange', 'white', 'green', 'brown'] as const
+
+type ColorId = (typeof COLOR_IDS)[number]
+
+function isColorId(value: unknown): value is ColorId {
+	return (COLOR_IDS as readonly unknown[]).includes(value)
+}
+
+// `profiles.color_prefs` is unvalidated JSON. Deliberately does NOT pad: an
+// empty result means "no preference", which resolves to a random color rather
+// than to the default order.
+function parseColorPrefs(raw: unknown): ColorId[] {
+	if (!Array.isArray(raw)) return []
+	const out: ColorId[] = []
+	for (const entry of raw) {
+		if (isColorId(entry) && !out.includes(entry)) out.push(entry)
+	}
+	return out
+}
+
+// One distinct color per seat, same length and order as `prefs`. Walk the
+// rankings a depth at a time, hand each free color to its sole claimant (or a
+// random one of several), and let a seat whose choice is already gone fall
+// through to the next depth. Whoever is still empty-handed draws at random.
+function resolveColorPreferences(
+	prefs: readonly (readonly ColorId[])[]
+): ColorId[] {
+	const assigned: (ColorId | null)[] = prefs.map(() => null)
+	const taken = new Set<ColorId>()
+
+	for (let depth = 0; depth < COLOR_IDS.length; depth++) {
+		// A seat names at most one color per depth, so none can win twice.
+		const claims = new Map<ColorId, number[]>()
+		for (let seat = 0; seat < prefs.length; seat++) {
+			if (assigned[seat] !== null) continue
+			const want = prefs[seat][depth]
+			if (want === undefined || taken.has(want)) continue
+			const seats = claims.get(want)
+			if (seats) seats.push(seat)
+			else claims.set(want, [seat])
+		}
+
+		for (const [color, seats] of claims) {
+			const winner =
+				seats.length === 1
+					? seats[0]
+					: seats[Math.floor(Math.random() * seats.length)]
+			assigned[winner] = color
+			taken.add(color)
+		}
+	}
+
+	const spare = shuffle(COLOR_IDS.filter((c) => !taken.has(c)))
+	for (let seat = 0; seat < assigned.length; seat++) {
+		if (assigned[seat] === null)
+			assigned[seat] = spare.pop() ?? COLOR_IDS[0]
+	}
+
+	return assigned as ColorId[]
+}
+
+// Every seat's color for a starting game, read from the players' profiles in
+// `playerOrder` order. A failed read is not fatal — every seat falls back to
+// "no preference", which is a random permutation, rather than blocking the
+// game from starting.
+async function resolveColorsForPlayers(
+	admin: SupabaseClient,
+	playerOrder: string[]
+): Promise<ColorId[]> {
+	const { data, error } = await admin
+		.from('profiles')
+		.select('id, color_prefs')
+		.in('id', playerOrder)
+
+	const byId = new Map<string, ColorId[]>()
+	if (!error && data) {
+		for (const row of data as { id: string; color_prefs: unknown }[]) {
+			byId.set(row.id, parseColorPrefs(row.color_prefs))
+		}
+	}
+
+	return resolveColorPreferences(playerOrder.map((id) => byId.get(id) ?? []))
+}
+
 // --- Bonuses (must match lib/catan/bonuses) --------------------------------
 
 type BonusId =
@@ -4235,6 +4323,10 @@ async function handleRespond(
 		]
 		const playerOrder = shuffle(participants)
 		const config = request.config as GameConfig
+		// Colors are decided here, not at invite time: a request can sit
+		// pending for days, and the ranking that counts is the one in effect
+		// when the last invitee accepts.
+		const colors = await resolveColorsForPlayers(admin, playerOrder)
 
 		// One bonus and one curse each is nothing to choose between, so those
 		// games skip the selection phase and open on placement with the cards
@@ -4283,6 +4375,7 @@ async function handleRespond(
 			.insert({
 				participants,
 				player_order: playerOrder,
+				colors,
 				// Bonus selection is simultaneous — nobody holds the turn, and
 				// naming a seat there is actively wrong (the header's tab strip
 				// reads this column to badge "waiting on you"). Set to 0 when

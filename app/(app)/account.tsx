@@ -1,4 +1,5 @@
 import { useAuth } from '@/lib/auth'
+import { parseColorPrefs } from '@/lib/catan/colors'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { Input } from '@/lib/modules/Input'
@@ -197,6 +198,8 @@ export default function AccountScreen() {
 		router.replace('/')
 	}
 
+	const colorPrefsSet = parseColorPrefs(profile?.color_prefs).length > 0
+
 	const saveDisabled =
 		saving ||
 		checking ||
@@ -288,6 +291,22 @@ export default function AccountScreen() {
 				<View style={styles.section}>
 					<Text style={styles.sectionLabel}>Appearance</Text>
 					<ThemeSegmentControl />
+				</View>
+
+				<View style={styles.section}>
+					<Text style={styles.sectionLabel}>Colors</Text>
+					<Pressable
+						onPress={() => router.push('/player-colors')}
+						style={({ pressed }) => [
+							styles.row,
+							pressed && styles.rowPressed,
+						]}
+					>
+						<Text style={styles.rowValue}>Player colors</Text>
+						<Text style={styles.rowAction}>
+							{colorPrefsSet ? 'Ranked' : 'No preference'}
+						</Text>
+					</Pressable>
 				</View>
 
 				{Platform.OS !== 'web' && (

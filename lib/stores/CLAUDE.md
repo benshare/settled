@@ -94,6 +94,18 @@ Two consequences that are easy to get wrong:
 
 `spectatableGames` is everything the viewer _may_ watch; the header tab strip shows only games they're _actively_ watching, kept in `profiles.spectating` (a `uuid[]` on the profile row, owned by `useProfileStore` — `startSpectating` / `stopSpectating` / `pruneSpectating`, all optimistic). `useGamesStore` cross-references it in two places so a spectated game that ends can't linger as a stale tab: `handleGameChange` calls `stopSpectating` when a watched game goes `complete`/is deleted, and `loadForUser` calls `pruneSpectating(spectatableGame ids)` to catch games that ended while the app was closed. Both are best-effort — the tab disappears for free regardless, since `useSwitchableGames` intersects `spectating` with `spectatableGames` (which already drops completed games).
 
+## Profile columns are listed per store
+
+`PROFILE_COLS` is declared separately in `useProfileStore`, `useFriendsStore`
+and `useGamesStore`, and all three must select the **same** set — every one of
+them constructs a full `Profile` row, so a column added to the table has to be
+added to all three or the two that missed it fail to typecheck against the
+regenerated `Database` types. `color_prefs` is the most recent addition.
+
+Only `useProfileStore` ever writes it (`updateColorPrefs`, optimistic with a
+rollback, the same shape as `setSpectating`); the other two fetch it purely
+because they build `Profile` objects.
+
 ## Dev-flagged profiles
 
 `profiles.dev` is a boolean column (default `false`) used to mark users that only exist for local/dev testing — see `dev/seed-test-users.mjs`, which sets it to `true`. **In production builds, every user-facing query that returns or searches profiles must filter these out.** Non-`__DEV__` clients should never show a dev user to a real user.

@@ -81,6 +81,7 @@ export default function AppLayout() {
 				}}
 			/>
 			<Tabs.Screen name="create-game" options={{ href: null }} />
+			<Tabs.Screen name="player-colors" options={{ href: null }} />
 		</Tabs>
 	)
 }
