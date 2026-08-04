@@ -219,6 +219,10 @@ function useGameScreenState(gameId: string) {
 	// Game-over overlay starts open when the game is complete; user can
 	// dismiss to inspect the final board and reopen via FinalScoreButton.
 	const [gameOverOpen, setGameOverOpen] = useState(true)
+	// A transient confirmation line. It hangs off the screen context because
+	// what raises it (the nav's `GameMenu`) and what renders it (the screen
+	// root, so it floats over every zone) are in different parts of the tree.
+	const [toast, setToast] = useState<string | null>(null)
 
 	function confirmAction(
 		title: string,
@@ -1559,6 +1563,9 @@ function useGameScreenState(gameId: string) {
 		setBonusPaneCollapsed,
 		gameOverOpen,
 		setGameOverOpen,
+		toast,
+		showToast: (message: string) => setToast(message),
+		hideToast: () => setToast(null),
 		ritualOpen,
 		setRitualOpen,
 		shepherdOpen,

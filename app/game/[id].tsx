@@ -38,6 +38,7 @@ import { GameScreenProvider, useGameScreen } from '@/lib/game/gameScreenContext'
 import { Nav } from '@/lib/game/Nav'
 import { TopArea } from '@/lib/game/TopArea'
 import { SlidingArea } from '@/lib/modules/SlidingArea'
+import { Toast } from '@/lib/modules/Toast'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, font, spacing, z } from '@/lib/theme'
 import { useLocalSearchParams, useRouter } from 'expo-router'
@@ -112,6 +113,8 @@ function Game() {
 		dismissNomadAnim,
 		ftAnim,
 		dismissFtAnim,
+		toast,
+		hideToast,
 	} = useGameScreen()
 	const router = useRouter()
 
@@ -242,6 +245,12 @@ function Game() {
 				profilesById={profilesById}
 				meId={meId}
 			/>
+
+			{/* Raised from the nav's overflow menu, so it has to float over
+			    every zone — hence the root, and the chat's z token. */}
+			<View pointerEvents="none" style={styles.toastLayer}>
+				<Toast message={toast} onHide={hideToast} />
+			</View>
 		</>
 	)
 }
@@ -309,6 +318,12 @@ const styles = StyleSheet.create({
 	},
 	root: {
 		flex: 1,
+	},
+	// Above the board container (`z.playArea`) and everything floating in it,
+	// same as the chat scrim — a confirmation nothing can paint over.
+	toastLayer: {
+		...StyleSheet.absoluteFill,
+		zIndex: z.chat,
 	},
 	center: {
 		flex: 1,

@@ -25,23 +25,31 @@ app/game/[id].tsx
   top/bottom bar backgrounds, the board's water background + edge shadows), and
   wraps each zone in a `ZoneSlide`. Also renders what belongs to no single
   zone: the loading / not-found states, `GameOverOverlay` + `FinalScoreButton`,
-  the three event animations, and `ChatPanel` (at the root so it covers the
-  action bars but leaves the nav clear — see `lib/catan/CLAUDE.md`).
+  the three event animations, `ChatPanel` (at the root so it covers the action
+  bars but leaves the nav clear — see `lib/catan/CLAUDE.md`), and the `Toast`
+  layer. The toast is raised from the nav's `GameMenu` but rendered here
+  because it has to float over every zone; its state (`toast` / `showToast` /
+  `hideToast`) lives on the screen context for exactly that reason — the
+  trigger and the surface are in different parts of the tree.
 - `Nav.tsx` — the fixed top row: the back chevron, `GameTitle` (the game
   switcher), and `GameMenu`. Outside every sliding area **and outside
   `<Game>`** on purpose.
 - `GameMenu.tsx` — the overflow (`⋯`) menu opposite the back chevron: forfeit
-  and end-game, each submittable and withdrawable. It sits in the nav because,
-  like the title, it is about _which game you're on_ rather than about what the
-  board is waiting for. It lives here rather than in `lib/catan/` — the rest of
-  which is rules and board components — because it reads `useGameScreen()`,
-  exactly as the zones do. Renders a same-width **spacer** rather than nothing
-  when there's nothing to offer (spectator, or a finished game), so the title
-  stays centred either way. Its `⋯` carries an accent dot whenever any
-  declaration is standing: the sheet is otherwise the only place a pending vote
-  exists and nobody would think to open it. Submitting goes through
-  `ConfirmModal`; **withdrawing does not** — that's the undo. See the
-  forfeiting section of `lib/catan/CLAUDE.md`.
+  and end-game (each submittable and withdrawable), plus **Copy debugging
+  info**, which puts `{ gameId, playerId }` on the clipboard as JSON and raises
+  a "Copied" toast. It sits in the nav because, like the title, it is about
+  _which game you're on_ rather than about what the board is waiting for. It
+  lives here rather than in `lib/catan/` — the rest of which is rules and board
+  components — because it reads `useGameScreen()`, exactly as the zones do.
+  Renders a same-width **spacer** rather than nothing until the game has loaded
+  (no ids to copy, nothing to declare), so the title stays centred either way.
+  The two declarations are gated on `canEndGame` **inside** the sheet rather
+  than gating the whole menu: a spectator and a finished game are exactly the
+  states worth reporting a bug from, so the copy row survives both. Its `⋯`
+  carries an accent dot whenever any declaration is standing: the sheet is
+  otherwise the only place a pending vote exists and nobody would think to open
+  it. Submitting goes through `ConfirmModal`; **withdrawing does not** — that's
+  the undo. See the forfeiting section of `lib/catan/CLAUDE.md`.
 - `gameScreenContext.tsx` — `GameScreenProvider` / `useGameScreen()`. All local
   UI state, every flag derived from the current phase, and one handler per
   store action. This is where a new action or a new piece of screen state goes.

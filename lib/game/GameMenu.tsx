@@ -1,5 +1,5 @@
 // The game screen's overflow menu: the two ways a game can end without anyone
-// reaching the VP threshold.
+// reaching the VP threshold, plus a bug-reporting affordance.
 //
 //   Forfeit    — a standing, withdrawable declaration. When every seat but one
 //                holds one, the game ends and the survivor wins.
@@ -10,15 +10,23 @@
 // their seat, their turn and their resources. See
 // `.claude/specs/forfeit-and-end-game.md`.
 //
+//   Copy debugging info — the game id + the viewer's own player id as JSON, so
+//                a report of "the board did something weird" arrives with the
+//                two ids needed to find the row. Offered to everyone with the
+//                menu open, spectators and finished games included: those are
+//                exactly the states worth reporting from.
+//
 // It lives in `Nav` (opposite the back chevron) rather than in a zone because,
 // like the title, it is about *which game you're on* rather than about what the
-// board is waiting for. For a spectator or a finished game it renders a spacer
-// of the same width instead, so the title stays centred either way.
+// board is waiting for. Until the game has loaded there are no ids to copy and
+// nothing to declare, so it renders a spacer of the same width instead and the
+// title stays centred either way.
 
 import { ConfirmModal } from '@/lib/modules/ConfirmModal'
 import { Modal } from '@/lib/modules/Modal'
 import { colors, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
+import * as Clipboard from 'expo-clipboard'
 import { useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useGameScreen } from './gameScreenContext'
@@ -31,6 +39,8 @@ type Pending = 'forfeit' | 'end' | null
 
 export function GameMenu() {
 	const {
+		game,
+		meId,
 		canEndGame,
 		forfeitedIds,
 		endVoteIds,
@@ -39,14 +49,15 @@ export function GameMenu() {
 		submitting,
 		onSetForfeit,
 		onSetEndVote,
+		showToast,
 	} = useGameScreen()
 
 	const [open, setOpen] = useState(false)
 	const [pending, setPending] = useState<Pending>(null)
 
-	// A spectator has no seat to forfeit, and a finished game has nothing left
-	// to declare. Both fall back to the spacer that keeps the title centred.
-	if (!canEndGame) return <View style={styles.slot} />
+	// Nothing to copy and nothing to declare before the game lands. Falls back
+	// to the spacer that keeps the title centred.
+	if (!game) return <View style={styles.slot} />
 
 	// Without this the sheet is the only place a standing declaration exists,
 	// and nobody would think to open it.
@@ -73,6 +84,16 @@ export function GameMenu() {
 		else if (which === 'end') await onSetEndVote(true)
 	}
 
+	// An arrow rather than a declaration: a hoisted `function` doesn't see the
+	// `!game` guard above, so `game` would read as possibly undefined.
+	const copyDebugInfo = async () => {
+		setOpen(false)
+		await Clipboard.setStringAsync(
+			JSON.stringify({ gameId: game.id, playerId: meId ?? null }, null, 2)
+		)
+		showToast('Copied')
+	}
+
 	return (
 		<>
 			<Pressable
@@ -96,33 +117,56 @@ export function GameMenu() {
 				onDismiss={() => setOpen(false)}
 				contentStyle={styles.sheet}
 			>
-				<Section
-					title="Forfeit"
-					status={<ForfeitStatus />}
-					blurb="The last player left standing wins."
-					active={myForfeit}
-					activeLabel="Withdraw forfeit"
-					idleLabel="Forfeit game"
-					submitting={submitting}
-					// Withdrawing is the undo — it doesn't need an "are you
-					// sure" in front of it.
-					onIdlePress={() => ask('forfeit')}
-					onActivePress={() => onSetForfeit(false)}
-				/>
+				{/* A spectator has no seat to forfeit, and a finished game has
+				    nothing left to declare — but both can still report a bug. */}
+				{canEndGame && (
+					<>
+						<Section
+							title="Forfeit"
+							status={<ForfeitStatus />}
+							blurb="The last player left standing wins."
+							active={myForfeit}
+							activeLabel="Withdraw forfeit"
+							idleLabel="Forfeit game"
+							submitting={submitting}
+							// Withdrawing is the undo — it doesn't need an "are
+							// you sure" in front of it.
+							onIdlePress={() => ask('forfeit')}
+							onActivePress={() => onSetForfeit(false)}
+						/>
 
-				<View style={styles.divider} />
+						<View style={styles.divider} />
 
-				<Section
-					title="End game"
-					status={<EndVoteStatus />}
-					blurb="Everyone has to agree. A canceled game counts for nothing."
-					active={myEndVote}
-					activeLabel="Withdraw vote"
-					idleLabel="End game"
-					submitting={submitting}
-					onIdlePress={() => ask('end')}
-					onActivePress={() => onSetEndVote(false)}
-				/>
+						<Section
+							title="End game"
+							status={<EndVoteStatus />}
+							blurb="Everyone has to agree. A canceled game counts for nothing."
+							active={myEndVote}
+							activeLabel="Withdraw vote"
+							idleLabel="End game"
+							submitting={submitting}
+							onIdlePress={() => ask('end')}
+							onActivePress={() => onSetEndVote(false)}
+						/>
+
+						<View style={styles.divider} />
+					</>
+				)}
+
+				<Pressable
+					onPress={copyDebugInfo}
+					style={({ pressed }) => [
+						styles.row,
+						pressed && styles.pressed,
+					]}
+				>
+					<Ionicons
+						name="bug-outline"
+						size={18}
+						color={colors.textSecondary}
+					/>
+					<Text style={styles.rowText}>Copy debugging info</Text>
+				</Pressable>
 			</Modal>
 
 			<ConfirmModal
@@ -276,6 +320,20 @@ const styles = StyleSheet.create({
 	divider: {
 		height: 1,
 		backgroundColor: colors.border,
+	},
+	// A plain menu row, not a Section — there's no state to report and nothing
+	// to withdraw, so the bordered action button would overstate it.
+	row: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+		paddingVertical: spacing.md,
+		paddingHorizontal: spacing.md,
+	},
+	rowText: {
+		fontSize: font.base,
+		color: colors.text,
+		fontWeight: '600',
 	},
 	action: {
 		marginTop: spacing.xs,
