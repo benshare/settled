@@ -10,10 +10,10 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import type { GameEvent } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, shadow, spacing, z } from '../theme'
-import type { ResourceHand } from './types'
 import { RESOURCES, type Resource } from './board'
 import { bonusById, curseById } from './bonuses'
 import { devCardById } from './devCards'
+import type { ResourceHand } from './types'
 
 const RESOURCE_LABELS: Record<Resource, string> = {
 	wood: 'wood',
@@ -582,7 +582,7 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'forger_token_move':
 			return {
-				text: `${who(e.player)} moved their forger token`,
+				text: `${who(e.player)} moved ${who(e.player) === "You" ? "your" : "their"} forger token`,
 				player: e.player,
 			}
 		case 'forger_copy':
