@@ -12,6 +12,7 @@
 //                  trade's responders, the one wait outside the phase machine.
 
 import { describeEvent, type LogContext } from '@/lib/catan/ActionLog'
+import { mustMoveForgerToken } from '@/lib/catan/bonus'
 import { pendingSeats } from '@/lib/catan/timeout'
 import type { DiceRoll, GameState, TradeOffer } from '@/lib/catan/types'
 import type { Game, GameEvent } from '@/lib/stores/useGamesStore'
@@ -35,8 +36,9 @@ const ROLL_KINDS: ReadonlySet<GameEvent['kind']> = new Set([
 ])
 
 // The phases where the table is waiting on a decision the island doesn't
-// already narrate. `roll` / `main` / `initial_placement` are ordinary turns
-// (the island names the seat), so they fall through to the recent-action line.
+// already narrate. `main` / `initial_placement` are ordinary turns (the island
+// names the seat), so they fall through to the recent-action line; `roll` has
+// its own line (see `rollLine`) so the banner refreshes the moment a turn ends.
 const WAIT_KINDS: ReadonlySet<GameState['phase']['kind']> = new Set([
 	'select_bonus',
 	'post_placement',
@@ -107,7 +109,30 @@ export function islandStatus(ctx: Ctx): {
 export function bannerStatus(ctx: Ctx): string | null {
 	const phase = ctx.gameState.phase
 	if (WAIT_KINDS.has(phase.kind)) return waitLine(ctx)
+	if (phase.kind === 'roll') return rollLine(ctx)
 	return recentActionLine(ctx)
+}
+
+// The `roll` phase is an ordinary turn, so it isn't in `WAIT_KINDS` — but with
+// no line here the banner falls through to the *previous* turn's last action
+// and reads as stale the moment a turn ends. Name what the table is waiting to
+// roll (or the forger's compulsory pre-roll token move) instead. The actor gets
+// the instruction; everyone else gets the status.
+function rollLine(ctx: Ctx): string | null {
+	const { game, gameState, meIdx } = ctx
+	const phase = gameState.phase
+	if (phase.kind !== 'roll') return null
+	const turn = game.current_turn ?? 0
+	// A gambler who has already rolled is keeping or rerolling; the island shows
+	// the pending dice, so name the decision rather than "to roll".
+	if (phase.pending?.dice) return `${isPhrase(turn, ctx)} confirming the roll`
+	const p = gameState.players[turn]
+	if (p && mustMoveForgerToken(p)) {
+		return turn === meIdx
+			? 'Move your forger token to an adjacent hex'
+			: `${nameOf(turn, ctx)} is moving their forger token`
+	}
+	return turn === meIdx ? 'Roll the dice' : `${nameOf(turn, ctx)} to roll`
 }
 
 function waitLine(ctx: Ctx): string | null {

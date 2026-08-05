@@ -582,7 +582,7 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'forger_token_move':
 			return {
-				text: `${who(e.player)} moved ${who(e.player) === "You" ? "your" : "their"} forger token`,
+				text: `${who(e.player)} moved ${who(e.player) === 'You' ? 'your' : 'their'} forger token`,
 				player: e.player,
 			}
 		case 'forger_copy':
