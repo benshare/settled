@@ -23,7 +23,9 @@ const RESOURCE_LABELS: Record<Resource, string> = {
 	ore: 'ore',
 }
 
-type LogContext = {
+// Exported so the HUD status banner can reuse `describeEvent` for its
+// "most recent action" line rather than duplicating the event formatters.
+export type LogContext = {
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	meIdx: number
@@ -112,7 +114,7 @@ const KINDS_BY_FILTER: Record<Category, ReadonlySet<GameEvent['kind']>> = {
 // (for the colored dot). `player: null` renders a neutral marker. `detail` is
 // the expanded body — omitted for events with nothing more to say, which is
 // what makes a row tappable or not.
-type LogLine = {
+export type LogLine = {
 	text: string
 	player: number | null
 	detail?: DetailRow[]
@@ -128,6 +130,7 @@ export function ActionLog({
 	profilesById,
 	meIdx,
 	seatColors,
+	anchorBottom,
 }: {
 	events: GameEvent[]
 	playerOrder: string[]
@@ -136,9 +139,20 @@ export function ActionLog({
 	// Each seat's color, in seat order. Resolved once in `gameContext`
 	// (`useGame().seatColors`) so this can't disagree with the board.
 	seatColors: readonly string[]
+	// When set, anchor from the bottom (HUD bottom-right column) instead of the
+	// default top-right. The button sits in the second slot; the panel opens
+	// from there.
+	anchorBottom?: number
 }) {
 	const [open, setOpen] = useState(false)
 	const [filter, setFilter] = useState<Filter>('all')
+	const SLOT = 32 + spacing.xs
+	const collapsedVpos =
+		anchorBottom != null
+			? { bottom: anchorBottom + SLOT }
+			: { top: spacing.sm + SLOT }
+	const panelVpos =
+		anchorBottom != null ? { bottom: anchorBottom + SLOT } : { top: spacing.sm }
 	// Keyed the same way as the rendered rows, so an expansion survives new
 	// events landing above it. Everything starts collapsed.
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -171,6 +185,7 @@ export function ActionLog({
 				onPress={() => setOpen(true)}
 				style={({ pressed }) => [
 					styles.collapsed,
+					collapsedVpos,
 					pressed && styles.pressed,
 				]}
 				hitSlop={6}
@@ -185,7 +200,7 @@ export function ActionLog({
 		<Animated.View
 			entering={FadeIn.duration(150)}
 			exiting={FadeOut.duration(120)}
-			style={styles.panel}
+			style={[styles.panel, panelVpos]}
 		>
 			<View style={styles.header}>
 				<Text style={styles.title}>Log</Text>
@@ -330,7 +345,7 @@ function LogRow({
 	)
 }
 
-function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
+export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 	const who = (idx: number) => nameFor(idx, ctx)
 
 	switch (e.kind) {
@@ -776,7 +791,6 @@ const LIQUIDATION_LABELS: Record<string, string> = {
 const styles = StyleSheet.create({
 	collapsed: {
 		position: 'absolute',
-		top: spacing.sm + 32 + spacing.xs,
 		right: spacing.sm,
 		width: 32,
 		height: 32,
@@ -791,7 +805,6 @@ const styles = StyleSheet.create({
 	},
 	panel: {
 		position: 'absolute',
-		top: spacing.sm,
 		right: spacing.sm,
 		width: 244,
 		maxHeight: 320,

@@ -36,7 +36,21 @@ import {
 import { useGameScreen } from './gameScreenContext'
 import { sharedStyles } from './gameScreenShared'
 
-export function BoardArea() {
+export function BoardArea({
+	floatingButtonsBottom,
+	active = true,
+}: {
+	// When set, the top-right utility buttons (legend / log / chat / watchers)
+	// anchor this many px from the bottom of the board instead of the top — the
+	// HUD moves the column above its dock. The classic screen leaves it
+	// undefined and keeps them top-right.
+	floatingButtonsBottom?: number
+	// False for an off-screen HUD pane: the board + in-tree chrome still render
+	// (they slide), but the board-blocking `Modal` pickers are suppressed so a
+	// background game's picker can't portal over the game you're looking at.
+	// Defaults true (classic and the active pane).
+	active?: boolean
+} = {}) {
 	const {
 		game,
 		gameState,
@@ -97,7 +111,8 @@ export function BoardArea() {
 
 	return (
 		<>
-			{gameState &&
+			{active &&
+				gameState &&
 				gameState.phase.kind === 'scout_pick' &&
 				gameState.phase.owner === meIdx && (
 					<ScoutPickOverlay
@@ -107,7 +122,8 @@ export function BoardArea() {
 					/>
 				)}
 
-			{gameState &&
+			{active &&
+				gameState &&
 				gameState.phase.kind === 'curio_pick' &&
 				gameState.phase.pending.includes(meIdx) && (
 					<CurioPickOverlay
@@ -116,7 +132,8 @@ export function BoardArea() {
 					/>
 				)}
 
-			{gameState &&
+			{active &&
+				gameState &&
 				gameState.phase.kind === 'forger_pick' &&
 				gameState.phase.queue.length > 0 &&
 				gameState.phase.queue[0].idx === meIdx && (
@@ -140,7 +157,8 @@ export function BoardArea() {
 					/>
 				)}
 
-			{gameState &&
+			{active &&
+				gameState &&
 				gameState.phase.kind === 'magician_pick' &&
 				gameState.phase.roller === meIdx &&
 				myPlayer && (
@@ -156,7 +174,7 @@ export function BoardArea() {
 					/>
 				)}
 
-			{metroPending && myHand && (
+			{active && metroPending && myHand && (
 				<MetropolitanCostPicker
 					hand={myHand}
 					titleKind={metroPending.kind}
@@ -166,7 +184,7 @@ export function BoardArea() {
 				/>
 			)}
 
-			{fencePending && myHand && (
+			{active && fencePending && myHand && (
 				<FenceCostPicker
 					hand={myHand}
 					submitting={submitting}
@@ -267,7 +285,10 @@ export function BoardArea() {
 				</View>
 			)}
 			{gameState && (!inBonusSelection || isSpectator) && (
-				<BoardLegend devCardsEnabled={!!gameState.config.devCards} />
+				<BoardLegend
+					devCardsEnabled={!!gameState.config.devCards}
+					anchorBottom={floatingButtonsBottom}
+				/>
 			)}
 			{gameState && (!inBonusSelection || isSpectator) && (
 				<ActionLog
@@ -276,14 +297,17 @@ export function BoardArea() {
 					profilesById={profilesById}
 					meIdx={meIdx}
 					seatColors={seatColors}
+					anchorBottom={floatingButtonsBottom}
 				/>
 			)}
-			{gameState && (!inBonusSelection || isSpectator) && <ChatButton />}
 			{gameState && (!inBonusSelection || isSpectator) && (
-				<WatcherButton />
+				<ChatButton anchorBottom={floatingButtonsBottom} />
 			)}
 			{gameState && (!inBonusSelection || isSpectator) && (
-				<StopWatchingButton />
+				<WatcherButton anchorBottom={floatingButtonsBottom} />
+			)}
+			{gameState && (!inBonusSelection || isSpectator) && (
+				<StopWatchingButton anchorBottom={floatingButtonsBottom} />
 			)}
 			{pendingConfirm && (
 				<ConfirmBar

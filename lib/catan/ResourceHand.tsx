@@ -161,14 +161,22 @@ function Card({
 	)
 }
 
-// The original game-wide hand display: full-size, solid, counted, read-only.
-// Behaviour is unchanged from before the CardFan extraction.
-export function ResourceHand({ hand }: { hand: ResourceHandType }) {
+// The game-wide hand display: solid, counted, read-only. `size` defaults to the
+// original full fan; pass `compact` for the tighter HUD dock.
+export function ResourceHand({
+	hand,
+	size = 'full',
+}: {
+	hand: ResourceHandType
+	size?: CardFanSize
+}) {
 	const entries = RESOURCES.filter((r) => (hand[r] ?? 0) > 0).map((r) => ({
 		resource: r,
 		count: hand[r] ?? 0,
 	}))
-	return <CardFan entries={entries} emptyLabel="Your hand is empty" />
+	return (
+		<CardFan entries={entries} size={size} emptyLabel="Your hand is empty" />
+	)
 }
 
 const RESOURCE_LABELS: Record<Resource, string> = {

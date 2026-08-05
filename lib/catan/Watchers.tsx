@@ -21,11 +21,16 @@ import { useGame } from './gameContext'
 const BUTTON_INSET = spacing.sm
 const SLOT = 32 + spacing.xs
 
-export function WatcherButton() {
+export function WatcherButton({ anchorBottom }: { anchorBottom?: number }) {
 	const { watcherIds } = useGame()
 	const [open, setOpen] = useState(false)
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const ensureProfiles = useGamesStore((s) => s.ensureProfiles)
+	// Fourth floating slot. Anchor from the bottom (HUD) or the top (classic).
+	const vpos =
+		anchorBottom != null
+			? { bottom: anchorBottom + 3 * SLOT }
+			: { top: BUTTON_INSET + 3 * SLOT }
 
 	// A watcher can be a friend-of-a-player the viewer has never met, so their
 	// profile was never in any participant list this client fetched.
@@ -43,6 +48,7 @@ export function WatcherButton() {
 				onPress={() => setOpen(true)}
 				style={({ pressed }) => [
 					styles.button,
+					vpos,
 					pressed && styles.pressed,
 				]}
 				hitSlop={6}
@@ -88,10 +94,19 @@ export function WatcherButton() {
 // `profiles.spectating` and so removes its header tab. Since the tab is gone,
 // it navigates back to the games list rather than to a tab that no longer
 // exists. Spectator-only — a seated player has no such affordance.
-export function StopWatchingButton() {
+export function StopWatchingButton({
+	anchorBottom,
+}: {
+	anchorBottom?: number
+}) {
 	const { game, isSpectator } = useGame()
 	const router = useRouter()
 	const stopSpectating = useProfileStore((s) => s.stopSpectating)
+	// Fifth floating slot. Anchor from the bottom (HUD) or the top (classic).
+	const vpos =
+		anchorBottom != null
+			? { bottom: anchorBottom + 4 * SLOT }
+			: { top: BUTTON_INSET + 4 * SLOT }
 
 	if (!isSpectator || !game) return null
 
@@ -103,7 +118,7 @@ export function StopWatchingButton() {
 			}}
 			style={({ pressed }) => [
 				styles.button,
-				styles.stopButton,
+				vpos,
 				pressed && styles.pressed,
 			]}
 			hitSlop={6}
@@ -117,7 +132,6 @@ export function StopWatchingButton() {
 const styles = StyleSheet.create({
 	button: {
 		position: 'absolute',
-		top: BUTTON_INSET + 3 * SLOT,
 		right: spacing.sm,
 		width: 32,
 		height: 32,
@@ -129,9 +143,6 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 		boxShadow: shadow.card,
 		zIndex: z.floatingButton,
-	},
-	stopButton: {
-		top: BUTTON_INSET + 4 * SLOT,
 	},
 	pressed: {
 		opacity: 0.7,

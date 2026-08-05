@@ -189,6 +189,7 @@ export function TradeBanner({
 				<View style={styles.actions}>
 					<Button
 						variant="secondary"
+						size="small"
 						onPress={onReject}
 						disabled={submitting}
 						style={styles.rejectBtn}
@@ -201,6 +202,7 @@ export function TradeBanner({
 						</Text>
 					) : (
 						<Button
+							size="small"
 							onPress={onAccept}
 							disabled={!canAccept}
 							loading={submitting}

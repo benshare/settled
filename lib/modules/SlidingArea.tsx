@@ -16,6 +16,7 @@ import {
 	Children,
 	isValidElement,
 	useEffect,
+	useMemo,
 	useRef,
 	useState,
 	type ReactNode,
@@ -27,6 +28,7 @@ import {
 	type StyleProp,
 	type ViewStyle,
 } from 'react-native'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
 	Easing,
 	runOnJS,
@@ -34,6 +36,11 @@ import Animated, {
 	useSharedValue,
 	withTiming,
 } from 'react-native-reanimated'
+
+// A horizontal swipe past these thresholds pages to the adjacent child (only
+// when `scrollable`).
+const SWIPE_DX = 50
+const SWIPE_VX = 400
 
 const DEFAULT_DURATION = 360
 // A pronounced ease-in-out cubic-bezier — slow at both ends, quick through the
@@ -43,12 +50,20 @@ const EASING = Easing.bezier(0.83, 0, 0.17, 1)
 export function SlidingArea({
 	index,
 	duration = DEFAULT_DURATION,
+	scrollable = false,
+	onIndexChange,
 	style,
 	paneStyle,
 	children,
 }: {
 	index: number
 	duration?: number
+	// When true, a one-finger horizontal swipe pages to the adjacent child by
+	// calling `onIndexChange` with the neighbouring index. The area stays
+	// controlled — the parent decides what to do with the request (e.g. navigate)
+	// and feeds the new `index` back in.
+	scrollable?: boolean
+	onIndexChange?: (index: number) => void
 	style?: StyleProp<ViewStyle>
 	// Applied to every pane wrapper. Panes are content-height by default (the
 	// active one drives the container); pass `flex: 1` for an area that instead
@@ -108,9 +123,35 @@ export function SlidingArea({
 		],
 	}))
 
+	// A one-finger horizontal swipe pages to the adjacent child. `activeOffsetX`
+	// keeps taps and vertical scrolls (chat / log lists) from triggering it — the
+	// pan only claims the gesture once the finger has clearly moved sideways.
+	const paneCount = panes.length
+	const pan = useMemo(
+		() =>
+			Gesture.Pan()
+				.enabled(scrollable && !!onIndexChange)
+				.activeOffsetX([-20, 20])
+				.failOffsetY([-15, 15])
+				.onEnd((e) => {
+					'worklet'
+					if (!onIndexChange) return
+					let target = active
+					if (e.translationX < -SWIPE_DX || e.velocityX < -SWIPE_VX)
+						target = Math.min(active + 1, paneCount - 1)
+					else if (
+						e.translationX > SWIPE_DX ||
+						e.velocityX > SWIPE_VX
+					)
+						target = Math.max(active - 1, 0)
+					if (target !== active) runOnJS(onIndexChange)(target)
+				}),
+		[scrollable, onIndexChange, active, paneCount]
+	)
+
 	if (panes.length === 0) return null
 
-	return (
+	const content = (
 		<View style={[styles.container, style]} onLayout={onLayout}>
 			{panes.map((pane, i) => {
 				// Keyed by the child's own key where it has one, so a caller
@@ -145,6 +186,15 @@ export function SlidingArea({
 			})}
 		</View>
 	)
+
+	// Only wrap in a GestureDetector when swiping is enabled — otherwise a
+	// non-scrollable area (classic zones, Stats tabs) would demand a
+	// GestureHandlerRootView ancestor it doesn't have.
+	return scrollable && onIndexChange ? (
+		<GestureDetector gesture={pan}>{content}</GestureDetector>
+	) : (
+		content
+	)
 }
 
 const styles = StyleSheet.create({
@@ -156,9 +206,14 @@ const styles = StyleSheet.create({
 	active: {
 		zIndex: 1,
 	},
+	// `bottom: 0` as well as `top: 0` so a parked pane keeps the full height of
+	// the area (matching the in-flow active pane) instead of collapsing to its
+	// content — otherwise a pane's bottom-anchored UI (e.g. the HUD's utility
+	// rail and dock) jumps to the top the moment it stops being active.
 	parked: {
 		position: 'absolute',
 		top: 0,
+		bottom: 0,
 		left: 0,
 		width: '100%',
 	},

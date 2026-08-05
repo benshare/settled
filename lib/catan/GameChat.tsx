@@ -65,14 +65,21 @@ const WAVE_HALF_MS = 300
 const WAVE_STAGGER_MS = 130
 const WAVE_RISE = 3
 
-export function ChatButton() {
+export function ChatButton({ anchorBottom }: { anchorBottom?: number }) {
 	const { open, setOpen, unreadCount } = useChat()
+	const SLOT = 32 + spacing.xs
+	// Third floating slot. Anchor from the bottom (HUD) or the top (classic).
+	const vpos =
+		anchorBottom != null
+			? { bottom: anchorBottom + 2 * SLOT }
+			: { top: BUTTON_INSET + 2 * SLOT }
 
 	return (
 		<Pressable
 			onPress={() => setOpen(!open)}
 			style={({ pressed }) => [
 				styles.collapsed,
+				vpos,
 				pressed && styles.pressed,
 			]}
 			hitSlop={6}
@@ -96,6 +103,7 @@ export function ChatButton() {
 
 export function ChatPanel({
 	topOffset,
+	bottomInset = 0,
 	playerOrder,
 	profilesById,
 	seatColors,
@@ -105,6 +113,10 @@ export function ChatPanel({
 	// panel's top edge lands on the same line as the floating buttons, which
 	// sit at `spacing.sm` inside that container.
 	topOffset: number
+	// How far up from the screen bottom the overlay stops. The classic screen
+	// sits inside a full safe area (so 0); the HUD isn't bottom-inset, so it
+	// passes the safe-area bottom plus a gap to keep the panel off the edge.
+	bottomInset?: number
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	// Each seat's color, in seat order. Resolved once in `gameContext`
@@ -207,7 +219,11 @@ export function ChatPanel({
 		<Animated.View
 			ref={scrimRef}
 			onLayout={measureScrim}
-			style={[styles.scrim, { top: topOffset + BUTTON_INSET }, liftStyle]}
+			style={[
+				styles.scrim,
+				{ top: topOffset + BUTTON_INSET, bottom: bottomInset },
+				liftStyle,
+			]}
 		>
 			{/* Behind the panel, so every tap outside it — including the slop
 			    ring — dismisses. */}
@@ -528,10 +544,9 @@ function MessageRow({
 
 const styles = StyleSheet.create({
 	// Third floating slot, stacked below BoardLegend (slot 0) and ActionLog
-	// (slot 1).
+	// (slot 1). Vertical anchor is applied inline (top vs. bottom).
 	collapsed: {
 		position: 'absolute',
-		top: BUTTON_INSET + 2 * (32 + spacing.xs),
 		right: spacing.sm,
 		width: 32,
 		height: 32,
@@ -565,11 +580,13 @@ const styles = StyleSheet.create({
 	// stays visible and tappable above it.
 	scrim: {
 		position: 'absolute',
-		// `top` is supplied inline — it tracks the measured board container.
+		// `top` / `bottom` are supplied inline — top tracks the measured board
+		// container, bottom is the caller's inset.
 		left: 0,
 		right: 0,
-		bottom: 0,
-		backgroundColor: 'rgba(0, 0, 0, 0.15)',
+		// No dark shading: the panel itself is translucent, so the board stays
+		// visible behind an open chat with no dimming.
+		backgroundColor: 'transparent',
 		zIndex: z.chat,
 	},
 	// Inset by the gap less the slop ring, which `panel` pads back — so the

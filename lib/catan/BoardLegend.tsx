@@ -29,9 +29,20 @@ const COST_ENTRIES = [
 	{ key: 'dev_card', label: 'Dev card', cost: DEV_CARD_COST },
 ] as const
 
-export function BoardLegend({ devCardsEnabled }: { devCardsEnabled: boolean }) {
+export function BoardLegend({
+	devCardsEnabled,
+	anchorBottom,
+}: {
+	devCardsEnabled: boolean
+	// When set, the button/panel anchor this many px from the bottom of their
+	// parent (bottom-right column) instead of the default top-right. The HUD
+	// uses it; the classic screen leaves it undefined.
+	anchorBottom?: number
+}) {
 	const [open, setOpen] = useState(false)
 	const [tab, setTab] = useState<Tab>('key')
+	const vpos =
+		anchorBottom != null ? { bottom: anchorBottom } : { top: spacing.sm }
 
 	if (!open) {
 		return (
@@ -39,6 +50,7 @@ export function BoardLegend({ devCardsEnabled }: { devCardsEnabled: boolean }) {
 				onPress={() => setOpen(true)}
 				style={({ pressed }) => [
 					styles.collapsed,
+					vpos,
 					pressed && styles.pressed,
 				]}
 				hitSlop={6}
@@ -57,7 +69,7 @@ export function BoardLegend({ devCardsEnabled }: { devCardsEnabled: boolean }) {
 		<Animated.View
 			entering={FadeIn.duration(150)}
 			exiting={FadeOut.duration(120)}
-			style={styles.panel}
+			style={[styles.panel, vpos]}
 		>
 			<View style={styles.header}>
 				<View style={styles.tabs}>
@@ -181,7 +193,6 @@ function CostList({ devCardsEnabled }: { devCardsEnabled: boolean }) {
 const styles = StyleSheet.create({
 	collapsed: {
 		position: 'absolute',
-		top: spacing.sm,
 		right: spacing.sm,
 		width: 32,
 		height: 32,
@@ -196,7 +207,6 @@ const styles = StyleSheet.create({
 	},
 	panel: {
 		position: 'absolute',
-		top: spacing.sm,
 		right: spacing.sm,
 		minWidth: 168,
 		maxWidth: 220,

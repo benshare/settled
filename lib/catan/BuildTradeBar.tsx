@@ -396,6 +396,9 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'stretch',
 		justifyContent: 'space-between',
+		// Wraps the trade panel below the build panel when the bar is placed in
+		// a narrow column (the HUD dock); stays one row at full width (classic).
+		flexWrap: 'wrap',
 		gap: spacing.sm,
 		paddingHorizontal: spacing.md,
 		paddingTop: spacing.xs,
@@ -430,6 +433,7 @@ const styles = StyleSheet.create({
 	},
 	iconRow: {
 		flexDirection: 'row',
+		flexWrap: 'wrap',
 		gap: spacing.xs,
 	},
 	// Layout carrier for a tooltip-wrapped button: takes the row share the

@@ -12,9 +12,13 @@ import { useTheme } from '../ThemeContext'
 import { ColorScheme, font, radius, spacing } from '../theme'
 
 type ButtonVariant = 'primary' | 'secondary'
+type ButtonSize = 'default' | 'small'
 
 interface ButtonProps extends PressableProps {
 	variant?: ButtonVariant
+	// `small` is a thinner, lighter-weight button for dense surfaces like the
+	// HUD dock; `default` is the original full-height control.
+	size?: ButtonSize
 	loading?: boolean
 	children: React.ReactNode
 	style?: StyleProp<ViewStyle>
@@ -22,6 +26,7 @@ interface ButtonProps extends PressableProps {
 
 export function Button({
 	variant = 'primary',
+	size = 'default',
 	loading = false,
 	disabled,
 	children,
@@ -32,11 +37,13 @@ export function Button({
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const isDisabled = disabled || loading
 	const isPrimary = variant === 'primary'
+	const isSmall = size === 'small'
 
 	return (
 		<Pressable
 			style={({ pressed }) => [
 				styles.base,
+				isSmall && styles.baseSmall,
 				isPrimary ? styles.primary : styles.secondary,
 				isDisabled && styles.disabled,
 				pressed && !isDisabled && styles.pressed,
@@ -54,6 +61,7 @@ export function Button({
 				<Text
 					style={[
 						styles.label,
+						isSmall && styles.labelSmall,
 						{ color: isPrimary ? colors.white : colors.text },
 					]}
 				>
@@ -75,6 +83,11 @@ function makeStyles(colors: ColorScheme) {
 			justifyContent: 'center',
 			flexDirection: 'row',
 		},
+		baseSmall: {
+			minHeight: 38,
+			paddingVertical: 8,
+			paddingHorizontal: spacing.md,
+		},
 		primary: {
 			backgroundColor: colors.brand,
 		},
@@ -93,6 +106,10 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.md,
 			fontWeight: '600',
 			letterSpacing: 0.2,
+		},
+		labelSmall: {
+			fontSize: font.sm,
+			fontWeight: '500',
 		},
 	})
 }

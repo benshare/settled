@@ -38,6 +38,7 @@ export function HonkButton({
 	enabled,
 	submitting,
 	onHonk,
+	size,
 }: {
 	events: GameEvent[]
 	phase: Phase
@@ -46,6 +47,7 @@ export function HonkButton({
 	enabled: boolean
 	submitting: boolean
 	onHonk: () => void
+	size?: 'default' | 'small'
 }) {
 	const [now, setNow] = useState(() => Date.now())
 
@@ -59,7 +61,12 @@ export function HonkButton({
 		return null
 
 	return (
-		<Button variant="secondary" onPress={onHonk} loading={submitting}>
+		<Button
+			variant="secondary"
+			size={size}
+			onPress={onHonk}
+			loading={submitting}
+		>
 			Honk
 		</Button>
 	)
