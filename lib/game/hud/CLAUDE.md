@@ -19,8 +19,9 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
                    active seat pulses an accent ring
       StatusBanner above the dock: a combined card — turn + roll (top row) over
                    the recent action / what the table waits on
-      Dock         bottom: hand (left) + build actions over primary (right),
-                   floating with an even margin above the bottom safe area
+      Dock         bottom: hand (left) + right column (build on its own row
+                   over a trade | primary-action row), floating with an even
+                   margin above the bottom safe area
       + PlayerDetailOverlay, ChatPanel, GameOverOverlay, animations, Toast
 ```
 

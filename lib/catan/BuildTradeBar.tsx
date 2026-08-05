@@ -1,4 +1,11 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import {
+	Pressable,
+	StyleSheet,
+	Text,
+	View,
+	type StyleProp,
+	type ViewStyle,
+} from 'react-native'
 import { colors, font, radius, shadow, spacing } from '../theme'
 
 import { Ionicons } from '@expo/vector-icons'
@@ -29,6 +36,8 @@ export function BuildTradeBar({
 	color,
 	tradeEnabled,
 	tradeActive,
+	showTrade = true,
+	flush = false,
 	devCardsEnabled,
 	carpenterEnabled,
 	superCityEnabled,
@@ -52,6 +61,14 @@ export function BuildTradeBar({
 	color: string
 	tradeEnabled: boolean
 	tradeActive: boolean
+	// When false, the trade button is left out entirely and the build panel
+	// spans the row on its own — the HUD dock renders trade separately, in a
+	// row of its own alongside the turn's primary action.
+	showTrade?: boolean
+	// Drops the outer row's padding so the build panel sits flush to its
+	// container — the dock uses it so the panel's width matches the trade +
+	// primary-action row directly below it.
+	flush?: boolean
 	// Config gate: when the game wasn't created with dev cards, the button
 	// is hidden entirely rather than just disabled.
 	devCardsEnabled: boolean
@@ -69,19 +86,20 @@ export function BuildTradeBar({
 	// Boolean = eligible to set aside a trio (≥3 VP, ≥3 of a resource, cap).
 	investorEnabled?: boolean
 	onSelect: (tool: BuildKind) => void
-	onTradePress: () => void
+	// Optional: only consumed by the built-in trade button, which the dock
+	// omits (showTrade={false}) in favour of rendering trade itself.
+	onTradePress?: () => void
 	onBuyDevCard: () => void
 	onBuyCarpenterVP?: () => void
 	onSelectSuperCity?: () => void
 	onAccountant?: () => void
 	onInvest?: () => void
 }) {
-	const tradeInteractive = tradeEnabled || tradeActive
 	const options = devCardsEnabled
 		? BUILD_OPTIONS
 		: BUILD_OPTIONS.filter((o) => o.key !== 'dev_card')
 	return (
-		<View style={styles.row}>
+		<View style={[styles.row, flush && styles.rowFlush]}>
 			<View style={[styles.panel, styles.buildPanel]}>
 				<Text style={styles.title}>Build</Text>
 				<View style={styles.iconRow}>
@@ -133,34 +151,99 @@ export function BuildTradeBar({
 				</View>
 			</View>
 
+			{showTrade && onTradePress && (
+				<TradeButton
+					tradeEnabled={tradeEnabled}
+					tradeActive={tradeActive}
+					color={color}
+					onTradePress={onTradePress}
+				/>
+			)}
+		</View>
+	)
+}
+
+// The trade affordance. `compact` is a short horizontal pill (icon + label) the
+// height of a small button, used by the HUD dock where trade shares a row with
+// the turn's primary action; the default is the taller title-over-icon panel
+// that mirrors the build panel in the classic bar.
+export function TradeButton({
+	tradeEnabled,
+	tradeActive,
+	color,
+	compact = false,
+	onTradePress,
+	style,
+}: {
+	tradeEnabled: boolean
+	tradeActive: boolean
+	color: string
+	compact?: boolean
+	onTradePress: () => void
+	style?: StyleProp<ViewStyle>
+}) {
+	const tradeInteractive = tradeEnabled || tradeActive
+	if (compact) {
+		return (
 			<Pressable
 				disabled={!tradeInteractive}
 				onPress={onTradePress}
 				style={({ pressed }) => [
-					styles.panel,
-					styles.tradePanel,
+					styles.tradeCompact,
 					!tradeInteractive && styles.panelDisabled,
 					tradeActive && { borderColor: color, borderWidth: 2 },
 					pressed && tradeInteractive && styles.pressed,
+					style,
 				]}
 			>
-				<Text style={styles.title}>Trade</Text>
-				<View style={styles.tradeBody}>
-					<Ionicons
-						name="swap-horizontal"
-						size={24}
-						color={
-							tradeInteractive ? colors.text : colors.textMuted
-						}
-					/>
-				</View>
+				<Ionicons
+					name="swap-horizontal"
+					size={18}
+					color={tradeInteractive ? colors.text : colors.textMuted}
+				/>
+				<Text
+					style={[
+						styles.tradeCompactLabel,
+						!tradeInteractive && { color: colors.textMuted },
+					]}
+				>
+					Trade
+				</Text>
 				{tradeActive && (
 					<View style={styles.cancelBadge}>
 						<Ionicons name="close" size={12} color={colors.white} />
 					</View>
 				)}
 			</Pressable>
-		</View>
+		)
+	}
+	return (
+		<Pressable
+			disabled={!tradeInteractive}
+			onPress={onTradePress}
+			style={({ pressed }) => [
+				styles.panel,
+				styles.tradePanel,
+				!tradeInteractive && styles.panelDisabled,
+				tradeActive && { borderColor: color, borderWidth: 2 },
+				pressed && tradeInteractive && styles.pressed,
+				style,
+			]}
+		>
+			<Text style={styles.title}>Trade</Text>
+			<View style={styles.tradeBody}>
+				<Ionicons
+					name="swap-horizontal"
+					size={24}
+					color={tradeInteractive ? colors.text : colors.textMuted}
+				/>
+			</View>
+			{tradeActive && (
+				<View style={styles.cancelBadge}>
+					<Ionicons name="close" size={12} color={colors.white} />
+				</View>
+			)}
+		</Pressable>
 	)
 }
 
@@ -404,6 +487,13 @@ const styles = StyleSheet.create({
 		paddingTop: spacing.xs,
 		paddingBottom: spacing.sm,
 	},
+	// Dock: no outer padding, so the build panel is flush to the right column and
+	// its width matches the trade + primary-action row below it.
+	rowFlush: {
+		paddingHorizontal: 0,
+		paddingTop: 0,
+		paddingBottom: 0,
+	},
 	panel: {
 		backgroundColor: colors.card,
 		borderRadius: radius.md,
@@ -423,6 +513,27 @@ const styles = StyleSheet.create({
 	tradePanel: {
 		minWidth: 96,
 		alignItems: 'center',
+	},
+	// Compact horizontal pill sized to a small Button (minHeight 38) so trade
+	// sits level with Roll / End turn in the dock's action row.
+	tradeCompact: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'center',
+		gap: spacing.xs,
+		minHeight: 38,
+		paddingHorizontal: spacing.md,
+		borderRadius: radius.md,
+		borderWidth: 1,
+		borderColor: colors.border,
+		backgroundColor: colors.card,
+		boxShadow: shadow.bar,
+	},
+	tradeCompactLabel: {
+		fontSize: font.md,
+		fontWeight: '600',
+		color: colors.text,
+		letterSpacing: 0.2,
 	},
 	title: {
 		fontSize: font.sm,

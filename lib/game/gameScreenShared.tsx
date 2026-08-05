@@ -3,7 +3,7 @@
 // bar chrome — this file is what keeps either zone from having to import the
 // other to get at them.
 
-import { canHonk } from '@/lib/catan/honk'
+import { canHonk, honkTargetFor } from '@/lib/catan/honk'
 import type { Phase } from '@/lib/catan/types'
 import { Button } from '@/lib/modules/Button'
 import type { GameEvent } from '@/lib/stores/useGamesStore'
@@ -39,6 +39,7 @@ export function HonkButton({
 	submitting,
 	onHonk,
 	size,
+	alwaysShow = false,
 }: {
 	events: GameEvent[]
 	phase: Phase
@@ -48,6 +49,11 @@ export function HonkButton({
 	submitting: boolean
 	onHonk: () => void
 	size?: 'default' | 'small'
+	// When true, the button holds its place for the whole of someone else's
+	// turn, disabled until the idle threshold makes a honk due — rather than
+	// popping in only once it does. Still hidden when honking has no target this
+	// turn (your own turn, a sub-phase) or the game has honking off.
+	alwaysShow?: boolean
 }) {
 	const [now, setNow] = useState(() => Date.now())
 
@@ -57,15 +63,20 @@ export function HonkButton({
 		return () => clearInterval(id)
 	}, [])
 
-	if (!canHonk({ events, phase, meIdx, currentTurn, now, enabled }))
-		return null
+	const active = canHonk({ events, phase, meIdx, currentTurn, now, enabled })
+	// Is there someone to honk at all this turn (regardless of the idle clock)?
+	const target = honkTargetFor(phase, currentTurn)
+	const relevant = enabled && target !== null && target !== meIdx
+
+	if (alwaysShow ? !relevant : !active) return null
 
 	return (
 		<Button
 			variant="secondary"
 			size={size}
 			onPress={onHonk}
-			loading={submitting}
+			loading={active && submitting}
+			disabled={!active}
 		>
 			Honk
 		</Button>

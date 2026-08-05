@@ -1,12 +1,16 @@
 // The HUD's bottom action dock. Compact, translucent, floating over the board.
 //
-// Layout (v1): the build/trade bar spans the top when building is actionable;
-// below it a row splits into the hand on the left (resources + dev cards + the
-// veteran knight bar) and the turn's primary action on the right (Roll / End
-// turn / Confirm / Done / Honk). The trade and discard composers replace the
-// whole row, since each is built by tapping the hand itself. A spectator gets no
-// dock at all (their readout is the island + banner). See
-// `.claude/specs/game-hud.md` §10.
+// Layout (v1): a row splits into the hand on the left (resources + dev cards +
+// the veteran knight bar) and a right column on the right. The right column
+// stacks the build panel on its own row over a second row that splits trade
+// (left) and the turn's primary action (Roll / End turn / Done, with Honk,
+// right). Through the whole main loop (roll / main / special build) build,
+// trade, and the turn control keep their place regardless of whose turn it is —
+// each disables itself off-turn instead of popping in and out; Honk likewise
+// holds its slot for another player's turn, disabled until a nudge is due. The
+// trade and discard composers replace the whole row, since each is built by
+// tapping the hand itself. A spectator gets no dock at all (their readout is
+// the island + banner). See `.claude/specs/game-hud.md` §10.
 
 import {
 	canShepherdSwap,
@@ -17,7 +21,7 @@ import { AccountantPicker } from '@/lib/catan/AccountantPicker'
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel } from '@/lib/catan/DiscardPanel'
-import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
+import { BuildTradeBar, TradeButton } from '@/lib/catan/BuildTradeBar'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
@@ -76,7 +80,6 @@ export function Dock({
 		inBonusSelection,
 		inPlacement,
 		isMyActiveTurn,
-		isMySpecialBuild,
 		tradePanelOpen,
 		onProposeTrade,
 		onBankTrade,
@@ -112,10 +115,16 @@ export function Dock({
 			? (gameState.phase.pending[meIdx] ?? null)
 			: null
 
-	// Build actions are actionable only on your own main turn or your
-	// special-build slot; the bar hides otherwise (during your roll, others'
-	// turns, sub-phases) rather than showing a wall of disabled buttons.
-	const showBuildBar = ctx.canBuildThisTurn || isMySpecialBuild
+	// Build + trade + the turn control hold their place for the whole main loop
+	// (roll / main / special build), regardless of whose turn it is — each
+	// affordance disables itself off-turn rather than popping in and out. Only
+	// the distinct modes (placement, discard, the board sub-phases) replace or
+	// drop the row.
+	const phaseKind = gameState.phase.kind
+	const inMainLoop =
+		phaseKind === 'roll' ||
+		phaseKind === 'main' ||
+		phaseKind === 'special_build'
 
 	return (
 		<View
@@ -187,10 +196,13 @@ export function Dock({
 						)}
 					</View>
 					<View style={styles.rightCol}>
-						{/* Actions on top, the turn's primary control at the
-							    bottom. */}
-						{showBuildBar ? <BuildBar /> : <View />}
-						<PrimaryAction />
+						{/* Build spans its own row; below it, trade sits on the
+							    left and the turn's primary control on the right. */}
+						{inMainLoop ? <BuildBar /> : <View />}
+						<View style={styles.actionRow}>
+							{inMainLoop ? <DockTradeButton /> : <View />}
+							<PrimaryAction />
+						</View>
 					</View>
 				</View>
 			)}
@@ -255,13 +267,10 @@ function BuildBar() {
 		myPlayer,
 		gameState,
 		canBuildThisTurn,
-		tradeButtonEnabled,
-		tradeButtonActive,
 		superCityEnabled,
 		accountantEnabled,
 		investorEnabled,
 		onBuildToolSelect,
-		onTradePress,
 		onBuyDevCard,
 		onBuyCarpenterVP,
 		setAccountantOpen,
@@ -274,8 +283,13 @@ function BuildBar() {
 			enabled={buildEnabled}
 			curseHints={buildCurseHints}
 			color={seatColor(gameState, meIdx)}
-			tradeEnabled={tradeButtonEnabled}
-			tradeActive={tradeButtonActive}
+			// Trade is rendered on its own row (DockTradeButton), so the bar
+			// shows the build panel alone, flush to the column so its width
+			// matches the trade + primary-action row below.
+			tradeEnabled={false}
+			tradeActive={false}
+			showTrade={false}
+			flush
 			devCardsEnabled={!!gameState.config.devCards}
 			carpenterEnabled={
 				myPlayer?.bonus === 'carpenter'
@@ -297,12 +311,33 @@ function BuildBar() {
 				myPlayer?.bonus === 'investor' ? investorEnabled : undefined
 			}
 			onSelect={onBuildToolSelect}
-			onTradePress={onTradePress}
 			onBuyDevCard={onBuyDevCard}
 			onBuyCarpenterVP={onBuyCarpenterVP}
 			onSelectSuperCity={() => onBuildToolSelect('super_city')}
 			onAccountant={() => setAccountantOpen(true)}
 			onInvest={() => setInvestOpen(true)}
+		/>
+	)
+}
+
+// The trade affordance, wired from context. Rendered on its own row in the
+// dock (not inside the build bar) so it shares a line with the primary action.
+function DockTradeButton() {
+	const {
+		gameState,
+		meIdx,
+		tradeButtonEnabled,
+		tradeButtonActive,
+		onTradePress,
+	} = useGameScreen()
+	if (!gameState) return null
+	return (
+		<TradeButton
+			compact
+			tradeEnabled={tradeButtonEnabled}
+			tradeActive={tradeButtonActive}
+			color={seatColor(gameState, meIdx)}
+			onTradePress={onTradePress}
 		/>
 	)
 }
@@ -374,22 +409,41 @@ function PrimaryAction() {
 		)
 	}
 
-	// Roll phase — roll / gambler confirm-reroll / choose-of-two, plus the
-	// pre-roll bonus buttons.
-	if (phase.kind === 'roll' && isMyActiveTurn) {
-		const pendingDice = phase.pending?.dice ?? null
-		const altDice = phase.pending?.altDice ?? null
+	// Everything past here is the main game loop (roll / main / special build).
+	// Any other phase is a board sub-phase with no dock control.
+	if (
+		phase.kind !== 'roll' &&
+		phase.kind !== 'main' &&
+		phase.kind !== 'special_build'
+	)
+		return null
+
+	// Honk holds its place for the whole of someone else's turn (disabled until
+	// the idle threshold), and hides itself on your own turn — see HonkButton.
+	const honk = (
+		<HonkButton
+			events={(game.events ?? []) as GameEvent[]}
+			phase={phase}
+			meIdx={meIdx}
+			currentTurn={game.current_turn ?? 0}
+			enabled={gameState.config.honk !== false}
+			submitting={submitting}
+			onHonk={onHonk}
+			size="small"
+			alwaysShow
+		/>
+	)
+
+	// Gambler pending dice (your turn only): the choose-of-two / confirm-reroll
+	// takes over the whole control.
+	if (phase.kind === 'roll' && isMyActiveTurn && phase.pending?.dice) {
+		const pendingDice = phase.pending.dice
+		const altDice = phase.pending.altDice ?? null
 		const rerolled = gameState.players[meIdx]?.rerolledThisTurn ?? false
-		const canRitual =
-			!pendingDice &&
-			myPlayer?.bonus === 'ritualist' &&
-			!myPlayer?.ritualWasUsedThisTurn
-		const canShepherd =
-			!pendingDice && !!myPlayer && canShepherdSwap(myPlayer)
 		return (
 			<View style={styles.actionCol}>
-				{pendingDice && altDice ? (
-					<View style={styles.actionCol}>
+				{altDice ? (
+					<>
 						<RollChoice
 							dice={pendingDice}
 							disabled={submitting}
@@ -400,8 +454,8 @@ function PrimaryAction() {
 							disabled={submitting}
 							onPress={() => onConfirmRoll(1)}
 						/>
-					</View>
-				) : pendingDice ? (
+					</>
+				) : (
 					<>
 						{!rerolled && (
 							<Button
@@ -421,106 +475,91 @@ function PrimaryAction() {
 							Confirm
 						</Button>
 					</>
-				) : (
-					<>
-						{isDev && (
-							<DevRollPicker
-								value={devRollTotal ?? null}
-								disabled={submitting}
-								onChange={setDevRollTotal}
-							/>
-						)}
-						<Button
-							size="small"
-							onPress={onRoll}
-							loading={submitting}
-							disabled={forgerMustMove}
-						>
-							Roll
-						</Button>
-						{canRitual && (
-							<Button
-								size="small"
-								variant="secondary"
-								onPress={() => setRitualOpen(true)}
-								disabled={submitting}
-							>
-								Ritual
-							</Button>
-						)}
-						{canShepherd && (
-							<Button
-								size="small"
-								variant="secondary"
-								onPress={() => setShepherdOpen(true)}
-								disabled={submitting}
-							>
-								Shepherd
-							</Button>
-						)}
-					</>
 				)}
 			</View>
 		)
 	}
 
-	// Main turn — end it, with the undo arrow when the server allows one.
-	if (phase.kind === 'main' && isMyActiveTurn) {
-		return (
-			<View style={styles.actionCol}>
-				{canUndo && (
-					<UndoButton submitting={submitting} onPress={onUndo} />
-				)}
-				<Button size="small" onPress={onEndTurn} loading={submitting}>
-					End turn
-				</Button>
-			</View>
-		)
-	}
+	// Pre-roll bonus buttons — only on your own roll.
+	const canRitual =
+		phase.kind === 'roll' &&
+		isMyActiveTurn &&
+		myPlayer?.bonus === 'ritualist' &&
+		!myPlayer?.ritualWasUsedThisTurn
+	const canShepherd =
+		phase.kind === 'roll' &&
+		isMyActiveTurn &&
+		!!myPlayer &&
+		canShepherdSwap(myPlayer)
 
-	// A special-build slot — the acting builder finishes it.
-	if (phase.kind === 'special_build' && isMySpecialBuild) {
-		return (
-			<View style={styles.actionCol}>
-				{canUndo && (
-					<UndoButton submitting={submitting} onPress={onUndo} />
-				)}
+	return (
+		<View style={styles.actionCol}>
+			{phase.kind === 'roll' && isMyActiveTurn && isDev && (
+				<DevRollPicker
+					value={devRollTotal ?? null}
+					disabled={submitting}
+					onChange={setDevRollTotal}
+				/>
+			)}
+			{canRitual && (
 				<Button
 					size="small"
-					onPress={onEndSpecialBuild}
-					loading={submitting}
+					variant="secondary"
+					onPress={() => setRitualOpen(true)}
+					disabled={submitting}
 				>
-					Done building
+					Ritual
 				</Button>
-			</View>
-		)
-	}
-
-	// Not your move — the nudge, when the target has stalled.
-	if (
-		phase.kind === 'roll' ||
-		phase.kind === 'main' ||
-		phase.kind === 'special_build'
-	) {
-		// Wrapped so the button is natural-width and right-aligned rather than
-		// stretched across the column.
-		return (
-			<View style={styles.actionCol}>
-				<HonkButton
-					events={(game.events ?? []) as GameEvent[]}
-					phase={phase}
-					meIdx={meIdx}
-					currentTurn={game.current_turn ?? 0}
-					enabled={gameState.config.honk !== false}
-					submitting={submitting}
-					onHonk={onHonk}
+			)}
+			{canShepherd && (
+				<Button
 					size="small"
-				/>
+					variant="secondary"
+					onPress={() => setShepherdOpen(true)}
+					disabled={submitting}
+				>
+					Shepherd
+				</Button>
+			)}
+			{/* Undo (your move only), Honk (others' turns only — mutually
+			    exclusive), and the phase's primary control, which stays put and
+			    disables itself off-turn. */}
+			<View style={styles.primaryRow}>
+				{canUndo && (
+					<UndoButton submitting={submitting} onPress={onUndo} />
+				)}
+				{honk}
+				{phase.kind === 'roll' ? (
+					<Button
+						size="small"
+						onPress={onRoll}
+						loading={submitting && isMyActiveTurn}
+						disabled={!isMyActiveTurn || forgerMustMove}
+					>
+						Roll
+					</Button>
+				) : phase.kind === 'main' ? (
+					<Button
+						size="small"
+						onPress={onEndTurn}
+						loading={submitting && isMyActiveTurn}
+						disabled={!isMyActiveTurn}
+					>
+						End turn
+					</Button>
+				) : (
+					<Button
+						size="small"
+						onPress={onEndSpecialBuild}
+						loading={submitting && isMySpecialBuild}
+						disabled={!isMySpecialBuild}
+					>
+						Done building
+					</Button>
+				)}
 			</View>
-		)
-	}
-
-	return null
+		</View>
+	)
 }
 
 // One of the gambler's two thrown pairs, tappable to keep it.
@@ -611,9 +650,24 @@ const styles = StyleSheet.create({
 		alignItems: 'stretch',
 		gap: spacing.xs,
 	},
+	// Trade on the left, the turn's primary control on the right. Bottom-aligned
+	// so the tall trade panel and the short primary button share a baseline.
+	actionRow: {
+		flexDirection: 'row',
+		alignItems: 'flex-end',
+		justifyContent: 'space-between',
+		gap: spacing.xs,
+	},
 	actionCol: {
 		gap: spacing.xs,
 		alignItems: 'flex-end',
+	},
+	// The bottom line of the action column: undo / honk sit level with the
+	// turn's primary button.
+	primaryRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.xs,
 	},
 	rollChoice: {
 		flexDirection: 'row',
