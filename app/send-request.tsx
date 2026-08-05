@@ -1,3 +1,4 @@
+import { IS_ADMIN, useAdminStore } from '@/lib/admin'
 import { useAuth } from '@/lib/auth'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
@@ -29,6 +30,7 @@ export default function SendRequestScreen() {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const search = useFriendsStore((s) => s.search)
+	const adminError = useAdminStore((s) => s.error)
 
 	const [query, setQuery] = useState('')
 	const [results, setResults] = useState<SearchResult[]>([])
@@ -102,6 +104,10 @@ export default function SendRequestScreen() {
 						autoCorrect={false}
 					/>
 
+					{IS_ADMIN && adminError && (
+						<Text style={styles.errorText}>{adminError}</Text>
+					)}
+
 					{trimmedLength < 2 ? (
 						<Text style={styles.hint}>
 							Type at least 2 characters
@@ -143,6 +149,8 @@ function SearchRow({
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const sendRequest = useFriendsStore((s) => s.sendRequest)
+	const actAs = useAdminStore((s) => s.actAs)
+	const adminBusy = useAdminStore((s) => s.busy)
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
@@ -166,6 +174,16 @@ function SearchRow({
 				<Text style={styles.rowUsername} numberOfLines={1}>
 					{result.profile.username}
 				</Text>
+				{IS_ADMIN && (
+					<Button
+						variant="secondary"
+						onPress={() => actAs(result.profile)}
+						disabled={adminBusy}
+						style={styles.rowAction}
+					>
+						Act as
+					</Button>
+				)}
 				{result.relationship === 'none' ? (
 					<Button
 						onPress={onAdd}

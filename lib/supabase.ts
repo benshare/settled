@@ -53,7 +53,9 @@ const isBrowser =
 	typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
 const isNative = Platform.OS === 'ios' || Platform.OS === 'android'
 
-const storage = {
+// Exported so `lib/admin.ts` can stash the real account's tokens in the same
+// place, with the same native/web split, as the session they belong to.
+export const authStorage = {
 	getItem: (key: string) =>
 		isBrowser
 			? LocalStorageAdapter.getItem(key)
@@ -76,7 +78,7 @@ const storage = {
 
 export const supabase = createClient<Database>(supabaseUrl, supabasePublicKey, {
 	auth: {
-		storage,
+		storage: authStorage,
 		autoRefreshToken: true,
 		persistSession: true,
 		detectSessionInUrl: false,

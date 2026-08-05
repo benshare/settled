@@ -380,6 +380,12 @@ verify_jwt = false
 [functions.reviewer-login]
 verify_jwt = false
 
+# Same reason: the dev impersonation route calls this to obtain a session, so
+# there is none to verify. It authorizes on the DEV_LOGIN_KEY header, and is
+# inert unless that secret is set.
+[functions.dev-login]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

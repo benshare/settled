@@ -4,6 +4,26 @@ Admin-level helpers for local development. Each script uses the service-role key
 
 All scripts are plain `.mjs` + `node --env-file=.env`. No extra runtime deps.
 
+## Admin mode ("act as" any player)
+
+Not a script — a build-time switch. With both of these in `.env`:
+
+```sh
+ADMIN=true
+DEV_LOGIN_KEY=<a long random string>
+```
+
+every row in the Add-friend search grows an **Act as** button, and a red banner across the top of the app is the way back out. The switch is `IS_ADMIN` in `lib/admin.ts`; the session comes from the `dev-login` edge function, which needs the same key as a secret:
+
+```sh
+npx supabase secrets set DEV_LOGIN_KEY=<the same value>
+npm run edge
+```
+
+Neither variable is defined in any EAS environment, and `.env` is not read by `eas build` or by `eas update --environment production`, so a shipped bundle has `IS_ADMIN === false` and no key to call the endpoint with. Keep it that way: adding `DEV_LOGIN_KEY` to an EAS environment would put an impersonate-anyone credential in a public bundle.
+
+Impersonating an account for the first time sets a password on it, which revokes its existing sessions — i.e. signs that person out on their own devices. Later switches to the same account are silent.
+
 ## Scripts
 
 ### `seed-test-users.mjs`

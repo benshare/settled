@@ -1,17 +1,27 @@
+import { IS_ADMIN, useAdminStore } from '@/lib/admin'
 import { useAppForeground } from '@/lib/appState'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { GameLayoutProvider } from '@/lib/GameLayoutContext'
 import { useAppBadge, useNotificationRouting } from '@/lib/notifications'
 import { loadAllUserStores } from '@/lib/stores'
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext'
+import { ColorScheme, font, spacing } from '@/lib/theme'
 import { VERSION_LABEL } from '@/lib/version'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import * as Updates from 'expo-updates'
-import { useEffect, useState } from 'react'
-import { Image, Platform, Text, View } from 'react-native'
+import { useEffect, useMemo, useState } from 'react'
+import {
+	Image,
+	Platform,
+	Pressable,
+	StyleSheet,
+	Text,
+	View,
+} from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import 'react-native-reanimated'
 
 // Desktop browsers stretch the native layout to the full viewport, which
@@ -98,6 +108,13 @@ function RootNav() {
 		SplashScreen.hideAsync().catch(() => {})
 	}, [])
 
+	// A reload while impersonating keeps the borrowed session, so the banner —
+	// the only way back — has to be re-derived from storage rather than from
+	// whatever this process happened to do.
+	useEffect(() => {
+		useAdminStore.getState().restore()
+	}, [])
+
 	if (loading || !updateChecked) return <LoadingScreen />
 
 	return (
@@ -120,6 +137,7 @@ function RootNav() {
 					borderColor: colors.border,
 				}}
 			>
+				<ImpersonationBanner />
 				<Stack
 					screenOptions={{ headerShown: false, animation: 'fade' }}
 				>
@@ -133,6 +151,58 @@ function RootNav() {
 			</View>
 		</View>
 	)
+}
+
+// The way out of an impersonated session, and the reminder that you're in one.
+// It sits above the Stack rather than floating over it so it can't be mistaken
+// for part of the screen underneath — every screen shifts down while it's up.
+// Renders nothing outside admin builds, where `actingAs` is always null.
+function ImpersonationBanner() {
+	const actingAs = useAdminStore((s) => s.actingAs)
+	const busy = useAdminStore((s) => s.busy)
+	const stopActing = useAdminStore((s) => s.stopActing)
+	const insets = useSafeAreaInsets()
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeBannerStyles(colors), [colors])
+
+	if (!IS_ADMIN || !actingAs) return null
+
+	return (
+		<View style={[styles.banner, { paddingTop: insets.top + spacing.xs }]}>
+			<Text style={styles.label} numberOfLines={1}>
+				Acting as {actingAs.username}
+			</Text>
+			<Pressable onPress={stopActing} disabled={busy} hitSlop={8}>
+				<Text style={styles.stop}>{busy ? 'Stopping…' : 'Stop'}</Text>
+			</Pressable>
+		</View>
+	)
+}
+
+function makeBannerStyles(colors: ColorScheme) {
+	return StyleSheet.create({
+		banner: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: spacing.sm,
+			paddingHorizontal: spacing.md,
+			paddingBottom: spacing.xs,
+			backgroundColor: colors.error,
+		},
+		label: {
+			flex: 1,
+			fontSize: font.sm,
+			fontWeight: '600',
+			color: colors.white,
+		},
+		stop: {
+			fontSize: font.sm,
+			fontWeight: '700',
+			color: colors.white,
+			textDecorationLine: 'underline',
+		},
+	})
 }
 
 // Mirrors the native splash (see app.json `expo-splash-screen` config) so the

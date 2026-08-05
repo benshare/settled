@@ -1,3 +1,4 @@
+import { useAdminStore } from '@/lib/admin'
 import { useAuth } from '@/lib/auth'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import { ensurePermissionAndRegister } from '@/lib/notifications'
@@ -16,13 +17,20 @@ export const unstable_settings = {
 export default function AppLayout() {
 	const { colors } = useTheme()
 	const { user } = useAuth()
+	const actingAs = useAdminStore((s) => s.actingAs)
+	const adminRestored = useAdminStore((s) => s.restored)
 
 	// Registration belongs here — it is about being signed in and inside the
 	// app. Routing tapped notifications is not, and lives at the root.
+	//
+	// Skipped while impersonating: the upsert is keyed on the token, so
+	// registering would move this device's row onto the borrowed account and
+	// silently redirect that person's pushes here. Held until `restored`, or a
+	// launch already impersonating would race the check and register anyway.
 	useEffect(() => {
-		if (!user?.id) return
+		if (!user?.id || !adminRestored || actingAs) return
 		ensurePermissionAndRegister(user.id)
-	}, [user?.id])
+	}, [user?.id, adminRestored, actingAs])
 
 	return (
 		<Tabs
