@@ -16,7 +16,7 @@
 		"edge": "npm run check:edge && npx supabase functions deploy",
 		"types": "supabase gen types typescript --project-id ymbtisbqwehsgpidntag > lib/database-types.ts",
 		"build:native": "EAS_BUILD_NO_EXPO_GO_WARNING=true eas build --platform ios --profile production --auto-submit",
-		"ota": "eas update --branch production --auto --environment production"
+		"ota": "node ./scripts/ota.mjs"
 	},
 	"dependencies": {
 		"@expo/vector-icons": "^15.0.3",
