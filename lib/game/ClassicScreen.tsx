@@ -129,7 +129,9 @@ function Game() {
 					pointsByPlayer={displayVP}
 					publicByPlayer={publicVP}
 					canceled={game.status === 'canceled'}
-					wonByForfeit={wonByForfeit((game.events ?? []) as GameEvent[])}
+					wonByForfeit={wonByForfeit(
+						(game.events ?? []) as GameEvent[]
+					)}
 					onDismiss={() => setGameOverOpen(false)}
 					onBackToGames={() => router.replace('/games')}
 					// Straight into the create-game form, prefilled with this

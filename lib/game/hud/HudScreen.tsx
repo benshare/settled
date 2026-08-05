@@ -81,10 +81,7 @@ export function HudScreen() {
 			{/* Fixed over the slide — Back, the games pager, and the menu are
 			    about *which* game you're on, so they don't remount on a switch. */}
 			<View style={styles.topBar} pointerEvents="box-none">
-				<HudTopBar
-					pageCount={paneIds.length}
-					pageIndex={activeIndex}
-				/>
+				<HudTopBar pageCount={paneIds.length} pageIndex={activeIndex} />
 			</View>
 		</GestureHandlerRootView>
 	)

@@ -51,7 +51,11 @@ const GameLayoutContext = createContext<GameLayoutContextValue>({
 	toggleLayout: () => {},
 })
 
-export function GameLayoutProvider({ children }: { children: React.ReactNode }) {
+export function GameLayoutProvider({
+	children,
+}: {
+	children: React.ReactNode
+}) {
 	const [layout, setLayoutState] = useState<GameLayout>(DEFAULT_LAYOUT)
 
 	useEffect(() => {

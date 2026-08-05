@@ -8,7 +8,7 @@ before a replacement.
 
 Scope is deliberately **self-contained: no changes to stores, the edge
 function, game rules, or the realtime/data layer.** The HUD is a new
-presentational tree over the *same* providers the classic screen uses.
+presentational tree over the _same_ providers the classic screen uses.
 
 ---
 
@@ -69,7 +69,7 @@ Top-to-bottom, per the agreed structural model:
   sliding pane, so a game switch animates the whole HUD in one translate. The
   blue water does not reload; the Nav dropdown does not reload.
 - **Sliding mechanism is the existing `ZoneSlide` trick, unified into one area.**
-  A single content pane carries a fixed key (`"zone"`) and is *moved* to the
+  A single content pane carries a fixed key (`"zone"`) and is _moved_ to the
   active tab index rather than remounted, so the HUD's own local state survives
   a switch and `SlidingArea` has something to translate. Direction falls out of
   the tab delta (`gameTabIndex` / `gameTabCount`, keyed off
@@ -98,7 +98,7 @@ Top-to-bottom, per the agreed structural model:
 - Stable, non-expanding. Shows the **current turn** ("Your turn" / "Bea's turn")
   plus **the turn's roll** as dice faces.
 - Omits the dice when there is no roll yet (roll phase, initial placement); still
-  names the current turn. During other players' turns it shows *that* turn's most
+  names the current turn. During other players' turns it shows _that_ turn's most
   recent roll alongside their name.
 - **Uniform across all viewers** — same content for everyone, "you" vs. name
   substitution only (same rule as the banner, §6).
@@ -111,12 +111,12 @@ Top-to-bottom, per the agreed structural model:
 A single always-current line: the most recent action, or what the table is
 waiting on. **One line of text; the turn dot is a separate set** (see §7).
 
-- **Uniform across all viewers.** The island and the banner show the *same
-  content to everyone*, differing only in "you" vs. the player's name. The
+- **Uniform across all viewers.** The island and the banner show the _same
+  content to everyone_, differing only in "you" vs. the player's name. The
   banner is a **status summary, not a per-viewer instruction** — the actual "do
   this now" affordance lives in the dock (the `DiscardPanel` composer, the
   `TradeBanner` response UI, a picker modal). So on a 7 everyone reads "Waiting
-  for {names} to discard" (the ower sees "you" in the list); the ower *also*
+  for {names} to discard" (the ower sees "you" in the list); the ower _also_
   gets the discard composer in their dock.
 - **Precedence:** live pending-wait > most-recent completed action > nothing.
   When any seat is pending, the wait line wins; a bare roll with nothing pending
@@ -169,14 +169,14 @@ waiting on. **One line of text; the turn dot is a separate set** (see §7).
   composers (`TradePanel` / `DiscardPanel`) **replace** the hand here, exactly as
   today (the give / discard side is composed by tapping the hand).
 - **Right column: the active actions.**
-  - **Main phase:** build tools at top (road / settlement / city, plus the
-    bonus builds that apply to this seat — super city, carpenter VP, accountant,
-    invest, buy dev card), the **Trade** button, then **End turn** below.
-  - **Roll phase:** Roll (plus gambler Confirm / Reroll, ritual-roll /
-    shepherd-swap, and the dev roll picker for `dev` seats). Build/trade are
-    hidden, so the right column **may take over the freed space** for these.
-  - **Placement:** the placement confirm + local undo occupy the right column;
-    `MainLoopBar` does not render.
+    - **Main phase:** build tools at top (road / settlement / city, plus the
+      bonus builds that apply to this seat — super city, carpenter VP, accountant,
+      invest, buy dev card), the **Trade** button, then **End turn** below.
+    - **Roll phase:** Roll (plus gambler Confirm / Reroll, ritual-roll /
+      shepherd-swap, and the dev roll picker for `dev` seats). Build/trade are
+      hidden, so the right column **may take over the freed space** for these.
+    - **Placement:** the placement confirm + local undo occupy the right column;
+      `MainLoopBar` does not render.
 - Compact styling throughout (the whole point of the redesign is reclaiming the
   two fat action bars).
 - **Open:** the left column's content during initial placement (the round-1 hand

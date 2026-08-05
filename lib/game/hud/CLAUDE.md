@@ -26,7 +26,7 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
 
 - `HudTopBar` — the games switcher (left) and overflow menu (right), rendered by
   `HudScreen` **outside** the SlidingArea so they don't remount or travel on a
-  switch (they're about *which* game you're on). Both are anchored `Modal`
+  switch (they're about _which_ game you're on). Both are anchored `Modal`
   dropdowns, not centered sheets; the `⋯` menu is one-tap (Back to games,
   propose/withdraw end game, resign/withdraw, copy debug, switch to the classic
   UI) with no confirms or blurbs, deliberately separate from the classic

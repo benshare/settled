@@ -175,7 +175,11 @@ export function ResourceHand({
 		count: hand[r] ?? 0,
 	}))
 	return (
-		<CardFan entries={entries} size={size} emptyLabel="Your hand is empty" />
+		<CardFan
+			entries={entries}
+			size={size}
+			emptyLabel="Your hand is empty"
+		/>
 	)
 }
 

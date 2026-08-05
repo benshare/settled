@@ -33,7 +33,10 @@ import {
 	sharedStyles,
 	UndoButton,
 } from '@/lib/game/gameScreenShared'
-import { useGameScreen, type PlacementStage } from '@/lib/game/gameScreenContext'
+import {
+	useGameScreen,
+	type PlacementStage,
+} from '@/lib/game/gameScreenContext'
 import { Button } from '@/lib/modules/Button'
 import { colors, font, radius, spacing } from '@/lib/theme'
 import type { GameEvent } from '@/lib/stores/useGamesStore'
@@ -142,59 +145,54 @@ export function Dock({
 			) : (
 				<View style={styles.row}>
 					<View style={styles.handSide}>
-							{/* `displayHand`, not the live hand: a card a reveal
+						{/* `displayHand`, not the live hand: a card a reveal
 							    animation is still working up to stays hidden
 							    until it lands. */}
-							<ResourceHand
-								size="compact"
-								hand={
-									displayHand ??
-									gameState.players[meIdx].resources
+						<ResourceHand
+							size="compact"
+							hand={
+								displayHand ??
+								gameState.players[meIdx].resources
+							}
+						/>
+						{!inPlacement && gameState.config.devCards && (
+							<DevCardHand
+								entries={gameState.players[meIdx].devCards}
+								round={gameState.round}
+								myTurn={isMyActiveTurn}
+								phaseKind={gameState.phase.kind}
+								playedDevThisTurn={
+									gameState.players[meIdx].playedDevThisTurn
 								}
+								monopolyPerPlayerCap={
+									gameState.config.limitMonopoly
+										? monopolyCap(gameState.players.length)
+										: null
+								}
+								onPlay={onPlayDevCard}
 							/>
-							{!inPlacement && gameState.config.devCards && (
-								<DevCardHand
-									entries={gameState.players[meIdx].devCards}
-									round={gameState.round}
-									myTurn={isMyActiveTurn}
-									phaseKind={gameState.phase.kind}
-									playedDevThisTurn={
-										gameState.players[meIdx]
-											.playedDevThisTurn
-									}
-									monopolyPerPlayerCap={
-										gameState.config.limitMonopoly
-											? monopolyCap(
-													gameState.players.length
-												)
-											: null
-									}
-									onPlay={onPlayDevCard}
-								/>
-							)}
-							{!inPlacement &&
-								myPlayer?.bonus === 'veteran' && (
-									<KnightTapBar
-										untappedKnights={
-											(myPlayer.devCardsPlayed.knight ??
-												0) -
-											(myPlayer.tappedKnights ?? 0)
-										}
-										enabled={
-											isMyActiveTurn &&
-											gameState.phase.kind === 'main'
-										}
-										onTap={onTapKnight}
-									/>
-								)}
-						</View>
-						<View style={styles.rightCol}>
-							{/* Actions on top, the turn's primary control at the
-							    bottom. */}
-							{showBuildBar ? <BuildBar /> : <View />}
-							<PrimaryAction />
-						</View>
+						)}
+						{!inPlacement && myPlayer?.bonus === 'veteran' && (
+							<KnightTapBar
+								untappedKnights={
+									(myPlayer.devCardsPlayed.knight ?? 0) -
+									(myPlayer.tappedKnights ?? 0)
+								}
+								enabled={
+									isMyActiveTurn &&
+									gameState.phase.kind === 'main'
+								}
+								onTap={onTapKnight}
+							/>
+						)}
 					</View>
+					<View style={styles.rightCol}>
+						{/* Actions on top, the turn's primary control at the
+							    bottom. */}
+						{showBuildBar ? <BuildBar /> : <View />}
+						<PrimaryAction />
+					</View>
+				</View>
 			)}
 
 			{/* Modals opened from the dock's affordances. All Modal-based, so
@@ -287,7 +285,9 @@ function BuildBar() {
 					: undefined
 			}
 			superCityEnabled={
-				myPlayer?.bonus === 'metropolitan' ? superCityEnabled : undefined
+				myPlayer?.bonus === 'metropolitan'
+					? superCityEnabled
+					: undefined
 			}
 			superCityActive={buildTool === 'super_city'}
 			accountantEnabled={

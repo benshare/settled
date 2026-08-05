@@ -63,7 +63,9 @@ function isPhrase(idx: number, ctx: Ctx): string {
 
 function listOf(idxs: number[], ctx: Ctx): string {
 	if (idxs.length === 0) return 'nobody'
-	return idxs.map((i) => (i === ctx.meIdx ? 'you' : nameOf(i, ctx))).join(', ')
+	return idxs
+		.map((i) => (i === ctx.meIdx ? 'you' : nameOf(i, ctx)))
+		.join(', ')
 }
 
 // This turn's roll, wherever it currently lives — committed on `main`, pending
@@ -83,7 +85,10 @@ export function currentRoll(gameState: GameState): DiceRoll | null {
 	return null
 }
 
-export function islandStatus(ctx: Ctx): { label: string; dice: DiceRoll | null } {
+export function islandStatus(ctx: Ctx): {
+	label: string
+	dice: DiceRoll | null
+} {
 	const { game, gameState } = ctx
 	const phase = gameState.phase
 	if (phase.kind === 'special_build' && phase.queue.length > 0) {
@@ -94,7 +99,8 @@ export function islandStatus(ctx: Ctx): { label: string; dice: DiceRoll | null }
 	}
 	const turn = game.current_turn
 	if (turn === null) return { label: 'Choosing bonuses', dice: null }
-	const label = turn === ctx.meIdx ? 'Your turn' : `${nameOf(turn, ctx)}'s turn`
+	const label =
+		turn === ctx.meIdx ? 'Your turn' : `${nameOf(turn, ctx)}'s turn`
 	return { label, dice: currentRoll(gameState) }
 }
 

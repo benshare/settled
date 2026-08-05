@@ -152,7 +152,9 @@ export function ActionLog({
 			? { bottom: anchorBottom + SLOT }
 			: { top: spacing.sm + SLOT }
 	const panelVpos =
-		anchorBottom != null ? { bottom: anchorBottom + SLOT } : { top: spacing.sm }
+		anchorBottom != null
+			? { bottom: anchorBottom + SLOT }
+			: { top: spacing.sm }
 	// Keyed the same way as the rendered rows, so an expansion survives new
 	// events landing above it. Everything starts collapsed.
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
