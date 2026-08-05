@@ -1,23 +1,23 @@
 // dev-login: mints a session for an arbitrary account, so an admin build can
 // "act as" any player from the user search (`lib/admin.ts`). Same shape as
 // `reviewer-login` — no caller identity, so `verify_jwt = false` and it
-// authorizes on a header — but two things differ.
+// authorizes on a header — but the target is a request parameter (a profile
+// uuid or a username), not a hardcoded id, so this hands out a session for ANY
+// account. `DEV_LOGIN_KEY` therefore is a real security boundary, unlike
+// `REVIEWER_KEY`: it must never ship in the app bundle. The app reads it from
+// `.env` via `app.config.js` extra, which is populated locally and nowhere
+// else. If the secret is unset the function is inert (500), so deploying it
+// without setting the secret exposes nothing.
 //
-// 1. The target is a request parameter (a profile uuid or a username), not a
-//    hardcoded id, so this hands out a session for ANY account. `DEV_LOGIN_KEY`
-//    therefore is a real security boundary, unlike `REVIEWER_KEY`: it must
-//    never ship in the app bundle. The app reads it from `.env` via
-//    `app.config.js` extra, which is populated locally and nowhere else. If the
-//    secret is unset the function is inert (500), so deploying it without
-//    setting the secret exposes nothing.
-// 2. The password is derived, not stored: HMAC(DEV_LOGIN_KEY, userId). Knowing
-//    one account's password tells you nothing about another's, and rotating the
-//    key invalidates every derived password at once.
-//
-// Sign-in is attempted BEFORE the password is set, so an account that has been
-// impersonated once is never written to again. That matters because GoTrue
-// revokes every session on an admin password change — impersonating a real
-// player signs them out on their own devices, but only the first time.
+// The session is minted through a magic link — admin `generateLink`, redeemed
+// by `verifyOtp` on the client — and NOT a password. Setting a password revokes
+// every existing session for the account (GoTrue; supabase/auth#1579), which
+// would sign the real owner out on their own devices on every first
+// impersonation. `generateLink` needs an email, so a phone-signup account with
+// none gets a namespaced synthetic one the first time; unlike a password
+// change, setting an email leaves the account's existing sessions intact. The
+// function returns the link's `token_hash` rather than a session, since only
+// the client that will hold the session can redeem it.
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -85,72 +85,42 @@ serve(async (req) => {
 	if (getErr || !userRes?.user)
 		return err(404, getErr?.message ?? `no auth user with id ${userId}`)
 
-	const phone = userRes.user.phone
-	if (!phone) return err(400, 'that account has no phone identity')
-
-	const anon = createClient(
-		Deno.env.get('SUPABASE_URL')!,
-		Deno.env.get('SUPABASE_ANON_KEY')!,
-		{ auth: { persistSession: false, autoRefreshToken: false } }
-	)
-	const credentials = {
-		phone: `+${phone.replace(/^\+/, '')}`,
-		password: await derivePassword(devKey, userId),
-	}
-
-	let rotated = false
-	let { data, error } = await anon.auth.signInWithPassword(credentials)
-	if (error) {
+	// `generateLink` keys off an email. These are phone-signup accounts, so most
+	// have none — give them a namespaced synthetic one the first time. This never
+	// overwrites a real email, and (unlike a password change) does not revoke the
+	// account's sessions, so the real owner stays signed in on their own devices.
+	let email = userRes.user.email
+	if (!email) {
+		email = `impersonate+${userId}@settled.invalid`
 		const { error: updErr } = await admin.auth.admin.updateUserById(
 			userId,
 			{
-				password: credentials.password,
+				email,
+				email_confirm: true,
 			}
 		)
 		if (updErr) return err(500, updErr.message)
-		rotated = true
-		;({ data, error } = await anon.auth.signInWithPassword(credentials))
 	}
-	if (error || !data.session) return err(500, error?.message ?? 'no session')
+
+	const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
+		type: 'magiclink',
+		email,
+	})
+	const tokenHash = link?.properties?.hashed_token
+	if (linkErr || !tokenHash)
+		return err(500, linkErr?.message ?? 'could not generate magic link')
 
 	return new Response(
 		JSON.stringify({
 			ok: true,
-			access_token: data.session.access_token,
-			refresh_token: data.session.refresh_token,
+			token_hash: tokenHash,
 			user_id: userId,
 			username: profile?.username ?? null,
 			dev: profile?.dev ?? false,
-			// True when this account had no derived password yet, i.e. its other
-			// sessions were just revoked. The app ignores it; it's here so a
-			// manual call can tell whether it just signed someone out.
-			rotated,
 		}),
 		{ headers: { ...CORS, 'Content-Type': 'application/json' } }
 	)
 })
-
-// The `Dev1!` prefix covers upper/lower/digit/symbol so the result satisfies any
-// password-strength policy the project may turn on later; the hex carries the
-// entropy.
-async function derivePassword(secret: string, userId: string) {
-	const key = await crypto.subtle.importKey(
-		'raw',
-		new TextEncoder().encode(secret),
-		{ name: 'HMAC', hash: 'SHA-256' },
-		false,
-		['sign']
-	)
-	const sig = await crypto.subtle.sign(
-		'HMAC',
-		key,
-		new TextEncoder().encode(userId)
-	)
-	const hex = Array.from(new Uint8Array(sig))
-		.map((b) => b.toString(16).padStart(2, '0'))
-		.join('')
-	return `Dev1!${hex}`
-}
 
 function err(status: number, message: string) {
 	return new Response(JSON.stringify({ ok: false, error: message }), {

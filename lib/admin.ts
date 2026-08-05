@@ -3,10 +3,11 @@
 // `app.config.js` extra, and `.env` is never loaded by an EAS build or by
 // `eas update --environment production`, so a shipped bundle has neither.
 //
-// The session itself is minted by the `dev-login` edge function (see its header
-// for why impersonation has to go through a password). The real account's tokens
-// are stashed on the way in and restored on the way out; they're persisted
-// rather than held in memory so a reload mid-impersonation can still get back.
+// The session is minted by the `dev-login` edge function through a magic link
+// (see its header), so impersonating a player never touches their password and
+// never signs them out on their own devices. The real account's tokens are
+// stashed on the way in and restored on the way out; they're persisted rather
+// than held in memory so a reload mid-impersonation can still get back.
 
 import Constants from 'expo-constants'
 import { router } from 'expo-router'
@@ -79,7 +80,7 @@ export const useAdminStore = create<AdminStore>((set, get) => ({
 			headers: { 'x-dev-key': DEV_LOGIN_KEY ?? '' },
 			body: { player: player.id },
 		})
-		if (error || !data?.access_token) {
+		if (error || !data?.token_hash) {
 			set({
 				busy: false,
 				error:
@@ -98,10 +99,7 @@ export const useAdminStore = create<AdminStore>((set, get) => ({
 			original,
 		})
 
-		const { error: switchError } = await applySession(
-			data.access_token,
-			data.refresh_token
-		)
+		const { error: switchError } = await applyTokenHash(data.token_hash)
 		if (switchError) {
 			await clearStored()
 			set({ busy: false, error: switchError })
@@ -168,11 +166,29 @@ export const useAdminStore = create<AdminStore>((set, get) => ({
 	},
 }))
 
-// Every account switch runs through here: drop the outgoing account's data,
-// then set the session. The root layout's `user?.id` effect reloads the stores
-// for whoever we land on, so this deliberately doesn't load anything itself.
-// The push token is left alone — it belongs to the device's real account, and
-// re-pointing it would send that person's notifications somewhere else.
+// Both account switches drop the outgoing account's data first; the root
+// layout's `user?.id` effect reloads the stores for whoever we land on, so
+// neither loads anything itself. The push token is left alone — it belongs to
+// the device's real account, and re-pointing it would send that person's
+// notifications somewhere else.
+
+// Into an impersonated account: redeem the one-time magic-link token minted by
+// `dev-login`. No password is involved, so the target's own sessions elsewhere
+// are untouched.
+async function applyTokenHash(tokenHash: string) {
+	clearAllUserStores()
+	const { data, error } = await supabase.auth.verifyOtp({
+		token_hash: tokenHash,
+		type: 'magiclink',
+	})
+	if (error || !data.session) {
+		return { error: error?.message ?? 'session could not be set' }
+	}
+	return { error: null }
+}
+
+// Back to the real account: its tokens were captured at the first switch and
+// are still valid, since nothing above ever touched them.
 async function applySession(accessToken: string, refreshToken: string) {
 	clearAllUserStores()
 	const { data, error } = await supabase.auth.setSession({
