@@ -15,7 +15,7 @@
 				"NSPhotoLibraryUsageDescription": "Allow Settled to access your photos so you can set a profile picture."
 			},
 			"runtimeVersion": {
-				"policy": "appVersion"
+				"policy": "fingerprint"
 			}
 		},
 		"android": {
@@ -64,7 +64,7 @@
 			"checkAutomatically": "ON_LOAD"
 		},
 		"runtimeVersion": {
-			"policy": "appVersion"
+			"policy": "fingerprint"
 		}
 	}
 }
