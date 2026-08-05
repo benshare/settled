@@ -7,6 +7,7 @@
 // `GameMenu`. It reads the route-level providers (the current game) that wrap
 // HudScreen.
 
+import { useGameLayout } from '@/lib/GameLayoutContext'
 import { useGameScreen } from '@/lib/game/gameScreenContext'
 import { Modal } from '@/lib/modules/Modal'
 import { colors, font, radius, spacing } from '@/lib/theme'
@@ -85,6 +86,7 @@ function HudMenu({ dropTop }: { dropTop: number }) {
 		onSetEndVote,
 		showToast,
 	} = useGameScreen()
+	const { setLayout } = useGameLayout()
 	const [open, setOpen] = useState(false)
 
 	const anyPending = forfeitedIds.length > 0 || endVoteIds.length > 0
@@ -155,6 +157,14 @@ function HudMenu({ dropTop }: { dropTop: number }) {
 					icon="bug-outline"
 					label="Copy debug info"
 					onPress={copyDebug}
+				/>
+				<MenuRow
+					icon="swap-horizontal"
+					label="Switch to classic UI"
+					onPress={() => {
+						setOpen(false)
+						setLayout('classic')
+					}}
 				/>
 			</Modal>
 		</>

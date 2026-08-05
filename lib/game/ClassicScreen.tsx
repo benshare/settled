@@ -1,8 +1,8 @@
 // The classic (shipped) game-screen layout: the stacked-band arrangement of
 // Nav + three sliding zones (TopArea / BoardArea / BottomArea) over a fixed
 // water frame. Extracted verbatim from `app/game/[id].tsx` so the screen route
-// can switch between this and the HUD layout (see `lib/flags.ts` and
-// `.claude/specs/game-hud.md`); the providers stay in the route.
+// can switch between this and the HUD layout (see `lib/GameLayoutContext.tsx`
+// and `.claude/specs/game-hud.md`); the providers stay in the route.
 //
 // The split between frame and zone is the whole layout rule here: each zone's
 // background (the top/bottom bars' fill, the board's water and its edge

@@ -1,9 +1,12 @@
 # The HUD layout (v1)
 
 The full-bleed-board + floating-HUD alternative to the classic stacked-band
-screen. Selected by the `GAME_LAYOUT` dev flag in `lib/flags.ts`; both layouts
-mount under the same three providers and read the same `useGameScreen()`, so this
-directory is presentation only. Full design in `.claude/specs/game-hud.md`.
+screen. Selected by the persisted `useGameLayout()` preference
+(`lib/GameLayoutContext.tsx`), which defaults to the HUD and is toggled in-game
+from either overflow menu ("Switch to classic UI" here, "Switch to new UI" in
+the classic `GameMenu`); both layouts mount under the same three providers and
+read the same `useGameScreen()`, so this directory is presentation only. Full
+design in `.claude/specs/game-hud.md`.
 
 ```
 HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
@@ -25,8 +28,9 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
   `HudScreen` **outside** the SlidingArea so they don't remount or travel on a
   switch (they're about *which* game you're on). Both are anchored `Modal`
   dropdowns, not centered sheets; the `⋯` menu is one-tap (Back to games,
-  propose/withdraw end game, resign/withdraw, copy debug) with no confirms or
-  blurbs, deliberately separate from the classic `GameMenu`. The turn/roll
+  propose/withdraw end game, resign/withdraw, copy debug, switch to the classic
+  UI) with no confirms or blurbs, deliberately separate from the classic
+  `GameMenu`. The turn/roll
   indicator is **not** here — it's the top row of the combined `StatusBanner`.
 
 ## Rules

@@ -1,15 +1,15 @@
 // The game screen route. It mounts the three shared providers and then hands
 // off to one of two layouts — the classic stacked-band screen or the full-bleed
-// HUD — chosen by the `GAME_LAYOUT` dev flag. Both consume the same
-// `useGameScreen()` context, so the choice is purely presentational. See
-// `lib/game/ClassicScreen.tsx`, `lib/game/hud/HudScreen.tsx`, and
-// `.claude/specs/game-hud.md`.
+// HUD — chosen by the persisted `useGameLayout()` preference (toggled in-game
+// from either overflow menu). Both consume the same `useGameScreen()` context,
+// so the choice is purely presentational. See `lib/game/ClassicScreen.tsx`,
+// `lib/game/hud/HudScreen.tsx`, and `.claude/specs/game-hud.md`.
 
 import { useAuth } from '@/lib/auth'
 import { ChatProvider } from '@/lib/catan/chatContext'
 import { GameProvider } from '@/lib/catan/gameContext'
 import { waterColor } from '@/lib/catan/palette'
-import { GAME_LAYOUT } from '@/lib/flags'
+import { useGameLayout } from '@/lib/GameLayoutContext'
 import { ClassicScreen } from '@/lib/game/ClassicScreen'
 import { GameScreenProvider } from '@/lib/game/gameScreenContext'
 import { HudScreen } from '@/lib/game/hud/HudScreen'
@@ -19,12 +19,11 @@ import { useEffect } from 'react'
 import { StyleSheet } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-const HUD = GAME_LAYOUT === 'hud'
-
 export default function GameDetailScreen() {
 	const { id, chat } = useLocalSearchParams<{ id: string; chat?: string }>()
 	const router = useRouter()
 	const { user } = useAuth()
+	const HUD = useGameLayout().layout === 'hud'
 
 	// The flag is a one-shot request, not screen state: drop it once the panel
 	// has been told to open, or dismissing chat and tapping a second

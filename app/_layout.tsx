@@ -1,5 +1,6 @@
 import { useAppForeground } from '@/lib/appState'
 import { AuthProvider, useAuth } from '@/lib/auth'
+import { GameLayoutProvider } from '@/lib/GameLayoutContext'
 import { useAppBadge, useNotificationRouting } from '@/lib/notifications'
 import { loadAllUserStores } from '@/lib/stores'
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext'
@@ -35,9 +36,11 @@ export default function RootLayout() {
 	return (
 		<GestureHandlerRootView style={{ flex: 1 }}>
 			<ThemeProvider>
-				<AuthProvider>
-					<RootNav />
-				</AuthProvider>
+				<GameLayoutProvider>
+					<AuthProvider>
+						<RootNav />
+					</AuthProvider>
+				</GameLayoutProvider>
 			</ThemeProvider>
 		</GestureHandlerRootView>
 	)

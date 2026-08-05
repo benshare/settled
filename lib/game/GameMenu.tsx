@@ -22,6 +22,7 @@
 // nothing to declare, so it renders a spacer of the same width instead and the
 // title stays centred either way.
 
+import { useGameLayout } from '@/lib/GameLayoutContext'
 import { ConfirmModal } from '@/lib/modules/ConfirmModal'
 import { Modal } from '@/lib/modules/Modal'
 import { colors, font, radius, spacing } from '@/lib/theme'
@@ -51,6 +52,7 @@ export function GameMenu() {
 		onSetEndVote,
 		showToast,
 	} = useGameScreen()
+	const { setLayout } = useGameLayout()
 
 	const [open, setOpen] = useState(false)
 	const [pending, setPending] = useState<Pending>(null)
@@ -166,6 +168,26 @@ export function GameMenu() {
 						color={colors.textSecondary}
 					/>
 					<Text style={styles.rowText}>Copy debugging info</Text>
+				</Pressable>
+
+				<View style={styles.divider} />
+
+				<Pressable
+					onPress={() => {
+						setOpen(false)
+						setLayout('hud')
+					}}
+					style={({ pressed }) => [
+						styles.row,
+						pressed && styles.pressed,
+					]}
+				>
+					<Ionicons
+						name="swap-horizontal"
+						size={18}
+						color={colors.textSecondary}
+					/>
+					<Text style={styles.rowText}>Switch to new UI</Text>
 				</Pressable>
 			</Modal>
 

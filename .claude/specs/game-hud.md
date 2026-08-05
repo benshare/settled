@@ -12,15 +12,20 @@ presentational tree over the *same* providers the classic screen uses.
 
 ---
 
-## 1. Feature flag
+## 1. Layout preference
 
-- **A development-only flag, not a shipped user setting.** A single module
-  constant in `lib/flags.ts`: `export const GAME_LAYOUT: 'classic' | 'hud' =
-  'classic'`. Flip it in code to preview the HUD; fast-refresh swaps the layout
-  in place without dropping the route.
-- No persistence, no UI, no store touch. (A runtime dev toggle can be added
-  later if side-by-side comparison of a live game proves useful — out of scope
-  for v1.)
+- **A persisted, device-local preference — not a synced account setting.**
+  `lib/GameLayoutContext.tsx` holds `GameLayout = 'classic' | 'hud'`, defaulting
+  to `'hud'`, and persists the choice with `expo-secure-store` (web
+  `localStorage` fallback) under `settled.gameLayout` — the same mechanism as
+  the theme. `useGameLayout()` exposes `{ layout, setLayout, toggleLayout }`;
+  the route reads `layout`, so a change re-renders the screen in place without
+  dropping the providers.
+- **Toggled in-game from either overflow menu.** A bottom row switches to the
+  other layout — "Switch to classic UI" in the HUD's `⋯` menu (`HudTopBar`),
+  "Switch to new UI" in the classic `GameMenu`. No dev-only code edit needed.
+- The provider is mounted at the app root (`app/_layout.tsx`) beside
+  `ThemeProvider`, so the preference is available anywhere the game route lives.
 
 ## 2. The screen split
 
@@ -211,7 +216,9 @@ New components (in `lib/game/hud/`):
 
 ## 13. Resolved decisions
 
-1. Flag is **development-only** — a `lib/flags.ts` constant, no account UI (§1).
+1. Layout is a **persisted device-local preference** (`GameLayoutContext`),
+   default HUD, toggled from either overflow menu — not a dev-only constant and
+   not a synced account setting (§1).
 2. Banner shows **all** non-roll actions, including the viewer's own (§6).
 3. Placement dock left column just shows the (empty) hand — no special state
    (§10).
