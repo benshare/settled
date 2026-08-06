@@ -36,9 +36,10 @@ const ROLL_KINDS: ReadonlySet<GameEvent['kind']> = new Set([
 ])
 
 // The phases where the table is waiting on a decision the island doesn't
-// already narrate. `main` / `initial_placement` are ordinary turns (the island
-// names the seat), so they fall through to the recent-action line; `roll` has
-// its own line (see `rollLine`) so the banner refreshes the moment a turn ends.
+// already narrate. `main` is an ordinary turn (the island names the seat), so it
+// falls through to the recent-action line; `roll` and `initial_placement` have
+// their own lines (see `rollLine` / `placementLine`) so the banner refreshes the
+// moment a turn ends.
 const WAIT_KINDS: ReadonlySet<GameState['phase']['kind']> = new Set([
 	'select_bonus',
 	'post_placement',
@@ -110,7 +111,23 @@ export function bannerStatus(ctx: Ctx): string | null {
 	const phase = ctx.gameState.phase
 	if (WAIT_KINDS.has(phase.kind)) return waitLine(ctx)
 	if (phase.kind === 'roll') return rollLine(ctx)
+	if (phase.kind === 'initial_placement') return placementLine(ctx)
 	return recentActionLine(ctx)
+}
+
+// Placement turns commit a settlement and its road together, so the recent
+// action is almost always "…placed a road" — stale narration of the turn the
+// table has already moved past. Name the piece the seat owes instead. The stage
+// within a turn is drafted client-side (see `placementStage`), so this stays at
+// the phase's altitude and always says settlement.
+function placementLine(ctx: Ctx): string | null {
+	const phase = ctx.gameState.phase
+	if (phase.kind !== 'initial_placement') return null
+	const turn = ctx.game.current_turn ?? 0
+	if (phase.step === 'pick_last')
+		return `${isPhrase(turn, ctx)} choosing a starting settlement`
+	const whose = turn === ctx.meIdx ? 'Your' : `${nameOf(turn, ctx)}'s`
+	return `${whose} turn to place settlement`
 }
 
 // The `roll` phase is an ordinary turn, so it isn't in `WAIT_KINDS` — but with

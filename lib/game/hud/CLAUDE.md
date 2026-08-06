@@ -43,7 +43,8 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
 - **Island and banner are uniform across viewers** — both derive from
   `status.ts`, "you" vs. name only. The banner is a status summary, never the
   instruction (the dock or a picker carries the affordance); precedence is live
-  wait > recent action > nothing. It **doesn't render during bonus selection**
+  wait > the turn's own line on `roll` / `initial_placement` > recent action >
+  nothing. It **doesn't render during bonus selection**
   for a seated viewer — the bonus pane owns the screen and already names who
   it's waiting on. A spectator has no pane, so they keep it.
 - **The honk button is the banner's one interactive part.** A nudge is a
