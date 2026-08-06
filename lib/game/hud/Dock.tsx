@@ -1,9 +1,5 @@
 // The HUD's bottom action dock. Compact, translucent, floating over the board.
 //
-// Layout (v1): a row splits 40/60 into the hand on the left (resources + dev
-// cards + the veteran knight bar) and a right column. The right column
-// stacks the build panel on its own row over a second row that splits trade
-// (left) and the turn's primary action (Roll / End turn / Done, right).
 // Through the whole main loop (roll / main / special build) build, trade, and
 // the turn control keep their place regardless of whose turn it is — each
 // disables itself off-turn instead of popping in and out. The nudge is not
@@ -46,9 +42,8 @@ import { colors, font, radius, spacing } from '@/lib/theme'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-// The dock floats as an inset card: the bottom gap sits above the safe area (so
-// it never collides with the home indicator), and the sides are inset twice as
-// far to pull the card in from the screen edges.
+// The dock floats as an inset card, its bottom gap kept above the safe area so
+// it clears the home indicator.
 const DOCK_MARGIN = spacing.sm
 const DOCK_MARGIN_X = DOCK_MARGIN * 2
 
@@ -195,8 +190,6 @@ export function Dock({
 						)}
 					</View>
 					<View style={styles.rightCol}>
-						{/* Build spans its own row; below it, trade sits on the
-							    left and the turn's primary control on the right. */}
 						{inMainLoop ? <BuildBar /> : <View />}
 						<View style={styles.actionRow}>
 							{inMainLoop ? <DockTradeButton /> : <View />}
@@ -594,9 +587,8 @@ function confirmLabel(
 const styles = StyleSheet.create({
 	dock: {
 		position: 'absolute',
-		// Inset on the sides; the bottom offset (base margin + the bottom
-		// safe-area inset) is applied inline so the card floats clear of the home
-		// indicator.
+		// Inset on the sides; the bottom offset is applied inline because it needs
+		// the runtime safe-area inset.
 		left: DOCK_MARGIN_X,
 		right: DOCK_MARGIN_X,
 		backgroundColor: 'rgba(247,237,214,0.96)',
@@ -607,9 +599,9 @@ const styles = StyleSheet.create({
 		paddingVertical: spacing.xs,
 		boxShadow: '0px 2px 10px rgba(0,0,0,0.18)',
 	},
-	// A 40/60 split at equal height — the hand reads fine compressed (it's a
-	// fan of cards), the buttons don't. Height is driven by the hand and stays
-	// constant whether or not the build bar is showing.
+	// The uneven split: the hand reads fine compressed (it's a fan of cards),
+	// the buttons don't. Height is driven by the hand and stays constant
+	// whether or not the build bar is showing.
 	row: {
 		flexDirection: 'row',
 		alignItems: 'stretch',
@@ -625,7 +617,6 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 		gap: spacing.xs,
 	},
-	// Right: build actions on top, the turn's primary control at the bottom.
 	// Children stretch to the column width (the build bar uses it; the primary
 	// action right-aligns its own buttons internally).
 	rightCol: {
@@ -635,8 +626,8 @@ const styles = StyleSheet.create({
 		alignItems: 'stretch',
 		gap: spacing.xs,
 	},
-	// Trade on the left, the turn's primary control on the right. Bottom-aligned
-	// so the tall trade panel and the short primary button share a baseline.
+	// Bottom-aligned so the tall trade panel and the short primary button share a
+	// baseline.
 	actionRow: {
 		flexDirection: 'row',
 		alignItems: 'flex-end',
@@ -647,8 +638,6 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 		alignItems: 'flex-end',
 	},
-	// The bottom line of the action column: undo sits level with the turn's
-	// primary button.
 	primaryRow: {
 		flexDirection: 'row',
 		alignItems: 'center',

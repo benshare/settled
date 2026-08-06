@@ -91,18 +91,15 @@ export function HudGame({ active = true }: { active?: boolean } = {}) {
 
 	return (
 		<View style={styles.pane}>
-			{/* The board layer: BoardView, all board-blocking overlays, the
-			    trade banner, the bonus pane, the confirm bar, and the top-right
-			    utility buttons (legend / log / chat / watchers). Inset below the
-			    top band and above the dock so the board and its own floating
-			    buttons stay clear of the chrome. */}
+			{/* The board layer (BoardArea), inset below the top band and above the
+			    dock so the board and its own floating buttons stay clear of the
+			    chrome. */}
 			<View
 				style={[
 					styles.boardFill,
 					{
-						// Chips sit at HUD_TOP_BAR_H with measured height topBandH;
-						// the trade banner flows at `marginTop: spacing.sm` inside
-						// here, so this lands it `spacing.lg` below the chips.
+						// Below the measured chip band, with room for the trade
+						// banner that flows at the board layer's top.
 						top: topBandH
 							? HUD_TOP_BAR_H + topBandH + spacing.md
 							: TOP_BAND,

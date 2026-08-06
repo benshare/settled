@@ -1,11 +1,6 @@
 // Bonus-selection pane. Rendered as a floating overlay on top of the board
-// while gameState.phase.kind === 'select_bonus' so the player can preview
-// the board (port placements, terrain, neighbours' positions… well, none of
-// those are placed yet, but the seed is visible) while they choose.
-//
-// The pane toggles between an expanded body (cards + confirm + play-order
-// footer) and a collapsed header bar via the chevron. The footer shows each
-// player in turn order (read-only) along with whether they've committed yet.
+// while gameState.phase.kind === 'select_bonus', so the board seed stays
+// visible while the player chooses. Collapsible via the chevron.
 //
 // After submit, the local player shows a waiting state until every other
 // player has also chosen. When the last player commits, the edge function

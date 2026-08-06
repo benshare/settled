@@ -521,7 +521,6 @@ function makeStyles(colors: ColorScheme) {
 		},
 		tabActive: {},
 		tabLabel: {
-			// Unselected: faded and 5% smaller than the active header.
 			fontSize: font.xl * 0.95,
 			fontWeight: '700',
 			color: colors.textMuted,
