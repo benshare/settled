@@ -1,7 +1,7 @@
 // The HUD's bottom action dock. Compact, translucent, floating over the board.
 //
-// Layout (v1): a row splits into the hand on the left (resources + dev cards +
-// the veteran knight bar) and a right column on the right. The right column
+// Layout (v1): a row splits 40/60 into the hand on the left (resources + dev
+// cards + the veteran knight bar) and a right column. The right column
 // stacks the build panel on its own row over a second row that splits trade
 // (left) and the turn's primary action (Roll / End turn / Done, right).
 // Through the whole main loop (roll / main / special build) build, trade, and
@@ -607,17 +607,20 @@ const styles = StyleSheet.create({
 		paddingVertical: spacing.xs,
 		boxShadow: '0px 2px 10px rgba(0,0,0,0.18)',
 	},
-	// Two equal halves at equal height — so the dock's height is driven by the
-	// hand and stays constant whether or not the build bar is showing.
+	// A 40/60 split at equal height — the hand reads fine compressed (it's a
+	// fan of cards), the buttons don't. Height is driven by the hand and stays
+	// constant whether or not the build bar is showing.
 	row: {
 		flexDirection: 'row',
 		alignItems: 'stretch',
 		gap: spacing.sm,
 		paddingHorizontal: spacing.xs,
 	},
-	// Left: the hand, centered.
+	// Left: the hand, centered. `minWidth: 0` so the ratio holds on web, where
+	// a flex child won't shrink below its content without it.
 	handSide: {
-		flex: 1,
+		flex: 4,
+		minWidth: 0,
 		alignItems: 'center',
 		justifyContent: 'center',
 		gap: spacing.xs,
@@ -626,7 +629,8 @@ const styles = StyleSheet.create({
 	// Children stretch to the column width (the build bar uses it; the primary
 	// action right-aligns its own buttons internally).
 	rightCol: {
-		flex: 1,
+		flex: 6,
+		minWidth: 0,
 		justifyContent: 'space-between',
 		alignItems: 'stretch',
 		gap: spacing.xs,
