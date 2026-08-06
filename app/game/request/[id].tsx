@@ -4,6 +4,7 @@ import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import { ConfirmModal } from '@/lib/modules/ConfirmModal'
 import {
+	needsMyResponse,
 	type GameRequest,
 	type InvitedEntry,
 	useGamesStore,
@@ -173,12 +174,7 @@ function Body({
 	onReject,
 	onCancelGame,
 }: {
-	request: {
-		id: string
-		proposer: string
-		invited: InvitedEntry[]
-		config: unknown
-	}
+	request: GameRequest
 	profilesById: Record<string, Profile>
 	meId: string | undefined
 	busy: 'accept' | 'reject' | 'cancel' | null
@@ -192,8 +188,7 @@ function Body({
 	const mine = request.invited.find((i) => i.user === meId)
 	const iAmProposer = meId === request.proposer
 	const someoneRejected = request.invited.some((i) => i.status === 'rejected')
-	const canRespond =
-		mine !== undefined && mine.status === 'pending' && !someoneRejected
+	const canRespond = needsMyResponse(request, meId)
 
 	// Participant count = proposer + everyone they invited. We don't filter
 	// by response status here — a "3 player game" describes the intended

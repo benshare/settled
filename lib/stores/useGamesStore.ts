@@ -1413,6 +1413,22 @@ export function isMyTurn(game: Game, meId: string | undefined): boolean {
 	return game.player_order[game.current_turn] === meId
 }
 
+/**
+ * Whether a game request is waiting on `meId` to accept or reject — the split
+ * behind the Games tab (unheaded top section vs. `Pending`) and the tab-bar
+ * dot. Everything else is waiting on somebody else: an invite I sent, one I
+ * already answered, or one already killed by another invitee's reject.
+ */
+export function needsMyResponse(
+	request: GameRequest,
+	meId: string | undefined
+): boolean {
+	if (!meId) return false
+	const mine = request.invited.find((i) => i.user === meId)
+	if (!mine || mine.status !== 'pending') return false
+	return !request.invited.some((i) => i.status === 'rejected')
+}
+
 export function describePendingRequest(
 	request: GameRequest,
 	meId: string | undefined,

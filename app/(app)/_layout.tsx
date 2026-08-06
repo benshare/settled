@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/auth'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import { ensurePermissionAndRegister } from '@/lib/notifications'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
-import { useGamesStore } from '@/lib/stores/useGamesStore'
+import { needsMyResponse, useGamesStore } from '@/lib/stores/useGamesStore'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
@@ -109,14 +109,9 @@ function FriendsTabIcon({ color, size }: { color: ColorValue; size: number }) {
 function GamesTabIcon({ color, size }: { color: ColorValue; size: number }) {
 	const { user } = useAuth()
 	const meId = user?.id
-	const showDot = useGamesStore((s) => {
-		if (!meId) return false
-		return (s.pendingRequests ?? []).some((r) => {
-			const mine = r.invited.find((i) => i.user === meId)
-			if (!mine || mine.status !== 'pending') return false
-			return !r.invited.some((i) => i.status === 'rejected')
-		})
-	})
+	const showDot = useGamesStore((s) =>
+		(s.pendingRequests ?? []).some((r) => needsMyResponse(r, meId))
+	)
 	return (
 		<TabBarIcon
 			name="game-controller-outline"

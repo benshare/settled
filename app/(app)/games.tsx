@@ -3,6 +3,7 @@ import { Avatar } from '@/lib/modules/Avatar'
 import {
 	describePendingRequest,
 	isMyTurn,
+	needsMyResponse,
 	useGamesStore,
 	type Game,
 	type GameRequest,
@@ -36,6 +37,19 @@ export default function GamesScreen() {
 	const completeGames = useGamesStore((s) => s.completeGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const [historyOpen, setHistoryOpen] = useState(false)
+
+	// Invites I still owe an answer sit unheaded at the very top — they're the
+	// only thing on this screen asking for an action outside a game. The rest
+	// (mine to send, already answered, dead) wait under Pending.
+	const [toAnswer, awaitingOthers] = useMemo(() => {
+		const toAnswer: GameRequest[] = []
+		const awaitingOthers: GameRequest[] = []
+		for (const r of pendingRequests ?? []) {
+			if (needsMyResponse(r, user?.id)) toAnswer.push(r)
+			else awaitingOthers.push(r)
+		}
+		return [toAnswer, awaitingOthers]
+	}, [pendingRequests, user?.id])
 
 	const storeLoaded =
 		pendingRequests !== undefined &&
@@ -76,10 +90,9 @@ export default function GamesScreen() {
 					<ActivityIndicator color={colors.textMuted} />
 				) : null}
 
-				{(pendingRequests ?? []).length > 0 && (
+				{toAnswer.length > 0 && (
 					<View style={styles.section}>
-						<Text style={styles.sectionHeading}>Invites</Text>
-						{(pendingRequests ?? []).map((r) => (
+						{toAnswer.map((r) => (
 							<PendingRow
 								key={r.id}
 								request={r}
@@ -103,6 +116,23 @@ export default function GamesScreen() {
 								profilesById={profilesById}
 								meId={user?.id}
 								onPress={() => router.push(`/game/${g.id}`)}
+							/>
+						))}
+					</View>
+				)}
+
+				{awaitingOthers.length > 0 && (
+					<View style={styles.section}>
+						<Text style={styles.sectionHeading}>Pending</Text>
+						{awaitingOthers.map((r) => (
+							<PendingRow
+								key={r.id}
+								request={r}
+								meId={user?.id}
+								profilesById={profilesById}
+								onPress={() =>
+									router.push(`/game/request/${r.id}`)
+								}
 							/>
 						))}
 					</View>
