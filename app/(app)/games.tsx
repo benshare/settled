@@ -66,7 +66,7 @@ export default function GamesScreen() {
 		completeGames.length === 0
 
 	return (
-		<SafeAreaView style={styles.safe}>
+		<SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
 			<ScrollView contentContainerStyle={styles.container}>
 				<View style={styles.header}>
 					<Text style={styles.title}>Games</Text>

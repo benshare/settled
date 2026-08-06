@@ -33,7 +33,7 @@ export default function FriendsScreen() {
 	const showBanner = pendingIncoming.length + pendingOutgoing.length > 0
 
 	return (
-		<SafeAreaView style={styles.safe}>
+		<SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
 			<ScrollView contentContainerStyle={styles.container}>
 				<View style={styles.header}>
 					<Text style={styles.title}>Friends</Text>

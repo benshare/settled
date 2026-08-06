@@ -212,7 +212,7 @@ export default function AccountScreen() {
 		formatError ?? (taken ? 'Username already taken' : saveError)
 
 	return (
-		<SafeAreaView style={styles.safe}>
+		<SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
 			<ScrollView contentContainerStyle={styles.container}>
 				<View style={styles.avatarSection}>
 					<View>

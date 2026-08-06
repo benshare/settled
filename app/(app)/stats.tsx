@@ -80,7 +80,7 @@ export default function StatsScreen() {
 	)
 
 	return (
-		<SafeAreaView style={styles.safe}>
+		<SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
 			<TabBar tab={tab} onTab={setTab} />
 			<ScrollView contentContainerStyle={styles.container}>
 				<SlidingArea index={activeIndex}>
