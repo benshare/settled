@@ -4,13 +4,22 @@
 // other to get at them.
 
 import { canHonk, honkTargetFor } from '@/lib/catan/honk'
+import { colors, font, radius, spacing } from '@/lib/theme'
+import { useEffect, useState } from 'react'
+import {
+	Platform,
+	Pressable,
+	StyleSheet,
+	Text,
+	View,
+	type StyleProp,
+	type ViewStyle,
+} from 'react-native'
+
 import type { Phase } from '@/lib/catan/types'
 import { Button } from '@/lib/modules/Button'
 import type { GameEvent } from '@/lib/stores/useGamesStore'
-import { colors, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
-import { useEffect, useState } from 'react'
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 
 // On web we trim chrome around the board a bit so the SVG can breathe.
 export const isWeb = Platform.OS === 'web'
@@ -38,7 +47,8 @@ export function HonkButton({
 	enabled,
 	submitting,
 	onHonk,
-	size,
+	size = 'small',
+	style,
 	alwaysShow = false,
 }: {
 	events: GameEvent[]
@@ -49,6 +59,9 @@ export function HonkButton({
 	submitting: boolean
 	onHonk: () => void
 	size?: 'default' | 'small'
+	// Applied over the Button's own chrome (it wins the style array), so a dense
+	// surface can slim it past `size="small"` — see the HUD's StatusBanner.
+	style?: StyleProp<ViewStyle>
 	// When true, the button holds its place for the whole of someone else's
 	// turn, disabled until the idle threshold makes a honk due — rather than
 	// popping in only once it does. Still hidden when honking has no target this
@@ -77,6 +90,7 @@ export function HonkButton({
 			onPress={onHonk}
 			loading={active && submitting}
 			disabled={!active}
+			style={style}
 		>
 			Honk
 		</Button>

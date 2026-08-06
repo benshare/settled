@@ -3,13 +3,14 @@
 // Layout (v1): a row splits into the hand on the left (resources + dev cards +
 // the veteran knight bar) and a right column on the right. The right column
 // stacks the build panel on its own row over a second row that splits trade
-// (left) and the turn's primary action (Roll / End turn / Done, with Honk,
-// right). Through the whole main loop (roll / main / special build) build,
-// trade, and the turn control keep their place regardless of whose turn it is —
-// each disables itself off-turn instead of popping in and out; Honk likewise
-// holds its slot for another player's turn, disabled until a nudge is due. The
-// trade and discard composers replace the whole row, since each is built by
-// tapping the hand itself. A spectator gets no dock at all (their readout is
+// (left) and the turn's primary action (Roll / End turn / Done, right).
+// Through the whole main loop (roll / main / special build) build, trade, and
+// the turn control keep their place regardless of whose turn it is — each
+// disables itself off-turn instead of popping in and out. The nudge is not
+// here: honking is about the table stalling, not about your turn, so it hangs
+// off the status banner (see `StatusBanner.tsx`). The trade and discard
+// composers replace the whole row, since each is built by tapping the hand
+// itself. A spectator gets no dock at all (their readout is
 // the island + banner). See `.claude/specs/game-hud.md` §10.
 
 import {
@@ -33,7 +34,6 @@ import { TradePanel } from '@/lib/catan/TradePanel'
 import { monopolyCap, type DiceRoll } from '@/lib/catan/types'
 import {
 	DieFaceView,
-	HonkButton,
 	sharedStyles,
 	UndoButton,
 } from '@/lib/game/gameScreenShared'
@@ -43,7 +43,6 @@ import {
 } from '@/lib/game/gameScreenContext'
 import { Button } from '@/lib/modules/Button'
 import { colors, font, radius, spacing } from '@/lib/theme'
-import type { GameEvent } from '@/lib/stores/useGamesStore'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -374,7 +373,6 @@ function PrimaryAction() {
 		onRerollDice,
 		onEndTurn,
 		onEndSpecialBuild,
-		onHonk,
 		forgerMustMove,
 		setRitualOpen,
 		setShepherdOpen,
@@ -417,22 +415,6 @@ function PrimaryAction() {
 		phase.kind !== 'special_build'
 	)
 		return null
-
-	// Honk holds its place for the whole of someone else's turn (disabled until
-	// the idle threshold), and hides itself on your own turn — see HonkButton.
-	const honk = (
-		<HonkButton
-			events={(game.events ?? []) as GameEvent[]}
-			phase={phase}
-			meIdx={meIdx}
-			currentTurn={game.current_turn ?? 0}
-			enabled={gameState.config.honk !== false}
-			submitting={submitting}
-			onHonk={onHonk}
-			size="small"
-			alwaysShow
-		/>
-	)
 
 	// Gambler pending dice (your turn only): the choose-of-two / confirm-reroll
 	// takes over the whole control.
@@ -521,14 +503,13 @@ function PrimaryAction() {
 					Shepherd
 				</Button>
 			)}
-			{/* Undo (your move only), Honk (others' turns only — mutually
-			    exclusive), and the phase's primary control, which stays put and
-			    disables itself off-turn. */}
+			{/* Undo (your move only) and the phase's primary control, which
+			    stays put and disables itself off-turn. The honk nudge lives in
+			    the status banner — it's about the table, not your turn. */}
 			<View style={styles.primaryRow}>
 				{canUndo && (
 					<UndoButton submitting={submitting} onPress={onUndo} />
 				)}
-				{honk}
 				{phase.kind === 'roll' ? (
 					<Button
 						size="small"
@@ -662,8 +643,8 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 		alignItems: 'flex-end',
 	},
-	// The bottom line of the action column: undo / honk sit level with the
-	// turn's primary button.
+	// The bottom line of the action column: undo sits level with the turn's
+	// primary button.
 	primaryRow: {
 		flexDirection: 'row',
 		alignItems: 'center',

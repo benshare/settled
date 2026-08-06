@@ -18,7 +18,8 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
       PlayerChips  below the top bar: color dot + avatar + VP + cards; the
                    active seat pulses an accent ring
       StatusBanner above the dock: a combined card — turn + roll (top row) over
-                   the recent action / what the table waits on
+                   the recent action / what the table waits on, with the honk
+                   nudge on its right
       Dock         bottom: hand (left) + right column (build on its own row
                    over a trade | primary-action row), floating with an even
                    margin above the bottom safe area
@@ -70,7 +71,19 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
   `status.ts` and show the same content to everyone, "you" vs. name only. The
   banner is a status summary, never the instruction — the dock (or a picker
   modal) carries the actual affordance. Precedence: live wait > recent action >
-  nothing.
+  nothing. **The banner doesn't render at all during bonus selection** (for a
+  seated viewer): the bonus pane owns the screen there and already names who
+  it's waiting on, and `BoardArea` hides the log / legend / utility buttons
+  behind the same gate. A spectator has no pane, so they keep the banner.
+- **The honk button is the banner's one exception, and its one interactive
+  part.** A nudge is a complaint about the line the banner is currently showing
+  — the table sitting on it — so it hangs off the banner rather than the dock,
+  which is about your own turn. It is therefore _not_ uniform: it renders only
+  for a viewer who may honk right now, and only once the idle threshold makes
+  one due (no `alwaysShow` — the banner resizes with its text anyway, so a
+  permanently disabled button would just widen it for the whole game). The card
+  is `pointerEvents="box-none"` with the text block `none`, so the banner stays
+  tap-through everywhere but the button.
 - **The chips' dot set is `pendingSeats` (+ trade responders), not
   `current_turn`.** `actingSeats` in `status.ts` lights the seat(s) that owe an
   action now — a 7's discarders, a special-build queue head — which is often not
