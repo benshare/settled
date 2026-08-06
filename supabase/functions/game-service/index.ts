@@ -6037,8 +6037,10 @@ const MAX_TIMEOUT_STEPS = 12
 // Games handled per sweep tick, most overdue first.
 const SWEEP_BATCH = 100
 
-// Every row created before timeouts shipped is missing the key, and must parse
-// to no clock — an in-flight game can never acquire one.
+// A missing or unrecognized key is no clock, never the default — a stored row
+// records the clock its game is actually being played under, so raising the
+// default can't silently put running games on one. Games that were in flight
+// when the default moved to '2d' were backfilled by migration instead.
 function timeoutOptionOf(config: GameConfig): TimeoutOption | null {
 	const t = config?.timeout
 	return typeof t === 'string' && t in TIMEOUT_MS

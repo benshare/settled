@@ -7,8 +7,8 @@
 import type { Phase } from './types'
 
 // How long a game may sit idle before whoever is holding it up is skipped.
-// `null` (the default, and every game created before this shipped) means no
-// clock at all.
+// `2d` is the default; `null` (a deliberate choice, and every game created
+// before this shipped that the backfill missed) means no clock at all.
 export const TIMEOUT_OPTIONS = [
 	'1h',
 	'3h',

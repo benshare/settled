@@ -130,8 +130,8 @@ export type GameConfig = {
 	// otherwise.
 	extraBuild: ExtraBuildConfig
 	// How long the game may sit idle before whoever is holding it up is skipped
-	// (at 2 players, loses). `null` — the default — is no clock at all. See
-	// lib/catan/timeout.ts.
+	// (at 2 players, loses). Defaults to two days; `null` is no clock at all.
+	// See lib/catan/timeout.ts.
 	timeout: TimeoutOption | null
 }
 
@@ -153,7 +153,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 	tradeMode: 'automatic',
 	spectators: true,
 	extraBuild: { enabled: true, buildPhases: 'every', moreThanSeven: false },
-	timeout: null,
+	timeout: '2d',
 }
 
 // Whether a game needs the simultaneous `select_bonus` phase at all. With one
@@ -216,9 +216,11 @@ export function parseGameConfig(raw: unknown): GameConfig {
 				? src.numberLayout
 				: DEFAULT_CONFIG.numberLayout,
 		extraBuild: parseExtraBuild(src.extraBuild, DEFAULT_CONFIG.extraBuild),
-		// Anything unrecognized — including the missing key every game created
-		// before timeouts shipped carries — parses to no clock, so an in-flight
-		// game can never acquire one.
+		// The one field that does NOT fall back to DEFAULT_CONFIG: a stored row
+		// records the clock the game was actually played under, and the default
+		// moving to '2d' must not retroactively rewrite that. Games in flight
+		// when it moved were given the key by migration instead — see
+		// 20260806120000_default_move_timeout.sql.
 		timeout: isTimeoutOption(src.timeout) ? src.timeout : null,
 	}
 }
@@ -321,8 +323,12 @@ export function summarizeGameConfig(
 	if (config.spectators !== DEFAULT_CONFIG.spectators) {
 		parts.push('Spectators disabled')
 	}
-	if (config.timeout !== null) {
-		parts.push(`${timeoutLabel(config.timeout)} move timeout`)
+	if (config.timeout !== DEFAULT_CONFIG.timeout) {
+		parts.push(
+			config.timeout === null
+				? 'No move timeout'
+				: `${timeoutLabel(config.timeout)} move timeout`
+		)
 	}
 	// Extra build phases only apply to >4 player games, so only surface a
 	// non-default value there.

@@ -12,8 +12,8 @@ exactly the state the feature exists to break.
 
 ## 1. Config
 
-`GameConfig.timeout: TimeoutOption | null`, default `null` (no timeout). Ten
-values, in `lib/catan/timeout.ts`:
+`GameConfig.timeout: TimeoutOption | null`, default `'2d'` (`null` = no
+timeout). Ten values, in `lib/catan/timeout.ts`:
 
 ```ts
 export const TIMEOUT_OPTIONS = [
@@ -36,14 +36,34 @@ export type TimeoutOption = (typeof TIMEOUT_OPTIONS)[number]
   `'2 days'` … `'7 days'`. One place for the copy; the Select, the config
   summary and the warning push all read it.
 
-Parsed defensively in `parseGameConfig` like every other field — anything not in
-`TIMEOUT_OPTIONS` (including a missing key, which is every pre-existing row)
-falls back to `null`, so no in-flight game acquires a clock.
+Parsed defensively in `parseGameConfig`, but **not** against `DEFAULT_CONFIG`
+like every other field: anything not in `TIMEOUT_OPTIONS`, a missing key
+included, falls back to `null`. A stored row records the clock its game was
+actually played under, and the default moving from `null` to `'2d'` must not
+retroactively rewrite that.
 
-`summarizeGameConfig` appends `` `${timeoutLabel(t)} timeout` `` when non-null.
-The default is `null`, so the existing "only non-default options are called out"
-rule already gives us "note it if present, say nothing if absent" for free — this
-is what shows up in the game-request description on `/game/request/[id]`.
+`summarizeGameConfig` calls the timeout out only when it differs from the
+default — `` `${timeoutLabel(t)} timeout` `` for a non-default window, and
+`No move timeout` for `null`, which is now itself a departure. This is what
+shows up in the game-request description on `/game/request/[id]`.
+
+### 1b. Moving the default to two days
+
+Shipped after the fact (`supabase/migrations/20260806120000_default_move_timeout.sql`),
+and the interesting part is what it had to touch beyond the two in-code
+defaults (`DEFAULT_CONFIG` and `DEFAULT_GAME_DEFAULTS`):
+
+- **Games in flight are backfilled**, not left to the parse fallback — every
+  `placement`/`active` game with no valid `config.timeout` gets `'2d'` plus a
+  full fresh `deadline_at` (`now() + 2 days`) and `timeout_warned = 0`, so
+  nothing is skipped the moment the migration lands. Finished games are left
+  alone.
+- **Pending `game_requests` are backfilled too.** A request's config is what
+  `handleRespond` builds the game from, so an old one accepted next week would
+  otherwise still produce a clockless game.
+- **`parseGameDefaults` keeps an explicit `null`** and only falls back on a
+  missing key — otherwise a user who saves "None" as their personal default
+  reads it back as two days on the next load, and could never save it at all.
 
 `GameDefaults` (`lib/stores/useProfileStore.ts`) gains `settings.timeout` so the
 choice is saveable as a personal default and travels through a rematch, same as

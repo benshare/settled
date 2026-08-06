@@ -57,7 +57,7 @@ export const DEFAULT_GAME_DEFAULTS: GameDefaults = {
 			buildPhases: 'every',
 			moreThanSeven: false,
 		},
-		timeout: null,
+		timeout: '2d',
 	},
 	extras: {
 		bonuses: false,
@@ -110,9 +110,16 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 				settings?.extraBuild,
 				DEFAULT_GAME_DEFAULTS.settings.extraBuild
 			),
-			timeout: isTimeoutOption(settings?.timeout)
-				? settings.timeout
-				: DEFAULT_GAME_DEFAULTS.settings.timeout,
+			// An explicit null is a saved "no timeout" and is kept; only a
+			// missing key falls back, so profiles saved before timeouts
+			// shipped pick up the two-day default rather than being pinned
+			// to the old one.
+			timeout:
+				settings?.timeout === null
+					? null
+					: isTimeoutOption(settings?.timeout)
+						? settings.timeout
+						: DEFAULT_GAME_DEFAULTS.settings.timeout,
 		},
 		extras: {
 			bonuses:
