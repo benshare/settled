@@ -47,6 +47,12 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
   nothing. It **doesn't render during bonus selection**
   for a seated viewer — the bonus pane owns the screen and already names who
   it's waiting on. A spectator has no pane, so they keep it.
+- **The banner is mounted inside the board layer, not beside it.** It shares its
+  line with the board's utility buttons and the log / legend panels those open,
+  which expand upward over it — and `zIndex` only orders siblings, so the panels
+  could never win from inside `boardFill` while the banner sat outside it. It
+  renders as a last child of `boardFill` at `z.banner` (over the board, under
+  `z.floatingButton` / `z.panel`).
 - **The honk button is the banner's one interactive part.** A nudge is a
   complaint about the table sitting on the line the banner is showing, so it
   hangs off the banner rather than the dock (which is about your own turn). It's

@@ -113,6 +113,15 @@ export function HudGame({ active = true }: { active?: boolean } = {}) {
 				    buttons anchor `spacing.md` above this box's bottom — the same
 				    line as the banner. */}
 				<BoardArea active={active} floatingButtonsBottom={spacing.md} />
+
+				{/* Status summary, on the utility buttons' line. Inside this box
+				    rather than beside it because RN only orders siblings: as a
+				    sibling of the board layer nothing within it — the log and
+				    legend panels, which expand up into the banner — could ever
+				    paint above the banner. */}
+				<View style={styles.bannerWrap} pointerEvents="box-none">
+					<StatusBanner />
+				</View>
 			</View>
 
 			{/* Player chips, just below the fixed Games/menu bar. */}
@@ -122,18 +131,6 @@ export function HudGame({ active = true }: { active?: boolean } = {}) {
 				onLayout={(e) => setTopBandH(e.nativeEvent.layout.height)}
 			>
 				<PlayerChips />
-			</View>
-
-			{/* Status summary, floated just above the dock (or near the bottom
-			    for a spectator, who has no dock). */}
-			<View
-				style={[
-					styles.bannerWrap,
-					{ bottom: (dockTop || insets.bottom) + spacing.md },
-				]}
-				pointerEvents="box-none"
-			>
-				<StatusBanner />
 			</View>
 
 			<Dock onHeight={setDockHeight} active={active} />
@@ -266,8 +263,9 @@ const styles = StyleSheet.create({
 		position: 'absolute',
 		left: 0,
 		right: 0,
+		bottom: spacing.md,
 		alignItems: 'center',
-		zIndex: z.panel,
+		zIndex: z.banner,
 	},
 	toastLayer: {
 		...StyleSheet.absoluteFill,

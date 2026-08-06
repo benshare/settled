@@ -173,6 +173,9 @@ export const z = {
 	// The board container. Lifts it above the player strip and the action bars
 	// (its siblings), so the panels floating inside it can overhang them.
 	playArea: 10,
+	// The HUD's status banner. Over the board, under the floating buttons and
+	// the panels they open — it shares their line, so it has to lose to them.
+	banner: 15,
 	// Collapsed floating buttons in the board's top-right stack.
 	floatingButton: 20,
 	// What those buttons open, plus the other floating panels over the board.
