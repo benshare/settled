@@ -15,7 +15,7 @@
 // a second, top-bar-only provider stack — cheap, and it keeps the bar out of the
 // per-pane wiring.
 
-import { ChatProvider } from '@/lib/catan/chatContext'
+import { ChatProvider, useChat } from '@/lib/catan/chatContext'
 import { GameProvider } from '@/lib/catan/gameContext'
 import { waterColor } from '@/lib/catan/palette'
 import { useSwitchableGames } from '@/lib/catan/switchableGames'
@@ -24,10 +24,19 @@ import { GameScreenProvider } from '@/lib/game/gameScreenContext'
 import { SlidingArea } from '@/lib/modules/SlidingArea'
 import { z } from '@/lib/theme'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useEffect, useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import Animated, {
+	useAnimatedStyle,
+	useSharedValue,
+	withTiming,
+} from 'react-native-reanimated'
 import { HudGame } from './HudGame'
 import { HudTopBar } from './HudTopBar'
+
+// The top bar fades out under an open chat panel and back in when it closes.
+const CHAT_FADE_MS = 180
 
 export function HudScreen() {
 	const { id: currentId, chat } = useLocalSearchParams<{
@@ -46,6 +55,17 @@ export function HudScreen() {
 	const idx = games.findIndex((g) => g.id === currentId)
 	const paneIds = idx >= 0 ? games.map((g) => g.id) : [currentId]
 	const activeIndex = idx >= 0 ? idx : 0
+
+	// The chat panel covers the board it's mounted over, so the bar has nothing
+	// left to sit against — it fades rather than hanging over the conversation.
+	const [chatOpen, setChatOpen] = useState(false)
+	const barOpacity = useSharedValue(1)
+	useEffect(() => {
+		barOpacity.value = withTiming(chatOpen ? 0 : 1, {
+			duration: CHAT_FADE_MS,
+		})
+	}, [chatOpen, barOpacity])
+	const barStyle = useAnimatedStyle(() => ({ opacity: barOpacity.value }))
 
 	return (
 		<GestureHandlerRootView style={styles.root}>
@@ -69,6 +89,12 @@ export function HudScreen() {
 								meId={user?.id}
 								requestOpen={chat === '1' && gid === currentId}
 							>
+								{/* Only the game you're looking at gets to fade
+								    the bar; a background pane's open panel is
+								    invisible anyway. */}
+								{gid === currentId && (
+									<ChatOpenReporter onChange={setChatOpen} />
+								)}
 								<GameScreenProvider gameId={gid}>
 									<HudGame active={gid === currentId} />
 								</GameScreenProvider>
@@ -80,11 +106,30 @@ export function HudScreen() {
 
 			{/* Fixed over the slide — Back, the games pager, and the menu are
 			    about *which* game you're on, so they don't remount on a switch. */}
-			<View style={styles.topBar} pointerEvents="box-none">
+			<Animated.View
+				style={[styles.topBar, barStyle]}
+				// `none` while faded, so the strip it occupies falls through to
+				// the chat scrim's dismiss layer instead of eating taps.
+				pointerEvents={chatOpen ? 'none' : 'box-none'}
+			>
 				<HudTopBar pageCount={paneIds.length} pageIndex={activeIndex} />
-			</View>
+			</Animated.View>
 		</GestureHandlerRootView>
 	)
+}
+
+// The chat panel is opened from inside a pane, under that pane's own
+// ChatProvider — but the bar that has to get out of its way is out here, so the
+// active pane's open state is reported up. Mounted only for the active pane, so
+// a switch tears this down (cleanup clears the flag) before the next one mounts
+// and reports its own state.
+function ChatOpenReporter({ onChange }: { onChange: (open: boolean) => void }) {
+	const { open } = useChat()
+	useEffect(() => {
+		onChange(open)
+	}, [open, onChange])
+	useEffect(() => () => onChange(false), [onChange])
+	return null
 }
 
 const styles = StyleSheet.create({

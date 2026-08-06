@@ -34,6 +34,10 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
   UI) with no confirms or blurbs, deliberately separate from the classic
   `GameMenu`. The turn/roll
   indicator is **not** here — it's the top row of the combined `StatusBanner`.
+  It **fades out while the active pane's chat panel is open** (and back in on
+  close), since the panel covers the board the bar would otherwise sit against;
+  it also drops to `pointerEvents: 'none'` while faded so its strip falls
+  through to the chat's dismiss layer.
 
 ## Rules
 
@@ -57,7 +61,14 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
 - **The fixed `HudTopBar` reads the route-level providers (the current game);**
   the per-pane stacks are separate. So the current game mounts twice — once for
   the top bar, once as its pane — a cheap redundancy that keeps the bar off the
-  per-pane wiring.
+  per-pane wiring. The one thing it can't read that way is **chat open**: the
+  panel is opened from inside a pane, against that pane's own `ChatProvider`,
+  which the route-level instance knows nothing about. `HudScreen` therefore
+  mounts a `ChatOpenReporter` inside the **active** pane's provider to lift that
+  flag up to the bar's fade. It's mounted only for the active pane so a switch
+  unmounts it (its cleanup clears the flag) before the next one mounts and
+  reports its own state — the ordering a per-pane effect keyed on `active`
+  wouldn't guarantee.
 - **`BoardArea` is reused whole, not reimplemented.** It already renders the
   board, every board-blocking picker, the trade banner, the bonus-selection
   pane, the confirm bar, and the top-right utility buttons. The HUD only adds
