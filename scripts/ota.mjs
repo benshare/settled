@@ -8,10 +8,11 @@
 // fingerprint against the fingerprint EAS recorded for the latest shipped
 // production iOS build. If they differ, a real native change may have happened
 // and the publish is blocked — bump `version` in app.json and cut a new build
-// instead. Fingerprint is conservative and flags harmless drift too (a
-// dependency version-pin, a JS-only config edit); when you've inspected the
-// listed sources and confirmed the native side is unchanged, re-run with
-// `--force` to publish anyway.
+// instead. Drift confined to `expo.extra` is recognised and allowed through
+// (see MANIFEST_ONLY_CONFIG_KEYS). Fingerprint is conservative and flags other
+// harmless drift too (a dependency version-pin, a JS-only config edit); when
+// you've inspected the listed sources and confirmed the native side is
+// unchanged, re-run with `--force` to publish anyway.
 //
 // Usage: pnpm ota [--force] [-- <extra eas update args>]
 
@@ -34,6 +35,17 @@ const die = (msg) => {
 	console.error(`\n${msg}\n`)
 	process.exit(1)
 }
+
+// Resolved-config keys that can differ without threatening native
+// compatibility. `extra` is delivered in the update manifest, so an OTA update
+// carries its own copy and can never disagree with the installed binary. It is
+// also the only part of the config `app.config.js` fills from the local `.env`,
+// which makes it drift purely from *where* a fingerprint was computed: EAS
+// records a build's fingerprint client-side with `.env` loaded, while the
+// comparison below runs against the `production` environment, where ADMIN and
+// DEV_LOGIN_KEY deliberately don't exist. Without this the guard would block
+// every single publish, which trains you to pass --force and defeats the point.
+const MANIFEST_ONLY_CONFIG_KEYS = ['extra']
 
 // 1. The latest finished production iOS build = what TestFlight/App Store users
 //    are actually running, and the binary an OTA update would land on.
@@ -97,27 +109,41 @@ if (!build) {
 	const local = cmp.fingerprint2?.hash // this working tree
 
 	if (shipped !== local) {
-		reportDrift(
+		const { significant, benign } = diffSources(
 			cmp.fingerprint1?.sources ?? [],
 			cmp.fingerprint2?.sources ?? []
 		)
-		console.error(
-			`Native fingerprint differs from the shipped production build:\n` +
-				`  shipped build ${build.appVersion} (${build.id.slice(0, 8)}): ${shipped}\n` +
-				`  local project:                            ${local}\n`
-		)
-		if (!force)
-			die(
-				'Blocking OTA publish — an installed binary may be incompatible with ' +
-					'this JS bundle.\n' +
-					'  • If a native module/config actually changed: bump `version` in ' +
-					'app.json and cut a new build (pnpm build:native).\n' +
-					'  • If the sources above are JS-only / no-op (e.g. a version-pin): ' +
-					're-run with --force.'
+
+		if (benign.length)
+			console.log(
+				`Ignoring drift confined to manifest-delivered config: ${benign.join(', ')}\n`
 			)
-		console.warn(
-			'\n⚠ Fingerprint drift overridden — publishing anyway (--force).\n'
-		)
+
+		if (significant.length === 0) {
+			console.log(
+				`✓ Every native fingerprint source matches shipped build ${build.appVersion} — safe to publish OTA.\n`
+			)
+		} else {
+			console.error('\nFingerprint sources that changed since the build:')
+			for (const s of significant) console.error(`  • ${s}`)
+			console.error(
+				`\nNative fingerprint differs from the shipped production build:\n` +
+					`  shipped build ${build.appVersion} (${build.id.slice(0, 8)}): ${shipped}\n` +
+					`  local project:                            ${local}\n`
+			)
+			if (!force)
+				die(
+					'Blocking OTA publish — an installed binary may be incompatible ' +
+						'with this JS bundle.\n' +
+						'  • If a native module/config actually changed: bump `version` ' +
+						'in app.json and cut a new build (pnpm build:native).\n' +
+						'  • If the sources above are JS-only / no-op (e.g. a ' +
+						'version-pin): re-run with --force.'
+				)
+			console.warn(
+				'\n⚠ Fingerprint drift overridden — publishing anyway (--force).\n'
+			)
+		}
 	} else {
 		console.log(
 			`✓ Native fingerprint matches shipped build ${build.appVersion} — safe to publish OTA.\n`
@@ -142,25 +168,56 @@ function parseArray(out) {
 	return JSON.parse(out.slice(out.indexOf('[')))
 }
 
-// Print the fingerprint sources whose hash changed, so drift can be judged
-// real (native) vs. harmless (JS-only) at a glance.
-function reportDrift(shippedSources, localSources) {
-	// filePath is null for synthesized sources (resolved config, package.json
-	// sections); `reasons` is what distinguishes those, so fold it into the key
-	// and the human label.
-	const label = (s) =>
-		s.filePath ?? s.overrideHashKey ?? (s.reasons ?? []).join(',')
-	const key = (s) => `${s.type}:${label(s)}`
-	const map = (arr) => new Map(arr.map((s) => [key(s), s.hash ?? '(dir)']))
-	const a = map(shippedSources)
-	const b = map(localSources)
-	const changed = []
-	for (const [k, hash] of b)
-		if (a.has(k) && a.get(k) !== hash) changed.push(k)
-	for (const [k] of b) if (!a.has(k)) changed.push(`${k} (added)`)
-	for (const [k] of a) if (!b.has(k)) changed.push(`${k} (removed)`)
-	if (changed.length) {
-		console.error('\nFingerprint sources that changed since the build:')
-		for (const c of changed) console.error(`  • ${c}`)
+// Split the fingerprint sources whose hash changed into drift that could
+// reflect a native change and drift that provably can't.
+function diffSources(shippedSources, localSources) {
+	const a = index(shippedSources)
+	const b = index(localSources)
+	const significant = []
+	const benign = []
+	for (const [k, source] of b) {
+		if (!a.has(k)) {
+			significant.push(`${k} (added)`)
+			continue
+		}
+		const before = a.get(k)
+		if ((before.hash ?? '(dir)') === (source.hash ?? '(dir)')) continue
+		if (
+			k === 'contents:expoConfig' &&
+			onlyManifestKeysDiffer(before, source)
+		)
+			benign.push(k)
+		else significant.push(k)
 	}
+	for (const [k] of a) if (!b.has(k)) significant.push(`${k} (removed)`)
+	return { significant, benign }
+}
+
+// filePath is null for synthesized sources (resolved config, package.json
+// sections); `id`/`reasons` is what distinguishes those, so fold them into the
+// key and the human label.
+function index(sources) {
+	const label = (s) =>
+		s.id ?? s.filePath ?? s.overrideHashKey ?? (s.reasons ?? []).join(',')
+	return new Map(sources.map((s) => [`${s.type}:${label(s)}`, s]))
+}
+
+// True when two resolved configs are identical once the manifest-delivered keys
+// are dropped. Fails closed: contents that aren't parseable JSON count as a
+// real difference rather than being waved through.
+function onlyManifestKeysDiffer(before, after) {
+	const strip = (s) => {
+		if (typeof s.contents !== 'string') return null
+		let config
+		try {
+			config = JSON.parse(s.contents)
+		} catch {
+			return null
+		}
+		for (const key of MANIFEST_ONLY_CONFIG_KEYS) delete config[key]
+		return JSON.stringify(config)
+	}
+	const x = strip(before)
+	const y = strip(after)
+	return x !== null && x === y
 }
