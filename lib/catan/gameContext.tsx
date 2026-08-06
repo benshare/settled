@@ -6,7 +6,11 @@ import { useAppForeground } from '@/lib/appState'
 import { useAuth } from '@/lib/auth'
 import { onGameMutated } from '@/lib/gameSync'
 import { uniqueTopic } from '@/lib/realtime'
-import { useGamesStore, type Game } from '@/lib/stores/useGamesStore'
+import {
+	isPartialGameRow,
+	useGamesStore,
+	type Game,
+} from '@/lib/stores/useGamesStore'
 import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
 import {
@@ -173,6 +177,24 @@ export function GameProvider({
 					filter: `id=eq.${gameId}`,
 				},
 				(payload) => {
+					// Postgres drops unchanged TOASTed columns from UPDATE
+					// payloads, so a write that doesn't touch `events` — the
+					// deadline stamp after every action, the timeout sweep's
+					// warning bump — arrives without it. Applying that row
+					// empties the log for a beat, which is all it takes for the
+					// screen's animation cursors to re-seed at zero and then
+					// replay the whole game. An omitted column is an unchanged
+					// one, so merge rather than re-read: the row we hold is the
+					// only copy of what was left out. The seq is deliberately
+					// not bumped — this isn't a complete row, so a fetch already
+					// in flight should still be allowed to land.
+					if (isPartialGameRow(payload.new)) {
+						setLiveGame(
+							(prev) =>
+								prev && { ...prev, ...(payload.new as Game) }
+						)
+						return
+					}
 					gameSeq.current += 1
 					setLiveGame(payload.new as Game)
 				}

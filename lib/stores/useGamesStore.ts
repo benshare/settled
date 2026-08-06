@@ -1250,7 +1250,16 @@ function handleGameChange(
 		return
 	}
 
-	const game = payload.new as Game
+	const incoming = payload.new as Game
+	// An omitted column is an unchanged one, so merging the payload onto the row
+	// we already hold is exact — and it keeps `events` out of the flash of
+	// emptiness that replays a game's animations. See `isPartialGameRow`. With
+	// no row to merge onto there is nothing to complete it with; drop it and let
+	// the next full payload (or the foreground resync) bring the game in.
+	const game = isPartialGameRow(payload.new)
+		? mergePartialGame(incoming, active, spectatable, complete)
+		: incoming
+	if (!game) return
 	// A game reaches this handler either because I'm seated at it or because
 	// the spectator policy let it through; which list it belongs in follows
 	// from participation, exactly as in loadForUser.
@@ -1300,6 +1309,19 @@ function handleGameChange(
 	}
 }
 
+// The row a partial payload describes, completed from the copy we already hold.
+// `undefined` when we hold none — there is nothing to complete it with.
+function mergePartialGame(
+	incoming: Game,
+	...lists: Game[][]
+): Game | undefined {
+	for (const list of lists) {
+		const held = list.find((g) => g.id === incoming.id)
+		if (held) return { ...held, ...incoming }
+	}
+	return undefined
+}
+
 async function handleRequestChange(
 	payload: {
 		eventType: string
@@ -1341,6 +1363,26 @@ async function handleRequestChange(
 		])
 		set({ pendingRequests: [decoded, ...(get().pendingRequests ?? [])] })
 	}
+}
+
+/**
+ * Whether a realtime UPDATE payload for a `games` row is missing columns.
+ *
+ * Postgres logical replication omits unchanged TOASTed columns from UPDATE
+ * payloads, and `events` is the one column here that outgrows the TOAST
+ * threshold — a few dozen turns in, every write that doesn't touch it arrives
+ * without it. That is not rare: the post-action deadline stamp and the timeout
+ * sweep's warning bump both write the `games` row and leave `events` alone, so
+ * a partial payload follows practically every action in a game with a clock.
+ *
+ * `events` is `not null` in the schema, so an absent (`undefined`) value can
+ * only mean the column was omitted, never a legitimate null. Applying such a
+ * row wholesale empties `game.events` for a beat — long enough for the game
+ * screen's animation cursors to re-seed at zero and then replay every steal,
+ * nomad production and fortune-teller roll in the game when the full row lands.
+ */
+export function isPartialGameRow(row: Record<string, unknown>): boolean {
+	return row.events === undefined
 }
 
 /**

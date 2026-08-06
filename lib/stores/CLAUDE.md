@@ -65,7 +65,25 @@ Any component that subscribes to its own channel outside a store (e.g.
 `GameProvider`) owes the same debt: refetch and re-subscribe from
 `useAppForeground`.
 
-Two further guards, because none of the above is worth trusting on its own:
+Three further guards, because none of the above is worth trusting on its own:
+
+- **A realtime UPDATE payload can be missing columns — never apply one
+  wholesale.** Postgres logical replication omits unchanged TOASTed columns, so
+  once a jsonb column outgrows the TOAST threshold every write that doesn't
+  touch it delivers a row without it. On `games` that column is `events`, and
+  the writes that leave it alone are routine (the post-action deadline stamp,
+  the timeout sweep's warning bump), so the partial payload is the common case,
+  not an edge one. The columns are `not null` in the schema, so an absent value
+  can only mean an omitted column: `isPartialGameRow` is the test, and both
+  subscribers — the store and `GameProvider` — answer it by **merging the
+  payload onto the row they already hold** rather than by re-reading. An omitted
+  column is an unchanged one, so the merge is exact, and the copy in hand is the
+  only record of what was left out. (`game_states` re-reads instead, via
+  `isPartialStateRow` → `fetchState`, because there the omitted columns are the
+  whole board and it is a rarer payload.) Applying such a row as-is empties
+  `game.events` for a beat, which is enough to make the game screen's animation
+  cursors re-seed at zero and replay every steal, nomad production and
+  fortune-teller roll in the game.
 
 - **Refetch from the `subscribe()` status callback on `SUBSCRIBED`.** The fetch
   and the join race each other, so an event landing between the fetch's snapshot

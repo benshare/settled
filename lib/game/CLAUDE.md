@@ -150,7 +150,13 @@ app/game/[id].tsx
   queued animation rather than emitting one. Compare against **`game.id`, not
   the `gameId` prop**: `useGame()` serves the outgoing game's row for one render
   after the param changes, and a cursor re-seeded on that render would be
-  measuring the old log.
+  measuring the old log. The other way a cursor gets corrupted is a `games` row
+  that arrives **without** its `events` column — an empty log reads as a game
+  rewound to nothing, so the cursor drops to zero and the next full row replays
+  everything past it. That one is not defended here: `game.events` being absent
+  is meaningless rather than empty, so it's kept out of the context entirely
+  (`isPartialGameRow` — see `lib/stores/CLAUDE.md`), where it also protects the
+  action log, the honk gate and the recap.
 - **A reveal animation holds the viewer's hand, it does not delay the state.**
   The steal, nomad and fortune-teller animations all fire _after_ the resource
   has reached the hand — the steal one recovers which resource it was by
