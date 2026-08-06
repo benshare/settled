@@ -4,137 +4,59 @@ Two kinds of stores live here.
 
 ## 1. Bespoke stores
 
-Loaded explicitly by routes that need the result before they can proceed — e.g. `login.tsx`, `verify.tsx`, `set-username.tsx` all `await useProfileStore.loadProfile()` before deciding where to route. These pre-(app) flows can't rely on the auto-load registry, which only runs once the user enters `(app)`.
+Loaded explicitly by routes that need the result before they can proceed — the pre-`(app)` flows (`login.tsx`, `verify.tsx`, `set-username.tsx` all `await useProfileStore.loadProfile()`), which can't rely on the auto-load registry that only runs once inside `(app)`.
 
 ## 2. Auto-loaded user stores
 
-Registered in `index.ts`. Loaded once when a user enters `(app)`, cleared on sign out. Use this for any store whose data is scoped to a signed-in user and whose load can be fire-and-forget — failure is non-fatal, and the screen using the data is responsible for its own empty/loading state.
+Registered in `index.ts`, loaded once when a user enters `(app)`, cleared on sign out. Use for any store whose data is user-scoped and whose load is fire-and-forget (failure non-fatal; the screen owns its own empty/loading state). `useStatsStore` is the plainest example, and deliberately keeps **no realtime channel** — `game_results` rows appear only when a game ends, and the foreground resync below already refetches on every return to the app.
 
-`useStatsStore` is the plainest example: it selects the caller's `game_results` rows (per-game summaries the edge function writes on completion — see `.claude/specs/stats.md`) and deliberately keeps **no realtime channel**. Rows only appear when a game ends, and the foreground resync below already refetches on every return to the app, which is also the path back from a game that just finished.
-
-A single store can serve both roles: `useProfileStore` registers in `autoLoadedStores` for in-(app) screens (so `state.profile` is always populated on cold start) _and_ exposes `loadProfile` for the pre-(app) routes that need to await it.
+A single store can serve both roles: `useProfileStore` registers for auto-load _and_ exposes `loadProfile` for the pre-`(app)` routes.
 
 ### Adding an auto-loaded store
 
-1. Create `useMyStore.ts` with a zustand store. Give it a `loadForUser(userId)` action and a `clear()` action.
-2. In the same file, export a registration object:
-
-    ```ts
-    import type { AutoLoadedStore } from './index'
-
-    export const myStoreRegistration: AutoLoadedStore = {
-    	name: 'my',
-    	loadForUser: (userId) => useMyStore.getState().loadForUser(userId),
-    	clear: () => useMyStore.getState().clear(),
-    }
-    ```
-
+1. Create `useMyStore.ts` with a zustand store, a `loadForUser(userId)` action and a `clear()` action.
+2. In the same file, export an `AutoLoadedStore` registration object (`name` + `loadForUser` + `clear` delegating to the store).
 3. Import and add it to `autoLoadedStores` in `index.ts`.
 
 `app/_layout.tsx` calls `loadAllUserStores(user.id)` on mount; `account.tsx` calls `clearAllUserStores()` on sign out.
 
 ## Realtime is best-effort — resync on foreground
 
-While the app is backgrounded the OS suspends the JS thread and closes the
-WebSocket, and Supabase realtime does **not** replay events on reconnect. Every
-`postgres_changes` event emitted during that window is lost. A store that
-subscribes once at load and then trusts its channel will silently drift (this is
-how a player kept seeing a pending game invite for a game that had already
-started).
+While the app is backgrounded the OS closes the WebSocket, and Supabase realtime does **not** replay missed events on reconnect. A store that subscribes once and then trusts its channel silently drifts. So `app/_layout.tsx` also calls `loadAllUserStores(user.id)` from `useAppForeground` (`lib/appState.ts`) on every background → foreground transition. That works only because `loadForUser` refetches _and_ re-creates its channels — keep all four properties when writing a store:
 
-So `app/_layout.tsx` also calls `loadAllUserStores(user.id)` from
-`useAppForeground` (`lib/appState.ts`) on every background → foreground
-transition. This works because `loadForUser` refetches _and_ re-creates its
-channels — keep both properties when writing a new store:
+- **Idempotent and safe to call repeatedly.**
+- **Must not wipe data to `undefined` on entry** (set a `loading` flag instead), or a resync flashes every consumer into its loading state.
+- **Must `removeChannel` any existing channel before subscribing**, or a resync leaks one channel per foreground.
+- **Must name that channel with `uniqueTopic()` (`lib/realtime.ts`), never a bare string.** A socket holds one channel per topic and `removeChannel` is async; on a socket that died in the background, rejoining the same topic is refused by the server with nowhere to report it, and realtime goes quiet for the session. (This is how a robber placement appeared to fail: the move succeeded, the board never advanced, the retry was rejected as out-of-phase.)
 
-- `loadForUser` must be idempotent and safe to call repeatedly.
-- It must not wipe its data back to `undefined` on entry (set a `loading` flag
-  instead), or a resync will flash every consumer into its loading state.
-- It must `removeChannel` any existing channel before subscribing a new one, or
-  a resync leaks a channel per foreground.
-- **It must name that channel with `uniqueTopic()` (`lib/realtime.ts`), never a
-  bare string.** A socket holds one channel per topic, and `removeChannel` is
-  async — on a socket that died in the background its `leave` may never land at
-  all. Rejoining the same topic in that window is refused by the server, and
-  `.subscribe()` has nowhere to report it, so realtime goes quiet for the rest of
-  the session. (This is exactly how a robber placement appeared to fail: the move
-  succeeded server-side, the board never advanced, and the retry was rejected as
-  out-of-phase.)
+Any component that subscribes outside a store (e.g. `GameProvider`) owes the same debt. Three further guards:
 
-Any component that subscribes to its own channel outside a store (e.g.
-`GameProvider`) owes the same debt: refetch and re-subscribe from
-`useAppForeground`.
+- **A realtime UPDATE payload can be missing columns — never apply one wholesale.** Postgres omits unchanged TOASTed columns, so once a jsonb column outgrows the TOAST threshold every write that doesn't touch it delivers a row without it. On `games` that column is `events`, and the writes that leave it alone are routine (the deadline stamp, the timeout warning bump), so the partial payload is the *common* case. `isPartialGameRow` is the test; both subscribers (store and `GameProvider`) **merge the payload onto the row they already hold** rather than re-reading (an omitted column is an unchanged one, so the merge is exact). `game_states` re-reads instead (`isPartialStateRow` → `fetchState`), because there the omitted columns are the whole board. Applying such a row as-is empties `game.events` for a beat — enough to make the game screen's animation cursors re-seed at zero and replay every animation in the game.
+- **Refetch from the `subscribe()` status callback on `SUBSCRIBED`.** The fetch and the join race, so an event landing between the fetch's snapshot and the join reaches nobody. Reading once the channel is live closes that gap, on first join and every automatic rejoin.
+- **Never make a player wait on realtime to see their own move.** Every game-service call goes through `callGameService`, which pings `lib/gameSync.ts` on success and re-reads the changed rows. The edge function's 200 already confirmed the write. This is a re-read, not an optimistic update.
 
-Three further guards, because none of the above is worth trusting on its own:
-
-- **A realtime UPDATE payload can be missing columns — never apply one
-  wholesale.** Postgres logical replication omits unchanged TOASTed columns, so
-  once a jsonb column outgrows the TOAST threshold every write that doesn't
-  touch it delivers a row without it. On `games` that column is `events`, and
-  the writes that leave it alone are routine (the post-action deadline stamp,
-  the timeout sweep's warning bump), so the partial payload is the common case,
-  not an edge one. The columns are `not null` in the schema, so an absent value
-  can only mean an omitted column: `isPartialGameRow` is the test, and both
-  subscribers — the store and `GameProvider` — answer it by **merging the
-  payload onto the row they already hold** rather than by re-reading. An omitted
-  column is an unchanged one, so the merge is exact, and the copy in hand is the
-  only record of what was left out. (`game_states` re-reads instead, via
-  `isPartialStateRow` → `fetchState`, because there the omitted columns are the
-  whole board and it is a rarer payload.) Applying such a row as-is empties
-  `game.events` for a beat, which is enough to make the game screen's animation
-  cursors re-seed at zero and replay every steal, nomad production and
-  fortune-teller roll in the game.
-
-- **Refetch from the `subscribe()` status callback on `SUBSCRIBED`.** The fetch
-  and the join race each other, so an event landing between the fetch's snapshot
-  and the join reaches nobody. Reading once the channel is actually live closes
-  that gap — on the first join and on every automatic rejoin after a drop.
-- **Never make a player wait on realtime to see their own move.** Every
-  game-service call goes through `callGameService` in `useGamesStore`, which
-  pings `lib/gameSync.ts` on success; `GameProvider` re-reads the rows it just
-  changed. The edge function's 200 already confirmed the write — the channel is
-  not the only path to the result. This is a re-read, not an optimistic update.
-
-`lib/appState.ts` also force-bounces the realtime socket
-(`disconnect()` → `connect()`) on foreground, because React Native doesn't
-reliably surface the close and supabase-js will otherwise keep rejoining a dead
-one.
+`lib/appState.ts` also force-bounces the socket (`disconnect()` → `connect()`) on foreground, because React Native doesn't reliably surface the close and supabase-js will otherwise keep rejoining a dead one.
 
 ## Spectatable games share the active-games query
 
-With the spectator RLS policies in place (see `.claude/specs/spectating.md`), `select * from games where status in ('placement','active')` returns two different things: games the user is seated at, and games they're merely allowed to watch. `loadForUser` issues one query and partitions the rows by `participants.includes(userId)` into `activeGames` / `spectatableGames`; `handleGameChange` routes realtime rows by the same test, which is why the store keeps `meId`.
+With the spectator RLS policies in place (see `.claude/specs/spectating.md`), `select * from games where status in ('placement','active')` returns both games the user is seated at and games they may merely watch. `loadForUser` issues one query and partitions the rows by `participants.includes(userId)` into `activeGames` / `spectatableGames`; `handleGameChange` routes realtime rows by the same test (hence the store keeps `meId`). Two things that are easy to get wrong:
 
-Two consequences that are easy to get wrong:
+- **The completed-games query needs `.contains('participants', [userId])`,** or every finished game the user only watched lands in their History.
+- **`completeGames` holds both endings.** A whole-table end-vote gives `status = 'canceled'` (no winner, contributes nothing to stats) and shares History with a completed game, so the query is `.in('status', ['complete', 'canceled'])` and every status test routes on the exported **`isFinished(status)`**, never `=== 'complete'` — an equality check leaves a canceled game looking playable and a spectator holding a stale header tab.
+- **`spectatableGames` is a first-contact surface** (it shows a friend's co-players, who the viewer may never have met), so it filters dev profiles in production per the rule below. Games the user is seated at are never filtered.
 
-- **The completed-games query needs `.contains('participants', [userId])`.** Without it, every finished game the user only watched lands in their History.
-- **`completeGames` holds both endings.** A game the whole table voted to end has `status = 'canceled'` (no winner, contributes nothing to stats) and shares History with a completed one, so the query is `.in('status', ['complete', 'canceled'])` and `handleGameChange` routes on the exported **`isFinished(status)`** rather than `=== 'complete'`. Use that predicate for every status test — an equality check leaves a canceled game looking playable, and leaves a spectator holding a header tab for a game that has ended.
-- **`spectatableGames` is a first-contact surface** — it shows a friend's co-players, who the viewer may never have met — so it filters dev profiles in production per the rule below. Games the user is seated at are never filtered.
-
-`spectatableGames` is everything the viewer _may_ watch; the header tab strip shows only games they're _actively_ watching, kept in `profiles.spectating` (a `uuid[]` on the profile row, owned by `useProfileStore` — `startSpectating` / `stopSpectating` / `pruneSpectating`, all optimistic). `useGamesStore` cross-references it in two places so a spectated game that ends can't linger as a stale tab: `handleGameChange` calls `stopSpectating` when a watched game goes `complete`/is deleted, and `loadForUser` calls `pruneSpectating(spectatableGame ids)` to catch games that ended while the app was closed. Both are best-effort — the tab disappears for free regardless, since `useSwitchableGames` intersects `spectating` with `spectatableGames` (which already drops completed games).
+`spectatableGames` is everything the viewer _may_ watch; the header tab strip shows only games they're _actively_ watching, kept in `profiles.spectating` (owned by `useProfileStore`, all optimistic). `useGamesStore` cross-references it so a spectated game that ends can't linger as a stale tab (`handleGameChange` stops spectating on complete/delete; `loadForUser` prunes games that ended while the app was closed). Both are best-effort — `useSwitchableGames` intersects `spectating` with `spectatableGames` (which already drops completed games), so the tab disappears regardless.
 
 ## Profile columns are listed per store
 
-`PROFILE_COLS` is declared separately in `useProfileStore`, `useFriendsStore`
-and `useGamesStore`, and all three must select the **same** set — every one of
-them constructs a full `Profile` row, so a column added to the table has to be
-added to all three or the two that missed it fail to typecheck against the
-regenerated `Database` types. `color_prefs` is the most recent addition.
-
-Only `useProfileStore` ever writes it (`updateColorPrefs`, optimistic with a
-rollback, the same shape as `setSpectating`); the other two fetch it purely
-because they build `Profile` objects.
+`PROFILE_COLS` is declared separately in `useProfileStore`, `useFriendsStore` and `useGamesStore`, and all three must select the **same** set — each constructs a full `Profile` row, so a column added to the table must be added to all three or the two that missed it fail to typecheck. Only `useProfileStore` ever writes profile fields (`updateColorPrefs`, optimistic with rollback); the other two fetch them purely to build `Profile` objects.
 
 ## Dev-flagged profiles
 
-`profiles.dev` is a boolean column (default `false`) used to mark users that only exist for local/dev testing — see `dev/seed-test-users.mjs`, which sets it to `true`. **In production builds, every user-facing query that returns or searches profiles must filter these out.** Non-`__DEV__` clients should never show a dev user to a real user.
+`profiles.dev` marks users that exist only for local/dev testing (see `dev/seed-test-users.mjs`). **In production builds, every user-facing query that returns or searches profiles must filter these out** — non-`__DEV__` clients should never show a dev user to a real user. The convention:
 
-The convention:
+1. Gate the filter on `!__DEV__` (a Metro compile-time constant).
+2. Direct profile queries add `.eq('dev', false)`; queries that embed profiles via joins fetch and post-filter client-side.
+3. **Filter from searches, not from specific lookups.** A query that surfaces profiles a user could meet for the first time (user search, friend suggestions, invitable lists) is filtered; a query that dereferences ids the user is already connected to (game participants, past messages, existing friends) is not — hiding a dev user they're already entangled with breaks the UI more than it protects. Self-loads and username-uniqueness checks are never filtered.
 
-1. Gate the filter on `!__DEV__` (a React Native / Metro compile-time constant — `true` in dev builds, `false` in production).
-2. For direct profile queries, add `.eq('dev', false)` when the gate is true (see `useFriendsStore.search`).
-3. For queries that embed profiles via joins, it's simpler to fetch and post-filter client-side (`profile.dev === true` → drop the row). See `useFriendsStore.loadForUser`.
-4. Self-loading the current user's own profile is never filtered — you are who you are.
-5. Username-uniqueness checks are never filtered either: dev users still reserve usernames (the DB unique index is the real guard).
-6. **Filter from searches, not from specific lookups.** If a query surfaces profiles a user could meet for the first time (user search, friend suggestions, invitable lists) — filter it. If a query dereferences ids the user is already connected to (game participants, past messages, existing friends' profile data), do not filter — hiding a dev user they're already entangled with breaks the UI more than it protects.
-
-Any new store or query that surfaces profiles to the end user needs to follow this. If you're unsure whether a query counts as "user-facing", the default is yes — filter it.
+Any new query that surfaces profiles needs to follow this. If you're unsure whether a query counts as user-facing, the default is yes — filter it.

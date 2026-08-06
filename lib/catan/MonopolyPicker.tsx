@@ -1,5 +1,4 @@
-// Resource picker for the Monopoly dev card. Pick one resource → Confirm
-// fires onConfirm(resource). Rendered as a modal over the game view.
+// Resource picker for the Monopoly dev card.
 
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { Modal } from '../modules/Modal'

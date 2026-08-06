@@ -1,7 +1,5 @@
-// Resource picker for the Year of Plenty dev card. The player picks two
-// resources (duplicates allowed — tapping the same card twice counts as
-// two). Confirm fires onConfirm(r1, r2). Rendered as a modal over the game
-// view.
+// Resource picker for the Year of Plenty dev card. Two resources, duplicates
+// allowed.
 
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'

@@ -3,8 +3,6 @@
 // an action right now carry an accent dot, derived from `actingSeats` (see
 // `status.ts`) so it lights the correct player even when that isn't the
 // turn-holder (a 7's discarders, a special-build queue head).
-//
-// Layout: up to 4 players on one row; 5–6 wrap to two centered rows.
 
 import { colors, radius, spacing } from '@/lib/theme'
 import { Pressable, StyleSheet, Text, View } from 'react-native'

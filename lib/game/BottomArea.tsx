@@ -609,8 +609,6 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		gap: spacing.xs,
 	},
-	// The undo arrow sits left of the confirm, which takes the rest of the bar
-	// — the same 52pt row the main-loop bar uses.
 	placementRow: {
 		flexDirection: 'row',
 		alignItems: 'center',
