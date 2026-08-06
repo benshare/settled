@@ -1,6 +1,9 @@
 // Bonus-selection pane. Rendered as a floating overlay on top of the board
 // while gameState.phase.kind === 'select_bonus', so the board seed stays
-// visible while the player chooses. Collapsible via the chevron.
+// visible while the player chooses. Collapsible via `CollapsibleSheet`, the
+// same top-anchored behavior the board-dependent pickers get from
+// `MinimizableModal` — in-tree rather than in a `Modal` so the pane stays
+// inside the board area.
 //
 // After submit, the local player shows a waiting state until every other
 // player has also chosen. When the last player commits, the edge function
@@ -8,16 +11,12 @@
 // view without any client-side cleanup needed.
 
 import { Button } from '@/lib/modules/Button'
-import { ColorScheme, font, radius, shadow, spacing } from '@/lib/theme'
+import { CollapsibleSheet } from '@/lib/modules/CollapsibleSheet'
+import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import Animated, {
-	useAnimatedStyle,
-	useSharedValue,
-	withTiming,
-} from 'react-native-reanimated'
 import type { Profile } from '../stores/useProfileStore'
 import {
 	bonusById,
@@ -33,8 +32,6 @@ import {
 	handCurses,
 	type SelectBonusHand,
 } from './types'
-
-const ANIM_DURATION = 240
 
 export type BonusSelectionProps = {
 	hand: SelectBonusHand | undefined
@@ -84,31 +81,6 @@ export function BonusSelection({
 	const bonusIdx = bonusFixed ? 0 : pick
 	const curseIdx = curseFixed ? 0 : cursePick
 
-	const outerHeightSV = useSharedValue(0)
-	const headerHeightSV = useSharedValue(0)
-	const progress = useSharedValue(collapsed ? 0 : 1)
-
-	useEffect(() => {
-		progress.value = withTiming(collapsed ? 0 : 1, {
-			duration: ANIM_DURATION,
-		})
-	}, [collapsed, progress])
-
-	const wrapAnimStyle = useAnimatedStyle(() => {
-		if (outerHeightSV.value === 0 || headerHeightSV.value === 0) return {}
-		const min = headerHeightSV.value
-		const max = outerHeightSV.value
-		return { height: min + (max - min) * progress.value }
-	})
-
-	const bodyAnimStyle = useAnimatedStyle(() => ({
-		opacity: progress.value,
-	}))
-
-	const chevronAnimStyle = useAnimatedStyle(() => ({
-		transform: [{ rotate: `${progress.value * 180}deg` }],
-	}))
-
 	async function onConfirm() {
 		if (!hand || bonusIdx === null || curseIdx === null) return
 		onPick(hand.offered[bonusIdx], curses[curseIdx])
@@ -123,147 +95,109 @@ export function BonusSelection({
 		: 'Bonus selection'
 
 	return (
-		<View
-			style={styles.outer}
-			onLayout={(e) => {
-				outerHeightSV.value = e.nativeEvent.layout.height
-			}}
+		<CollapsibleSheet
+			fill
+			title={headerLabel}
+			collapsed={collapsed}
+			onToggleCollapsed={onToggleCollapsed}
 		>
-			<Animated.View style={[styles.wrap, wrapAnimStyle]}>
-				<Pressable
-					onPress={onToggleCollapsed}
-					onLayout={(e) => {
-						headerHeightSV.value = e.nativeEvent.layout.height
-					}}
-					style={({ pressed }) => [
-						styles.header,
-						pressed && styles.pressed,
-					]}
-				>
-					<Animated.View style={chevronAnimStyle}>
-						<Ionicons
-							name="chevron-up"
-							size={20}
-							color={colors.text}
-						/>
-					</Animated.View>
-					<Text style={styles.headerTitle}>{headerLabel}</Text>
-				</Pressable>
-
-				<Animated.View
-					style={[styles.bodyWrap, bodyAnimStyle]}
-					pointerEvents={collapsed ? 'none' : 'auto'}
-				>
-					<ScrollView
-						style={styles.scroll}
-						contentContainerStyle={styles.body}
-						showsVerticalScrollIndicator={false}
-					>
-						{hand ? (
-							<>
-								<Text style={styles.subheading}>
-									{selectionCopy(
-										hand.offered.length,
-										curses.length
-									)}
-								</Text>
-								<CardRow
-									kind="bonus"
-									cards={hand.offered.map((id) => ({
-										id,
-										title: bonusById(id)!.title,
-										icon: bonusById(id)!.icon,
-										description: bonusDescriptionFor(
-											id,
-											size
-										),
-									}))}
-									pickedIdx={
-										committed
-											? hand.offered.indexOf(hand.chosen!)
-											: bonusIdx
-									}
-									committed={committed}
-									fixed={bonusFixed}
-									disabled={submitting}
-									onPick={setPick}
-									styles={styles}
-									colors={colors}
-								/>
-
-								<CardRow
-									kind="curse"
-									cards={curses.map((id) => ({
-										id,
-										title: curseById(id)!.title,
-										icon: curseById(id)!.icon,
-										description: curseDescriptionFor(
-											id,
-											size
-										),
-									}))}
-									pickedIdx={
-										committed
-											? curses.indexOf(
-													handChosenCurse(hand)!
-												)
-											: curseIdx
-									}
-									committed={committed}
-									fixed={curseFixed}
-									disabled={submitting}
-									onPick={setCursePick}
-									styles={styles}
-									colors={colors}
-								/>
-
-								{committed ? (
-									<View style={styles.waitingRow}>
-										<Text style={styles.waitingText}>
-											{waitingOn.length === 0
-												? 'Everyone is ready — starting placement…'
-												: `Waiting for ${formatList(waitingOn)} to pick`}
-										</Text>
-									</View>
-								) : (
-									<View style={styles.actionRow}>
-										<Button
-											onPress={onConfirm}
-											disabled={
-												bonusIdx === null ||
-												curseIdx === null ||
-												submitting
-											}
-											loading={submitting}
-										>
-											{bonusIdx === null
-												? 'Pick a bonus'
-												: curseIdx === null
-													? 'Pick a curse'
-													: 'Confirm'}
-										</Button>
-									</View>
-								)}
-							</>
-						) : (
-							<Text style={styles.subheading}>
-								Players are choosing their bonus cards.
-							</Text>
-						)}
-
-						<PlayOrderFooter
-							playerOrder={playerOrder}
-							meIdx={meIdx}
-							profilesById={profilesById}
-							phaseHands={phaseHands}
-							seatColors={seatColors}
+			<ScrollView
+				style={styles.scroll}
+				contentContainerStyle={styles.body}
+				showsVerticalScrollIndicator={false}
+			>
+				{hand ? (
+					<>
+						<Text style={styles.subheading}>
+							{selectionCopy(hand.offered.length, curses.length)}
+						</Text>
+						<CardRow
+							kind="bonus"
+							cards={hand.offered.map((id) => ({
+								id,
+								title: bonusById(id)!.title,
+								icon: bonusById(id)!.icon,
+								description: bonusDescriptionFor(id, size),
+							}))}
+							pickedIdx={
+								committed
+									? hand.offered.indexOf(hand.chosen!)
+									: bonusIdx
+							}
+							committed={committed}
+							fixed={bonusFixed}
+							disabled={submitting}
+							onPick={setPick}
 							styles={styles}
 							colors={colors}
 						/>
-					</ScrollView>
-				</Animated.View>
-			</Animated.View>
-		</View>
+
+						<CardRow
+							kind="curse"
+							cards={curses.map((id) => ({
+								id,
+								title: curseById(id)!.title,
+								icon: curseById(id)!.icon,
+								description: curseDescriptionFor(id, size),
+							}))}
+							pickedIdx={
+								committed
+									? curses.indexOf(handChosenCurse(hand)!)
+									: curseIdx
+							}
+							committed={committed}
+							fixed={curseFixed}
+							disabled={submitting}
+							onPick={setCursePick}
+							styles={styles}
+							colors={colors}
+						/>
+
+						{committed ? (
+							<View style={styles.waitingRow}>
+								<Text style={styles.waitingText}>
+									{waitingOn.length === 0
+										? 'Everyone is ready — starting placement…'
+										: `Waiting for ${formatList(waitingOn)} to pick`}
+								</Text>
+							</View>
+						) : (
+							<View style={styles.actionRow}>
+								<Button
+									onPress={onConfirm}
+									disabled={
+										bonusIdx === null ||
+										curseIdx === null ||
+										submitting
+									}
+									loading={submitting}
+								>
+									{bonusIdx === null
+										? 'Pick a bonus'
+										: curseIdx === null
+											? 'Pick a curse'
+											: 'Confirm'}
+								</Button>
+							</View>
+						)}
+					</>
+				) : (
+					<Text style={styles.subheading}>
+						Players are choosing their bonus cards.
+					</Text>
+				)}
+
+				<PlayOrderFooter
+					playerOrder={playerOrder}
+					meIdx={meIdx}
+					profilesById={profilesById}
+					phaseHands={phaseHands}
+					seatColors={seatColors}
+					styles={styles}
+					colors={colors}
+				/>
+			</ScrollView>
+		</CollapsibleSheet>
 	)
 }
 
@@ -428,37 +362,6 @@ function formatList(names: string[]): string {
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		outer: {
-			flex: 1,
-			justifyContent: 'flex-end',
-		},
-		wrap: {
-			backgroundColor: colors.card,
-			borderWidth: 1,
-			borderColor: colors.border,
-			borderRadius: radius.md,
-			overflow: 'hidden',
-			boxShadow: shadow.overlay,
-		},
-		header: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: spacing.sm,
-			paddingHorizontal: spacing.md,
-			paddingVertical: spacing.sm,
-			backgroundColor: colors.cardAlt,
-			borderBottomWidth: 1,
-			borderBottomColor: colors.border,
-		},
-		headerTitle: {
-			flex: 1,
-			fontSize: font.md,
-			fontWeight: '700',
-			color: colors.text,
-		},
-		bodyWrap: {
-			flex: 1,
-		},
 		scroll: {
 			flex: 1,
 		},
