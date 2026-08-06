@@ -2,11 +2,9 @@
 
 The zones behind one route (`app/game/[id].tsx`), split by **screen zone**
 rather than by feature. The rules and the components themselves live in
-`lib/catan/` — this directory is only the assembly.
-
-Everything here lives outside `app/` on purpose: Expo Router treats every file
-under `app/` as a route and warns about any that has no default export, so
-non-route modules for a screen belong in `lib/`.
+`lib/catan/`; this directory is only the assembly. Everything here lives outside
+`app/` because Expo Router warns about any file under `app/` with no default
+export.
 
 ```
 app/game/[id].tsx
@@ -14,192 +12,98 @@ app/game/[id].tsx
                                 <Nav gameId={id} />        fixed, outside Game
                                 <Game />                   no props
            Game()               SlidingArea → TopArea
-                                water frame
-                                  SlidingArea → BoardArea
+                                water frame → SlidingArea → BoardArea
                                 SlidingArea → BottomArea
                                 overlays, animations, ChatPanel
 ```
 
 - `app/game/[id].tsx` — the shell. Mounts the three providers (`GameProvider` →
-  `ChatProvider` → `GameScreenProvider`), owns the **fixed frames** (the
-  top/bottom bar backgrounds, the board's water background + edge shadows), and
-  wraps each zone in a `ZoneSlide`. Also renders what belongs to no single
-  zone: the loading / not-found states, `GameOverOverlay` + `FinalScoreButton`,
-  the three event animations, `ChatPanel` (at the root so it covers the action
-  bars but leaves the nav clear — see `lib/catan/CLAUDE.md`), and the `Toast`
-  layer. The toast is raised from the nav's `GameMenu` but rendered here
-  because it has to float over every zone; its state (`toast` / `showToast` /
-  `hideToast`) lives on the screen context for exactly that reason — the
-  trigger and the surface are in different parts of the tree.
-- `Nav.tsx` — the fixed top row: the back chevron, `GameTitle` (the game
-  switcher), and `GameMenu`. Outside every sliding area **and outside
-  `<Game>`** on purpose.
-- `GameMenu.tsx` — the overflow (`⋯`) menu opposite the back chevron: forfeit
-  and end-game (each submittable and withdrawable), plus **Copy debugging
-  info**, which puts `{ gameId, playerId }` on the clipboard as JSON and raises
-  a "Copied" toast. It sits in the nav because, like the title, it is about
-  _which game you're on_ rather than about what the board is waiting for. It
-  lives here rather than in `lib/catan/` — the rest of which is rules and board
-  components — because it reads `useGameScreen()`, exactly as the zones do.
-  Renders a same-width **spacer** rather than nothing until the game has loaded
-  (no ids to copy, nothing to declare), so the title stays centred either way.
-  The two declarations are gated on `canEndGame` **inside** the sheet rather
-  than gating the whole menu: a spectator and a finished game are exactly the
-  states worth reporting a bug from, so the copy row survives both. Its `⋯`
-  carries an accent dot whenever any declaration is standing: the sheet is
-  otherwise the only place a pending vote exists and nobody would think to open
-  it. Submitting goes through `ConfirmModal`; **withdrawing does not** — that's
-  the undo. See the forfeiting section of `lib/catan/CLAUDE.md`.
-- `gameScreenContext.tsx` — `GameScreenProvider` / `useGameScreen()`. All local
-  UI state, every flag derived from the current phase, and one handler per
-  store action. This is where a new action or a new piece of screen state goes.
-- `TopArea.tsx` — the top menu zone: `PlayerStrip`, the status lines, the
-  build/trade bar, and the phase bars that replace it (`RobberStatus`,
-  `RoadBuildingStatus`, `SpecialBuildBar`). A discard is composed in the bottom
-  zone, so this zone's only part in it is `RobberStatus`'s line. Owns
-  `spectatorStatus()` and `PlacementHeader`. `SpecialBuildBar` carries the
-  third `UndoButton` placement, left of **Done building** — a special builder
-  builds out of turn, so their arrow can't hang off `MainLoopBar`.
-- `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus
-  the inline `ConfirmBar`.
-- `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and
-  the viewer's own hand (`ResourceHand` / `DevCardHand` / `KnightTapBar`).
-  `TradePanel` **replaces** the hand for the same reason `DiscardPanel` does —
-  the give side is composed by tapping the hand itself. It is one composer with
-  two destinations (propose to players / trade with the bank), not a flow: the
-  bank has no ratio picker any more, so `onBankTrade` takes just give/receive.
-  See `lib/catan/CLAUDE.md`.
-  While the viewer owes a discard, `DiscardPanel` **replaces** the hand (and
-  hides the dev cards / knight bar) rather than being a bar of its own — the
-  cards are picked by tapping the hand itself, so the composer has to be where
-  the hand is. It reads the live hand, not `displayHand`: the cards it selects
-  are real, so a reveal animation must not hide one from the picker.
-  `MainLoopBar` also shows `DevRollPicker` beside the Roll button for a
-  `dev`-flagged seat — see the admin-testing section of `lib/catan/CLAUDE.md`.
-  It is the one affordance here that takes props rather than reading the
-  context directly, because the bar is already prop-driven; `isDev` gates it by
-  passing `onDevRollTotalChange` as `undefined` for everyone else. Renders
-  `UndoButton` twice: inside `MainLoopBar` left of **End turn** during `main`,
-  and on its own row during `post_placement` (where `MainLoopBar` doesn't
-  render at all, so the fencer's tokens and the explorer's roads would
-  otherwise have nowhere to hang it). Both are gated on the context's
-  `canUndo` — see the undo rule below. It also carries a **third, unrelated**
-  arrow, left of the placement confirm: that one is gated on
-  `canUndoPlacement` and pops a locally-drafted piece — see the placement rule
-  below.
+  `ChatProvider` → `GameScreenProvider`), owns the **fixed frames** (bar
+  backgrounds, board water + edge shadows), wraps each zone in a `ZoneSlide`, and
+  renders what belongs to no single zone: loading/not-found, `GameOverOverlay`,
+  the event animations, `ChatPanel` (at the root so it covers the action bars but
+  leaves the nav clear), and the `Toast` layer (raised from the nav's `GameMenu`
+  but rendered here because it floats over every zone).
+- `Nav.tsx` / `GameMenu.tsx` — the fixed top row (back chevron, `GameTitle`
+  switcher, overflow menu), outside every sliding area **and outside `<Game>`**
+  because it's the one thing on screen that's about _which_ game you're on. The
+  `⋯` menu holds forfeit / end-game (each submittable and withdrawable) and Copy
+  debugging info; it carries an accent dot whenever a declaration is standing.
+- `gameScreenContext.tsx` — `GameScreenProvider` / `useGameScreen()`: all local
+  UI state, every phase-derived flag, and one handler per store action. New
+  screen state or actions go here.
+- `TopArea.tsx` — the top zone: `PlayerStrip`, status lines, the build/trade bar
+  and the phase bars that replace it. Owns `spectatorStatus()` and
+  `PlacementHeader`.
+- `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus the
+  inline `ConfirmBar`.
+- `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and the
+  viewer's own hand. `TradePanel` and `DiscardPanel` each **replace** the hand
+  rather than being a bar of their own, because both are composed by tapping the
+  hand itself — the composer has to be where the hand is. `DiscardPanel` reads
+  the live hand, not `displayHand`, so a reveal animation can't hide a card from
+  the picker.
 - `gameScreenShared.tsx` — the few things both menu zones render (`DieFaceView`,
-  `HonkButton`, `UndoButton`, the bar styles, `isWeb`), so neither has to
-  import the other. `UndoButton` lives here rather than with the two bottom-zone
-  placements because `SpecialBuildBar` is in `TopArea` — an undoable action can
-  be taken from either zone.
+  `HonkButton`, `UndoButton`, bar styles), so neither imports the other.
 - `app/game/request/[id].tsx` — the pending-invite view. Unrelated to the above.
 
 ## Rules
 
 - **Zones read `useGameScreen()`; they don't take props.** The screen has ~15
-  pieces of local state and ~40 handlers, and affordances move between bars
-  often enough that prop chains would be the whole diff. A zone that needs
-  something new adds it to the context's return object.
-- **The context value is not memoized on purpose.** Every field derives from
-  the same `game` / `gameState` pair, so a stable identity would only survive
-  renders where nothing changed — and the provider doesn't re-render on those.
-- **What slides is content, never a frame.** A zone file renders _only_ the
-  travelling content; its background lives on the `ZoneSlide` container in the
-  shell. Translating the frames too drags the backgrounds off with them and the
-  screen reads as scrolling sideways.
-- **The tab strip must navigate with `router.setParams`, not `router.replace`.**
-  `REPLACE` gives the route a fresh key, so React Navigation unmounts and
-  remounts this entire screen — providers, zones, sliding areas and all — on
-  every tab tap. Nothing here can animate a switch it doesn't survive. See
-  `lib/catan/GameTitle.tsx`.
-- **Nothing under the nav is parameterized by `gameId`.** `<Game>` takes no
-  props and reads everything from the context, so a switch doesn't re-render
-  the component that owns the sliding areas. `Nav` is the exception and is
-  therefore hoisted above it — it is the one thing on screen that is _about_
-  which game you're on.
-- **`ZoneSlide` gives every switchable game a pane but content only to the
-  active one.** A single `GameProvider` swaps its state under one tree
-  (`lib/catan/gameContext.tsx`), so there is no second game's data to render
-  and a retained copy would immediately re-render as the _new_ game. The empty
-  panes exist to give `SlidingArea` something to cross with, and the direction
-  falls out of the tab delta (`gameTabIndex` / `gameTabCount` on the context,
-  keyed off `useSwitchableGames()`). One game → one pane → a no-op. The content
-  pane carries a **fixed key** (`"zone"`), not its positional one, so moving it
-  from tab i to tab j moves the zone rather than unmounting it and mounting a
-  fresh copy — otherwise every switch would discard the zone's own state and
-  leave the slide animating a remount.
-- **No zone clips.** `SlidingArea` defaults to `overflow: 'hidden'`; every zone
-  overrides it to `visible` via `styles.zone`. Each zone spans the full width
-  so the screen's edges do the clipping, and the build bar's tooltips and
-  cancel badges deliberately render outside their bar.
-- **An overlay lives with what opens it, not with what it covers.** The build
-  bar's pickers are in `TopArea`, the pre-roll bonus modals are in
-  `BottomArea`, the board-blocking phase pickers are in `BoardArea`. All of
-  them are `Modal`-based (`lib/modules/Modal.tsx` → RN `Modal`, which portals
-  out of the tree on web too), so where they sit in the JSX has no layout
-  consequence — only a legibility one.
-- **A zone early-returns on `!game`.** The shell already gates on it, but the
-  guard is what narrows the type for the rest of the file.
+  pieces of local state and ~40 handlers, and affordances move between bars often
+  enough that prop chains would be the whole diff. The context value is
+  deliberately **not memoized** — every field derives from the same
+  `game`/`gameState` pair, so a stable identity would only survive renders that
+  don't happen anyway.
+- **What slides is content, never a frame.** A zone renders only the travelling
+  content; its background lives on the `ZoneSlide` container in the shell.
+  Translating the frames too drags the backgrounds off and the screen reads as
+  scrolling sideways.
+- **The tab strip navigates with `router.setParams`, not `router.replace`.**
+  `REPLACE` gives the route a fresh key, remounting this whole screen — providers,
+  zones and all — on every tab tap; nothing here can animate a switch it doesn't
+  survive. So `<Game>` takes no props and reads everything from context (a switch
+  doesn't re-render the slider owner), and `Nav` is hoisted above it as the
+  exception. See `lib/catan/GameTitle.tsx`.
+- **`ZoneSlide` gives every switchable game a pane but content only to the active
+  one.** A single `GameProvider` swaps its state under one tree, so there's no
+  second game's data to render; the empty panes exist only to give `SlidingArea`
+  something to cross with, and the direction falls out of the tab delta. The
+  content pane carries a **fixed key** (`"zone"`) so moving it between tab
+  positions moves the zone rather than unmounting and remounting it.
+- **No zone clips**: `SlidingArea` defaults to `overflow: hidden`; zones override
+  to `visible` so the build bar's tooltips and cancel badges can render outside
+  their bar, letting the screen's edges do the clipping.
+- **An overlay lives with what opens it, not with what it covers.** All screen
+  overlays are `Modal`-based (which portals out of the tree), so where they sit in
+  the JSX is a legibility choice, not a layout one.
 - **An event-driven animation's cursor is tagged with its game.** The steal,
-  nomad and fortune-teller animations fire on events that appear past a
-  remembered position in `games.events`. The provider survives a tab switch, so
-  a bare count carries into the next game and everything past it in that game's
-  log reads as newly arrived — the whole game's animations replay in sequence
-  the moment it loads. Each cursor is an `EventCursor` (`{ gameId, count }`)
-  compared against `game.id`, and a mismatch re-seeds the cursor and drops any
-  queued animation rather than emitting one. Compare against **`game.id`, not
-  the `gameId` prop**: `useGame()` serves the outgoing game's row for one render
-  after the param changes, and a cursor re-seeded on that render would be
-  measuring the old log. The other way a cursor gets corrupted is a `games` row
-  that arrives **without** its `events` column — an empty log reads as a game
-  rewound to nothing, so the cursor drops to zero and the next full row replays
-  everything past it. That one is not defended here: `game.events` being absent
-  is meaningless rather than empty, so it's kept out of the context entirely
-  (`isPartialGameRow` — see `lib/stores/CLAUDE.md`), where it also protects the
-  action log, the honk gate and the recap.
-- **A reveal animation holds the viewer's hand, it does not delay the state.**
-  The steal, nomad and fortune-teller animations all fire _after_ the resource
-  has reached the hand — the steal one recovers which resource it was by
-  diffing the hand, so it cannot fire any earlier — and their backdrop is
-  translucent, so the card is legible under the roulette that is about to
-  reveal it. Each animation that moves the viewer's own hand registers the hand
-  as it stood before (`heldHands`, keyed the same way the animation is), and
-  `displayHand` renders that until the animation dismisses. **The bottom bar's
-  fanned `ResourceHand` is the only surface that takes `displayHand`**; every
-  other seat is shown as a card count, which never gave the resource away, and
-  everything else — affordability, build enablement, the trade panel — reads
-  the live `myHand`, so a hold can never disable a build the player can
-  actually make. A hold counts only while its own animation is in flight, so a
-  stranded entry can't leave the hand showing stale cards. Delaying the write
-  server-side is not the alternative: `game_states` is authoritative for every
-  client, and the steal animation needs the applied state to exist. The one
-  case it can't cover is the `game_states` row landing a render _before_
-  `games.events`, where the pre-event hand is already gone by the time the
-  event names it — the same ordering that already stops the steal animation
-  firing at all.
+  nomad and fortune-teller animations fire on events past a remembered position in
+  `games.events`. The provider survives a tab switch, so a bare count would carry
+  into the next game and replay its whole log; each cursor is an `EventCursor`
+  (`{ gameId, count }`) compared against **`game.id`** (not the `gameId` prop,
+  which lags one render on a switch). A `games` row arriving without its `events`
+  column would also read as a rewound log — that's kept out of the context
+  entirely via `isPartialGameRow` (see `lib/stores/CLAUDE.md`).
+- **A reveal animation holds the viewer's hand, it does not delay the state.** The
+  steal/nomad/fortune-teller animations fire _after_ the resource reaches the hand
+  (the steal one recovers which resource by diffing the hand). Each registers the
+  pre-animation hand in `heldHands`, and `displayHand` renders that until the
+  animation dismisses. **The bottom bar's fanned `ResourceHand` is the only
+  surface that takes `displayHand`** — everything else (affordability, build
+  enablement, trade) reads the live `myHand`, so a hold can never disable a build
+  the player can actually make. Delaying the write server-side isn't the
+  alternative: `game_states` is authoritative and the steal animation needs the
+  applied state to exist.
 - **A placement turn is drafted locally, so `phase.step` is not the stage.**
-  `placementDraft` accumulates a settlement, its road, and — for the seat that
-  places both back-to-back — a second pair, and only the confirm sends
-  anything (`place_start`). `placementStage` on the context is what every
-  placement affordance reads: the server's `step` stays `'settlement'` for the
-  whole turn, so reading it instead shows the wrong instruction from the second
-  tap onwards. `step` decides exactly one thing — whether this is the
-  `pick_last` nomination, which is a separate one-tap choice held in `pickLast`
-  rather than in the draft.
-- **The placement arrow is not the undo arrow.** `canUndoPlacement` pops the
-  last drafted piece — pure local state, nothing has reached the server. It has
-  no relationship to `canUndo` / `gameState.undo` below, and placement is not
-  an undoable action.
+  `placementDraft` accumulates the pieces and only the confirm sends anything
+  (`place_start`); `placementStage` on the context is what every placement
+  affordance reads, since the server's `step` stays `'settlement'` for the whole
+  turn. The placement arrow (`canUndoPlacement`, pops a drafted piece) is **not**
+  the undo arrow (`canUndo`) — placement isn't an undoable action.
 - **`canUndo` is read off `gameState.undo`, never derived from the event log.**
-  The edge function stashes a pre-action snapshot on `game_states.undo` for the
-  actions it considers undoable, and that column _is_ the availability signal —
-  reconstructing "was my last action a build?" from `games.events` would drift
-  from the server's rule the moment an action mutates state without logging an
-  event. The context adds only what the server can't see: the viewer's seat,
-  spectator status, and a phase test for whether this seat currently holds the
-  floor. That last one is **not** `isMyActiveTurn` everywhere — during
-  `special_build` the acting builder is `phase.queue[0]`, not `current_turn`
-  (which has already advanced to the next roller), so the gate reads
-  `isMySpecialBuild` there. Gating the whole thing on the turn-holder is what
-  made a special builder's road un-undoable while the server was happily
-  snapshotting it. See `.claude/specs/undo.md`.
+  The edge function stashes a pre-action snapshot there for undoable actions, and
+  that column _is_ the availability signal. The context adds only what the server
+  can't see (viewer seat, spectator status, and whether this seat holds the
+  floor) — which during `special_build` is `phase.queue[0]`, not `current_turn`,
+  so the gate reads `isMySpecialBuild` there. See `.claude/specs/undo.md`.
