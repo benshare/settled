@@ -1753,6 +1753,10 @@ type GameState = {
 	edges: Partial<Record<Edge, EdgeState>>
 	players: PlayerState[]
 	phase: Phase
+	// Seat holding the turn, null when nobody does (the whole simultaneous
+	// select_bonus phase). Mirror of lib/catan/types.ts. Still written to
+	// `games.current_turn` for old clients; never read from there.
+	currentTurn: number | null
 	robber: Hex
 	ports?: Port[]
 	// Set 3 fencer: edge → owning fencer player index (reserved road spots).
@@ -4192,6 +4196,7 @@ async function loadGame(
 		edges: stateRow.edges,
 		players: stateRow.players,
 		phase,
+		currentTurn: (stateRow.current_turn as number | null) ?? null,
 		robber: stateRow.robber,
 		ports: stateRow.ports ?? [],
 		fenceTokens:
@@ -4210,6 +4215,9 @@ type GameRow = {
 	id: string
 	participants: string[]
 	player_order: string[]
+	// Deprecated mirror of `game_states.current_turn`, kept written (never read)
+	// for clients that predate the move. Dropped in release 2 — see
+	// `.claude/specs/current-turn-on-game-states.md`.
 	current_turn: number | null
 	status: 'placement' | 'active' | 'complete' | 'canceled'
 	winner: number | null
@@ -4224,10 +4232,17 @@ type GameRow = {
 	timed_out: string[] | null
 }
 
-function currentPlayerIndex(game: GameRow, me: string): number | null {
+// The caller's seat, or null when they aren't seated — or when nobody holds the
+// turn at all, which is the whole simultaneous select_bonus phase. Hence the
+// `state`: the pointer lives beside the phase now.
+function currentPlayerIndex(
+	game: GameRow,
+	state: GameState,
+	me: string
+): number | null {
 	const idx = game.player_order.indexOf(me)
 	if (idx < 0) return null
-	if (game.current_turn === null) return null
+	if (state.currentTurn === null) return null
 	return idx
 }
 
@@ -4372,10 +4387,8 @@ async function handleRespond(
 				participants,
 				player_order: playerOrder,
 				colors,
-				// Bonus selection is simultaneous — nobody holds the turn, and
-				// naming a seat there is actively wrong (the header's tab strip
-				// reads this column to badge "waiting on you"). Set to 0 when
-				// the phase resolves to initial_placement in handlePickBonus.
+				// Deprecated mirror of game_states.current_turn, written for
+				// clients that predate the move. Release 2 drops it.
 				current_turn: selecting ? null : 0,
 				status: 'placement',
 				// Passed through whole rather than re-derived field by field —
@@ -4417,6 +4430,10 @@ async function handleRespond(
 			edges: {},
 			players: seatedPlayers,
 			phase: initialPhase,
+			// Bonus selection is simultaneous — nobody holds the turn, and
+			// naming a seat there is actively wrong. Set to 0 when the phase
+			// resolves to initial_placement in handlePickBonus.
+			current_turn: selecting ? null : 0,
 			robber: desert,
 			ports: generatePorts(variant),
 			dev_deck: config.devCards ? buildInitialDevDeck() : [],
@@ -4559,7 +4576,13 @@ async function handlePickBonus(
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ phase: nextPhase, players: nextPlayers })
+		// The snake order starts the moment the last hand lands; until then
+		// nobody holds the turn and the column stays null.
+		.update({
+			phase: nextPhase,
+			players: nextPlayers,
+			...(allChosen ? { current_turn: 0 } : {}),
+		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -4583,8 +4606,7 @@ async function handlePickBonus(
 		const { error: gameErr } = await admin
 			.from('games')
 			.update({
-				// Held null for the duration of the simultaneous phase; the
-				// snake order starts now. See the insert in handleRespond.
+				// Deprecated mirror — see the state update above.
 				current_turn: 0,
 				events: [...(game.events ?? []), ...events],
 			})
@@ -4801,9 +4823,9 @@ async function handlePlaceStart(
 	if (state.phase.step !== 'settlement')
 		return err(400, 'expected settlement step')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	const playerCount = game.player_order.length
 	const round = state.phase.round
@@ -4896,7 +4918,11 @@ async function handlePlaceStart(
 	if (next === null) {
 		const { error: stateErr } = await admin
 			.from('game_states')
-			.update({ ...pieces, phase: endOfPlacementPhase(working) })
+			.update({
+				...pieces,
+				phase: endOfPlacementPhase(working),
+				current_turn: 0,
+			})
 			.eq('game_id', game.id)
 		if (stateErr) return err(500, 'could not update state')
 
@@ -4908,6 +4934,7 @@ async function handlePlaceStart(
 			.from('games')
 			.update({
 				status: 'active',
+				// Deprecated mirror — see the state update above.
 				current_turn: 0,
 				events: [...(game.events ?? []), ...events, completeEvent],
 			})
@@ -4926,6 +4953,7 @@ async function handlePlaceStart(
 				round: next.round,
 				step: 'settlement',
 			} satisfies Phase,
+			current_turn: next.currentTurn,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
@@ -4933,6 +4961,7 @@ async function handlePlaceStart(
 	const { error: gameErr } = await admin
 		.from('games')
 		.update({
+			// Deprecated mirror — see the state update above.
 			current_turn: next.currentTurn,
 			events: [...(game.events ?? []), ...events],
 		})
@@ -5006,9 +5035,9 @@ async function handleChooseLastSettlement(
 	if (state.phase.step !== 'pick_last')
 		return err(400, 'expected pick_last step')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	const mine = ownSettlementVertices(state, meIdx)
 	if (!mine.includes(body.vertex as Vertex))
@@ -5032,6 +5061,7 @@ async function handleChooseLastSettlement(
 				round: next.round,
 				step: 'settlement',
 			} satisfies Phase,
+			current_turn: next.currentTurn,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
@@ -5062,6 +5092,7 @@ async function handleChooseLastSettlement(
 	const { error: gameErr } = await admin
 		.from('games')
 		.update({
+			// Deprecated mirror — see the state update above.
 			current_turn: next.currentTurn,
 			events: [...events, ...applied.nomadEvents],
 		})
@@ -5112,7 +5143,6 @@ async function applyRollOutcome(
 	game: {
 		id: string
 		events: unknown[] | null
-		current_turn: number | null
 		player_order: string[]
 	},
 	state: GameState,
@@ -5122,7 +5152,7 @@ async function applyRollOutcome(
 ): Promise<Response> {
 	const total = dice.a + dice.b
 	const existingEvents = [...(game.events ?? []), ...extraEvents]
-	const activeIdx = game.current_turn ?? 0
+	const activeIdx = state.currentTurn ?? 0
 
 	if (total === 7) {
 		// Friendly robber: during the first full go-around (every seat's opening
@@ -5528,9 +5558,9 @@ async function handleRoll(
 	if (state.phase.pending?.dice)
 		return err(400, 'dice are already rolled; confirm or reroll')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	// Forger: moving the token is compulsory and gates the roll. The client
 	// disables Roll for the same reason, so this only catches a forged body.
@@ -5599,9 +5629,9 @@ async function handleConfirmRoll(
 	if (!state.phase.pending?.dice)
 		return err(400, 'no pending roll to confirm')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	// `which` names the pending pair to keep — only meaningful when the
 	// gambler was dealt two (choose-of-two at a 5-6 player table). Anything
@@ -5645,9 +5675,9 @@ async function handleRerollDice(
 	if (!state.phase.pending?.dice)
 		return err(400, 'nothing to reroll — roll first')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 	if (bonusOf(state, meIdx) !== 'gambler') return err(400, 'not a gambler')
 	if (gamblerModeFor(gameSizeFor(state.players.length)) === 'choose_two')
 		return err(400, 'gambler chooses between two rolls at this table size')
@@ -5761,10 +5791,10 @@ async function handleHonk(
 	// missing value as enabled. Mirrors `gameState.config.honk !== false`.
 	if (state.config.honk === false) return err(400, 'honking disabled')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 
-	const currentTurn = game.current_turn
+	const currentTurn = state.currentTurn
 	if (currentTurn === null) return err(400, 'no current turn')
 
 	// Both halves of a normal turn are honkable, plus the special build phase —
@@ -5825,7 +5855,7 @@ function inProgress(game: GameRow): boolean {
 }
 
 // The seat this user occupies, or null. Deliberately NOT `currentPlayerIndex`,
-// which returns null whenever `games.current_turn` is null — that is the entire
+// which returns null whenever the turn pointer is null — that is the entire
 // simultaneous bonus-selection phase, and neither declaration has anything to
 // do with holding the turn.
 function seatOf(game: GameRow, me: string): number | null {
@@ -6126,9 +6156,7 @@ async function refreshDeadline(
 	// `game_states` read it will do nothing with.
 	const { data: row, error: loadErr } = await admin
 		.from('games')
-		.select(
-			'id, status, config, current_turn, player_order, deadline_at, timed_out'
-		)
+		.select('id, status, config, player_order, deadline_at, timed_out')
 		.eq('id', gameId)
 		.maybeSingle()
 	if (loadErr || !row) return
@@ -6137,7 +6165,6 @@ async function refreshDeadline(
 		| 'id'
 		| 'status'
 		| 'config'
-		| 'current_turn'
 		| 'player_order'
 		| 'deadline_at'
 		| 'timed_out'
@@ -6156,14 +6183,14 @@ async function refreshDeadline(
 	if (live) {
 		const { data: stateRow } = await admin
 			.from('game_states')
-			.select('phase')
+			.select('phase, current_turn')
 			.eq('game_id', gameId)
 			.maybeSingle()
 		if (!stateRow) return
 		deadline = deadlineFor({
 			timeout,
 			phase: stateRow.phase as Phase,
-			currentTurn: game.current_turn,
+			currentTurn: (stateRow.current_turn as number | null) ?? null,
 			playerOrder: game.player_order,
 			timedOut,
 			now: Date.now(),
@@ -6234,7 +6261,7 @@ async function sweepGame(
 	const { game, state } = loaded
 
 	const timeout = timeoutOptionOf(game.config)
-	const pending = pendingSeats(state.phase, game.current_turn)
+	const pending = pendingSeats(state.phase, state.currentTurn)
 	// The row can't have a live deadline — clear it so the sweep stops
 	// selecting it. (Reachable if a game ends through a path that somehow
 	// skipped the refresh, or sits in a phase waiting on nobody.)
@@ -6330,7 +6357,7 @@ async function applyTimeout(
 	for (let step = 0; step < MAX_TIMEOUT_STEPS; step++) {
 		const seats = pendingSeats(
 			cur.state.phase,
-			cur.game.current_turn
+			cur.state.currentTurn
 		).filter((idx) => expired.has(cur.game.player_order[idx]))
 		// Nobody expired is on the clock any more — the game is waiting on
 		// someone who still has their own full window.
@@ -6376,7 +6403,7 @@ async function applyTimeout(
 		? deadlineFor({
 				timeout: timeoutOptionOf(cur.game.config),
 				phase: cur.state.phase,
-				currentTurn: cur.game.current_turn,
+				currentTurn: cur.state.currentTurn,
 				playerOrder: cur.game.player_order,
 				timedOut,
 				now: Date.now(),
@@ -6871,11 +6898,11 @@ async function handleEndTurn(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
-	const nextTurn = nextMainTurn(game.current_turn!, game.player_order.length)
+	const nextTurn = nextMainTurn(state.currentTurn!, game.player_order.length)
 
 	// Clear the outgoing active player's one-per-turn dev flag so they can
 	// play again when it becomes their turn again. Round bumps monotonically
@@ -6932,6 +6959,7 @@ async function handleEndTurn(
 			phase: nextPhase,
 			players: nextPlayers,
 			round: nextRound,
+			current_turn: nextTurn,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
@@ -6939,6 +6967,7 @@ async function handleEndTurn(
 	const { error: gameErr } = await admin
 		.from('games')
 		.update({
+			// Deprecated mirror — see the state update above.
 			current_turn: nextTurn,
 			events: [...(game.events ?? []), ...events],
 		})
@@ -6977,7 +7006,7 @@ async function handleEndSpecialBuild(
 	if (state.phase.kind !== 'special_build')
 		return err(400, 'expected special build phase')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	if (state.phase.queue[0] !== meIdx) return err(403, 'not your build')
 
@@ -7004,7 +7033,7 @@ async function handleEndSpecialBuild(
 
 	// Notify the next actor: the next builder, else the roller (current_turn).
 	const notifyIdx =
-		remaining.length > 0 ? remaining[0] : (game.current_turn ?? 0)
+		remaining.length > 0 ? remaining[0] : (state.currentTurn ?? 0)
 	const nextUserId = game.player_order[notifyIdx]
 	if (nextUserId) {
 		EdgeRuntime.waitUntil(
@@ -7039,10 +7068,10 @@ async function preflightBuild(
 	const { game, state } = loaded
 	if (game.status !== 'active')
 		return { ok: false, response: err(400, 'not active') }
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null)
 		return { ok: false, response: err(403, 'not a participant') }
-	const inMain = state.phase.kind === 'main' && game.current_turn === meIdx
+	const inMain = state.phase.kind === 'main' && state.currentTurn === meIdx
 	const inSpecial = allowSpecialBuild && isSpecialBuildActor(state, meIdx)
 	if (!inMain && !inSpecial) {
 		if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
@@ -7083,7 +7112,7 @@ async function handleBuildRoad(
 	const { game, state } = loaded
 
 	if (game.status !== 'active') return err(400, 'not active')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 
 	const phase = state.phase
@@ -7093,7 +7122,7 @@ async function handleBuildRoad(
 	const isSpecial = isSpecialBuildActor(state, meIdx)
 	if (phase.kind !== 'main' && !isRoadBuilding && !isSpecial)
 		return err(400, 'expected main, road_building, or special_build phase')
-	if (!isSpecial && game.current_turn !== meIdx)
+	if (!isSpecial && state.currentTurn !== meIdx)
 		return err(403, 'not your turn')
 
 	if (
@@ -7486,7 +7515,7 @@ async function handleDiscard(
 	const investorResult = settled
 		? applyInvestorPayout(
 				{ ...state, players: nomadResult.players },
-				game.current_turn ?? 0
+				state.currentTurn ?? 0
 			)
 		: { players: nomadResult.players, events: [] as unknown[] }
 
@@ -7537,9 +7566,9 @@ async function handleMoveRobber(
 	if (state.phase.kind !== 'move_robber')
 		return err(400, 'expected move_robber phase')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	if (
 		!(boardFor(state.variant).hexes as readonly string[]).includes(body.hex)
@@ -7617,13 +7646,13 @@ async function handleMoveRobber(
 		state.phase.from7 &&
 		nextPhase.kind === 'main' &&
 		fortuneTellerTriggersOn(
-			stateAfterRobber.players[game.current_turn ?? 0]?.bonus,
+			stateAfterRobber.players[state.currentTurn ?? 0]?.bonus,
 			nextPhase.roll
 		)
 	) {
 		const ft = await runFortuneTellerChain(
 			stateAfterRobber,
-			game.current_turn ?? 0,
+			state.currentTurn ?? 0,
 			events
 		)
 		finalState = ft.state
@@ -7636,7 +7665,7 @@ async function handleMoveRobber(
 			phase: wrapMagicianWindow(
 				finalState.phase,
 				finalState,
-				game.current_turn ?? 0,
+				state.currentTurn ?? 0,
 				finalState.phase.roll
 			),
 		}
@@ -7684,9 +7713,9 @@ async function handleSteal(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'steal') return err(400, 'expected steal phase')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	if (!state.phase.candidates.includes(body.victim))
 		return err(400, 'invalid victim')
@@ -7739,13 +7768,13 @@ async function handleSteal(
 		state.phase.from7 &&
 		nextPhase.kind === 'main' &&
 		fortuneTellerTriggersOn(
-			nextPlayers[game.current_turn ?? 0]?.bonus,
+			nextPlayers[state.currentTurn ?? 0]?.bonus,
 			nextPhase.roll
 		)
 	) {
 		const ft = await runFortuneTellerChain(
 			finalState,
-			game.current_turn ?? 0,
+			state.currentTurn ?? 0,
 			events
 		)
 		finalState = ft.state
@@ -7758,7 +7787,7 @@ async function handleSteal(
 			phase: wrapMagicianWindow(
 				finalState.phase,
 				finalState,
-				game.current_turn ?? 0,
+				state.currentTurn ?? 0,
 				finalState.phase.roll
 			),
 		}
@@ -7791,9 +7820,9 @@ async function handleProposeTrade(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	const phase = state.phase
 	if (phase.kind !== 'main') return err(400, 'expected main phase')
@@ -8198,11 +8227,11 @@ async function handleBankTrade(
 
 	if (game.status !== 'active') return err(400, 'not active')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	// Bank/port trades are a main-turn action only — not available in a
 	// special-build slot.
-	const inMain = state.phase.kind === 'main' && game.current_turn === meIdx
+	const inMain = state.phase.kind === 'main' && state.currentTurn === meIdx
 	if (!inMain) {
 		if (state.phase.kind === 'special_build')
 			return err(400, 'no trading during special build')
@@ -8285,7 +8314,7 @@ async function handleBuyDevCard(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (!state.config.devCards) return err(400, 'dev cards disabled')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	// Buyable on your own main turn or in your special-build slot. The phase
 	// check leads so that `phase` stays narrowed to those two for the scout
@@ -8293,7 +8322,7 @@ async function handleBuyDevCard(
 	if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
 		return err(400, 'expected main phase')
 	const phase = state.phase
-	const inMain = phase.kind === 'main' && game.current_turn === meIdx
+	const inMain = phase.kind === 'main' && state.currentTurn === meIdx
 	if (!inMain && !isSpecialBuildActor(state, meIdx))
 		return err(403, 'not your turn')
 
@@ -8460,7 +8489,7 @@ async function handleConfirmScoutCard(
 	const { game, state } = loaded
 	if (state.phase.kind !== 'scout_pick')
 		return err(400, 'expected scout_pick phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	if (state.phase.owner !== meIdx) return err(403, 'not your scout pick')
 	const idx = body.index
@@ -8853,7 +8882,7 @@ async function handlePlaceExplorerRoad(
 	const { game, state } = loaded
 	if (state.phase.kind !== 'post_placement')
 		return err(400, 'expected post_placement phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	const remaining = state.phase.pending.explorer?.[meIdx] ?? 0
 	if (remaining <= 0) return err(400, 'no explorer roads remaining')
@@ -8938,9 +8967,9 @@ async function handleRitualRoll(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
 	if (state.phase.pending?.dice) return err(400, 'dice already pending')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 	const meP = state.players[meIdx]
 	if (meP.bonus !== 'ritualist') return err(400, 'not a ritualist')
 	if (meP.ritualWasUsedThisTurn) return err(400, 'ritual already used')
@@ -8994,9 +9023,9 @@ async function handleShepherdSwap(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
 	if (state.phase.pending?.dice) return err(400, 'dice already pending')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 	const meP = state.players[meIdx]
 	if (meP.bonus !== 'shepherd') return err(400, 'not a shepherd')
 	if (meP.shepherdUsedThisTurn) return err(400, 'shepherd already used')
@@ -9049,7 +9078,7 @@ async function handleClaimCurio(
 	const { game, state } = loaded
 	if (state.phase.kind !== 'curio_pick')
 		return err(400, 'expected curio_pick phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	if (!state.phase.pending.includes(meIdx))
 		return err(400, 'no curio pending for you')
@@ -9093,7 +9122,7 @@ async function handleClaimCurio(
 			players: nextPlayers,
 			phase: nextPhase,
 		}
-		const activeIdx = game.current_turn ?? 0
+		const activeIdx = state.currentTurn ?? 0
 		if (
 			fortuneTellerTriggersOn(
 				stateAfter.players[activeIdx]?.bonus,
@@ -9134,9 +9163,9 @@ async function handleMoveForgerToken(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'roll') return err(400, 'expected roll phase')
 	if (state.phase.pending?.dice) return err(400, 'dice already pending')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 	const meP = state.players[meIdx]
 	if (meP.bonus !== 'forger') return err(400, 'not a forger')
 	if (meP.forgerMovedThisTurn) return err(400, 'already moved this turn')
@@ -9185,7 +9214,7 @@ async function handlePickForgerTarget(
 	const { game, state } = loaded
 	if (state.phase.kind !== 'forger_pick')
 		return err(400, 'expected forger_pick phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	const head = state.phase.queue[0]
 	if (!head) return err(400, 'forger queue empty')
@@ -9229,7 +9258,7 @@ async function handlePickForgerTarget(
 	let finalPhase = nextPhase
 	let finalPlayers = nextPlayers
 	if (nextPhase.kind === 'main') {
-		const activeIdx = game.current_turn ?? 0
+		const activeIdx = state.currentTurn ?? 0
 		if (
 			fortuneTellerTriggersOn(
 				finalPlayers[activeIdx]?.bonus,
@@ -9284,9 +9313,9 @@ async function handleTapKnight(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	const p = state.players[meIdx]
 	if (p.bonus !== 'veteran') return err(400, 'not a veteran')
@@ -9348,9 +9377,9 @@ async function handleBuyCarpenterVP(
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	const me0 = state.players[meIdx]
 	if (me0.bonus !== 'carpenter') return err(400, 'not a carpenter')
@@ -9412,7 +9441,7 @@ async function handleSetSpecialistResource(
 	if (state.phase.kind !== 'post_placement')
 		return err(400, 'expected post_placement phase')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 
 	const resource = parseResource(body.resource)
@@ -9467,7 +9496,7 @@ async function handlePlaceFenceToken(
 	const { game, state } = loaded
 	if (state.phase.kind !== 'post_placement')
 		return err(400, 'expected post_placement phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	if (state.players[meIdx]?.bonus !== 'fencer')
 		return err(400, 'not a fencer')
@@ -9523,7 +9552,7 @@ async function handleSetHauntSpots(
 	const { game, state } = loaded
 	if (state.phase.kind !== 'post_placement')
 		return err(400, 'expected post_placement phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	if (state.players[meIdx]?.bonus !== 'haunt')
 		return err(400, 'not a haunt player')
@@ -9584,9 +9613,9 @@ async function handleInvest(
 	const { game, state } = loaded
 	if (game.status !== 'active') return err(400, 'not active')
 	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 	const meP = state.players[meIdx]
 	if (meP.bonus !== 'investor') return err(400, 'not an investor')
 	const resource = parseResource(body.resource)
@@ -9641,7 +9670,7 @@ async function handleCastMagic(
 	const { game, state } = loaded
 	if (state.phase.kind !== 'magician_pick')
 		return err(400, 'expected magician_pick phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	if (state.phase.roller !== meIdx)
 		return err(403, 'not your magician window')
@@ -9710,7 +9739,7 @@ async function handleSkipMagic(
 	const { game, state } = loaded
 	if (state.phase.kind !== 'magician_pick')
 		return err(400, 'expected magician_pick phase')
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
 	if (state.phase.roller !== meIdx)
 		return err(403, 'not your magician window')
@@ -9745,9 +9774,9 @@ async function handlePlayDevCard(
 
 	if (game.status !== 'active') return err(400, 'not active')
 
-	const meIdx = currentPlayerIndex(game, me)
+	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (game.current_turn !== meIdx) return err(403, 'not your turn')
+	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
 
 	const phase = state.phase
 	// Classic Catan allows pre-roll dev plays. Everything else must be main.
@@ -9968,7 +9997,9 @@ const UNDOABLE_ACTIONS = new Set<string>([
 const UNDO_NEUTRAL_ACTIONS = new Set<string>(['send_message'])
 
 // The mutable `game_states` columns. `hexes`/`variant` are omitted (nothing
-// mutates them) and so is `games.current_turn` — no undoable action writes it.
+// mutates them) and so is `current_turn` — no undoable action moves the turn,
+// and restoring it would only give it a way to disagree with its `games`
+// mirror, which undo does not rewrite.
 // If one ever does, the snapshot has to grow to cover it.
 const UNDO_COLUMNS =
 	'vertices, edges, players, phase, robber, ports, fence_tokens, dev_deck, largest_army, longest_road, round'

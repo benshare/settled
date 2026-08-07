@@ -691,6 +691,12 @@ export type GameState = {
 	edges: Partial<Record<Edge, EdgeState>>
 	players: PlayerState[]
 	phase: Phase
+	// Seat holding the turn, or null when nobody does — the whole simultaneous
+	// `select_bonus` phase. Beside `phase` because it is progress, not identity;
+	// it is still mirrored onto `games.current_turn` for clients that predate
+	// the move (see `.claude/specs/current-turn-on-game-states.md`). **Not the
+	// answer to "who is the game waiting on"** — that is `pendingSeats`.
+	currentTurn: number | null
 	robber: Hex
 	// Optional so games created before ports existed still parse. New games
 	// always seed 9 ports; readers should default a missing array to empty.
@@ -763,8 +769,9 @@ export type UndoSnapshot = {
 	// is what makes the undone action vanish from the log.
 	eventsLen: number
 	// The mutable `game_states` columns, under their column names. `hexes` and
-	// `variant` are omitted (nothing mutates them); `games.current_turn` is
-	// omitted because no undoable action writes it.
+	// `variant` are omitted (nothing mutates them); `current_turn` is omitted
+	// because no undoable action moves the turn, and including it would only
+	// create a way for it and its `games` mirror to disagree after an undo.
 	state: Record<string, unknown>
 }
 

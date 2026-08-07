@@ -135,9 +135,11 @@ export function pendingSeats(
  * `pendingSeats` in user ids — the "waiting on you" signal behind the Games
  * list dot, the header tab badge and the app-icon badge count.
  *
- * `phase` is undefined for a game whose `game_states` row hasn't loaded yet, and
- * the fallback is deliberately `current_turn` rather than "nobody": a cold start
- * must not blank a badge a push set correctly.
+ * An undefined `phase` means the game's board hasn't loaded, and the answer is
+ * "nobody" rather than a guess: the turn pointer lives on the same row, so
+ * there is nothing left to fall back to. Callers that must not act on a
+ * non-answer distinguish it themselves — `useAppBadge` leaves the icon alone
+ * rather than writing a zero it can't stand behind.
  *
  * Mirrored in `_notify`'s badge query (`supabase/functions/_shared/phase.ts`).
  */
@@ -146,12 +148,8 @@ export function pendingUserIds(
 	phase: Phase | undefined,
 	currentTurn: number | null
 ): string[] {
-	const seats = phase
-		? pendingSeats(phase, currentTurn)
-		: currentTurn === null
-			? []
-			: [currentTurn]
-	return seats
+	if (!phase) return []
+	return pendingSeats(phase, currentTurn)
 		.map((idx) => playerOrder[idx])
 		.filter((id): id is string => id !== undefined)
 }

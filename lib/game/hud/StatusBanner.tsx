@@ -85,7 +85,7 @@ export function StatusBanner() {
 				events={(game.events ?? []) as GameEvent[]}
 				phase={gameState.phase}
 				meIdx={meIdx}
-				currentTurn={game.current_turn ?? 0}
+				currentTurn={gameState.currentTurn ?? 0}
 				enabled={gameState.config.honk !== false}
 				submitting={submitting}
 				onHonk={onHonk}

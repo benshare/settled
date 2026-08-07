@@ -167,17 +167,14 @@ function testPendingUserIds() {
 		'u2',
 		'special build waits on the queue head, not the advanced turn holder'
 	)
-	// A game whose board hasn't loaded falls back to `current_turn` rather than
-	// to nobody — a cold start must not blank a badge a push set correctly.
+	// A game whose board hasn't loaded gets no answer, not a guess: the turn
+	// pointer lives on that same row, so there is nothing to fall back to.
+	// Callers that must not act on a non-answer say so themselves — see
+	// `useAppBadge`, which leaves the icon alone rather than writing a zero.
 	equal(
-		pendingUserIds(ORDER, undefined, 1).join(),
-		'u1',
-		'an unloaded phase falls back to the turn holder'
-	)
-	equal(
-		pendingUserIds(ORDER, undefined, null).length,
+		pendingUserIds(ORDER, undefined, 1).length,
 		0,
-		'and to nobody when there is no turn holder either'
+		'an unloaded phase names nobody, even with a turn holder passed in'
 	)
 	equal(
 		pendingUserIds(ORDER, { kind: 'roll' }, 7).length,
