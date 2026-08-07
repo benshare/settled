@@ -532,12 +532,7 @@ function CardStatFooter({ stat }: { stat: CardStat | undefined }) {
 					<StatCol value={percent(stat.pickRate)} label="picked" />
 				)}
 			</View>
-			<Text style={styles.statSample}>
-				{plural(stat.games, 'game')}
-				{/* Offers are a different population from games — one count
-				    would misattribute the pick rate's sample to the others. */}
-				{stat.offers > 0 && ` · ${plural(stat.offers, 'offer')}`}
-			</Text>
+			<Text style={styles.statSample}>{plural(stat.games, 'game')}</Text>
 		</View>
 	)
 }

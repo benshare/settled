@@ -379,7 +379,9 @@ assert(gambler, 'cards: gambler indexed')
 close(gambler.winRate!, 0.5, 'cards: sizes summed before dividing')
 close(gambler.avgPoints!, 9, 'cards: avg points over played games only')
 close(gambler.pickRate!, 0.25, 'cards: pick rate is keeps / offers')
-assert(gambler.games === 12 && gambler.offers === 24, 'cards: samples summed')
+// The offer sample is summed too, and shows up in the pick rate above: 6 keeps
+// over 4+20 offers.
+assert(gambler.games === 12, 'cards: samples summed')
 
 // One size checked reads exactly as its own row.
 const only = indexCardStats(ROWS, ['standard'])

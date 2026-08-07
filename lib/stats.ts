@@ -139,9 +139,10 @@ export type CardStat = {
 	avgPoints: number | null
 	pointsGames: number
 	// Null when the card has never been part of a real choice — a hand holding
-	// a single card isn't a pick, and the view doesn't count one.
+	// a single card isn't a pick, and the view doesn't count one. Its sample is
+	// the view's offer count, which is a different population from `games` and
+	// is deliberately not surfaced.
 	pickRate: number | null
-	offers: number
 }
 
 export function cardStatKey(kind: 'bonus' | 'curse', id: string): string {
@@ -185,7 +186,6 @@ export function indexCardStats(
 				t.played_games === 0 ? null : t.points_sum / t.played_games,
 			pointsGames: t.played_games,
 			pickRate: t.offers === 0 ? null : t.keeps / t.offers,
-			offers: t.offers,
 		})
 	}
 	return out
