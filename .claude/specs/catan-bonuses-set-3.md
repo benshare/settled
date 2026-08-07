@@ -419,7 +419,10 @@ Updated handlers:
 - `BoardView` — `FenceTokenPiece` on reserved edges; `'ghost'` VertexPiece
   variant.
 - `MagicianPickOverlay` — new, for `magician_pick`.
-- `PlayerStrip` / `PlayerDetailOverlay` — investment-token badge (public).
+- `InvestmentTokens` — the public token readout: one resource-colored dot per
+  token (the board legend's dot vocabulary). Rendered in the footer of the
+  investor's bonus card in `PlayerDetailOverlay`, and beside the investor's own
+  hand in both bottom areas (`Dock` / `BottomArea`).
 - `DevCardHand` / build buttons — smith substitution affordance.
 - `create-game.tsx` — unlock the Set 3 checkbox (remove the `setId === '3'`
   lock at line ~307).

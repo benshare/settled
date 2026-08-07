@@ -1,8 +1,8 @@
 // Modal overlay rendered when the user taps a player card in the strip.
 // Shows the player's avatar + name, their point/card totals, what's left in
 // their piece supply, and — if the game is running with bonuses — the full
-// bonus and curse cards they hold, plus an investor's set-aside investment
-// tokens (public to the whole table).
+// bonus and curse cards they hold. An investor's bonus card carries their
+// set-aside investment tokens in its footer (public to the whole table).
 
 import { Avatar } from '@/lib/modules/Avatar'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
@@ -10,12 +10,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { Modal } from '../modules/Modal'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
-import { RESOURCES } from './board'
-import {
-	INVEST_TRIO,
-	METROPOLITAN_SUPER_CITY_CAP,
-	superCityCount,
-} from './bonus'
+import { METROPOLITAN_SUPER_CITY_CAP, superCityCount } from './bonus'
 import {
 	bonusById,
 	bonusDescriptionFor,
@@ -32,10 +27,10 @@ import {
 	settlementCountFor,
 } from './curses'
 import { knightsPlayed } from './dev'
+import { InvestmentTokens } from './InvestmentTokens'
 import { longestRoadFor } from './longestRoad'
 import { seatColor } from './palette'
-import { CardFan, type CardFanEntry } from './ResourceHand'
-import { gameSizeFor, type GameState, type PlayerState } from './types'
+import { gameSizeFor, type GameState } from './types'
 
 export type PlayerDetailOverlayProps = {
 	playerIdx: number | null
@@ -199,6 +194,13 @@ function Body({
 							tag="Bonus"
 							tagColor={colors.brand}
 							borderColor={colors.brand}
+							footer={
+								bonus.id === 'investor' ? (
+									<InvestmentTokens
+										investments={player?.investments}
+									/>
+								) : undefined
+							}
 						/>
 					) : (
 						<EmptyCardBlock
@@ -208,9 +210,6 @@ function Body({
 									: 'Bonus hidden until picked.'
 							}
 						/>
-					)}
-					{player?.bonus === 'investor' && (
-						<InvestmentsBlock investments={player.investments} />
 					)}
 					{curse ? (
 						<CardBlock
@@ -415,6 +414,7 @@ function CardBlock({
 	tag,
 	tagColor,
 	borderColor,
+	footer,
 }: {
 	icon: React.ComponentProps<typeof Ionicons>['name']
 	iconColor: string
@@ -423,6 +423,10 @@ function CardBlock({
 	tag: string
 	tagColor: string
 	borderColor: string
+	// Whatever state the card's own rules have produced so far — today only the
+	// investor's tokens. Sits under the description rather than in a block of
+	// its own so the card stays one object.
+	footer?: React.ReactNode
 }) {
 	return (
 		<View style={[styles.cardBlock, { borderColor }]}>
@@ -438,6 +442,7 @@ function CardBlock({
 				</View>
 			</View>
 			<Text style={styles.cardDescription}>{description}</Text>
+			{footer}
 		</View>
 	)
 }
@@ -446,46 +451,6 @@ function EmptyCardBlock({ label }: { label: string }) {
 	return (
 		<View style={styles.emptyBlock}>
 			<Text style={styles.emptyText}>{label}</Text>
-		</View>
-	)
-}
-
-// An investor's set-aside trios, visible to the whole table. Each token pays 1
-// of its resource once the investor's roll resolves, so the fan doubles as
-// "what they collect every turn".
-function InvestmentsBlock({
-	investments,
-}: {
-	investments: PlayerState['investments']
-}) {
-	const entries: CardFanEntry[] = RESOURCES.filter(
-		(r) => (investments?.[r] ?? 0) > 0
-	).map((r) => ({ resource: r, count: investments?.[r] ?? 0 }))
-	const tokens = entries.reduce((n, e) => n + e.count, 0)
-	return (
-		<View style={styles.investBlock}>
-			<View style={styles.investHeader}>
-				<Ionicons
-					name="trending-up-outline"
-					size={16}
-					color={colors.textSecondary}
-				/>
-				<Text style={styles.investTitle}>Invested</Text>
-				<Text style={styles.investTokens}>
-					{tokens} {tokens === 1 ? 'token' : 'tokens'}
-				</Text>
-			</View>
-			<CardFan
-				entries={entries}
-				size="compact"
-				emptyLabel="Nothing set aside yet."
-			/>
-			{tokens > 0 && (
-				<Text style={styles.investCaption}>
-					{tokens * INVEST_TRIO} cards set aside · +{tokens} after
-					each roll
-				</Text>
-			)}
 		</View>
 	)
 }
@@ -676,37 +641,6 @@ const styles = StyleSheet.create({
 	cardDescription: {
 		fontSize: font.sm,
 		color: colors.textSecondary,
-	},
-	investBlock: {
-		borderWidth: 1,
-		borderColor: colors.border,
-		borderRadius: radius.md,
-		backgroundColor: colors.card,
-		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm,
-		gap: spacing.xs,
-	},
-	investHeader: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.xs,
-	},
-	investTitle: {
-		flex: 1,
-		fontSize: font.sm,
-		fontWeight: '700',
-		color: colors.textSecondary,
-		textTransform: 'uppercase',
-		letterSpacing: 0.5,
-	},
-	investTokens: {
-		fontSize: font.sm,
-		color: colors.textMuted,
-	},
-	investCaption: {
-		fontSize: font.sm,
-		color: colors.textMuted,
-		textAlign: 'center',
 	},
 	emptyBlock: {
 		borderRadius: radius.md,

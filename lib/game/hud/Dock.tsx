@@ -19,6 +19,7 @@ import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel } from '@/lib/catan/DiscardPanel'
 import { BuildTradeBar, TradeButton } from '@/lib/catan/BuildTradeBar'
+import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
@@ -173,6 +174,11 @@ export function Dock({
 										: null
 								}
 								onPlay={onPlayDevCard}
+							/>
+						)}
+						{!inPlacement && myPlayer?.bonus === 'investor' && (
+							<InvestmentTokens
+								investments={myPlayer.investments}
 							/>
 						)}
 						{!inPlacement && myPlayer?.bonus === 'veteran' && (

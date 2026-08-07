@@ -13,6 +13,7 @@ import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel } from '@/lib/catan/DiscardPanel'
 import { canShepherdSwap, ritualCardCost } from '@/lib/catan/bonus'
+import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
@@ -251,6 +252,14 @@ export function BottomArea() {
 								onPlay={onPlayDevCard}
 							/>
 						)}
+						{owedDiscard === null &&
+							myPlayer?.bonus === 'investor' && (
+								<View style={styles.investRow}>
+									<InvestmentTokens
+										investments={myPlayer.investments}
+									/>
+								</View>
+							)}
 						{owedDiscard === null &&
 							myPlayer?.bonus === 'veteran' && (
 								<KnightTapBar
@@ -616,6 +625,10 @@ const styles = StyleSheet.create({
 	},
 	placementConfirm: {
 		flex: 1,
+	},
+	investRow: {
+		paddingHorizontal: spacing.md,
+		paddingBottom: spacing.xs,
 	},
 	undoRow: {
 		flexDirection: 'row',
