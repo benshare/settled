@@ -1,46 +1,39 @@
 import { Fragment } from 'react'
 import { Circle, G } from 'react-native-svg'
-import { boardFor, edgeEndpoints, type Edge, type Vertex } from './board'
-import { fenceOwner } from './bonus'
+import { edgeEndpoints, type Edge, type Vertex } from './board'
 import {
 	payableBuildRoadEdges,
 	validBuildCityVertices,
+	validBuildFenceEdges,
 	validBuildRoadEdges,
 	validBuildSettlementVertices,
 	validBuildSuperCityVertices,
 	type BuildKind,
 } from './build'
 import { EdgePiece } from './EdgePiece'
+import { FenceTokenPiece } from './FenceTokenPiece'
 import { validSettlementVertices } from './placement'
 import { seatColor } from './palette'
 import { PulsingDot } from './PulsingDot'
-import { edgeStateOf, type GameState } from './types'
+import type { GameState } from './types'
 import { HauntSpotMarker, VertexPiece } from './VertexPiece'
 
 // `super_city` is the metropolitan upgrade (cities → super_city). It uses
 // the build-bar pulse layer the same way as the standard kinds, but is gated
-// on the metropolitan bonus. `explorer_road` is the post_placement free-road
-// pulse for the explorer bonus — same edge validity as a paid road, just
-// gated on a different phase.
+// on the metropolitan bonus. `fence` is the same arrangement for the fencer.
+// `explorer_road` is the post_placement free-road pulse for the explorer
+// bonus — same edge validity as a paid road, just gated on a different phase.
 export type BoardTool =
-	BuildKind | 'super_city' | 'explorer_road' | 'fence_token' | 'haunt_spot'
+	BuildKind | 'super_city' | 'fence' | 'explorer_road' | 'haunt_spot'
 
 export type BuildSelection =
 	| { kind: 'road'; edge: Edge }
 	| { kind: 'settlement'; vertex: Vertex }
 	| { kind: 'city'; vertex: Vertex }
 	| { kind: 'super_city'; vertex: Vertex }
+	| { kind: 'fence'; edge: Edge }
 	| { kind: 'explorer_road'; edge: Edge }
-	| { kind: 'fence_token'; edge: Edge }
 	| { kind: 'haunt_spot'; vertex: Vertex }
-
-// Empty, unfenced edges — where a fencer may drop a reserve token during
-// post_placement (any edge, no connectivity required).
-function fenceableEdges(state: GameState): Edge[] {
-	return boardFor(state.variant).edges.filter(
-		(e) => !edgeStateOf(state, e).occupied && fenceOwner(state, e) === null
-	)
-}
 
 // Overlay inside BoardSvg's transformed group. When a build tool is active,
 // pulses all valid spots for the current player and surfaces invisible hit
@@ -76,11 +69,7 @@ export function BuildLayer({
 	// Special build phase: the queue head — not current_turn — is the builder.
 	const inSpecialBuild =
 		state.phase.kind === 'special_build' && state.phase.queue[0] === meIdx
-	if (
-		tool === 'explorer_road' ||
-		tool === 'fence_token' ||
-		tool === 'haunt_spot'
-	) {
+	if (tool === 'explorer_road' || tool === 'haunt_spot') {
 		if (!inPostPlacement) return null
 	} else if (tool === 'road') {
 		// Road Building dev card places free roads outside the main phase.
@@ -92,40 +81,6 @@ export function BuildLayer({
 		if (!inMain && !inSpecialBuild) return null
 	}
 	const color = seatColor(state, meIdx)
-
-	if (tool === 'fence_token') {
-		const valids = fenceableEdges(state)
-		return (
-			<G>
-				{valids.map((e) => {
-					const [va, vb] = edgeEndpoints(e)
-					const pa = vertexPositions[va]
-					const pb = vertexPositions[vb]
-					const mx = (pa.x + pb.x) / 2
-					const my = (pa.y + pb.y) / 2
-					return (
-						<Fragment key={e}>
-							<PulsingDot
-								cx={mx}
-								cy={my}
-								r={layoutS * 0.16}
-								color={color}
-							/>
-							<Circle
-								cx={mx}
-								cy={my}
-								r={layoutS * 0.42}
-								fill="transparent"
-								onPress={() =>
-									onSelect({ kind: 'fence_token', edge: e })
-								}
-							/>
-						</Fragment>
-					)
-				})}
-			</G>
-		)
-	}
 
 	if (tool === 'haunt_spot') {
 		const valids = validSettlementVertices(state)
@@ -168,16 +123,19 @@ export function BuildLayer({
 		)
 	}
 
-	if (tool === 'road' || tool === 'explorer_road') {
+	if (tool === 'road' || tool === 'explorer_road' || tool === 'fence') {
 		// Free roads (explorer, Road Building) ignore the hand; a paid road is
-		// narrowed to what the player can cover — which for a fencer holding
-		// only Wood or only Brick is just their own reserved edges.
+		// narrowed to what the player can cover — which for a fencer short of
+		// Wood + Brick is just the upgrade on their own fences.
 		const free = tool === 'explorer_road' || inRoadBuilding
-		const valids = free
-			? validBuildRoadEdges(state, meIdx)
-			: payableBuildRoadEdges(state, meIdx)
+		const valids =
+			tool === 'fence'
+				? validBuildFenceEdges(state, meIdx)
+				: free
+					? validBuildRoadEdges(state, meIdx)
+					: payableBuildRoadEdges(state, meIdx)
 		const pickKind = tool
-		const pendingEdge = pending?.kind === 'road' ? pending.edge : null
+		const pendingEdge = pending?.kind === pickKind ? pending.edge : null
 		return (
 			<G>
 				{valids.map((e) => {
@@ -187,10 +145,11 @@ export function BuildLayer({
 					const mx = (pa.x + pb.x) / 2
 					const my = (pa.y + pb.y) / 2
 					const isPending = e === pendingEdge
+					const Piece = tool === 'fence' ? FenceTokenPiece : EdgePiece
 					return (
 						<Fragment key={e}>
 							{isPending ? (
-								<EdgePiece
+								<Piece
 									x1={pa.x}
 									y1={pa.y}
 									x2={pb.x}

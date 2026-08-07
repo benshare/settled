@@ -87,7 +87,7 @@ const CATEGORIES = {
 		'scout_buy',
 		'liquidate',
 		'build_super_city',
-		'fence_token',
+		'fence_built',
 		'invest',
 		'investor_payout',
 		'magic_cast',
@@ -631,9 +631,9 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				player: e.player,
 				detail: [{ label: 'Cost', text: handText(e.cost) }],
 			}
-		case 'fence_token':
+		case 'fence_built':
 			return {
-				text: `${who(e.player)} reserved an edge (fencer)`,
+				text: `${who(e.player)} built a fence`,
 				player: e.player,
 			}
 		case 'invest':

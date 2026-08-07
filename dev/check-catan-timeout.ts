@@ -107,8 +107,7 @@ function testPendingSeats() {
 				kind: 'post_placement',
 				pending: {
 					specialist: [0],
-					explorer: { 1: 2 },
-					fencer: { 2: 0 },
+					explorer: { 1: 2, 3: 0 },
 					haunt: [2],
 				},
 			},

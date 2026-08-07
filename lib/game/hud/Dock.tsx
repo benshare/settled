@@ -269,6 +269,7 @@ function BuildBar() {
 		gameState,
 		canBuildThisTurn,
 		superCityEnabled,
+		fenceEnabled,
 		accountantEnabled,
 		investorEnabled,
 		onBuildToolSelect,
@@ -305,6 +306,10 @@ function BuildBar() {
 					: undefined
 			}
 			superCityActive={buildTool === 'super_city'}
+			fenceEnabled={
+				myPlayer?.bonus === 'fencer' ? fenceEnabled : undefined
+			}
+			fenceActive={buildTool === 'fence'}
 			accountantEnabled={
 				myPlayer?.bonus === 'accountant' ? accountantEnabled : undefined
 			}
@@ -315,6 +320,7 @@ function BuildBar() {
 			onBuyDevCard={onBuyDevCard}
 			onBuyCarpenterVP={onBuyCarpenterVP}
 			onSelectSuperCity={() => onBuildToolSelect('super_city')}
+			onSelectFence={() => onBuildToolSelect('fence')}
 			onAccountant={() => setAccountantOpen(true)}
 			onInvest={() => setInvestOpen(true)}
 		/>

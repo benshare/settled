@@ -18,10 +18,9 @@ pattern, `placedTurn` fields).
   bank trade, including the default 4:1.
 - `plutocrat` — every time you gain ≥2 of a single resource from a roll, gain
   50% more of that resource (floor). Per-resource, per-roll.
-- `fencer` — start of game: place tokens on two empty edges. No other player
-  may ever build a road on a fenced edge. When the fencer builds a road on
-  their own fenced edge, it costs 1 card — either 1 Wood or 1 Brick (their
-  choice) — instead of 1 Wood + 1 Brick.
+- `fencer` — **superseded by `.claude/specs/fencer-rework.md`**; everything
+  below about the fencer describes the shipped-then-replaced design (two
+  start-of-game tokens, a Wood-or-Brick road). Fences are now a build action.
 - `smith` — may substitute Brick for Ore and vice versa when paying for
   buildings, dev cards, and bank/port trades.
 - `investor` — once your total VP is ≥3, during your turn you may set aside 3

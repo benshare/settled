@@ -716,11 +716,28 @@ export function isValidMerchantAddon(
 
 // --- Fencer -----------------------------------------------------------------
 //
-// Reserve two edges at post_placement. No other player may build a road on a
-// reserved edge; the fencer builds there for 1 card (Wood or Brick). The
-// build-side validity (own token + connectivity) lives in build.ts to avoid a
-// bonus ↔ build import cycle.
-export const FENCE_TOKEN_COUNT = 2
+// Fences are a main-phase build action open only to the fencer: 1 wood, placed
+// under road-like connectivity in which the player's own fences also chain. No
+// other player may ever build on a fenced edge, and the owner upgrades one into
+// a road for 1 brick. Placement validity and the shared road/fence supply cap
+// live in build.ts to avoid a bonus ↔ build import cycle.
+export const FENCE_COST: ResourceHand = {
+	brick: 0,
+	wood: 1,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
+}
+
+// A road overbuilt onto the builder's own fence. Not a choice the player
+// expresses — the server derives it from the edge.
+export const FENCE_UPGRADE_COST: ResourceHand = {
+	brick: 1,
+	wood: 0,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
+}
 
 export function fenceOwner(state: GameState, edge: Edge): number | null {
 	const owner = state.fenceTokens?.[edge]
@@ -737,14 +754,22 @@ export function isFenceReservedAgainst(
 	return owner !== null && owner !== playerIdx
 }
 
-export function fenceRoadCost(pay: 'wood' | 'brick'): ResourceHand {
-	return {
-		brick: pay === 'brick' ? 1 : 0,
-		wood: pay === 'wood' ? 1 : 0,
-		sheep: 0,
-		wheat: 0,
-		ore: 0,
+export function isOwnFence(
+	state: GameState,
+	edge: Edge,
+	playerIdx: number
+): boolean {
+	return fenceOwner(state, edge) === playerIdx
+}
+
+// Fences on the board for a player. Counted alongside roads against the
+// 15-piece supply, so this is not a display-only number.
+export function fenceCountFor(state: GameState, playerIdx: number): number {
+	let n = 0
+	for (const owner of Object.values(state.fenceTokens ?? {})) {
+		if (owner === playerIdx) n++
 	}
+	return n
 }
 
 // --- Smith ------------------------------------------------------------------

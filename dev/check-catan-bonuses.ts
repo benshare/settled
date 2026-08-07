@@ -58,7 +58,9 @@ import {
 	winVPThresholdFor,
 	// Set 3
 	canInvest,
-	fenceRoadCost,
+	FENCE_COST,
+	FENCE_UPGRADE_COST,
+	fenceCountFor,
 	investorActivateVPFor,
 	investorPayout,
 	investorTokenCount,
@@ -1422,9 +1424,10 @@ function testMerchant() {
 // --- fencer -----------------------------------------------------------------
 
 function testFencer() {
-	equal(fenceRoadCost('wood').wood, 1, 'wood cost 1 wood')
-	equal(fenceRoadCost('wood').brick, 0, 'wood cost 0 brick')
-	equal(fenceRoadCost('brick').brick, 1, 'brick cost 1 brick')
+	equal(FENCE_COST.wood, 1, 'a fence costs 1 wood')
+	equal(FENCE_COST.brick, 0, 'a fence costs no brick')
+	equal(FENCE_UPGRADE_COST.brick, 1, 'the upgrade costs 1 brick')
+	equal(FENCE_UPGRADE_COST.wood, 0, 'the upgrade costs no wood')
 	const s = baseState()
 	const edge = boardFor(s.variant).edges[0]
 	const withToken: GameState = { ...s, fenceTokens: { [edge]: 1 } }
@@ -1437,6 +1440,19 @@ function testFencer() {
 		!isFenceReservedAgainst(withToken, boardFor(s.variant).edges[1], 0),
 		'unfenced edge is free'
 	)
+
+	// Fences count against the shared road supply, so the tally is per-owner.
+	const two: GameState = {
+		...s,
+		fenceTokens: {
+			[boardFor(s.variant).edges[0]]: 1,
+			[boardFor(s.variant).edges[1]]: 1,
+			[boardFor(s.variant).edges[2]]: 0,
+		},
+	}
+	equal(fenceCountFor(two, 1), 2, 'counts only that owner')
+	equal(fenceCountFor(two, 0), 1, 'and the other owner separately')
+	equal(fenceCountFor(s, 0), 0, 'no fenceTokens is zero, not a crash')
 }
 
 // --- investor ---------------------------------------------------------------

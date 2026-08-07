@@ -17,7 +17,6 @@ export type PendingPhase =
 			pending: {
 				specialist: number[]
 				explorer?: Partial<Record<number, number>>
-				fencer?: Partial<Record<number, number>>
 				haunt?: number[]
 			}
 	  }
@@ -57,9 +56,6 @@ export function pendingSeats(
 			const seats = new Set<number>(p.specialist)
 			for (const idx of p.haunt ?? []) seats.add(idx)
 			for (const [idx, owed] of Object.entries(p.explorer ?? {})) {
-				if ((owed ?? 0) > 0) seats.add(Number(idx))
-			}
-			for (const [idx, owed] of Object.entries(p.fencer ?? {})) {
 				if ((owed ?? 0) > 0) seats.add(Number(idx))
 			}
 			return [...seats].sort((a, b) => a - b)

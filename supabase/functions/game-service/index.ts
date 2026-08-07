@@ -123,8 +123,6 @@ type BuildRoadBody = {
 	use_bricklayer?: boolean
 	// Smith: units of the cost's brick/ore component paid in the other.
 	smith_swap?: number
-	// Fencer: pay 1 of this resource on the fencer's own reserved edge.
-	fence_pay?: 'wood' | 'brick' | null
 }
 type BuildSettlementBody = {
 	action: 'build_settlement'
@@ -269,8 +267,8 @@ type ConfirmScoutCardBody = {
 	game_id: string
 	index: unknown
 }
-type PlaceFenceTokenBody = {
-	action: 'place_fence_token'
+type BuildFenceBody = {
+	action: 'build_fence'
 	game_id: string
 	edge: string
 }
@@ -337,7 +335,7 @@ type Body =
 	| MoveForgerTokenBody
 	| PickForgerTargetBody
 	| ConfirmScoutCardBody
-	| PlaceFenceTokenBody
+	| BuildFenceBody
 	| SetHauntSpotsBody
 	| InvestBody
 	| CastMagicBody
@@ -1694,7 +1692,6 @@ type Phase =
 			pending: {
 				specialist: number[]
 				explorer?: Partial<Record<number, number>>
-				fencer?: Partial<Record<number, number>>
 				haunt?: number[]
 			}
 	  }
@@ -2059,9 +2056,11 @@ function settlementKeepsYouthOK(
 	return next.size < RESOURCES.length
 }
 
+// Roads and fences share the 15-piece supply. Mirror of build.canBuildMoreRoads.
 function canBuildMoreRoads(state: GameState, playerIdx: number): boolean {
 	return (
-		roadCountFor(state, playerIdx) < maxRoadsFor(curseOf(state, playerIdx))
+		roadCountFor(state, playerIdx) + fenceCountFor(state, playerIdx) <
+		maxRoadsFor(curseOf(state, playerIdx))
 	)
 }
 
@@ -2376,6 +2375,7 @@ function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
 	if (state.config.extraBuild?.moreThanSeven && handSize(p.resources) <= 7)
 		return false
 	if (payableBuildRoadEdges(state, idx).length > 0) return true
+	if (canBuildFence(state, idx)) return true
 	if (
 		canAffordAnyCost(p, BUILD_COSTS.settlement) &&
 		boardFor(state.variant).vertices.some((v) =>
@@ -2447,11 +2447,14 @@ function deductHand(hand: ResourceHand, cost: ResourceHand): ResourceHand {
 	return out
 }
 
-function roadConnectsVia(
+// `fencesChain` lets the player's own fences extend the network, which is the
+// one difference between fence and road placement. Mirror of build.connectsVia.
+function connectsVia(
 	state: GameState,
 	playerIdx: number,
 	edge: Edge,
-	vertex: Vertex
+	vertex: Vertex,
+	fencesChain: boolean
 ): boolean {
 	const vs = vertexStateOf(state, vertex)
 	// A ghost (haunt bonus) is transparent — never blocks road chaining.
@@ -2459,7 +2462,11 @@ function roadConnectsVia(
 	for (const e of boardFor(state.variant).adjacentEdges[vertex]) {
 		if (e === edge) continue
 		const es = edgeStateOf(state, e)
-		if (es.occupied && es.player === playerIdx) return true
+		if (es.occupied) {
+			if (es.player === playerIdx) return true
+			continue
+		}
+		if (fencesChain && isOwnFence(state, e, playerIdx)) return true
 	}
 	return false
 }
@@ -2470,13 +2477,35 @@ function isValidBuildRoadEdge(
 	edge: Edge
 ): boolean {
 	if (edgeStateOf(state, edge).occupied) return false
-	// A fence token (fencer bonus) reserves the edge for its owner.
+	// A fence (fencer bonus) reserves the edge for its owner.
 	if (isFenceReservedAgainst(state, edge, playerIdx)) return false
+	// Overbuilding your own fence is supply-neutral, so it survives the cap.
+	if (
+		!isOwnFence(state, edge, playerIdx) &&
+		!canBuildMoreRoads(state, playerIdx)
+	)
+		return false
+	const [a, b] = edgeEndpoints(edge)
+	return (
+		connectsVia(state, playerIdx, edge, a, false) ||
+		connectsVia(state, playerIdx, edge, b, false)
+	)
+}
+
+function isValidBuildFenceEdge(
+	state: GameState,
+	playerIdx: number,
+	edge: Edge
+): boolean {
+	if (state.players[playerIdx]?.bonus !== 'fencer') return false
+	if (edgeStateOf(state, edge).occupied) return false
+	// Any fence takes the edge, the player's own included.
+	if (fenceOwner(state, edge) !== null) return false
 	if (!canBuildMoreRoads(state, playerIdx)) return false
 	const [a, b] = edgeEndpoints(edge)
 	return (
-		roadConnectsVia(state, playerIdx, edge, a) ||
-		roadConnectsVia(state, playerIdx, edge, b)
+		connectsVia(state, playerIdx, edge, a, true) ||
+		connectsVia(state, playerIdx, edge, b, true)
 	)
 }
 
@@ -2676,44 +2705,69 @@ function recomputeLargestArmy(state: GameState): number | null {
 	return bestIdx !== null ? bestIdx : state.largestArmy
 }
 
-function validBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
+function candidateEdges(
+	state: GameState,
+	meIdx: number,
+	fencesChain: boolean
+): Edge[] {
 	const out: Edge[] = []
 	const seen = new Set<Edge>()
 	for (const v of boardFor(state.variant).vertices) {
 		const vs = vertexStateOf(state, v)
 		const ownsVertex = vs.occupied && vs.player === meIdx
-		const hasAdjOwnRoad = boardFor(state.variant).adjacentEdges[v].some(
+		const hasAdjOwnPiece = boardFor(state.variant).adjacentEdges[v].some(
 			(e) => {
 				const es = edgeStateOf(state, e)
-				return es.occupied && es.player === meIdx
+				if (es.occupied) return es.player === meIdx
+				return fencesChain && isOwnFence(state, e, meIdx)
 			}
 		)
-		if (!ownsVertex && !hasAdjOwnRoad) continue
+		if (!ownsVertex && !hasAdjOwnPiece) continue
 		if (vs.occupied && vs.player !== meIdx && !isGhost(vs)) continue
 		for (const e of boardFor(state.variant).adjacentEdges[v]) {
 			if (seen.has(e)) continue
 			seen.add(e)
-			if (isValidBuildRoadEdge(state, meIdx, e)) out.push(e)
+			out.push(e)
 		}
 	}
 	return out
+}
+
+function validBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
+	return candidateEdges(state, meIdx, false).filter((e) =>
+		isValidBuildRoadEdge(state, meIdx, e)
+	)
+}
+
+function validBuildFenceEdges(state: GameState, meIdx: number): Edge[] {
+	if (state.players[meIdx]?.bonus !== 'fencer') return []
+	return candidateEdges(state, meIdx, true).filter((e) =>
+		isValidBuildFenceEdge(state, meIdx, e)
+	)
+}
+
+function canBuildFence(state: GameState, meIdx: number): boolean {
+	const p = state.players[meIdx]
+	if (!p || p.bonus !== 'fencer') return false
+	if (!canAfford(p.resources, FENCE_COST)) return false
+	return validBuildFenceEdges(state, meIdx).length > 0
 }
 
 function hasLegalRoadPlacement(state: GameState, meIdx: number): boolean {
 	return validBuildRoadEdges(state, meIdx).length > 0
 }
 
-// Legal road targets `meIdx` can actually pay for. A fencer holding only one of
-// Wood/Brick is narrowed to their own reserved edges, where a single card
-// covers the build. Mirror of build.payableBuildRoadEdges.
+// Legal road targets `meIdx` can actually pay for. A fencer short of the
+// standard pair is narrowed to their own fences, where a lone brick covers the
+// upgrade. Mirror of build.payableBuildRoadEdges.
 function payableBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
 	const p = state.players[meIdx]
 	if (!p) return []
 	if (canAffordAnyCost(p, BUILD_COSTS.road))
 		return validBuildRoadEdges(state, meIdx)
-	if (p.bonus === 'fencer' && (p.resources.wood > 0 || p.resources.brick > 0))
-		return validBuildRoadEdges(state, meIdx).filter(
-			(e) => fenceOwner(state, e) === meIdx
+	if (p.bonus === 'fencer' && canAfford(p.resources, FENCE_UPGRADE_COST))
+		return validBuildRoadEdges(state, meIdx).filter((e) =>
+			isOwnFence(state, e, meIdx)
 		)
 	return []
 }
@@ -3180,7 +3234,20 @@ function isValidMerchantAddon(
 }
 
 // Fencer.
-const FENCE_TOKEN_COUNT = 2
+const FENCE_COST: ResourceHand = {
+	brick: 0,
+	wood: 1,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
+}
+const FENCE_UPGRADE_COST: ResourceHand = {
+	brick: 1,
+	wood: 0,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
+}
 
 function fenceOwner(state: GameState, edge: Edge): number | null {
 	const owner = state.fenceTokens?.[edge]
@@ -3196,14 +3263,16 @@ function isFenceReservedAgainst(
 	return owner !== null && owner !== playerIdx
 }
 
-function fenceRoadCost(pay: 'wood' | 'brick'): ResourceHand {
-	return {
-		brick: pay === 'brick' ? 1 : 0,
-		wood: pay === 'wood' ? 1 : 0,
-		sheep: 0,
-		wheat: 0,
-		ore: 0,
+function isOwnFence(state: GameState, edge: Edge, playerIdx: number): boolean {
+	return fenceOwner(state, edge) === playerIdx
+}
+
+function fenceCountFor(state: GameState, playerIdx: number): number {
+	let n = 0
+	for (const owner of Object.values(state.fenceTokens ?? {})) {
+		if (owner === playerIdx) n++
 	}
+	return n
 }
 
 // Smith: brick ↔ ore fungible for builds, dev cards, ports.
@@ -4815,25 +4884,21 @@ function placeRoadPiece(
 function endOfPlacementPhase(state: GameState): Phase {
 	const specialistIdxs: number[] = []
 	const explorerOwed: Partial<Record<number, number>> = {}
-	const fencerOwed: Partial<Record<number, number>> = {}
 	const hauntIdxs: number[] = []
 	state.players.forEach((p, i) => {
 		if (p.bonus === 'specialist') specialistIdxs.push(i)
 		if (p.bonus === 'explorer') explorerOwed[i] = 3
-		if (p.bonus === 'fencer') fencerOwed[i] = FENCE_TOKEN_COUNT
 		if (p.bonus === 'haunt') hauntIdxs.push(i)
 	})
 	const explorerHas = Object.keys(explorerOwed).length > 0
-	const fencerHas = Object.keys(fencerOwed).length > 0
 	const hauntHas = hauntIdxs.length > 0
-	if (specialistIdxs.length === 0 && !explorerHas && !fencerHas && !hauntHas)
+	if (specialistIdxs.length === 0 && !explorerHas && !hauntHas)
 		return { kind: 'roll' }
 	return {
 		kind: 'post_placement',
 		pending: {
 			specialist: specialistIdxs,
 			...(explorerHas ? { explorer: explorerOwed } : {}),
-			...(fencerHas ? { fencer: fencerOwed } : {}),
 			...(hauntHas ? { haunt: hauntIdxs } : {}),
 		},
 	}
@@ -6690,18 +6755,6 @@ function autoActionFor(
 					? { action: 'place_explorer_road', game_id: gid, edge: e }
 					: null
 			}
-			if ((p.fencer?.[seat] ?? 0) > 0) {
-				const e = randomOf(
-					board.edges.filter(
-						(e) =>
-							!edgeStateOf(state, e).occupied &&
-							state.fenceTokens?.[e] === undefined
-					)
-				)
-				return e
-					? { action: 'place_fence_token', game_id: gid, edge: e }
-					: null
-			}
 			if ((p.haunt ?? []).includes(seat)) {
 				const spots = shuffle(
 					board.vertices.filter((v) =>
@@ -7223,21 +7276,11 @@ async function handleBuildRoad(
 		}
 	} else {
 		const meP = state.players[meIdx]
-		// Fencer building on their own reserved edge → pay 1 Wood or Brick.
-		const onOwnFence =
-			meP.bonus === 'fencer' && fenceOwner(state, edge) === meIdx
+		// Overbuilding your own fence is priced by the edge — 1 brick, no
+		// payload and no cost substitution.
 		let cost: ResourceHand | null
-		if (onOwnFence) {
-			const want = body.fence_pay === 'brick' ? 'brick' : 'wood'
-			// Fall back to the other card when the requested one isn't in hand:
-			// a fencer holding only one of the two has no choice to express.
-			const pay =
-				meP.resources[want] > 0
-					? want
-					: want === 'wood'
-						? 'brick'
-						: 'wood'
-			cost = fenceRoadCost(pay)
+		if (isOwnFence(state, edge, meIdx)) {
+			cost = FENCE_UPGRADE_COST
 			if (!canAfford(meP.resources, cost))
 				return err(400, 'insufficient resources')
 		} else {
@@ -7269,8 +7312,8 @@ async function handleBuildRoad(
 		},
 	}
 
-	// Consume the fence token once the fencer builds a road on the reserved
-	// edge (whether paid or a free Road Building placement).
+	// The fence is consumed when a road is built over it — including a free
+	// Road Building placement, which gets no rebate for it.
 	let nextFenceTokens = state.fenceTokens
 	if (state.fenceTokens?.[edge] === meIdx) {
 		nextFenceTokens = { ...state.fenceTokens }
@@ -8925,7 +8968,6 @@ async function handleLiquidate(
 type PostPlacementPending = {
 	specialist: number[]
 	explorer?: Partial<Record<number, number>>
-	fencer?: Partial<Record<number, number>>
 	haunt?: number[]
 }
 
@@ -8933,7 +8975,6 @@ function postPlacementDrained(pending: PostPlacementPending): boolean {
 	if (pending.specialist.length > 0) return false
 	if (pending.explorer && Object.keys(pending.explorer).length > 0)
 		return false
-	if (pending.fencer && Object.keys(pending.fencer).length > 0) return false
 	if (pending.haunt && pending.haunt.length > 0) return false
 	return true
 }
@@ -8947,8 +8988,6 @@ function postPlacementPhaseFrom(pending: PostPlacementPending): Phase {
 	const out: PostPlacementPending = { specialist: pending.specialist }
 	if (pending.explorer && Object.keys(pending.explorer).length > 0)
 		out.explorer = pending.explorer
-	if (pending.fencer && Object.keys(pending.fencer).length > 0)
-		out.fencer = pending.fencer
 	if (pending.haunt && pending.haunt.length > 0) out.haunt = pending.haunt
 	return { kind: 'post_placement', pending: out }
 }
@@ -9573,22 +9612,20 @@ async function handleSetSpecialistResource(
 
 // --- Set 3 handlers --------------------------------------------------------
 
-async function handlePlaceFenceToken(
+// A fence is an ordinary build: 1 wood, main turn or a special-build slot.
+// Unlike a road it never touches `edges`, so nothing here recomputes Longest
+// Road.
+async function handleBuildFence(
 	admin: SupabaseClient,
 	me: string,
-	body: PlaceFenceTokenBody
+	body: BuildFenceBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-	if (state.phase.kind !== 'post_placement')
-		return err(400, 'expected post_placement phase')
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
+	const pre = await preflightBuild(admin, me, body.game_id, true)
+	if (!pre.ok) return pre.response
+	const { game, state, meIdx } = pre
+
 	if (state.players[meIdx]?.bonus !== 'fencer')
 		return err(400, 'not a fencer')
-	const remaining = state.phase.pending.fencer?.[meIdx] ?? 0
-	if (remaining <= 0) return err(400, 'no fence tokens remaining')
 	if (
 		!(boardFor(state.variant).edges as readonly string[]).includes(
 			body.edge
@@ -9596,36 +9633,53 @@ async function handlePlaceFenceToken(
 	)
 		return err(400, 'unknown edge')
 	const edge = body.edge as Edge
-	if (edgeStateOf(state, edge).occupied) return err(400, 'edge occupied')
-	if (state.fenceTokens?.[edge] !== undefined)
-		return err(400, 'edge already fenced')
+
+	if (!isValidBuildFenceEdge(state, meIdx, edge))
+		return err(400, 'invalid fence')
+	const cost = FENCE_COST
+	if (!canAfford(state.players[meIdx].resources, cost))
+		return err(400, 'insufficient resources')
+	if (
+		!canSpendUnderAge(
+			state.players[meIdx],
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
+		return err(400, 'age limit reached this turn')
 
 	const nextFenceTokens = { ...(state.fenceTokens ?? {}), [edge]: meIdx }
-	const newRemaining = remaining - 1
-	const newFencer = { ...(state.phase.pending.fencer ?? {}) }
-	if (newRemaining <= 0) delete newFencer[meIdx]
-	else newFencer[meIdx] = newRemaining
-	const nextPhase = postPlacementPhaseFrom({
-		...state.phase.pending,
-		fencer: newFencer,
-	})
-
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ fence_tokens: nextFenceTokens, phase: nextPhase })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-	const event = {
-		kind: 'fence_token',
-		player: meIdx,
-		edge,
-		at: new Date().toISOString(),
+	const nextPlayers = applyCost(state.players, meIdx, cost)
+	const update: Record<string, unknown> = {
+		fence_tokens: nextFenceTokens,
+		players: nextPlayers,
 	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
+	const nextState: GameState = {
+		...state,
+		players: nextPlayers,
+		fenceTokens: nextFenceTokens,
+	}
+	const events: unknown[] = [
+		{
+			kind: 'fence_built',
+			player: meIdx,
+			edge,
+			at: new Date().toISOString(),
+		},
+	]
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: false,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner,
+		nextState
+	)
+	if (commitErr) return commitErr
+
 	return json({ ok: true })
 }
 
@@ -10073,7 +10127,7 @@ const UNDOABLE_ACTIONS = new Set<string>([
 	'invest',
 	'buy_carpenter_vp',
 	'tap_knight',
-	'place_fence_token',
+	'build_fence',
 	'place_explorer_road',
 ])
 
@@ -10362,8 +10416,8 @@ function dispatch(
 			return handlePickForgerTarget(admin, me, body)
 		case 'confirm_scout_card':
 			return handleConfirmScoutCard(admin, me, body)
-		case 'place_fence_token':
-			return handlePlaceFenceToken(admin, me, body)
+		case 'build_fence':
+			return handleBuildFence(admin, me, body)
 		case 'set_haunt_spots':
 			return handleSetHauntSpots(admin, me, body)
 		case 'invest':

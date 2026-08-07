@@ -83,8 +83,8 @@ export const BONUS_POOL: readonly Bonus[] = [
 	{
 		id: 'fencer',
 		title: 'Fencer',
-		description:
-			'Start of game: place tokens on two road locations (hex edges). No other players can build roads there. Building a road on those spots requires only one of Wood and Brick for you.',
+		description: `You may build fences, which require 1 wood and are placed like roads. Other players cannot build
+			on fences. Fences can be upgraded into roads for 1 brick.`,
 		icon: 'lock-closed-outline',
 		set: '3',
 	},

@@ -1,8 +1,8 @@
 // Full-screen modal shown during the `post_placement` phase for players
 // who still have a start-of-game bonus action pending. Today that's only
-// `specialist` (declare a resource). New set-2/3 bonuses (explorer,
-// fencer, haunt) plug into the same phase by adding entries to
-// phase.pending and extending this overlay.
+// `specialist` (declare a resource). New bonuses (explorer, haunt) plug into
+// the same phase by adding entries to phase.pending and extending this
+// overlay.
 
 import { Button } from '@/lib/modules/Button'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
@@ -104,34 +104,6 @@ export function ExplorerStatusBanner({
 			) : (
 				<Text style={styles.bannerText}>
 					Waiting on {waitingOn.join(', ')} to place explorer roads.
-				</Text>
-			)}
-		</View>
-	)
-}
-
-// Fencer's "reserve 2 edges" affordance. Inline banner + counter; edge picks
-// happen on the board (BuildLayer tool='fence_token').
-export function FenceStatusBanner({
-	remaining,
-	waitingOn,
-}: {
-	remaining: number
-	waitingOn: string[]
-}) {
-	const { colors } = useTheme()
-	const styles = useMemo(() => makeStyles(colors), [colors])
-	if (remaining <= 0 && waitingOn.length === 0) return null
-	return (
-		<View style={styles.banner}>
-			{remaining > 0 ? (
-				<Text style={styles.bannerText}>
-					Fencer: tap {remaining} more edge
-					{remaining === 1 ? '' : 's'} to reserve for your roads.
-				</Text>
-			) : (
-				<Text style={styles.bannerText}>
-					Waiting on {waitingOn.join(', ')} to place fence tokens.
 				</Text>
 			)}
 		</View>

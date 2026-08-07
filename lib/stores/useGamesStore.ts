@@ -292,7 +292,7 @@ export type GameEvent =
 			cost: ResourceHand
 			at: string
 	  }
-	| { kind: 'fence_token'; player: number; edge: string; at: string }
+	| { kind: 'fence_built'; player: number; edge: string; at: string }
 	| { kind: 'invest'; player: number; resource: Resource; at: string }
 	| {
 			kind: 'investor_payout'
@@ -488,16 +488,12 @@ type GamesStore = {
 	// `useBricklayer`: pay 4 Brick instead of the standard cost. Ignored by
 	// the edge if the caller doesn't have the bricklayer bonus.
 	// `smithSwap`: units of the cost's brick/ore component to pay in the other
-	// resource (smith bonus). `fencePay`: when building on the fencer's own
-	// reserved edge, pay 1 of this resource instead of 1 wood + 1 brick.
+	// resource (smith bonus). A road onto the fencer's own fence needs no
+	// payload — the edge itself sets the price at 1 brick.
 	buildRoad: (
 		gameId: string,
 		edge: string,
-		opts?: {
-			useBricklayer?: boolean
-			smithSwap?: number
-			fencePay?: 'wood' | 'brick'
-		}
+		opts?: { useBricklayer?: boolean; smithSwap?: number }
 	) => Promise<ActionResult>
 	buildSettlement: (
 		gameId: string,
@@ -612,8 +608,8 @@ type GamesStore = {
 
 	// --- Set-3 bonus actions -------------------------------------------------
 
-	// Fencer: place one of the 2 post-placement reserved-edge tokens.
-	placeFenceToken: (gameId: string, edge: string) => Promise<ActionResult>
+	// Fencer: build a fence (1 wood) on a connected edge.
+	buildFence: (gameId: string, edge: string) => Promise<ActionResult>
 
 	// Haunt: secretly commit the two ghost-spawn locations at post-placement.
 	setHauntSpots: (
@@ -999,7 +995,6 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 				edge,
 				use_bricklayer: !!opts?.useBricklayer,
 				smith_swap: opts?.smithSwap ?? 0,
-				fence_pay: opts?.fencePay ?? null,
 			},
 			"Couldn't build road"
 		)
@@ -1208,10 +1203,10 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async placeFenceToken(gameId, edge) {
+	async buildFence(gameId, edge) {
 		return callGameService(
-			{ action: 'place_fence_token', game_id: gameId, edge },
-			"Couldn't place fence token"
+			{ action: 'build_fence', game_id: gameId, edge },
+			"Couldn't build fence"
 		)
 	},
 

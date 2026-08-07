@@ -103,9 +103,6 @@ export function pendingSeats(
 			for (const [idx, owed] of Object.entries(p.explorer ?? {})) {
 				if ((owed ?? 0) > 0) seats.add(Number(idx))
 			}
-			for (const [idx, owed] of Object.entries(p.fencer ?? {})) {
-				if ((owed ?? 0) > 0) seats.add(Number(idx))
-			}
 			return [...seats].sort((a, b) => a - b)
 		}
 		case 'roll':
