@@ -1,5 +1,6 @@
 import { useAuth } from '@/lib/auth'
 import { Avatar } from '@/lib/modules/Avatar'
+import { useGameStatesStore } from '@/lib/stores/useGameStatesStore'
 import {
 	describePendingRequest,
 	isMyTurn,
@@ -263,7 +264,8 @@ function GameRow({
 		})
 		.join(', ')
 
-	const myTurn = isMyTurn(game, meId)
+	const phase = useGameStatesStore((s) => s.byId[game.id]?.phase)
+	const myTurn = isMyTurn(game, meId, phase)
 
 	return (
 		<Pressable

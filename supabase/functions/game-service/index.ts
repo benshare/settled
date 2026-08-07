@@ -54,6 +54,7 @@ import {
 	SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sendNotifications, type NotifyTarget } from '../_notify/index.ts'
+import { pendingSeats } from '../_shared/phase.ts'
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void }
 
@@ -4486,7 +4487,8 @@ async function handleCancelRequest(
 // select_bonus: each player picks one of their offered bonuses, and one of
 // their offered curses, to keep — both in the same call. Picks are parallel —
 // no current_turn enforcement. When every hand's `chosen` is set, snapshot each
-// player's kept cards onto PlayerState and advance to initial_placement.
+// player's kept cards onto PlayerState, advance to initial_placement, and tell
+// seat 0 they're up.
 async function handlePickBonus(
 	admin: SupabaseClient,
 	me: string,
@@ -4588,6 +4590,23 @@ async function handlePickBonus(
 			})
 			.eq('id', game.id)
 		if (gameErr) return err(500, 'could not log event')
+
+		// Resolving the phase hands the game to seat 0, and every other phase
+		// change tells the next actor. Skipped when the last picker *is* seat
+		// 0: they're looking at the screen they just acted on.
+		const firstPlacerId = game.player_order[0]
+		if (firstPlacerId && firstPlacerId !== me) {
+			EdgeRuntime.waitUntil(
+				sendNotifications(admin, [
+					{
+						userId: firstPlacerId,
+						kind: 'your_turn',
+						gate: 'yourTurn',
+						gameId: game.id,
+					},
+				])
+			)
+		}
 	}
 
 	return json({ ok: true })
@@ -6041,51 +6060,6 @@ function timeoutOptionOf(config: GameConfig): TimeoutOption | null {
 	return typeof t === 'string' && t in TIMEOUT_MS
 		? (t as TimeoutOption)
 		: null
-}
-
-/**
- * Every seat the game is waiting on right now — who gets warned, who gets
- * skipped, and (client-side) whose countdown shows. Deliberately NOT
- * `current_turn`, which names the wrong seat during `special_build` and is null
- * for the whole simultaneous bonus-selection phase.
- */
-function pendingSeats(phase: Phase, currentTurn: number | null): number[] {
-	const turn = currentTurn === null ? [] : [currentTurn]
-	switch (phase.kind) {
-		case 'select_bonus':
-			return Object.entries(phase.hands)
-				.filter(([, hand]) => hand.chosen === null)
-				.map(([idx]) => Number(idx))
-		case 'post_placement': {
-			const p = phase.pending
-			const seats = new Set<number>(p.specialist)
-			for (const idx of p.haunt ?? []) seats.add(idx)
-			for (const [idx, owed] of Object.entries(p.explorer ?? {})) {
-				if ((owed ?? 0) > 0) seats.add(Number(idx))
-			}
-			for (const [idx, owed] of Object.entries(p.fencer ?? {})) {
-				if ((owed ?? 0) > 0) seats.add(Number(idx))
-			}
-			return [...seats].sort((a, b) => a - b)
-		}
-		case 'discard':
-			return Object.keys(phase.pending).map(Number)
-		case 'scout_pick':
-			return [phase.owner]
-		case 'curio_pick':
-			return [...phase.pending]
-		case 'forger_pick':
-			return phase.queue.length > 0 ? [phase.queue[0].idx] : []
-		case 'magician_pick':
-			return [phase.roller]
-		case 'special_build':
-			return phase.queue.length > 0 ? [phase.queue[0]] : []
-		case 'game_over':
-			return []
-		default:
-			// initial_placement, roll, main, move_robber, steal, road_building
-			return turn
-	}
 }
 
 function deadlineFor(args: {

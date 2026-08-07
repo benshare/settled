@@ -5,7 +5,8 @@ import type { MerchantAddon } from '../catan/bonus'
 import type { BankRate } from '../catan/ports'
 import type { BonusId, CurseId } from '../catan/bonuses'
 import type { DevCardId } from '../catan/devCards'
-import type { DiceRoll, GameConfig, ResourceHand } from '../catan/types'
+import { pendingUserIds } from '../catan/timeout'
+import type { DiceRoll, GameConfig, Phase, ResourceHand } from '../catan/types'
 import type { Database } from '../database-types'
 import { emitGameMutated } from '../gameSync'
 import { uniqueTopic } from '../realtime'
@@ -1410,16 +1411,21 @@ export function isFinished(status: string): boolean {
  * behind the Games list dot, the game header's tab badge, and the app-icon
  * badge count.
  *
- * `games.current_turn` is the only turn field readable across games without
- * fetching each one's `game_states` row, which makes this approximate in two
- * known ways: during a special build phase `current_turn` has already advanced
- * to the next roller while the acting builder is the head of the phase queue,
- * and it is held `null` for the whole (simultaneous) bonus-selection phase, so
- * nobody reads as waiting there. Mirrored in `_notify`'s badge query.
+ * `phase` comes from `useGameStatesStore`, which holds every active game's
+ * board. Passing it is what makes this exact rather than an approximation of
+ * `games.current_turn`: parallel phases (bonus selection, discard,
+ * post-placement) wait on several seats at once and special build waits on one
+ * that isn't `current_turn` at all. See `pendingUserIds`.
  */
-export function isMyTurn(game: Game, meId: string | undefined): boolean {
-	if (!meId || game.current_turn === null) return false
-	return game.player_order[game.current_turn] === meId
+export function isMyTurn(
+	game: Game,
+	meId: string | undefined,
+	phase: Phase | undefined
+): boolean {
+	if (!meId) return false
+	return pendingUserIds(game.player_order, phase, game.current_turn).includes(
+		meId
+	)
 }
 
 /**

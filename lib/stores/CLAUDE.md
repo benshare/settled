@@ -14,6 +14,15 @@ Registered in `index.ts`, loaded once when a user enters `(app)`, cleared on sig
 
 A single store can serve both roles: `useProfileStore` registers for auto-load _and_ exposes `loadProfile` for the pre-`(app)` routes.
 
+### `useGameStatesStore` is downstream of `useGamesStore`
+
+It holds the `game_states` row for every game the viewer is seated at, so that (a) the "waiting on you" signal can be derived honestly rather than guessed from `games.current_turn`, and (b) opening one of those games renders warm. See `.claude/specs/pending-action-signal.md`; the parts that bite:
+
+- **Its id set is `activeGames`, never a query of its own.** It subscribes to `useGamesStore` and re-syncs when that set changes — cold start, a game starting, a game ending. It is _also_ registered for auto-load, purely for the foreground resync: when no ids have moved the subscription fires nothing, and the store would sit on a dead channel. So the subscription owns _which_ games and the registry owns _freshness and the socket_. The two run in parallel on a cold start; it simply holds nothing until the games store's load lands.
+- **The channel is bound per id, and that narrowing is not optional.** RLS also admits every friend's watchable game, and a `postgres_changes` payload is the whole row (it cannot project columns), so an unfiltered subscription would stream full boards for games the viewer isn't playing. Rebuilding on every id change is the price.
+- **A resync reads `updated_at` before it reads rows.** Board rows are large and most foregrounds find nothing new, so a stamp query decides what to pull. A game that was never loaded skips the stamp pass — it would only add a round trip in front of a fetch we already need.
+- **Games not in `activeGames` come in through `watch`/`unwatch`** (refcounted, called by `GameProvider`) — a spectated or finished game, plus the freshness check when opening any game.
+
 ### Adding an auto-loaded store
 
 1. Create `useMyStore.ts` with a zustand store, a `loadForUser(userId)` action and a `clear()` action.
@@ -33,7 +42,7 @@ While the app is backgrounded the OS closes the WebSocket, and Supabase realtime
 
 Any component that subscribes outside a store (e.g. `GameProvider`) owes the same debt. Three further guards:
 
-- **A realtime UPDATE payload can be missing columns — never apply one wholesale.** Postgres omits unchanged TOASTed columns, so once a jsonb column outgrows the TOAST threshold every write that doesn't touch it delivers a row without it. On `games` that column is `events`, and the writes that leave it alone are routine (the deadline stamp, the timeout warning bump), so the partial payload is the _common_ case. `isPartialGameRow` is the test; both subscribers (store and `GameProvider`) **merge the payload onto the row they already hold** rather than re-reading (an omitted column is an unchanged one, so the merge is exact). `game_states` re-reads instead (`isPartialStateRow` → `fetchState`), because there the omitted columns are the whole board. Applying such a row as-is empties `game.events` for a beat — enough to make the game screen's animation cursors re-seed at zero and replay every animation in the game.
+- **A realtime UPDATE payload can be missing columns — never apply one wholesale.** Postgres omits unchanged TOASTed columns, so once a jsonb column outgrows the TOAST threshold every write that doesn't touch it delivers a row without it. On `games` that column is `events`, and the writes that leave it alone are routine (the deadline stamp, the timeout warning bump), so the partial payload is the _common_ case. `isPartialGameRow` is the test; both subscribers (store and `GameProvider`) **merge the payload onto the row they already hold** rather than re-reading (an omitted column is an unchanged one, so the merge is exact). `game_states` re-reads instead (`isPartialStateRow` in `useGameStatesStore`), because there the omitted columns are the whole board. Applying such a row as-is empties `game.events` for a beat — enough to make the game screen's animation cursors re-seed at zero and replay every animation in the game.
 - **Refetch from the `subscribe()` status callback on `SUBSCRIBED`.** The fetch and the join race, so an event landing between the fetch's snapshot and the join reaches nobody. Reading once the channel is live closes that gap, on first join and every automatic rejoin.
 - **Never make a player wait on realtime to see their own move.** Every game-service call goes through `callGameService`, which pings `lib/gameSync.ts` on success and re-reads the changed rows. The edge function's 200 already confirmed the write. This is a re-read, not an optimistic update.
 
