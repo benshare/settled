@@ -391,6 +391,7 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			return {
 				text: `${who(e.thief)} stole from ${who(e.victim)}`,
 				player: e.thief,
+				detail: stolenDetail(e, ctx),
 			}
 		case 'trade_accepted':
 			return {
@@ -723,6 +724,18 @@ function gainsDetail(
 			text: handText(gains[idx]),
 		}))
 	return rows.length > 0 ? rows : [{ text: 'Nobody collected anything.' }]
+}
+
+// A steal is private: only the two players who already know the card get an
+// expandable row. Everyone else — and any steal logged before `resource` was
+// recorded — gets `undefined`, so the row stays a flat line.
+function stolenDetail(
+	e: Extract<GameEvent, { kind: 'stolen' }>,
+	ctx: LogContext
+): DetailRow[] | undefined {
+	if (!e.resource) return undefined
+	if (ctx.meIdx !== e.thief && ctx.meIdx !== e.victim) return undefined
+	return [{ label: 'Card', text: `1 ${RESOURCE_LABELS[e.resource]}` }]
 }
 
 function devPlayedDetail(

@@ -7616,6 +7616,7 @@ async function handleMoveRobber(
 				kind: 'stolen',
 				thief: meIdx,
 				victim,
+				resource: stolen,
 				at: now,
 			})
 		}
@@ -7749,6 +7750,7 @@ async function handleSteal(
 			kind: 'stolen',
 			thief: meIdx,
 			victim: body.victim,
+			resource: stolen,
 			at: new Date().toISOString(),
 		},
 	]

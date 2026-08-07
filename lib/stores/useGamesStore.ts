@@ -71,7 +71,16 @@ export type GameEvent =
 	| { kind: 'city_built'; player: number; vertex: string; at: string }
 	| { kind: 'discarded'; player: number; count: number; at: string }
 	| { kind: 'robber_moved'; player: number; hex: string; at: string }
-	| { kind: 'stolen'; thief: number; victim: number; at: string }
+	// `resource` is optional: steals logged before it was recorded read as
+	// un-expandable rather than claiming nothing was taken. ActionLog shows it
+	// only to the thief and the victim.
+	| {
+			kind: 'stolen'
+			thief: number
+			victim: number
+			resource?: Resource
+			at: string
+	  }
 	| {
 			kind: 'trade_proposed'
 			offer_id: string
