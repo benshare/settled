@@ -703,6 +703,7 @@ type PlayerState = {
 	// Set 2.
 	ritualWasUsedThisTurn?: boolean
 	shepherdUsedThisTurn?: boolean
+	shepherdPending?: [Resource, Resource]
 	forgerToken?: Hex
 	forgerMovedThisTurn?: boolean
 	// Set 3.
@@ -2929,6 +2930,40 @@ function shepherdEffectiveHandSize(p: PlayerState): number {
 		n += p.resources[r]
 	}
 	return n
+}
+
+// Hand over the pair declared by `shepherd_swap` and clear it. Called at every
+// point a roll resolves to `main` — all three exits of the 7-chain included —
+// so the declared cards are never in hand while a discard or a steal can reach
+// them. Mirror of lib/catan/bonus.ts.
+function applyShepherdPayout(
+	state: GameState,
+	idx: number
+): { players: PlayerState[]; events: unknown[] } {
+	const pending = state.players[idx]?.shepherdPending
+	if (!pending) return { players: state.players, events: [] }
+	const gain = emptyHand()
+	gain[pending[0]] += 1
+	gain[pending[1]] += 1
+	const players = state.players.map((p, i) => {
+		if (i !== idx) return p
+		const next = { ...p.resources }
+		for (const r of RESOURCES) next[r] += gain[r]
+		const paid: PlayerState = { ...p, resources: next }
+		delete paid.shepherdPending
+		return paid
+	})
+	return {
+		players,
+		events: [
+			{
+				kind: 'shepherd_payout',
+				player: idx,
+				gain,
+				at: new Date().toISOString(),
+			},
+		],
+	}
 }
 
 // Flat where the table size says so; otherwise 2 before the player's first
@@ -5168,17 +5203,28 @@ async function applyRollOutcome(
 				{ ...state, players: nomadResult.players },
 				activeIdx
 			)
-			const rollEvents = [...nomadResult.events, ...investorResult.events]
+			// The friendly robber is the one 7 that resolves straight to main,
+			// so the shepherd's declared pair lands here rather than at the end
+			// of a robber chain that never runs.
+			const shepherdResult = applyShepherdPayout(
+				{ ...state, players: investorResult.players },
+				activeIdx
+			)
+			const rollEvents = [
+				...nomadResult.events,
+				...investorResult.events,
+				...shepherdResult.events,
+			]
 			const mainPhase: Phase = { kind: 'main', roll: dice, trade: null }
 			const nextPhase = wrapMagicianWindow(
 				mainPhase,
-				{ ...state, players: investorResult.players },
+				{ ...state, players: shepherdResult.players },
 				activeIdx,
 				dice
 			)
 			const stateUpdate: Record<string, unknown> = { phase: nextPhase }
 			if (rollEvents.length > 0) {
-				stateUpdate.players = investorResult.players
+				stateUpdate.players = shepherdResult.players
 			}
 			const { error: stateErr } = await admin
 				.from('game_states')
@@ -5336,6 +5382,15 @@ async function applyRollOutcome(
 		nextPlayers = investorResult.players
 		stateAfter = { ...stateAfter, players: nextPlayers }
 		events.push(...investorResult.events)
+	}
+
+	// Shepherd: the pair declared before this roll. Nothing on a non-7 can
+	// take it, so it lands as soon as production is in.
+	const shepherdResult = applyShepherdPayout(stateAfter, activeIdx)
+	if (shepherdResult.events.length > 0) {
+		nextPlayers = shepherdResult.players
+		stateAfter = { ...stateAfter, players: nextPlayers }
+		events.push(...shepherdResult.events)
 	}
 
 	// Curio collector: queue picks for any curio_collector who gained ≥ 1
@@ -6917,6 +6972,9 @@ async function handleEndTurn(
 		if (p.boughtCarpenterVPThisTurn) next.boughtCarpenterVPThisTurn = false
 		if (p.ritualWasUsedThisTurn) next.ritualWasUsedThisTurn = false
 		if (p.shepherdUsedThisTurn) next.shepherdUsedThisTurn = false
+		// Belt and braces: every path out of the roll phase pays the pair out,
+		// so a declaration should never still be owed here.
+		if (p.shepherdPending) delete next.shepherdPending
 		if (p.forgerMovedThisTurn) next.forgerMovedThisTurn = false
 		return next
 	})
@@ -7633,6 +7691,18 @@ async function handleMoveRobber(
 		}
 	}
 
+	// Shepherd: the 7-chain is over the moment it lands in main with no steal
+	// to come, so the declared pair is paid here — after the discard AND after
+	// the steal that would otherwise have been able to take it.
+	if (state.phase.from7 && nextPhase.kind === 'main') {
+		const shepherdResult = applyShepherdPayout(
+			{ ...state, players: nextPlayers },
+			state.currentTurn ?? 0
+		)
+		nextPlayers = shepherdResult.players
+		events.push(...shepherdResult.events)
+	}
+
 	// If we're transitioning straight to main (no steal needed), apply
 	// the post-roll FT chain for the active player.
 	const stateAfterRobber: GameState = {
@@ -7758,10 +7828,21 @@ async function handleSteal(
 		},
 	]
 
+	// Shepherd: the steal was the last thing that could have taken the pair,
+	// so it lands now (see applyShepherdPayout).
+	const shepherdResult =
+		state.phase.from7 && nextPhase.kind === 'main'
+			? applyShepherdPayout(
+					{ ...state, players: nextPlayers },
+					state.currentTurn ?? 0
+				)
+			: { players: nextPlayers, events: [] as unknown[] }
+	events.push(...shepherdResult.events)
+
 	// FT chain after a 7 → steal → main transition.
 	let finalState: GameState = {
 		...state,
-		players: nextPlayers,
+		players: shepherdResult.players,
 		phase: nextPhase,
 	}
 	if (
@@ -9038,13 +9119,19 @@ async function handleShepherdSwap(
 	const r2 = parseResource(take[1])
 	if (!r1 || !r2) return err(400, 'invalid resource')
 
+	// A declaration, not a swap: the sheep go now, the pair is owed until the
+	// roll resolves (applyShepherdPayout), which is what puts it out of reach
+	// of a 7.
 	const nextPlayers = state.players.map((p, i) => {
 		if (i !== meIdx) return p
 		const r = p.resources
 		const next: ResourceHand = { ...r, sheep: r.sheep - 2 }
-		next[r1] = next[r1] + 1
-		next[r2] = next[r2] + 1
-		return { ...p, resources: next, shepherdUsedThisTurn: true }
+		return {
+			...p,
+			resources: next,
+			shepherdUsedThisTurn: true,
+			shepherdPending: [r1, r2] as [Resource, Resource],
+		}
 	})
 
 	const events: unknown[] = [

@@ -273,7 +273,10 @@ export function populistBonusVPFor(
 //
 // Sheep don't count toward the 7-roll discard hand-size threshold. The
 // `shepherd_swap` action is a once-per-turn opt-in to swap 2 sheep for 2
-// resources of choice.
+// resources of choice, but the two halves are separated by the roll: the
+// sheep leave the hand at declaration and the cards land only once the turn
+// reaches `main`, so a 7 can take neither. Nothing here has to exclude the
+// declared pair from the discard maths — it simply isn't in the hand yet.
 export function shepherdEffectiveHandSize(p: PlayerState): number {
 	let n = 0
 	for (const r of RESOURCES) {
@@ -287,6 +290,39 @@ export function canShepherdSwap(p: PlayerState): boolean {
 	if (p.bonus !== 'shepherd') return false
 	if (p.shepherdUsedThisTurn) return false
 	return p.resources.sheep >= 4
+}
+
+// Hand over the declared pair and clear it. Applied at every point a roll
+// resolves to `main` — including all three exits of the 7-chain — so the
+// cards are never in hand while a discard or a steal can reach them.
+export function applyShepherdPayout(
+	state: GameState,
+	idx: number
+): { players: PlayerState[]; events: unknown[] } {
+	const pending = state.players[idx]?.shepherdPending
+	if (!pending) return { players: state.players, events: [] }
+	const gain: ResourceHand = { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 }
+	gain[pending[0]] += 1
+	gain[pending[1]] += 1
+	const players = state.players.map((p, i) => {
+		if (i !== idx) return p
+		const next = { ...p.resources }
+		for (const r of RESOURCES) next[r] += gain[r]
+		const paid: PlayerState = { ...p, resources: next }
+		delete paid.shepherdPending
+		return paid
+	})
+	return {
+		players,
+		events: [
+			{
+				kind: 'shepherd_payout',
+				player: idx,
+				gain,
+				at: new Date().toISOString(),
+			},
+		],
+	}
 }
 
 // --- Ritualist --------------------------------------------------------------

@@ -1,5 +1,6 @@
 // Modal for the shepherd's once-per-turn 4-sheep → +2 resources of choice
-// swap. Picker UX mirrors Year of Plenty.
+// swap. Picker UX mirrors Year of Plenty. The pick is a declaration only —
+// the cards land after the roll (see `applyShepherdPayout`).
 
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -15,6 +16,16 @@ const RESOURCE_LABELS: Record<Resource, string> = {
 	sheep: 'Sheep',
 	brick: 'Brick',
 	ore: 'Ore',
+}
+
+// The bars' one-liner for a declaration awaiting its roll. Lives here beside
+// the picker's labels rather than in a sixth copy of RESOURCE_LABELS.
+export function shepherdPendingLabel(pending: [Resource, Resource]): string {
+	const owed =
+		pending[0] === pending[1]
+			? `2 ${RESOURCE_LABELS[pending[0]]}`
+			: `1 ${RESOURCE_LABELS[pending[0]]}, 1 ${RESOURCE_LABELS[pending[1]]}`
+	return `Shepherd: ${owed} after your roll`
 }
 
 export function ShepherdSwapPicker({
@@ -47,7 +58,8 @@ export function ShepherdSwapPicker({
 			<Text style={styles.title}>Shepherd: 2 sheep → 2 resources</Text>
 			<Text style={styles.subtitle}>
 				Pick 2 resources to take. Duplicates are fine — tap twice to
-				take 2 of the same.
+				take 2 of the same. You'll receive them after you roll, so a 7
+				can't take them.
 			</Text>
 			<View style={styles.grid}>
 				{RESOURCES.map((r) => {
