@@ -37,9 +37,12 @@ jobs:
               env:
                   SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
                   SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
+                  # Via env, not inline `${{ }}` — the message is untrusted text and
+                  # would otherwise be pasted straight into the shell command.
+                  COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'Manual update' }}
               run: |
                   eas update \
                     --branch production \
                     --environment production \
-                    --message "${{ github.event.head_commit.message || 'Manual update' }}" \
+                    --message "$COMMIT_MESSAGE" \
                     --non-interactive
