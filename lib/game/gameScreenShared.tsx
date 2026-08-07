@@ -177,9 +177,15 @@ export function HonkButton({
 export function UndoButton({
 	submitting,
 	onPress,
+	iconSize = 20,
+	style,
 }: {
 	submitting: boolean
 	onPress: () => void
+	iconSize?: number
+	// Applied over the button's own chrome (it wins the style array), so a dense
+	// surface can slim it past the 52pt row square — see the HUD's StatusBanner.
+	style?: StyleProp<ViewStyle>
 }) {
 	return (
 		<Pressable
@@ -191,9 +197,10 @@ export function UndoButton({
 				styles.undoBtn,
 				submitting && styles.undoBtnBusy,
 				pressed && !submitting && sharedStyles.pressed,
+				style,
 			]}
 		>
-			<Ionicons name="arrow-undo" size={20} color={colors.text} />
+			<Ionicons name="arrow-undo" size={iconSize} color={colors.text} />
 		</Pressable>
 	)
 }

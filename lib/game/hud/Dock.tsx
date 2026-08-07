@@ -359,8 +359,6 @@ function PrimaryAction() {
 		placementPairs,
 		placementDraft,
 		pickLast,
-		canUndo,
-		onUndo,
 		onRoll,
 		onConfirmRoll,
 		onRerollDice,
@@ -496,42 +494,38 @@ function PrimaryAction() {
 					Shepherd
 				</Button>
 			)}
-			{/* Undo (your move only) and the phase's primary control, which
-			    stays put and disables itself off-turn. The honk nudge lives in
-			    the status banner — it's about the table, not your turn. */}
-			<View style={styles.primaryRow}>
-				{canUndo && (
-					<UndoButton submitting={submitting} onPress={onUndo} />
-				)}
-				{phase.kind === 'roll' ? (
-					<Button
-						size="small"
-						onPress={onRoll}
-						loading={submitting && isMyActiveTurn}
-						disabled={!isMyActiveTurn || forgerMustMove}
-					>
-						Roll
-					</Button>
-				) : phase.kind === 'main' ? (
-					<Button
-						size="small"
-						onPress={onEndTurn}
-						loading={submitting && isMyActiveTurn}
-						disabled={!isMyActiveTurn}
-					>
-						End turn
-					</Button>
-				) : (
-					<Button
-						size="small"
-						onPress={onEndSpecialBuild}
-						loading={submitting && isMySpecialBuild}
-						disabled={!isMySpecialBuild}
-					>
-						Done building
-					</Button>
-				)}
-			</View>
+			{/* The phase's primary control, which stays put and disables itself
+			    off-turn. Neither the honk nudge nor the undo arrow is here —
+			    both belong to the line the status banner is showing rather than
+			    to your own turn (see `StatusBanner.tsx`). */}
+			{phase.kind === 'roll' ? (
+				<Button
+					size="small"
+					onPress={onRoll}
+					loading={submitting && isMyActiveTurn}
+					disabled={!isMyActiveTurn || forgerMustMove}
+				>
+					Roll
+				</Button>
+			) : phase.kind === 'main' ? (
+				<Button
+					size="small"
+					onPress={onEndTurn}
+					loading={submitting && isMyActiveTurn}
+					disabled={!isMyActiveTurn}
+				>
+					End turn
+				</Button>
+			) : (
+				<Button
+					size="small"
+					onPress={onEndSpecialBuild}
+					loading={submitting && isMySpecialBuild}
+					disabled={!isMySpecialBuild}
+				>
+					Done building
+				</Button>
+			)}
 		</View>
 	)
 }
@@ -637,11 +631,6 @@ const styles = StyleSheet.create({
 	actionCol: {
 		gap: spacing.xs,
 		alignItems: 'flex-end',
-	},
-	primaryRow: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.xs,
 	},
 	rollChoice: {
 		flexDirection: 'row',

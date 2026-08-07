@@ -59,10 +59,15 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
   could never win from inside `boardFill` while the banner sat outside it. It
   renders as a last child of `boardFill` at `z.banner` (over the board, under
   `z.floatingButton` / `z.panel`).
-- **The honk button is the banner's one interactive part.** A nudge is a
-  complaint about the table sitting on the line the banner is showing, so it
-  hangs off the banner rather than the dock (which is about your own turn). It's
-  not uniform: it renders only for a viewer who may honk right now.
+- **The honk button and the undo arrow are the banner's interactive parts, and
+  they share one slot.** Both are about the line the banner is showing — a honk
+  is a complaint that the table is sitting on it, an undo takes back the action
+  it reports — rather than about your own turn, which is what the dock is for.
+  They can't both apply (you honk only at someone else, undo only your own
+  move), so neither reserves space. Both break the banner's uniformity: each
+  renders only for the viewer it applies to. The dock keeps its _placement_
+  arrow, which pops a locally drafted piece and belongs beside the confirm it
+  feeds.
 - **The chips' dot set is `pendingSeats` (+ trade responders), not
   `current_turn`** (`actingSeats` in `status.ts`) — the seats that owe an action
   now, often not the turn-holder.

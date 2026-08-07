@@ -6,14 +6,21 @@
 // nobody pending); the island row always shows. Both are uniform across viewers
 // (see `status.ts`). Keeps the banner's card styling.
 //
-// It also carries the honk nudge, on the right: honking is a complaint about
-// *this* — the table sitting on the line the banner is showing — so the button
-// belongs beside it rather than in the dock, which is about your own turn. It's
-// the one interactive thing here, hence `box-none` on the card and `none` on
-// the text.
+// It also carries the two nudge-at-the-line controls, on the right: the honk
+// (a complaint about *this* — the table sitting on the line the banner is
+// showing) and the undo arrow (taking back the action the line is reporting).
+// Both are about the banner's own line rather than about your turn, which is
+// what the dock is for, and they're mutually exclusive in practice — you can
+// only honk at someone else and only undo your own move — so they share the
+// slot. They're the only interactive things here, hence `box-none` on the card
+// and `none` on the text.
 
 import { useGameScreen } from '@/lib/game/gameScreenContext'
-import { DieFaceView, HonkButton } from '@/lib/game/gameScreenShared'
+import {
+	DieFaceView,
+	HonkButton,
+	UndoButton,
+} from '@/lib/game/gameScreenShared'
 import type { GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, radius, spacing } from '@/lib/theme'
 import { StyleSheet, Text, View } from 'react-native'
@@ -27,6 +34,8 @@ export function StatusBanner() {
 		profilesById,
 		submitting,
 		onHonk,
+		canUndo,
+		onUndo,
 		inBonusSelection,
 		isSpectator,
 		placementStage,
@@ -81,6 +90,16 @@ export function StatusBanner() {
 				submitting={submitting}
 				onHonk={onHonk}
 			/>
+			{/* Same slot, same slimming: rendered only when the server would
+			    accept a take-back of this seat's last action. */}
+			{canUndo && (
+				<UndoButton
+					style={styles.undo}
+					iconSize={13}
+					submitting={submitting}
+					onPress={onUndo}
+				/>
+			)}
 		</View>
 	)
 }
@@ -135,6 +154,13 @@ const styles = StyleSheet.create({
 		minHeight: 20,
 		paddingVertical: 0,
 		paddingHorizontal: spacing.sm,
+		borderRadius: radius.sm,
+	},
+	// Same treatment for the arrow, whose default is a 52pt row square: shrunk
+	// to the honk's height so the two read as one slot.
+	undo: {
+		width: 26,
+		height: 20,
 		borderRadius: radius.sm,
 	},
 })
