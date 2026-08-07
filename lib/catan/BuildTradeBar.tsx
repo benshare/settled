@@ -37,7 +37,7 @@ export function BuildTradeBar({
 	tradeEnabled,
 	tradeActive,
 	showTrade = true,
-	flush = false,
+	bare = false,
 	devCardsEnabled,
 	carpenterEnabled,
 	superCityEnabled,
@@ -65,10 +65,11 @@ export function BuildTradeBar({
 	// spans the row on its own — the HUD dock renders trade separately, in a
 	// row of its own alongside the turn's primary action.
 	showTrade?: boolean
-	// Drops the outer row's padding so the build panel sits flush to its
-	// container — the dock uses it so the panel's width matches the trade +
-	// primary-action row directly below it.
-	flush?: boolean
+	// Strips the bar down to the build icon row alone — no card, no title, no
+	// padding of its own. The HUD dock uses it: the dock is already a card, and
+	// the naked row lines up with the trade + primary-action row below it.
+	// Implies build-only (trade is the dock's own row).
+	bare?: boolean
 	// Config gate: when the game wasn't created with dev cards, the button
 	// is hidden entirely rather than just disabled.
 	devCardsEnabled: boolean
@@ -98,57 +99,59 @@ export function BuildTradeBar({
 	const options = devCardsEnabled
 		? BUILD_OPTIONS
 		: BUILD_OPTIONS.filter((o) => o.key !== 'dev_card')
+	const iconRow = (
+		<View style={styles.iconRow}>
+			{options.map((opt) => (
+				<BuildIconButton
+					key={opt.key}
+					option={opt}
+					enabled={enabled[opt.key]}
+					active={opt.key !== 'dev_card' && active === opt.key}
+					curseHint={curseHints?.[opt.key]}
+					color={color}
+					onPress={() => {
+						if (opt.key === 'dev_card') {
+							onBuyDevCard()
+							return
+						}
+						onSelect(opt.key)
+					}}
+				/>
+			))}
+			{carpenterEnabled !== undefined && (
+				<CarpenterVPButton
+					enabled={carpenterEnabled}
+					onPress={() => onBuyCarpenterVP?.()}
+				/>
+			)}
+			{superCityEnabled !== undefined && (
+				<SuperCityButton
+					enabled={superCityEnabled}
+					active={!!superCityActive}
+					color={color}
+					onPress={() => onSelectSuperCity?.()}
+				/>
+			)}
+			{accountantEnabled !== undefined && (
+				<AccountantButton
+					enabled={accountantEnabled}
+					onPress={() => onAccountant?.()}
+				/>
+			)}
+			{investorEnabled !== undefined && (
+				<InvestorButton
+					enabled={investorEnabled}
+					onPress={() => onInvest?.()}
+				/>
+			)}
+		</View>
+	)
+	if (bare) return iconRow
 	return (
-		<View style={[styles.row, flush && styles.rowFlush]}>
+		<View style={styles.row}>
 			<View style={[styles.panel, styles.buildPanel]}>
 				<Text style={styles.title}>Build</Text>
-				<View style={styles.iconRow}>
-					{options.map((opt) => (
-						<BuildIconButton
-							key={opt.key}
-							option={opt}
-							enabled={enabled[opt.key]}
-							active={
-								opt.key !== 'dev_card' && active === opt.key
-							}
-							curseHint={curseHints?.[opt.key]}
-							color={color}
-							onPress={() => {
-								if (opt.key === 'dev_card') {
-									onBuyDevCard()
-									return
-								}
-								onSelect(opt.key)
-							}}
-						/>
-					))}
-					{carpenterEnabled !== undefined && (
-						<CarpenterVPButton
-							enabled={carpenterEnabled}
-							onPress={() => onBuyCarpenterVP?.()}
-						/>
-					)}
-					{superCityEnabled !== undefined && (
-						<SuperCityButton
-							enabled={superCityEnabled}
-							active={!!superCityActive}
-							color={color}
-							onPress={() => onSelectSuperCity?.()}
-						/>
-					)}
-					{accountantEnabled !== undefined && (
-						<AccountantButton
-							enabled={accountantEnabled}
-							onPress={() => onAccountant?.()}
-						/>
-					)}
-					{investorEnabled !== undefined && (
-						<InvestorButton
-							enabled={investorEnabled}
-							onPress={() => onInvest?.()}
-						/>
-					)}
-				</View>
+				{iconRow}
 			</View>
 
 			{showTrade && onTradePress && (
@@ -486,13 +489,6 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.md,
 		paddingTop: spacing.xs,
 		paddingBottom: spacing.sm,
-	},
-	// Dock: no outer padding, so the build panel is flush to the right column and
-	// its width matches the trade + primary-action row below it.
-	rowFlush: {
-		paddingHorizontal: 0,
-		paddingTop: 0,
-		paddingBottom: 0,
 	},
 	panel: {
 		backgroundColor: colors.card,

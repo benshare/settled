@@ -281,13 +281,13 @@ function BuildBar() {
 			enabled={buildEnabled}
 			curseHints={buildCurseHints}
 			color={seatColor(gameState, meIdx)}
-			// Trade is rendered on its own row (DockTradeButton), so the bar
-			// shows the build panel alone, flush to the column so its width
-			// matches the trade + primary-action row below.
+			// Trade is rendered on its own row (DockTradeButton), so the bar is
+			// the naked build icon row — the dock is already the card, and the
+			// row spans the column above trade + the primary action.
 			tradeEnabled={false}
 			tradeActive={false}
 			showTrade={false}
-			flush
+			bare
 			devCardsEnabled={!!gameState.config.devCards}
 			carpenterEnabled={
 				myPlayer?.bonus === 'carpenter'
@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
 		minWidth: 0,
 		justifyContent: 'space-between',
 		alignItems: 'stretch',
-		gap: spacing.xs,
+		gap: spacing.sm,
 	},
 	// Bottom-aligned so the tall trade panel and the short primary button share a
 	// baseline.
@@ -636,7 +636,7 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'flex-end',
 		justifyContent: 'space-between',
-		gap: spacing.xs,
+		gap: spacing.sm,
 	},
 	actionCol: {
 		gap: spacing.xs,
