@@ -384,6 +384,9 @@ export function initialGameState(
 		edges: {},
 		players,
 		phase,
+		// Nobody holds the turn while bonus selection runs; otherwise the game
+		// opens on seat 0. Mirrors the insert in `handleRespond`.
+		currentTurn: phase.kind === 'select_bonus' ? null : 0,
 		robber: desert,
 		ports: generatePorts(variant),
 		config,

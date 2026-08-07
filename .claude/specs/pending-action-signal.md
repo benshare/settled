@@ -39,6 +39,8 @@ the badge the app computes.
 
 ### Not in scope: moving `current_turn` to `game_states`
 
+_(Done as a follow-up — see `.claude/specs/current-turn-on-game-states.md`.)_
+
 `games` is otherwise identity + roster + config + log; `current_turn` is live
 progress and conceptually belongs on `game_states` beside `phase`. It lives on
 `games` because that is the only row the list has — the constraint this change
@@ -233,4 +235,8 @@ the sweep re-stamps the deadline anyway.
 
 ## Follow-ups (deliberately not here)
 
-1. **Move `current_turn` to `game_states`** — see above.
+1. ~~**Move `current_turn` to `game_states`**~~ — done, see
+   `.claude/specs/current-turn-on-game-states.md`. That change also removed the
+   `current_turn` fallback described under "The derivation" above: the pointer
+   moved onto the same row as the phase, so an unloaded game has nothing to fall
+   back to and `useAppBadge` holds the badge instead of guessing.

@@ -128,8 +128,8 @@ function GameTab({
 	const faces = others.slice(0, MAX_FACES)
 	const overflow = others.length - faces.length
 
-	const phase = useGameStatesStore((s) => s.byId[game.id]?.phase)
-	const myTurn = isMyTurn(game, meId, phase)
+	const state = useGameStatesStore((s) => s.byId[game.id])
+	const myTurn = isMyTurn(game, meId, state)
 
 	return (
 		<Pressable
