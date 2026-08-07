@@ -1754,8 +1754,7 @@ type GameState = {
 	players: PlayerState[]
 	phase: Phase
 	// Seat holding the turn, null when nobody does (the whole simultaneous
-	// select_bonus phase). Mirror of lib/catan/types.ts. Still written to
-	// `games.current_turn` for old clients; never read from there.
+	// select_bonus phase). Mirror of lib/catan/types.ts.
 	currentTurn: number | null
 	robber: Hex
 	ports?: Port[]
@@ -4215,10 +4214,6 @@ type GameRow = {
 	id: string
 	participants: string[]
 	player_order: string[]
-	// Deprecated mirror of `game_states.current_turn`, kept written (never read)
-	// for clients that predate the move. Dropped in release 2 — see
-	// `.claude/specs/current-turn-on-game-states.md`.
-	current_turn: number | null
 	status: 'placement' | 'active' | 'complete' | 'canceled'
 	winner: number | null
 	events: unknown[]
@@ -4387,9 +4382,6 @@ async function handleRespond(
 				participants,
 				player_order: playerOrder,
 				colors,
-				// Deprecated mirror of game_states.current_turn, written for
-				// clients that predate the move. Release 2 drops it.
-				current_turn: selecting ? null : 0,
 				status: 'placement',
 				// Passed through whole rather than re-derived field by field —
 				// the spectator policies read config.spectators off this row.
@@ -4605,11 +4597,7 @@ async function handlePickBonus(
 		}))
 		const { error: gameErr } = await admin
 			.from('games')
-			.update({
-				// Deprecated mirror — see the state update above.
-				current_turn: 0,
-				events: [...(game.events ?? []), ...events],
-			})
+			.update({ events: [...(game.events ?? []), ...events] })
 			.eq('id', game.id)
 		if (gameErr) return err(500, 'could not log event')
 
@@ -4934,8 +4922,6 @@ async function handlePlaceStart(
 			.from('games')
 			.update({
 				status: 'active',
-				// Deprecated mirror — see the state update above.
-				current_turn: 0,
 				events: [...(game.events ?? []), ...events, completeEvent],
 			})
 			.eq('id', game.id)
@@ -4960,11 +4946,7 @@ async function handlePlaceStart(
 
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({
-			// Deprecated mirror — see the state update above.
-			current_turn: next.currentTurn,
-			events: [...(game.events ?? []), ...events],
-		})
+		.update({ events: [...(game.events ?? []), ...events] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
 
@@ -5091,11 +5073,7 @@ async function handleChooseLastSettlement(
 
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({
-			// Deprecated mirror — see the state update above.
-			current_turn: next.currentTurn,
-			events: [...events, ...applied.nomadEvents],
-		})
+		.update({ events: [...events, ...applied.nomadEvents] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
 
@@ -6966,11 +6944,7 @@ async function handleEndTurn(
 
 	const { error: gameErr } = await admin
 		.from('games')
-		.update({
-			// Deprecated mirror — see the state update above.
-			current_turn: nextTurn,
-			events: [...(game.events ?? []), ...events],
-		})
+		.update({ events: [...(game.events ?? []), ...events] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
 
@@ -9998,8 +9972,7 @@ const UNDO_NEUTRAL_ACTIONS = new Set<string>(['send_message'])
 
 // The mutable `game_states` columns. `hexes`/`variant` are omitted (nothing
 // mutates them) and so is `current_turn` — no undoable action moves the turn,
-// and restoring it would only give it a way to disagree with its `games`
-// mirror, which undo does not rewrite.
+// so restoring it could only ever be a no-op or a bug.
 // If one ever does, the snapshot has to grow to cover it.
 const UNDO_COLUMNS =
 	'vertices, edges, players, phase, robber, ports, fence_tokens, dev_deck, largest_army, longest_road, round'

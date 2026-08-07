@@ -4,9 +4,9 @@
 //
 //   1. The Games list, the header tab strip and the app-icon badge all ask
 //      "is this game waiting on me?", and the honest answer is
-//      `pendingUserIds` (lib/catan/timeout.ts), which needs `phase`. Without
-//      the rows here they could only read `games.current_turn`, which is null
-//      through bonus selection and names the wrong seat during special build.
+//      `pendingUserIds` (lib/catan/timeout.ts), which reads the phase and the
+//      turn pointer — both of which live here. Nothing on the `games` row can
+//      answer it.
 //   2. Opening a game you're seated at renders warm — the board is already
 //      here, so `GameProvider` has nothing to wait for.
 //

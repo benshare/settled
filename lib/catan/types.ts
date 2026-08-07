@@ -692,10 +692,9 @@ export type GameState = {
 	players: PlayerState[]
 	phase: Phase
 	// Seat holding the turn, or null when nobody does — the whole simultaneous
-	// `select_bonus` phase. Beside `phase` because it is progress, not identity;
-	// it is still mirrored onto `games.current_turn` for clients that predate
-	// the move (see `.claude/specs/current-turn-on-game-states.md`). **Not the
-	// answer to "who is the game waiting on"** — that is `pendingSeats`.
+	// `select_bonus` phase. Beside `phase` because it is progress, not identity
+	// (see `.claude/specs/current-turn-on-game-states.md`). **Not the answer to
+	// "who is the game waiting on"** — that is `pendingSeats`.
 	currentTurn: number | null
 	robber: Hex
 	// Optional so games created before ports existed still parse. New games

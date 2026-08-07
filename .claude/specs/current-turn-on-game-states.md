@@ -21,8 +21,8 @@ still reads it. So:
   statement it already writes, every reader reads the new one. Old clients keep
   working off the mirror. Ship, and let it reach users.
 - **Release 2 (later, separate).** Drop `games.current_turn` and delete the
-  mirror writes. Nothing reads it by then, so the migration can't break a
-  client that is still running.
+  mirror writes. Nothing reads it by then, so the migration can't break a client
+  that is still running — but the deploy order flips; see below.
 
 The mirror is written **inline at each existing write site**, not derived
 afterwards in `serve` alongside `deadline_at`. `serve`'s post-action bookkeeping
@@ -142,9 +142,30 @@ where g.current_turn is distinct from s.current_turn
 - `.claude/specs/pending-action-signal.md` — its "not in scope" section becomes a
   pointer here.
 
-## Release 2 checklist (not now)
+## Release 2: dropping the mirror
+
+The code half is small — the six `games` updates stop naming the column,
+`GameRow` stops declaring it, and a migration drops it. Nothing else in the repo
+referenced it: no RLS policy, index or view, and no client read (the game screen
+moved to `gameState.currentTurn` in release 1).
+
+**The deploy order is the reverse of release 1, and getting it wrong takes the
+game down.** Release 1 could migrate first because the new column was inert
+until the edge function used it. Here the column is in use until the moment the
+edge function stops naming it, so:
 
 1. Confirm the mirror-drift query above returns nothing.
-2. Confirm client rollout (no meaningful traffic from builds predating release 1).
-3. `alter table public.games drop column current_turn;`
-4. Delete the 7 mirror writes and `GameRow.current_turn`.
+2. Confirm the rollout: no meaningful traffic from builds predating release 1.
+   Those clients read `games.current_turn` for their turn indicator, and it
+   stops moving the moment step 3 lands — before it disappears entirely.
+3. **`npm run edge`** — handlers stop writing the column.
+4. **`npm run migrate`** — drop it.
+5. `npm run types`, and commit the regenerated `lib/database-types.ts`.
+
+Between 3 and 4 the column simply freezes at its last value, which is harmless
+for anything still reading it and invisible to everything else. The other order
+— dropping while handlers still name the column in an `update` — fails every
+write, so every action in every game 500s until the deploy catches up.
+
+The client needs no release of its own. A release-1 build reads the column
+nowhere, and `select *` just returns one field fewer.
