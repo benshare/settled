@@ -212,9 +212,6 @@ function useGameScreenState(gameId: string) {
 		preview?: BuildSelection
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
-	// Game area's y within the screen root, so the chat panel can anchor to the
-	// same line as the floating buttons. See BoardArea's onLayout.
-	const [boardTop, setBoardTop] = useState(0)
 	// Haunt: the vertices the local haunt player has tapped (needs 2) during
 	// post_placement, before committing. Investor: whether the invest picker
 	// modal is open.
@@ -1566,8 +1563,6 @@ function useGameScreenState(gameId: string) {
 		hauntPicks,
 		openPlayerIdx,
 		setOpenPlayerIdx,
-		boardTop,
-		setBoardTop,
 		bonusPaneCollapsed,
 		setBonusPaneCollapsed,
 		gameOverOpen,

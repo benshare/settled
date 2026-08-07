@@ -36,6 +36,7 @@ import {
 	type ViewStyle,
 } from 'react-native'
 import Animated, { LinearTransition } from 'react-native-reanimated'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 const BOARD_RESIZE = LinearTransition.duration(220)
 
@@ -59,8 +60,6 @@ function Game() {
 		displayVP,
 		publicVP,
 		seatColors,
-		boardTop,
-		setBoardTop,
 		inGameOver,
 		gameOverOpen,
 		setGameOverOpen,
@@ -74,6 +73,7 @@ function Game() {
 		hideToast,
 	} = useGameScreen()
 	const router = useRouter()
+	const insets = useSafeAreaInsets()
 
 	if (!game) {
 		return (
@@ -95,15 +95,7 @@ function Game() {
 
 			{/* The water background is the fixed frame; the board and its
 			    floating buttons slide inside it. */}
-			<Animated.View
-				style={styles.gameArea}
-				layout={BOARD_RESIZE}
-				// The chat panel is mounted at the screen root (so it can cover
-				// the action bars) but has to line up with the floating buttons
-				// inside this container. Its offset from the root shifts with
-				// the PlayerStrip and placement header, so it's measured.
-				onLayout={(e) => setBoardTop(e.nativeEvent.layout.y)}
-			>
+			<Animated.View style={styles.gameArea} layout={BOARD_RESIZE}>
 				<ZoneSlide style={styles.gameAreaSlide} paneStyle={styles.fill}>
 					<BoardArea />
 				</ZoneSlide>
@@ -194,10 +186,12 @@ function Game() {
 				/>
 			)}
 
-			{/* Mounted here rather than in the board container so it covers the
-			    action bars too, while leaving the nav clear. */}
+			{/* Mounted here rather than in the board container so it spans the
+			    whole screen: from just inside the safe area down to the bottom
+			    bar's bottom edge. `containerBottomInset` is the safe-area bottom
+			    this root already sits inside, which the keyboard covers. */}
 			<ChatPanel
-				topOffset={boardTop}
+				containerBottomInset={insets.bottom}
 				playerOrder={game.player_order}
 				profilesById={profilesById}
 				seatColors={seatColors}

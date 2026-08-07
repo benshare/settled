@@ -5,13 +5,15 @@
 // - `ChatButton` — the floating affordance, third slot below BoardLegend and
 //   ActionLog, so it lives inside the board container with them.
 // - `ChatPanel` — the conversation. Mounted at the screen root (`styles.root`)
-//   rather than inside the board container, so it covers the action bars too
-//   but stops short of the screen header. It is an absolutely-positioned view
-//   rather than a Modal precisely so it stays inside the play area — a Modal
-//   would cover the whole screen.
+//   rather than inside the board container, so it covers the action bars too.
+//   It is an absolutely-positioned view rather than a Modal so it stays inside
+//   the screen's safe area and the layout's own chrome can react to it (the
+//   top bars fade under it). It fills that container — a gap inside the safe
+//   area at the top, the bottom of the layout's own bottom chrome at the bottom
+//   — and only its bottom edge moves for the keyboard.
 
 import { Ionicons } from '@expo/vector-icons'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
 	FlatList,
 	Pressable,
@@ -30,7 +32,6 @@ import Animated, {
 	withSequence,
 	withTiming,
 } from 'react-native-reanimated'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Avatar } from '../modules/Avatar'
 import { useGamesStore } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
@@ -43,11 +44,11 @@ const PANEL_BG = 'rgba(250, 243, 224, 0.9)'
 const PANEL_CHROME_BG = 'rgba(235, 219, 184, 0.94)'
 
 // The floating buttons' inset from the top of the board container. Slot 0's
-// origin, and the line the panel's top margin is measured from.
+// origin.
 const BUTTON_INSET = spacing.sm
 
-// Breathing room between the panel and the play area's edges, equal on all
-// sides. The top edge is measured from the floating buttons' line.
+// Breathing room between the panel and the edges it stops short of — the top of
+// its container, the sides, and the keyboard when one is up.
 const PANEL_GAP = spacing.md
 
 // Taps this far inside the panel's visible edge still dismiss: the panel is
@@ -102,21 +103,24 @@ export function ChatButton({ anchorBottom }: { anchorBottom?: number }) {
 }
 
 export function ChatPanel({
-	topOffset,
-	bottomInset = 0,
+	bottomOffset = 0,
+	containerBottomInset = 0,
 	playerOrder,
 	profilesById,
 	seatColors,
 	meId,
 }: {
-	// Game area's y within the screen root, measured by the game screen. The
-	// panel's top edge lands on the same line as the floating buttons, which
-	// sit at `spacing.sm` inside that container.
-	topOffset: number
-	// How far up from the screen bottom the overlay stops. The classic screen
-	// sits inside a full safe area (so 0); the HUD isn't bottom-inset, so it
-	// passes the safe-area bottom plus a gap to keep the panel off the edge.
-	bottomInset?: number
+	// Where the panel's bottom edge rests, as a distance up from the bottom of
+	// the container it's mounted in. Callers line it up with the bottom of their
+	// own bottom chrome — the HUD's floating dock, the classic screen's action
+	// bar — so the conversation and the layout share a baseline.
+	bottomOffset?: number
+	// How far the container's own bottom edge already sits above the screen's
+	// bottom edge. The keyboard's height is measured from the screen, so this is
+	// what resolves it into the container's coordinates: the classic screen sits
+	// inside a full safe area (so the safe-area bottom), the HUD runs to the
+	// screen edge (so 0).
+	containerBottomInset?: number
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	// Each seat's color, in seat order. Resolved once in `gameContext`
@@ -142,46 +146,19 @@ export function ChatPanel({
 		ensureProfiles(typingIds)
 	}, [typingIds, ensureProfiles])
 
-	// The keyboard lifts the whole overlay — scrim included — by one translate,
-	// so nothing about the panel re-lays-out as it moves. The panel's bottom is
-	// pinned to the play area, which sits well above the screen bottom, so
-	// padding-style avoidance would leave the composer covered; the play area
-	// also already stops short of the screen bottom by the safe-area inset,
-	// which the keyboard covers, so lifting by the full keyboard height would
-	// leave that inset as dead space.
-	//
-	// Lifting alone would push the panel's top off the screen, so past the point
-	// where its top would clear `insets.top + PANEL_GAP` — the same gap it keeps
-	// from the top of its own zone at rest — the panel shortens instead, and its
-	// top parks there.
-	const insets = useSafeAreaInsets()
+	// The panel's top never moves: it sits PANEL_GAP below the top of its
+	// container (which is already inside the safe area), keyboard or not. Only
+	// the bottom edge tracks the keyboard, so the conversation shortens from
+	// below rather than sliding up off the screen — and nothing about the header
+	// or the message list moves under a keyboard opening.
 	const keyboard = useAnimatedKeyboard()
-
-	// The scrim's y in window space. The panel can rise by that much (minus the
-	// safe area) before its top hits the ceiling; beyond that it must shrink.
-	const scrimRef = useRef<View>(null)
-	const [scrimY, setScrimY] = useState(0)
-	const measureScrim = useCallback(() => {
-		// A layout pass while the panel is lifted would measure the translated
-		// position; the resting one is the only meaningful reading.
-		if (keyboard.height.value > 0) return
-		scrimRef.current?.measureInWindow((_x, y) => setScrimY(y))
-	}, [keyboard])
-	const headroom = Math.max(0, scrimY - insets.top)
-
-	const liftStyle = useAnimatedStyle(() => ({
-		transform: [
-			{ translateY: -Math.max(0, keyboard.height.value - insets.bottom) },
-		],
-	}))
-	// Absolutely positioned against both edges, so trimming the top margin
-	// shortens the panel rather than moving it.
-	const shrinkStyle = useAnimatedStyle(() => ({
-		marginTop: Math.max(
-			0,
-			Math.max(0, keyboard.height.value - insets.bottom) - headroom
-		),
-	}))
+	const bottomStyle = useAnimatedStyle(() => {
+		const aboveKeyboard =
+			keyboard.height.value > 0
+				? keyboard.height.value - containerBottomInset + PANEL_GAP
+				: 0
+		return { bottom: Math.max(bottomOffset, aboveKeyboard) - DISMISS_SLOP }
+	})
 
 	const canSend = draft.trim().length > 0 && !sending
 
@@ -216,15 +193,7 @@ export function ChatPanel({
 	return (
 		// A light scrim: the panel itself is the translucent element, and a
 		// heavy backdrop on top of it would defeat glimpsing the board.
-		<Animated.View
-			ref={scrimRef}
-			onLayout={measureScrim}
-			style={[
-				styles.scrim,
-				{ top: topOffset + BUTTON_INSET, bottom: bottomInset },
-				liftStyle,
-			]}
-		>
+		<View style={styles.scrim}>
 			{/* Behind the panel, so every tap outside it — including the slop
 			    ring — dismisses. */}
 			<Pressable
@@ -237,7 +206,7 @@ export function ChatPanel({
 			    fall through to the dismiss layer. */}
 			<Animated.View
 				pointerEvents="box-none"
-				style={[styles.panelWrap, shrinkStyle]}
+				style={[styles.panelWrap, bottomStyle]}
 			>
 				{/* An opaque View swallows taps on its own (it sits above the
 				    dismiss layer), so no Pressable is needed here — and a
@@ -287,7 +256,7 @@ export function ChatPanel({
 					/>
 				</View>
 			</Animated.View>
-		</Animated.View>
+		</View>
 	)
 }
 
@@ -576,27 +545,24 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		color: colors.white,
 	},
-	// Covers the play area only — mounted at the screen root, so the header
-	// stays visible and tappable above it.
+	// The whole container it's mounted in: everything outside the panel is a
+	// dismiss target, including the strip the layout's own bottom chrome
+	// occupies (the panel covers it while open).
 	scrim: {
-		position: 'absolute',
-		// `top` / `bottom` are supplied inline — top tracks the measured board
-		// container, bottom is the caller's inset.
-		left: 0,
-		right: 0,
+		...StyleSheet.absoluteFill,
 		// No dark shading: the panel itself is translucent, so the board stays
 		// visible behind an open chat with no dimming.
 		backgroundColor: 'transparent',
 		zIndex: z.chat,
 	},
 	// Inset by the gap less the slop ring, which `panel` pads back — so the
-	// panel's visible edge still sits PANEL_GAP from the play area.
+	// panel's visible edge still sits PANEL_GAP from its container. `bottom` is
+	// animated (see `bottomStyle`); the other three edges never move.
 	panelWrap: {
 		position: 'absolute',
 		top: PANEL_GAP - DISMISS_SLOP,
 		left: PANEL_GAP - DISMISS_SLOP,
 		right: PANEL_GAP - DISMISS_SLOP,
-		bottom: PANEL_GAP - DISMISS_SLOP,
 		padding: DISMISS_SLOP,
 	},
 	panel: {

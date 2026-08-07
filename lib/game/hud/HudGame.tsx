@@ -27,10 +27,12 @@ import { PlayerChips } from './PlayerChips'
 import { StatusBanner } from './StatusBanner'
 
 // The fixed Games/menu bar (rendered by HudScreen, over the slide) is this tall;
-// the chips sit just below it, and the chat panel starts here so the bar stays
-// clear and tappable while chat is open.
+// the chips sit just below it.
 const HUD_TOP_BAR_H = 44
-const CHAT_TOP = HUD_TOP_BAR_H
+
+// The dock's own gap above the bottom safe area (`DOCK_MARGIN` in Dock.tsx).
+// The chat panel rests its bottom edge on the same line.
+const DOCK_MARGIN = spacing.sm
 
 // Fallback board-area top before the chip band's height is measured.
 const TOP_BAND = 120
@@ -75,7 +77,8 @@ export function HudGame({ active = true }: { active?: boolean } = {}) {
 	// (side margin + bottom safe inset) plus its measured height. Everything that
 	// sits above the dock — the board's bottom, the banner, the utility rail — is
 	// placed against this. 0 when there's no dock (spectator).
-	const dockTop = dockHeight > 0 ? insets.bottom + spacing.sm + dockHeight : 0
+	const dockTop =
+		dockHeight > 0 ? insets.bottom + DOCK_MARGIN + dockHeight : 0
 
 	if (!game) {
 		return (
@@ -220,9 +223,10 @@ export function HudGame({ active = true }: { active?: boolean } = {}) {
 				/>
 			)}
 
+			{/* Full-height: from just inside the safe area (the top bar fades
+			    out under it) down to the dock's bottom edge. */}
 			<ChatPanel
-				topOffset={CHAT_TOP}
-				bottomInset={insets.bottom + spacing.md}
+				bottomOffset={insets.bottom + DOCK_MARGIN}
 				playerOrder={game.player_order}
 				profilesById={profilesById}
 				seatColors={seatColors}

@@ -21,11 +21,13 @@ app/game/[id].tsx
   `ChatProvider` → `GameScreenProvider`), owns the **fixed frames** (bar
   backgrounds, board water + edge shadows), wraps each zone in a `ZoneSlide`, and
   renders what belongs to no single zone: loading/not-found, `GameOverOverlay`,
-  the event animations, `ChatPanel` (at the root so it covers the action bars but
-  leaves the nav clear), and the `Toast` layer (raised from the nav's `GameMenu`
-  but rendered here because it floats over every zone).
+  the event animations, `ChatPanel` (at the root so it can span every zone), and
+  the `Toast` layer (raised from the nav's `GameMenu` but rendered here because it
+  floats over every zone).
 - `Nav.tsx` / `GameMenu.tsx` — the fixed top row (back chevron, `GameTitle`
-  switcher, overflow menu), outside every sliding area **and outside `<Game>`**
+  switcher, overflow menu). It fades out under an open chat panel, which now runs
+  the full height of the screen — the HUD's top bar does the same.
+  Outside every sliding area **and outside `<Game>`**
   because it's the one thing on screen that's about _which_ game you're on. The
   `⋯` menu holds forfeit / end-game (each submittable and withdrawable) and Copy
   debugging info; it carries an accent dot whenever a declaration is standing.

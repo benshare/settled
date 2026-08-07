@@ -13,7 +13,7 @@ Shared, app-agnostic UI primitives (not Catan-specific). Style with `StyleSheet.
 
 ## Overlays
 
-Every modal/dialog/panel renders through `Modal.tsx`. Two intentional exceptions: `lib/catan/GameChat.tsx`'s `ChatPanel` (an in-play-area view so it stays inside the board, not a `<Modal>`), and the three Catan animation overlays (`StealAnimation`, `NomadAnimation`, `FortuneTellerAnimation`), which keep a raw `<Modal>` because they're transient, non-dismissible, and drive their own fade timeline.
+Every modal/dialog/panel renders through `Modal.tsx`. Two intentional exceptions: `lib/catan/GameChat.tsx`'s `ChatPanel` (an in-tree view, not a `<Modal>`, so it stays inside the safe area and the screen's own chrome can fade under it), and the three Catan animation overlays (`StealAnimation`, `NomadAnimation`, `FortuneTellerAnimation`), which keep a raw `<Modal>` because they're transient, non-dismissible, and drive their own fade timeline.
 
 ### Stacking
 
