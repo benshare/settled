@@ -407,7 +407,13 @@ Register in `lib/stores/index.ts` alongside `friendsStoreRegistration`.
 - Swap the current Play Tabs.Screen icon to use `PlayTabIcon` with `name="game-controller-outline"`.
 - Add hidden sibling routes: `<Tabs.Screen name="create-game" options={{ href: null }} />`. The `app/game/*` routes live outside `(app)` entirely so they don't need hidden tab entries.
 
-### `app/(app)/create-game.tsx` (new — hidden tab)
+### `app/create-game.tsx` (new)
+
+> Superseded: this shipped as a hidden tab route (`app/(app)/create-game.tsx`,
+> `href: null`) and later moved to the **root** stack, alongside
+> `player-colors` — see the Route section of `color-preferences.md` for why.
+> A hidden tab route answers back with the navigator's first tab, not with
+> whoever pushed it, which is wrong for a rematch pushed from a game screen.
 
 Styled like `send-request.tsx`:
 

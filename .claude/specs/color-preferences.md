@@ -206,11 +206,23 @@ one derivation, so nothing can drift.
 
 ### Route
 
-New `app/(app)/player-colors.tsx`, registered in `app/(app)/_layout.tsx` as
-`<Tabs.Screen name="player-colors" options={{ href: null }} />` — the same
-hidden-route pattern `create-game` already uses. Account gets a "Player colors"
-row (in a new **Colors** section, between Appearance and Notifications) that
-pushes to it.
+New `app/player-colors.tsx`, registered on the **root** stack in
+`app/_layout.tsx` as `<Stack.Screen name="player-colors" />`. Account gets a
+"Player colors" row (in a new **Colors** section, between Appearance and
+Notifications) that pushes to it.
+
+Root stack rather than a hidden tab route: inside the tab navigator, back
+resolves to the navigator's first tab (Games) regardless of who navigated in,
+so leaving the screen dropped the viewer out of Account. On the root stack the
+push/pop pair is real. `create-game` moved for the same reason at the same time
+(a rematch pushed from a game screen has the same problem), and the two share
+the root stack's `SUB_SCREEN` options — a slide, where every other root route
+fades, because they are the only pushes with a back chevron.
+
+The paths are unchanged (`(app)` is a group), so `router.push('/player-colors')`
+still works — and because both routes are now reachable without a history entry
+(a web URL, a cold deep link), each back chevron falls back to a `replace` onto
+its parent tab.
 
 A pushed screen rather than an inline section: six drag rows and a ScrollView
 compete for the vertical gesture, and a full-height screen never needs to

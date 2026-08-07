@@ -30,6 +30,8 @@ import 'react-native-reanimated'
 const WEB_MAX_WIDTH = 560
 const isWeb = Platform.OS === 'web'
 
+const SUB_SCREEN = { animation: 'slide_from_right' } as const
+
 export { ErrorBoundary } from 'expo-router'
 
 export const unstable_settings = {
@@ -145,6 +147,11 @@ function RootNav() {
 					<Stack.Screen name="(auth)" />
 					<Stack.Screen name="(app)" />
 					<Stack.Screen name="send-request" />
+					{/* Sub-screens pushed from a tab, and the only ones with a
+					    back chevron — they slide so the gesture reads as a
+					    push over the tab that opened them, not a swap. */}
+					<Stack.Screen name="create-game" options={SUB_SCREEN} />
+					<Stack.Screen name="player-colors" options={SUB_SCREEN} />
 					<Stack.Screen name="privacy" />
 					<Stack.Screen name="support" />
 				</Stack>

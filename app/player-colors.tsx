@@ -2,6 +2,10 @@
 // six drag rows and a ScrollView compete for the same vertical gesture, and a
 // full-height screen never has to scroll.
 //
+// It lives on the root stack, not in the tab group (as does `create-game`): a
+// hidden tab route answers back by returning to the navigator's first tab
+// (Games), not to whoever pushed it. A real push pops back to Account.
+//
 // An empty ranking is not "the default order" — it means no preference, and
 // the resolver answers it with a random color. So the unset state deliberately
 // shows no rank numbers and says so; the first drag makes the ranking real.
@@ -111,7 +115,11 @@ export default function PlayerColorsScreen() {
 		<SafeAreaView style={styles.safe}>
 			<View style={styles.header}>
 				<Pressable
-					onPress={() => router.back()}
+					onPress={() =>
+						router.canGoBack()
+							? router.back()
+							: router.replace('/account')
+					}
 					hitSlop={8}
 					style={({ pressed }) => [
 						styles.back,

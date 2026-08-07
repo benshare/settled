@@ -317,7 +317,11 @@ export default function CreateGameScreen() {
 			>
 				<View style={styles.header}>
 					<Pressable
-						onPress={() => router.back()}
+						onPress={() =>
+							router.canGoBack()
+								? router.back()
+								: router.replace('/games')
+						}
 						hitSlop={8}
 						style={({ pressed }) => [
 							styles.back,
