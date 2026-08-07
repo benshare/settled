@@ -9,7 +9,13 @@
 // have different heights to animate toward — a content-sized sheet has none
 // until its body lays out, so the body unmounts and the parent's layout
 // transition carries the height; a `fill` sheet is sized by its container, so
-// it interpolates between the measured header and container heights instead.
+// it animates the body between zero and the room left over once the bar has
+// taken its share.
+//
+// In `fill` mode the animated element is the body, never the sheet: sizing the
+// sheet instead makes the bar the thing being squeezed (`height` is border-box,
+// so a sheet exactly as tall as its bar has no room for it) and feeds the bar's
+// own `onLayout` back into the value that sizes it.
 
 import { Ionicons } from '@expo/vector-icons'
 import { ReactNode, useEffect, useMemo } from 'react'
@@ -25,6 +31,9 @@ import { ColorScheme, font, radius, shadow, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 
 export const COLLAPSE_DURATION = 220
+
+// `fillSheet`'s border, which eats into the height available to its children.
+const FILL_BORDER = 1
 
 export function CollapsibleSheet({
 	title,
@@ -60,14 +69,14 @@ export function CollapsibleSheet({
 		transform: [{ scaleY: progress.value * 2 - 1 }],
 	}))
 
-	const sheetStyle = useAnimatedStyle(() => {
+	const fillBodyStyle = useAnimatedStyle(() => {
 		if (headerHeight.value === 0 || availableHeight.value === 0) return {}
-		const min = headerHeight.value
-		const max = availableHeight.value
-		return { height: min + (max - min) * progress.value }
+		const max = Math.max(
+			availableHeight.value - headerHeight.value - FILL_BORDER * 2,
+			0
+		)
+		return { height: max * progress.value, opacity: progress.value }
 	})
-
-	const bodyStyle = useAnimatedStyle(() => ({ opacity: progress.value }))
 
 	const header = (
 		<Pressable
@@ -115,15 +124,15 @@ export function CollapsibleSheet({
 				availableHeight.value = e.nativeEvent.layout.height
 			}}
 		>
-			<Animated.View style={[styles.fillSheet, sheetStyle]}>
+			<View style={styles.fillSheet}>
 				{header}
 				<Animated.View
-					style={[styles.fillBody, bodyStyle]}
+					style={[styles.fillBody, fillBodyStyle]}
 					pointerEvents={collapsed ? 'none' : 'auto'}
 				>
 					{children}
 				</Animated.View>
-			</Animated.View>
+			</View>
 		</View>
 	)
 }
@@ -139,6 +148,7 @@ function makeStyles(colors: ColorScheme) {
 		// A full-height pane has no sheet padding of its own to sit in, and is
 		// wide enough that the bar reads better as a distinct band.
 		fillHeader: {
+			flexShrink: 0,
 			paddingHorizontal: spacing.md,
 			paddingVertical: spacing.sm,
 			backgroundColor: colors.cardAlt,
@@ -161,15 +171,17 @@ function makeStyles(colors: ColorScheme) {
 			justifyContent: 'flex-start',
 		},
 		fillSheet: {
+			// Height comes from the bar plus whatever the body is animated to,
+			// so the bar always gets the room it asked for.
 			backgroundColor: colors.card,
-			borderWidth: 1,
+			borderWidth: FILL_BORDER,
 			borderColor: colors.border,
 			borderRadius: radius.md,
 			overflow: 'hidden',
 			boxShadow: shadow.overlay,
 		},
 		fillBody: {
-			flex: 1,
+			overflow: 'hidden',
 		},
 		pressed: {
 			opacity: 0.8,
