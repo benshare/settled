@@ -10,10 +10,11 @@
 
 import Constants, { ExecutionEnvironment } from 'expo-constants'
 import * as Notifications from 'expo-notifications'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Platform } from 'react-native'
 import { useAppForeground } from '../appState'
 import { useAuth } from '../auth'
+import { useGameStatesStore } from '../stores/useGameStatesStore'
 import { isMyTurn, useGamesStore } from '../stores/useGamesStore'
 
 // Badging Expo Go's own icon would be someone else's app; the number is also
@@ -43,11 +44,19 @@ export function useAppBadge(): void {
 	const { user } = useAuth()
 	const meId = user?.id
 	// `null` while the store is still loading — a cold start must not clear a
-	// badge a push set correctly before `activeGames` has landed.
-	const count = useGamesStore((s) =>
-		s.activeGames === undefined
-			? null
-			: s.activeGames.filter((g) => isMyTurn(g, meId)).length
+	// badge a push set correctly before `activeGames` has landed. A game whose
+	// board hasn't landed yet still counts, off `current_turn` (see
+	// `pendingUserIds`), for the same reason.
+	const activeGames = useGamesStore((s) => s.activeGames)
+	const statesById = useGameStatesStore((s) => s.byId)
+	const count = useMemo(
+		() =>
+			activeGames === undefined
+				? null
+				: activeGames.filter((g) =>
+						isMyTurn(g, meId, statesById[g.id]?.phase)
+					).length,
+		[activeGames, statesById, meId]
 	)
 
 	useEffect(() => {

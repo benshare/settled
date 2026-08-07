@@ -1,11 +1,12 @@
-// Per-game context. Loads the games row (from the store / realtime) and the
-// game_states row (fetched on mount + realtime), and exposes both through
-// useGame() so descendants don't have to re-derive the same subscriptions.
+// Per-game context. Loads the games row (from the store / realtime), reads the
+// board from `useGameStatesStore`, and exposes the join through useGame() so
+// descendants don't have to re-derive the same subscriptions.
 
 import { useAppForeground } from '@/lib/appState'
 import { useAuth } from '@/lib/auth'
 import { onGameMutated } from '@/lib/gameSync'
 import { uniqueTopic } from '@/lib/realtime'
+import { useGameStatesStore } from '@/lib/stores/useGameStatesStore'
 import {
 	isPartialGameRow,
 	useGamesStore,
@@ -27,10 +28,6 @@ import { totalVP } from './dev'
 import { parseGameColors } from './colors'
 import { seatColors } from './palette'
 import { parseGameConfig, type GameState } from './types'
-
-// What the game_states row carries. `config` lives on the games row, so a
-// GameState is only complete once the two are joined — see `gameState` below.
-type BoardState = Omit<GameState, 'config' | 'colors'>
 
 export type GameContextValue = {
 	game: Game | undefined
@@ -108,8 +105,19 @@ export function GameProvider({
 	const [resyncNonce, setResyncNonce] = useState(0)
 	useAppForeground(() => setResyncNonce((n) => n + 1))
 
-	const [boardState, setBoardState] = useState<BoardState | undefined>()
-	const [stateLoaded, setStateLoaded] = useState(false)
+	// The board comes from the store, which already holds every game the viewer
+	// is seated at — that's what makes opening one of those warm rather than a
+	// load. `watch` covers the rest (a spectated or finished game) and doubles
+	// as the freshness check for a cached row that went stale in the
+	// background.
+	const watch = useGameStatesStore((s) => s.watch)
+	const unwatch = useGameStatesStore((s) => s.unwatch)
+	useEffect(() => {
+		watch(gameId)
+		return () => unwatch(gameId)
+	}, [gameId, watch, unwatch])
+	const boardState = useGameStatesStore((s) => s.byId[gameId])
+	const stateLoaded = useGameStatesStore((s) => s.loaded[gameId] === true)
 
 	// A fetch in flight when the game changes must not land on the new game.
 	const currentId = useRef(gameId)
@@ -125,7 +133,6 @@ export function GameProvider({
 	// whose Accept button then 404s forever. Drop any response that isn't the
 	// newest one issued.
 	const gameSeq = useRef(0)
-	const stateSeq = useRef(0)
 
 	const fetchGame = useCallback(async () => {
 		gameSeq.current += 1
@@ -140,29 +147,13 @@ export function GameProvider({
 		setLiveGame(data as Game)
 	}, [gameId])
 
-	const fetchState = useCallback(async () => {
-		stateSeq.current += 1
-		const seq = stateSeq.current
-		const { data } = await supabase
-			.from('game_states')
-			.select('*')
-			.eq('game_id', gameId)
-			.maybeSingle()
-		if (currentId.current !== gameId || seq !== stateSeq.current) return
-		setBoardState(data ? rowToState(data) : undefined)
-		setStateLoaded(true)
-	}, [gameId])
-
 	// A move we made ourselves is confirmed by the edge function's response, so
 	// the board advances on that rather than on a channel that may have quietly
-	// died. See lib/gameSync.ts.
+	// died. See lib/gameSync.ts. The board half is the store's job.
 	useEffect(() => {
 		if (!gameId) return
-		return onGameMutated(gameId, () => {
-			fetchGame()
-			fetchState()
-		})
-	}, [gameId, fetchGame, fetchState])
+		return onGameMutated(gameId, fetchGame)
+	}, [gameId, fetchGame])
 
 	useEffect(() => {
 		if (!gameId) return
@@ -211,57 +202,6 @@ export function GameProvider({
 			supabase.removeChannel(channel)
 		}
 	}, [gameId, resyncNonce, fetchGame])
-
-	// Only a change of game empties the board. A resync re-fetches in place, so
-	// foregrounding doesn't flash back to the loading state.
-	useEffect(() => {
-		setBoardState(undefined)
-		setStateLoaded(false)
-	}, [gameId])
-
-	useEffect(() => {
-		if (!gameId) return
-		const channel = supabase
-			.channel(uniqueTopic(`game_state:${gameId}`))
-			.on(
-				'postgres_changes',
-				{
-					event: '*',
-					schema: 'public',
-					table: 'game_states',
-					filter: `game_id=eq.${gameId}`,
-				},
-				(payload) => {
-					// A payload is newer than anything already in flight, so
-					// retire those responses before applying it.
-					stateSeq.current += 1
-					if (payload.eventType === 'DELETE') {
-						setBoardState(undefined)
-						return
-					}
-					// Postgres logical replication omits unchanged TOASTed
-					// columns from UPDATE payloads, so a write that only
-					// touches `phase` (propose / reject / cancel a trade)
-					// arrives with the large jsonb blobs (players, hexes,
-					// vertices, edges) absent. Feeding that straight into
-					// rowToState strands the board with undefined players
-					// and crashes VP computation. Re-read the full row
-					// instead whenever the payload is partial.
-					if (isPartialStateRow(payload.new)) {
-						fetchState()
-						return
-					}
-					setBoardState(rowToState(payload.new))
-				}
-			)
-			.subscribe((status) => {
-				if (status === 'SUBSCRIBED') fetchState()
-			})
-		fetchState()
-		return () => {
-			supabase.removeChannel(channel)
-		}
-	}, [gameId, resyncNonce, fetchState])
 
 	const game = liveGame ?? storeGame
 	const meId = user?.id
@@ -368,80 +308,4 @@ export function GameProvider({
 	)
 
 	return <GameContext.Provider value={value}>{children}</GameContext.Provider>
-}
-
-// A realtime UPDATE payload is partial when Postgres dropped unchanged TOASTed
-// columns (see the game_states subscription). These blobs are `not null` in the
-// schema, so an absent (`undefined`) value can only mean the column was omitted
-// — never a legitimate null. Any one missing makes rowToState unsafe.
-function isPartialStateRow(row: Record<string, unknown>): boolean {
-	return (
-		row.players === undefined ||
-		row.hexes === undefined ||
-		row.vertices === undefined ||
-		row.edges === undefined
-	)
-}
-
-function rowToState(row: Record<string, unknown>): BoardState {
-	return {
-		variant: row.variant as GameState['variant'],
-		hexes: row.hexes as GameState['hexes'],
-		vertices: DEV_DUMMY_PLACEMENTS
-			? {
-					...(row.vertices as GameState['vertices']),
-					...DUMMY_VERTICES,
-				}
-			: (row.vertices as GameState['vertices']),
-		edges: DEV_DUMMY_PLACEMENTS
-			? {
-					...(row.edges as GameState['edges']),
-					...DUMMY_EDGES,
-				}
-			: (row.edges as GameState['edges']),
-		players: row.players as GameState['players'],
-		phase: row.phase as GameState['phase'],
-		robber: row.robber as GameState['robber'],
-		ports: (row.ports as GameState['ports']) ?? [],
-		fenceTokens:
-			(row.fence_tokens as GameState['fenceTokens']) ?? undefined,
-		devDeck: (row.dev_deck as GameState['devDeck']) ?? [],
-		largestArmy: (row.largest_army as GameState['largestArmy']) ?? null,
-		longestRoad: (row.longest_road as GameState['longestRoad']) ?? null,
-		round: (row.round as GameState['round']) ?? 0,
-		undo: (row.undo as GameState['undo']) ?? null,
-	}
-}
-
-// Temporary: visual test data for building rendering. Remove once real
-// placement flow lands.
-const DEV_DUMMY_PLACEMENTS = false
-
-const DUMMY_VERTICES: GameState['vertices'] = {
-	'1A': { occupied: true, player: 0, building: 'settlement', placedTurn: 0 },
-	'1F': { occupied: true, player: 1, building: 'city', placedTurn: 0 },
-	'2D': { occupied: true, player: 2, building: 'settlement', placedTurn: 0 },
-	'3B': { occupied: true, player: 0, building: 'city', placedTurn: 0 },
-	'3H': { occupied: true, player: 1, building: 'settlement', placedTurn: 0 },
-	'4D': { occupied: true, player: 3, building: 'city', placedTurn: 0 },
-	'4I': { occupied: true, player: 2, building: 'settlement', placedTurn: 0 },
-	'5A': { occupied: true, player: 1, building: 'city', placedTurn: 0 },
-	'5F': { occupied: true, player: 3, building: 'settlement', placedTurn: 0 },
-	'6D': { occupied: true, player: 0, building: 'settlement', placedTurn: 0 },
-}
-
-const DUMMY_EDGES: GameState['edges'] = {
-	'1A - 1B': { occupied: true, player: 0, placedTurn: 0 },
-	'1E - 1F': { occupied: true, player: 1, placedTurn: 0 },
-	'2D - 2E': { occupied: true, player: 2, placedTurn: 0 },
-	'3A - 3B': { occupied: true, player: 0, placedTurn: 0 },
-	'3B - 3C': { occupied: true, player: 0, placedTurn: 0 },
-	'3H - 3I': { occupied: true, player: 1, placedTurn: 0 },
-	'4C - 4D': { occupied: true, player: 3, placedTurn: 0 },
-	'4D - 5C': { occupied: true, player: 3, placedTurn: 0 },
-	'4I - 4J': { occupied: true, player: 2, placedTurn: 0 },
-	'4B - 5A': { occupied: true, player: 1, placedTurn: 0 },
-	'5A - 5B': { occupied: true, player: 1, placedTurn: 0 },
-	'5F - 6E': { occupied: true, player: 3, placedTurn: 0 },
-	'6C - 6D': { occupied: true, player: 0, placedTurn: 0 },
 }

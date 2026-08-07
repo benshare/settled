@@ -9,6 +9,7 @@ import {
 	formatRemaining,
 	isTimeoutOption,
 	pendingSeats,
+	pendingUserIds,
 	timeoutLabel,
 	timeoutMs,
 	warningStageDue,
@@ -128,6 +129,63 @@ function testPendingSeats() {
 	)
 }
 
+// The same rule in user ids, which is what the Games list dot, the header tab
+// badge and the app-icon badge all read.
+function testPendingUserIds() {
+	// The whole reported bug: nobody holds the turn during bonus selection, so
+	// the ids have to come from the hands.
+	equal(
+		pendingUserIds(
+			ORDER,
+			{
+				kind: 'select_bonus',
+				hands: { 0: hand(null), 1: hand('bricklayer'), 2: hand(null) },
+			},
+			null
+		).join(),
+		'u0,u2',
+		'bonus selection waits on everyone who has not locked in'
+	)
+	equal(
+		pendingUserIds(
+			ORDER,
+			{
+				kind: 'select_bonus',
+				hands: {
+					0: hand('bricklayer'),
+					1: hand('bricklayer'),
+					2: hand('bricklayer'),
+				},
+			},
+			null
+		).length,
+		0,
+		'and on nobody once every hand is in'
+	)
+	equal(
+		pendingUserIds(ORDER, { kind: 'special_build', queue: [2] }, 0).join(),
+		'u2',
+		'special build waits on the queue head, not the advanced turn holder'
+	)
+	// A game whose board hasn't loaded falls back to `current_turn` rather than
+	// to nobody — a cold start must not blank a badge a push set correctly.
+	equal(
+		pendingUserIds(ORDER, undefined, 1).join(),
+		'u1',
+		'an unloaded phase falls back to the turn holder'
+	)
+	equal(
+		pendingUserIds(ORDER, undefined, null).length,
+		0,
+		'and to nobody when there is no turn holder either'
+	)
+	equal(
+		pendingUserIds(ORDER, { kind: 'roll' }, 7).length,
+		0,
+		'a seat past the end of the order names nobody'
+	)
+}
+
 function testDeadline() {
 	const base = {
 		phase: { kind: 'main', roll: { a: 1, b: 2 }, trade: null } as Phase,
@@ -208,6 +266,7 @@ const tests: [string, () => void][] = [
 	['labels and windows', testLabels],
 	['defensive parsing', testParsing],
 	['pending seats per phase', testPendingSeats],
+	['pending user ids', testPendingUserIds],
 	['deadline and the penalty window', testDeadline],
 	['warning stages', testWarningStages],
 	['remaining-time formatting', testFormatting],

@@ -5,6 +5,7 @@
 
 import { useAuth } from '@/lib/auth'
 import { Avatar } from '@/lib/modules/Avatar'
+import { useGameStatesStore } from '@/lib/stores/useGameStatesStore'
 import { isMyTurn, useGamesStore, type Game } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
 import { colors, font, radius, spacing } from '@/lib/theme'
@@ -127,7 +128,8 @@ function GameTab({
 	const faces = others.slice(0, MAX_FACES)
 	const overflow = others.length - faces.length
 
-	const myTurn = isMyTurn(game, meId)
+	const phase = useGameStatesStore((s) => s.byId[game.id]?.phase)
+	const myTurn = isMyTurn(game, meId, phase)
 
 	return (
 		<Pressable

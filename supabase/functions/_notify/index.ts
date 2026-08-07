@@ -4,6 +4,7 @@
 // this directory as its own function.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { pendingUserIds, type PendingPhase } from '../_shared/phase.ts'
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
 
@@ -193,8 +194,8 @@ export async function sendNotifications(
  * drifted while the app was closed.
  *
  * Safe to read here: every caller runs this after its write has committed, so
- * `current_turn` already names the seat the push is about. A user with no
- * matching games gets an explicit 0, which is what clears the icon.
+ * the phase and turn already describe the state the push is about. A user with
+ * no matching games gets an explicit 0, which is what clears the icon.
  *
  * Failure returns an empty map rather than throwing — the badge is decoration
  * and the notification itself is the point.
@@ -206,9 +207,13 @@ async function badgeCounts(
 	const counts = new Map<string, number>()
 	for (const id of userIds) counts.set(id, 0)
 
+	// The embed is the whole reason this agrees with the app: `current_turn`
+	// alone can't answer the question (null through bonus selection, the wrong
+	// seat during special build, one seat where a parallel phase has several).
+	// PostgREST returns only `phase` from the joined row, so this stays small.
 	const { data, error } = await admin
 		.from('games')
-		.select('player_order, current_turn')
+		.select('player_order, current_turn, game_states(phase)')
 		.in('status', ['placement', 'active'])
 		.overlaps('participants', userIds)
 
@@ -220,14 +225,25 @@ async function badgeCounts(
 	for (const row of (data ?? []) as {
 		player_order: string[] | null
 		current_turn: number | null
+		game_states: { phase: PendingPhase } | { phase: PendingPhase }[] | null
 	}[]) {
-		// `null` through the whole (simultaneous) bonus-selection phase.
-		if (row.current_turn === null) continue
-		const uid = (row.player_order ?? [])[row.current_turn]
-		const prev = uid === undefined ? undefined : counts.get(uid)
+		// A 1:1 embed comes back as an object, but PostgREST has shipped it as
+		// a single-element array before; tolerate both rather than silently
+		// badging nobody.
+		const embed = Array.isArray(row.game_states)
+			? row.game_states[0]
+			: row.game_states
+		const pending = pendingUserIds(
+			row.player_order ?? [],
+			embed?.phase,
+			row.current_turn
+		)
 		// Only seats we were asked about; the query returns whole games, so
 		// most rows name somebody else.
-		if (prev !== undefined) counts.set(uid, prev + 1)
+		for (const uid of pending) {
+			const prev = counts.get(uid)
+			if (prev !== undefined) counts.set(uid, prev + 1)
+		}
 	}
 	return counts
 }

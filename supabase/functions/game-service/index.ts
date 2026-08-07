@@ -54,6 +54,7 @@ import {
 	SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sendNotifications, type NotifyTarget } from '../_notify/index.ts'
+import { pendingSeats } from '../_shared/phase.ts'
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void }
 
@@ -6041,51 +6042,6 @@ function timeoutOptionOf(config: GameConfig): TimeoutOption | null {
 	return typeof t === 'string' && t in TIMEOUT_MS
 		? (t as TimeoutOption)
 		: null
-}
-
-/**
- * Every seat the game is waiting on right now — who gets warned, who gets
- * skipped, and (client-side) whose countdown shows. Deliberately NOT
- * `current_turn`, which names the wrong seat during `special_build` and is null
- * for the whole simultaneous bonus-selection phase.
- */
-function pendingSeats(phase: Phase, currentTurn: number | null): number[] {
-	const turn = currentTurn === null ? [] : [currentTurn]
-	switch (phase.kind) {
-		case 'select_bonus':
-			return Object.entries(phase.hands)
-				.filter(([, hand]) => hand.chosen === null)
-				.map(([idx]) => Number(idx))
-		case 'post_placement': {
-			const p = phase.pending
-			const seats = new Set<number>(p.specialist)
-			for (const idx of p.haunt ?? []) seats.add(idx)
-			for (const [idx, owed] of Object.entries(p.explorer ?? {})) {
-				if ((owed ?? 0) > 0) seats.add(Number(idx))
-			}
-			for (const [idx, owed] of Object.entries(p.fencer ?? {})) {
-				if ((owed ?? 0) > 0) seats.add(Number(idx))
-			}
-			return [...seats].sort((a, b) => a - b)
-		}
-		case 'discard':
-			return Object.keys(phase.pending).map(Number)
-		case 'scout_pick':
-			return [phase.owner]
-		case 'curio_pick':
-			return [...phase.pending]
-		case 'forger_pick':
-			return phase.queue.length > 0 ? [phase.queue[0].idx] : []
-		case 'magician_pick':
-			return [phase.roller]
-		case 'special_build':
-			return phase.queue.length > 0 ? [phase.queue[0]] : []
-		case 'game_over':
-			return []
-		default:
-			// initial_placement, roll, main, move_robber, steal, road_building
-			return turn
-	}
 }
 
 function deadlineFor(args: {

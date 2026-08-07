@@ -12,8 +12,10 @@
 // optimistic update (the client can't predict a move_robber auto-steal anyway).
 
 type Listener = () => void
+type AnyListener = (gameId: string) => void
 
 const listeners = new Map<string, Set<Listener>>()
+const anyListeners = new Set<AnyListener>()
 
 export function onGameMutated(gameId: string, listener: Listener): () => void {
 	const forGame = listeners.get(gameId) ?? new Set<Listener>()
@@ -25,7 +27,19 @@ export function onGameMutated(gameId: string, listener: Listener): () => void {
 	}
 }
 
+/**
+ * For subscribers that hold many games at once and so can't register per id —
+ * `useGameStatesStore`, whose set of games changes as games start and end.
+ */
+export function onAnyGameMutated(listener: AnyListener): () => void {
+	anyListeners.add(listener)
+	return () => {
+		anyListeners.delete(listener)
+	}
+}
+
 export function emitGameMutated(gameId: string): void {
+	for (const listener of anyListeners) listener(gameId)
 	const forGame = listeners.get(gameId)
 	if (!forGame) return
 	for (const listener of forGame) listener()

@@ -132,6 +132,31 @@ export function pendingSeats(
 }
 
 /**
+ * `pendingSeats` in user ids — the "waiting on you" signal behind the Games
+ * list dot, the header tab badge and the app-icon badge count.
+ *
+ * `phase` is undefined for a game whose `game_states` row hasn't loaded yet, and
+ * the fallback is deliberately `current_turn` rather than "nobody": a cold start
+ * must not blank a badge a push set correctly.
+ *
+ * Mirrored in `_notify`'s badge query (`supabase/functions/_shared/phase.ts`).
+ */
+export function pendingUserIds(
+	playerOrder: string[],
+	phase: Phase | undefined,
+	currentTurn: number | null
+): string[] {
+	const seats = phase
+		? pendingSeats(phase, currentTurn)
+		: currentTurn === null
+			? []
+			: [currentTurn]
+	return seats
+		.map((idx) => playerOrder[idx])
+		.filter((id): id is string => id !== undefined)
+}
+
+/**
  * The deadline to stamp on a game after an action, or null when it has no
  * clock. `timedOut` holds the user ids that have been skipped and not acted
  * since: any of them being on the clock shortens the window to a minute.
