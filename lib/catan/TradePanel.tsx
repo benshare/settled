@@ -12,7 +12,6 @@ import type { Profile } from '../stores/useProfileStore'
 import { Button } from '../modules/Button'
 import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
-import { seatColor } from './palette'
 import {
 	availableBankOptions,
 	bankPartitionFor,
@@ -185,7 +184,6 @@ export function TradePanel({
 						<PlayerChip
 							key={i}
 							label={profile?.username ?? `P${i + 1}`}
-							color={seatColor(state, i)}
 							active={addressed.includes(i)}
 							onPress={() => toggle(i)}
 						/>
@@ -270,12 +268,10 @@ function TradeSidePanel({
 
 function PlayerChip({
 	label,
-	color,
 	active,
 	onPress,
 }: {
 	label: string
-	color?: string
 	active: boolean
 	onPress: () => void
 }) {
@@ -284,19 +280,11 @@ function PlayerChip({
 			onPress={onPress}
 			style={({ pressed }) => [
 				styles.chip,
-				active && styles.chipActive,
-				active && color ? { borderColor: color } : null,
+				!active && styles.chipInactive,
 				pressed && styles.pressed,
 			]}
 		>
-			<Text
-				style={[
-					styles.chipLabel,
-					active && { color: colors.text, fontWeight: '700' },
-				]}
-			>
-				{label}
-			</Text>
+			<Text style={styles.chipLabel}>{label}</Text>
 		</Pressable>
 	)
 }
@@ -391,15 +379,15 @@ const styles = StyleSheet.create({
 		borderRadius: radius.full,
 		borderWidth: 1,
 		borderColor: colors.border,
-		backgroundColor: colors.card,
-	},
-	chipActive: {
 		backgroundColor: colors.white,
-		borderWidth: 2,
+	},
+	chipInactive: {
+		opacity: 0.35,
 	},
 	chipLabel: {
 		fontSize: font.sm,
-		color: colors.textSecondary,
+		fontWeight: '700',
+		color: colors.text,
 	},
 	buttons: {
 		flexDirection: 'row',
