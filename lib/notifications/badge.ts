@@ -43,21 +43,20 @@ export async function setAppBadge(count: number): Promise<void> {
 export function useAppBadge(): void {
 	const { user } = useAuth()
 	const meId = user?.id
-	// `null` while the store is still loading — a cold start must not clear a
-	// badge a push set correctly before `activeGames` has landed. A game whose
-	// board hasn't landed yet still counts, off `current_turn` (see
-	// `pendingUserIds`), for the same reason.
+	// `null` means "no answer" — leave the badge alone. A cold start must not
+	// clear a badge a push set correctly, and that now covers a game whose board
+	// hasn't landed as well as a games list that hasn't: the turn pointer moved
+	// onto the board row, so an unloaded game has nothing to be counted from.
+	// It resolves within a moment of the games list itself.
 	const activeGames = useGamesStore((s) => s.activeGames)
 	const statesById = useGameStatesStore((s) => s.byId)
-	const count = useMemo(
-		() =>
-			activeGames === undefined
-				? null
-				: activeGames.filter((g) =>
-						isMyTurn(g, meId, statesById[g.id]?.phase)
-					).length,
-		[activeGames, statesById, meId]
-	)
+	const loaded = useGameStatesStore((s) => s.loaded)
+	const count = useMemo(() => {
+		if (activeGames === undefined) return null
+		if (activeGames.some((g) => !loaded[g.id])) return null
+		return activeGames.filter((g) => isMyTurn(g, meId, statesById[g.id]))
+			.length
+	}, [activeGames, statesById, loaded, meId])
 
 	useEffect(() => {
 		if (count === null) return

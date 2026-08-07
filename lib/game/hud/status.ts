@@ -98,7 +98,7 @@ export function islandStatus(ctx: Ctx): {
 	label: string
 	dice: DiceRoll | null
 } {
-	const { game, gameState } = ctx
+	const { gameState } = ctx
 	const phase = gameState.phase
 	if (phase.kind === 'special_build' && phase.queue.length > 0) {
 		return {
@@ -106,7 +106,7 @@ export function islandStatus(ctx: Ctx): {
 			dice: null,
 		}
 	}
-	const turn = game.current_turn
+	const turn = gameState.currentTurn
 	if (turn === null) return { label: 'Choosing bonuses', dice: null }
 	const label =
 		turn === ctx.meIdx ? 'Your turn' : `${nameOf(turn, ctx)}'s turn`
@@ -133,7 +133,7 @@ export function bannerStatus(ctx: Ctx): string | null {
 function placementLine(ctx: Ctx): string | null {
 	const phase = ctx.gameState.phase
 	if (phase.kind !== 'initial_placement') return null
-	const turn = ctx.game.current_turn ?? 0
+	const turn = ctx.gameState.currentTurn ?? 0
 	if (phase.step === 'pick_last')
 		return `${isPhrase(turn, ctx)} choosing a starting settlement`
 	const whose = turn === ctx.meIdx ? 'Your' : `${nameOf(turn, ctx)}'s`
@@ -149,10 +149,10 @@ function placementLine(ctx: Ctx): string | null {
 // roll (or the forger's compulsory pre-roll token move) instead. The actor gets
 // the instruction; everyone else gets the status.
 function rollLine(ctx: Ctx): string | null {
-	const { game, gameState, meIdx } = ctx
+	const { gameState, meIdx } = ctx
 	const phase = gameState.phase
 	if (phase.kind !== 'roll') return null
-	const turn = game.current_turn ?? 0
+	const turn = gameState.currentTurn ?? 0
 	// A gambler who has already rolled is keeping or rerolling; the island shows
 	// the pending dice, so name the decision rather than "to roll".
 	if (phase.pending?.dice) return `${isPhrase(turn, ctx)} confirming the roll`
@@ -166,9 +166,9 @@ function rollLine(ctx: Ctx): string | null {
 }
 
 function waitLine(ctx: Ctx): string | null {
-	const { game, gameState } = ctx
+	const { gameState } = ctx
 	const phase = gameState.phase
-	const seats = pendingSeats(phase, game.current_turn)
+	const seats = pendingSeats(phase, gameState.currentTurn)
 	switch (phase.kind) {
 		case 'select_bonus':
 			return seats.length > 0
@@ -183,11 +183,11 @@ function waitLine(ctx: Ctx): string | null {
 		case 'curio_pick':
 			return `Waiting for ${listOf(seats, ctx)} to claim resources`
 		case 'move_robber':
-			return `${isPhrase(game.current_turn ?? 0, ctx)} moving the robber`
+			return `${isPhrase(gameState.currentTurn ?? 0, ctx)} moving the robber`
 		case 'steal':
-			return `${isPhrase(game.current_turn ?? 0, ctx)} stealing a card`
+			return `${isPhrase(gameState.currentTurn ?? 0, ctx)} stealing a card`
 		case 'road_building':
-			return `${isPhrase(game.current_turn ?? 0, ctx)} placing free roads`
+			return `${isPhrase(gameState.currentTurn ?? 0, ctx)} placing free roads`
 		case 'scout_pick':
 			return `${isPhrase(phase.owner, ctx)} peeking at dev cards`
 		case 'magician_pick':

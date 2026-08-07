@@ -16,7 +16,7 @@ A single store can serve both roles: `useProfileStore` registers for auto-load _
 
 ### `useGameStatesStore` is downstream of `useGamesStore`
 
-It holds the `game_states` row for every game the viewer is seated at, so that (a) the "waiting on you" signal can be derived honestly rather than guessed from `games.current_turn`, and (b) opening one of those games renders warm. See `.claude/specs/pending-action-signal.md`; the parts that bite:
+It holds the `game_states` row for every game the viewer is seated at, so that (a) the "waiting on you" signal can be derived honestly rather than guessed from a turn pointer, and (b) opening one of those games renders warm. See `.claude/specs/pending-action-signal.md`; the parts that bite:
 
 - **Its id set is `activeGames`, never a query of its own.** It subscribes to `useGamesStore` and re-syncs when that set changes — cold start, a game starting, a game ending. It is _also_ registered for auto-load, purely for the foreground resync: when no ids have moved the subscription fires nothing, and the store would sit on a dead channel. So the subscription owns _which_ games and the registry owns _freshness and the socket_. The two run in parallel on a cold start; it simply holds nothing until the games store's load lands.
 - **The channel is bound per id, and that narrowing is not optional.** RLS also admits every friend's watchable game, and a `postgres_changes` payload is the whole row (it cannot project columns), so an unfiltered subscription would stream full boards for games the viewer isn't playing. Rebuilding on every id change is the price.

@@ -39,7 +39,7 @@ export function PlayerChips() {
 
 	const acting = actingSeats(
 		gameState,
-		game.current_turn,
+		gameState.currentTurn,
 		playerCount,
 		liveOffer
 	)

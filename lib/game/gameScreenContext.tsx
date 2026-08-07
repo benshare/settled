@@ -273,8 +273,8 @@ function useGameScreenState(gameId: string) {
 
 	const isCurrentPlayer =
 		!!game &&
-		game.current_turn !== null &&
-		game.current_turn === meIdx &&
+		gameState?.currentTurn !== null &&
+		gameState?.currentTurn === meIdx &&
 		meIdx >= 0
 
 	const isMyPlacementTurn = isCurrentPlayer && game?.status === 'placement'
@@ -297,7 +297,7 @@ function useGameScreenState(gameId: string) {
 	// longer says which one went second.
 	const placementKey =
 		gameState?.phase.kind === 'initial_placement'
-			? `${game?.current_turn}-${gameState.phase.round}-${gameState.phase.step}`
+			? `${gameState?.currentTurn}-${gameState.phase.round}-${gameState.phase.step}`
 			: null
 	const pickLastSeed =
 		gameState?.phase.kind === 'initial_placement' &&
@@ -346,7 +346,7 @@ function useGameScreenState(gameId: string) {
 	const canActBuild =
 		(gameState?.phase.kind === 'main' && isMyActiveTurn) || isMySpecialBuild
 	const mainTurnKey = canActBuild
-		? `${game?.current_turn}-${gameState?.phase.kind}-${sbActor ?? ''}`
+		? `${gameState?.currentTurn}-${gameState?.phase.kind}-${sbActor ?? ''}`
 		: 'off'
 	useEffect(() => {
 		if (mainTurnKey === 'off') {
@@ -390,7 +390,7 @@ function useGameScreenState(gameId: string) {
 	// Any pending confirm is tied to the current phase/turn. If either flips
 	// under us (realtime), drop the stale confirm so its closure doesn't
 	// fire against the wrong state.
-	const confirmScopeKey = `${game?.current_turn ?? 'x'}:${gameState?.phase.kind ?? 'x'}`
+	const confirmScopeKey = `${gameState?.currentTurn ?? 'x'}:${gameState?.phase.kind ?? 'x'}`
 	useEffect(() => {
 		setPendingConfirm(null)
 	}, [confirmScopeKey])
@@ -1406,7 +1406,7 @@ function useGameScreenState(gameId: string) {
 			hasLegalTarget.city,
 		dev_card:
 			!!gameState &&
-			canBuyDevCard(gameState, meIdx, game?.current_turn ?? -1),
+			canBuyDevCard(gameState, meIdx, gameState?.currentTurn ?? -1),
 	}
 	const buildCurseHints: BuildCurseHints = (() => {
 		if (!gameState || meIdx < 0) return {}

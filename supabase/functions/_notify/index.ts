@@ -207,13 +207,14 @@ async function badgeCounts(
 	const counts = new Map<string, number>()
 	for (const id of userIds) counts.set(id, 0)
 
-	// The embed is the whole reason this agrees with the app: `current_turn`
-	// alone can't answer the question (null through bonus selection, the wrong
-	// seat during special build, one seat where a parallel phase has several).
-	// PostgREST returns only `phase` from the joined row, so this stays small.
+	// Both halves of the answer live on the state row: the phase, and the turn
+	// pointer it can override. The pointer alone can't answer the question —
+	// null through bonus selection, the wrong seat during special build, one
+	// seat where a parallel phase is waiting on several. PostgREST returns only
+	// the two named columns from the joined row, so this stays small.
 	const { data, error } = await admin
 		.from('games')
-		.select('player_order, current_turn, game_states(phase)')
+		.select('player_order, game_states(phase, current_turn)')
 		.in('status', ['placement', 'active'])
 		.overlaps('participants', userIds)
 
@@ -222,10 +223,10 @@ async function badgeCounts(
 		return new Map()
 	}
 
+	type Embed = { phase: PendingPhase; current_turn: number | null }
 	for (const row of (data ?? []) as {
 		player_order: string[] | null
-		current_turn: number | null
-		game_states: { phase: PendingPhase } | { phase: PendingPhase }[] | null
+		game_states: Embed | Embed[] | null
 	}[]) {
 		// A 1:1 embed comes back as an object, but PostgREST has shipped it as
 		// a single-element array before; tolerate both rather than silently
@@ -236,7 +237,7 @@ async function badgeCounts(
 		const pending = pendingUserIds(
 			row.player_order ?? [],
 			embed?.phase,
-			row.current_turn
+			embed?.current_turn ?? null
 		)
 		// Only seats we were asked about; the query returns whole games, so
 		// most rows name somebody else.

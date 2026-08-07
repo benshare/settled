@@ -103,7 +103,7 @@ export function TopArea() {
 			{gameState && (
 				<PlayerStrip
 					playerOrder={game.player_order}
-					currentTurn={game.current_turn}
+					currentTurn={gameState.currentTurn}
 					meIdx={meIdx}
 					profilesById={profilesById}
 					gameState={gameState}
@@ -453,7 +453,7 @@ function PlacementHeader({
 	profilesById: Record<string, Profile>
 }) {
 	if (gameState.phase.kind !== 'initial_placement') return null
-	const currentIdx = game.current_turn ?? 0
+	const currentIdx = gameState.currentTurn ?? 0
 	const currentId = game.player_order[currentIdx]
 	const currentName =
 		meIdx === currentIdx
@@ -500,7 +500,7 @@ function RobberStatus({
 	)
 		return null
 
-	const currentIdx = game.current_turn ?? 0
+	const currentIdx = gameState.currentTurn ?? 0
 	const currentId = game.player_order[currentIdx]
 	const currentName =
 		meIdx === currentIdx
@@ -570,7 +570,7 @@ function RoadBuildingStatus({
 }) {
 	const phase = gameState.phase
 	if (phase.kind !== 'road_building') return null
-	const currentIdx = game.current_turn ?? 0
+	const currentIdx = gameState.currentTurn ?? 0
 	const isMyTurn = meIdx === currentIdx
 	const currentName = isMyTurn
 		? 'You'
@@ -638,7 +638,7 @@ function SpecialBuildBar({
 						events={(game.events ?? []) as GameEvent[]}
 						phase={phase}
 						meIdx={meIdx}
-						currentTurn={game.current_turn ?? 0}
+						currentTurn={gameState.currentTurn ?? 0}
 						enabled={gameState.config.honk !== false}
 						submitting={submitting}
 						onHonk={onHonk}
@@ -661,7 +661,7 @@ function spectatorStatus(
 	const nameOf = (idx: number) =>
 		profilesById[game.player_order[idx]]?.username ?? 'Player'
 	const listOf = (idxs: number[]) => idxs.map(nameOf).join(', ')
-	const current = nameOf(game.current_turn ?? 0)
+	const current = nameOf(gameState.currentTurn ?? 0)
 	const phase = gameState.phase
 
 	switch (phase.kind) {

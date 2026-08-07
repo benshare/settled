@@ -352,7 +352,7 @@ function MainLoopBar({
 	const phase = gameState.phase
 	if (phase.kind !== 'roll' && phase.kind !== 'main') return null
 
-	const currentIdx = game.current_turn ?? 0
+	const currentIdx = gameState.currentTurn ?? 0
 	const currentId = game.player_order[currentIdx]
 	const currentName =
 		meIdx === currentIdx

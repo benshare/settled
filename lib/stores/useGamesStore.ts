@@ -6,7 +6,12 @@ import type { BankRate } from '../catan/ports'
 import type { BonusId, CurseId } from '../catan/bonuses'
 import type { DevCardId } from '../catan/devCards'
 import { pendingUserIds } from '../catan/timeout'
-import type { DiceRoll, GameConfig, Phase, ResourceHand } from '../catan/types'
+import type {
+	DiceRoll,
+	GameConfig,
+	GameState,
+	ResourceHand,
+} from '../catan/types'
 import type { Database } from '../database-types'
 import { emitGameMutated } from '../gameSync'
 import { uniqueTopic } from '../realtime'
@@ -1411,21 +1416,25 @@ export function isFinished(status: string): boolean {
  * behind the Games list dot, the game header's tab badge, and the app-icon
  * badge count.
  *
- * `phase` comes from `useGameStatesStore`, which holds every active game's
- * board. Passing it is what makes this exact rather than an approximation of
- * `games.current_turn`: parallel phases (bonus selection, discard,
- * post-placement) wait on several seats at once and special build waits on one
- * that isn't `current_turn` at all. See `pendingUserIds`.
+ * `state` comes from `useGameStatesStore`, which holds every active game's
+ * board. Both halves of the answer live there: the phase, and the turn pointer
+ * it can override. That is what makes this exact rather than an approximation —
+ * parallel phases (bonus selection, discard, post-placement) wait on several
+ * seats at once, and special build waits on one the pointer doesn't name.
+ *
+ * False for a game whose board hasn't loaded. See `pendingUserIds`.
  */
 export function isMyTurn(
 	game: Game,
 	meId: string | undefined,
-	phase: Phase | undefined
+	state: Pick<GameState, 'phase' | 'currentTurn'> | undefined
 ): boolean {
 	if (!meId) return false
-	return pendingUserIds(game.player_order, phase, game.current_turn).includes(
-		meId
-	)
+	return pendingUserIds(
+		game.player_order,
+		state?.phase,
+		state?.currentTurn ?? null
+	).includes(meId)
 }
 
 /**

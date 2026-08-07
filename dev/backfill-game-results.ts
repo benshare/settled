@@ -40,6 +40,7 @@ function rowToState(row: Record<string, unknown>): GameState {
 		edges: row.edges as GameState['edges'],
 		players: row.players as GameState['players'],
 		phase: row.phase as GameState['phase'],
+		currentTurn: (row.current_turn as number | null) ?? null,
 		robber: row.robber as GameState['robber'],
 		ports: (row.ports as GameState['ports']) ?? [],
 		fenceTokens:
