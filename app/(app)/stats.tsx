@@ -14,7 +14,13 @@ import {
 import type { GameSize } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { SlidingArea } from '@/lib/modules/SlidingArea'
-import { computeStats, type CardRate } from '@/lib/stats'
+import {
+	cardStatKey,
+	computeStats,
+	indexCardStats,
+	type CardRate,
+	type CardStat,
+} from '@/lib/stats'
 import { useGamesStore } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
 import { useStatsStore } from '@/lib/stores/useStatsStore'
@@ -253,6 +259,14 @@ function StatsTab({
 function CatalogTab() {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
+	// Global play numbers, everyone's games — see
+	// .claude/specs/card-global-stats.md. Undefined until loaded, which the
+	// cells render as no footer at all rather than a skeleton.
+	const cardStats = useStatsStore((s) => s.cardStats)
+	const statsByCard = useMemo(
+		() => (cardStats ? indexCardStats(cardStats) : undefined),
+		[cardStats]
+	)
 	// The catalog is read outside any game, so the table size it describes is
 	// the reader's choice. Defaults to the 3-4 player baseline the pool
 	// descriptions are written against.
@@ -295,6 +309,8 @@ function CatalogTab() {
 											size={size}
 											tint={colors.success}
 											width={cardWidth}
+											stats={statsByCard}
+											kind="bonus"
 										/>
 									)
 								)}
@@ -319,6 +335,8 @@ function CatalogTab() {
 									size={size}
 									tint={colors.error}
 									width={cardWidth}
+									stats={statsByCard}
+									kind="curse"
 								/>
 							))}
 						</View>
@@ -374,6 +392,8 @@ function CardCell({
 	size,
 	tint,
 	width,
+	stats,
+	kind,
 }: {
 	card: Bonus | Curse
 	description: string
@@ -381,6 +401,9 @@ function CardCell({
 	size: GameSize
 	tint: string
 	width: number
+	// Undefined while the global numbers are still loading.
+	stats: Map<string, CardStat> | undefined
+	kind: 'bonus' | 'curse'
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
@@ -397,11 +420,70 @@ function CardCell({
 			</View>
 			<Text style={styles.cardTitle}>{card.title}</Text>
 			<Text style={styles.cardDescription}>{description}</Text>
-			{unavailable && (
+			{unavailable ? (
 				<Text style={styles.cardUnavailable}>
 					Not dealt in {sizeLabelFor(size)} games
 				</Text>
+			) : (
+				stats && (
+					<CardStatFooter
+						stat={stats.get(cardStatKey(kind, card.id, size))}
+					/>
+				)
 			)}
+		</View>
+	)
+}
+
+// Everyone's games with this card at the selected table size. The sample is
+// always printed: there is no minimum-games filter, so a 100% off three games
+// has to be able to read as what it is.
+function CardStatFooter({ stat }: { stat: CardStat | undefined }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	if (!stat) {
+		return (
+			<View style={styles.statFooter}>
+				<Text style={styles.statSample}>No games yet</Text>
+			</View>
+		)
+	}
+	return (
+		<View style={styles.statFooter}>
+			<View style={styles.statRow}>
+				<StatCol value={percent(stat.winRate)} label="win" />
+				<StatCol
+					value={
+						stat.avgPoints === null
+							? '—'
+							: oneDecimal(stat.avgPoints)
+					}
+					label="pts"
+				/>
+				<StatCol
+					value={
+						stat.pickRate === null ? '—' : percent(stat.pickRate)
+					}
+					label="picked"
+				/>
+			</View>
+			<Text style={styles.statSample}>
+				{plural(stat.games, 'game')}
+				{/* Offers are a different population from games — one count
+				    would misattribute the pick rate's sample to the others. */}
+				{stat.offers > 0 && ` · ${plural(stat.offers, 'offer')}`}
+			</Text>
+		</View>
+	)
+}
+
+function StatCol({ value, label }: { value: string; label: string }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View style={styles.statCol}>
+			<Text style={styles.statValue}>{value}</Text>
+			<Text style={styles.statLabel}>{label}</Text>
 		</View>
 	)
 }
@@ -496,6 +578,10 @@ function percent(rate: number): string {
 
 function oneDecimal(value: number): string {
 	return value.toFixed(1)
+}
+
+function plural(count: number, noun: string): string {
+	return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
 
 function makeStyles(colors: ColorScheme) {
@@ -687,6 +773,38 @@ function makeStyles(colors: ColorScheme) {
 		cardDescription: {
 			fontSize: font.xs,
 			color: colors.textSecondary,
+			textAlign: 'center',
+		},
+		statFooter: {
+			// Pushed to the bottom of a cell that stretches to its row's
+			// tallest, so the numbers sit under the description however long
+			// it ran.
+			marginTop: 'auto',
+			alignSelf: 'stretch',
+			paddingTop: spacing.xs,
+			borderTopWidth: 1,
+			borderTopColor: colors.border,
+			gap: 2,
+		},
+		statRow: {
+			flexDirection: 'row',
+		},
+		statCol: {
+			flex: 1,
+			alignItems: 'center',
+		},
+		statValue: {
+			fontSize: font.sm,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		statLabel: {
+			fontSize: font.xs,
+			color: colors.textMuted,
+		},
+		statSample: {
+			fontSize: font.xs,
+			color: colors.textMuted,
 			textAlign: 'center',
 		},
 		emptyText: {

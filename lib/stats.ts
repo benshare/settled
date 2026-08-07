@@ -3,8 +3,9 @@
 // (useGamesStore) — with no I/O of its own. Checked by dev/check-stats.ts.
 
 import { BONUS_POOL, CURSE_POOL, type BonusId } from './catan/bonuses'
+import type { GameSize } from './catan/types'
 import type { Game } from './stores/useGamesStore'
-import type { GameResult } from './stores/useStatsStore'
+import type { CardStatRow, GameResult } from './stores/useStatsStore'
 
 // A bonus or curse and how often it hit, alongside the sample it was measured
 // over. `rate` is 0-1. Sample size is carried because there is no
@@ -121,6 +122,50 @@ export function computeStats(
 		),
 		topWinRate: topWinRate(bonusResults),
 	}
+}
+
+// One bonus or curse's global record at one table size, as the catalog shows
+// it. Rates are separated from their samples because there is no minimum-games
+// filter — a card played three times is shown, and says so.
+export type CardStat = {
+	games: number
+	winRate: number
+	// Null when every recorded game of this card ended in a forfeit: there is
+	// no meaningful score in one, so `pointsGames` is the smaller sample the
+	// average is measured over.
+	avgPoints: number | null
+	pointsGames: number
+	// Null when the card has never been part of a real choice — a hand holding
+	// a single card isn't a pick, and the view doesn't count one.
+	pickRate: number | null
+	offers: number
+}
+
+export function cardStatKey(
+	kind: 'bonus' | 'curse',
+	id: string,
+	size: GameSize
+): string {
+	return `${kind}:${id}:${size}`
+}
+
+// The view's rows, keyed for O(1) lookup per catalog cell. A miss means the
+// card has never been played or offered at that size, which the cell renders
+// as its own empty state — deliberately distinct from a zeroed entry.
+export function indexCardStats(rows: CardStatRow[]): Map<string, CardStat> {
+	const out = new Map<string, CardStat>()
+	for (const r of rows) {
+		out.set(cardStatKey(r.kind, r.card_id, r.size), {
+			games: r.games,
+			winRate: r.games === 0 ? 0 : r.wins / r.games,
+			avgPoints:
+				r.played_games === 0 ? null : r.points_sum / r.played_games,
+			pointsGames: r.played_games,
+			pickRate: r.offers === 0 ? null : r.keeps / r.offers,
+			offers: r.offers,
+		})
+	}
+	return out
 }
 
 // Kept / offered, over the results that recorded what they were dealt. Hands

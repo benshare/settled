@@ -10,6 +10,8 @@ Loaded explicitly by routes that need the result before they can proceed — the
 
 Registered in `index.ts`, loaded once when a user enters `(app)`, cleared on sign out. Use for any store whose data is user-scoped and whose load is fire-and-forget (failure non-fatal; the screen owns its own empty/loading state). `useStatsStore` is the plainest example, and deliberately keeps **no realtime channel** — `game_results` rows appear only when a game ends, and the foreground resync below already refetches on every return to the app.
 
+`useStatsStore` holds two slices, both read-only and both settling their own failure so one can't blank the other: `results`, the reader's own `game_results` rows (RLS-scoped to games they sat at), and `cardStats`, **global** per-bonus/curse counts across everybody's games. The second reads the `card_stats` view rather than the table — widening the table's select policy would expose other people's individual scores, whereas a view of counts exposes nothing recoverable. See `.claude/specs/card-global-stats.md`; the view also excludes dev profiles, which is the aggregate analogue of the rule below.
+
 A single store can serve both roles: `useProfileStore` registers for auto-load _and_ exposes `loadProfile` for the pre-`(app)` routes.
 
 ### Adding an auto-loaded store

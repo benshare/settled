@@ -63,6 +63,7 @@ A bank trade is **not** priced at one chosen ratio. The give is cut into groups 
 
 `GameSize` (`types.ts`) is `'small'` (2p) / `'standard'` (3–4p) / `'expanded'` (5–6p), derived by `gameSizeFor(playerCount)` and **never persisted** — deliberately separate from `Variant`, since a card can vary at 2 players where the board doesn't.
 
+- **`gameSizeFor` has a third mirror in SQL.** The `card_stats` view (`.claude/specs/card-global-stats.md`) buckets `game_results.player_count` the same way, so the catalog's global numbers line up with the descriptions shown beside them. Retuning the boundaries means a migration too.
 - **`bonuses/sizes.ts` is the one location for the deviations.** `BONUS_SIZE_VARIANTS` / `CURSE_SIZE_VARIANTS` are keyed card id → size → params; `BONUS_POOL`/`CURSE_POOL` stay the `standard` baseline and the fallback, so a card that doesn't vary needs no entry (32 of 38 have none). Full table in `.claude/specs/bonus-size-variants.md`.
 - **Retuning a card is two edits**: its entry in `sizes.ts`, and a `switch (size)` in that card's rule helper. Params are typed per card (`BonusSizeParams`/`CurseSizeParams`) so a param on the wrong card fails to compile.
 - **Never read `.description` off a pool entry where a player count is known** — use `bonusDescriptionFor` / `curseDescriptionFor`. **`available: false` gates the DEAL only** — a card someone already holds still resolves a description at every size, so a game in flight can never render blank.

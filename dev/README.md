@@ -77,7 +77,7 @@ npx tsx dev/check-catan-placement.ts
 
 ### `check-stats.ts`
 
-Unit-style checks for `lib/stats.ts` — the Stats tab's aggregations (averages over empty input, per-game rounds, opponent counting and the top-5 cap, bonus pick/win rates and their tie-breaks). Run after editing the stats derivations.
+Unit-style checks for `lib/stats.ts` — the Stats tab's aggregations (averages over empty input, per-game rounds, opponent counting and the top-5 cap, bonus pick/win rates and their tie-breaks), plus the arithmetic over the global `card_stats` rows the catalog shows. Run after editing the stats derivations.
 
 ```sh
 npx tsx dev/check-stats.ts
