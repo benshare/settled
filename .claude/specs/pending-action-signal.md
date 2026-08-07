@@ -192,6 +192,20 @@ runtime is the floor: the client's copy in `lib/catan/types.ts` /
 
 `npm run check:edge` must pass before `npm run edge`.
 
+### 5. The missing push when bonus selection resolves
+
+`handlePickBonus` sent no notification when the last pick flipped the phase to
+`initial_placement`, so the first placer learned it from the badge or not at
+all — the one phase change that didn't tell the next actor. It now sends
+`your_turn` to seat 0, skipped when the last picker _is_ seat 0 (they're looking
+at the screen they just acted on).
+
+The move-timeout sweep re-enters this handler like any other, so a seat auto-
+picked for by the sweep goes down the same path. One narrow consequence, not
+worth special-casing: a player who timed out, was auto-picked last, and sits at
+seat 0 gets no push — they still get the dot and badge this change fixes, and
+the sweep re-stamps the deadline anyway.
+
 ## Verification
 
 - 3-player bonus game: all three see the dot at deal; picking clears only your
@@ -205,6 +219,8 @@ runtime is the floor: the client's copy in `lib/catan/types.ts` /
 - Open a spectated game (not preloaded): loads as before.
 - Background for a few minutes while another player acts, foreground: dots and
   board are correct.
+- The last player to pick a bonus: everyone else's clients advance to placement,
+  and seat 0 gets a `your_turn` push unless they were that last picker.
 
 ## Docs to update
 
@@ -218,8 +234,3 @@ runtime is the floor: the client's copy in `lib/catan/types.ts` /
 ## Follow-ups (deliberately not here)
 
 1. **Move `current_turn` to `game_states`** — see above.
-2. **No push when bonus selection resolves.** `handlePickBonus` sends no
-   notification when the last pick flips the phase to `initial_placement`, so the
-   first placer learns it from the badge or not at all, while every other phase
-   change notifies the next actor. Fixing it belongs with the notification pass,
-   not with this one.

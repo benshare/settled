@@ -4487,7 +4487,8 @@ async function handleCancelRequest(
 // select_bonus: each player picks one of their offered bonuses, and one of
 // their offered curses, to keep — both in the same call. Picks are parallel —
 // no current_turn enforcement. When every hand's `chosen` is set, snapshot each
-// player's kept cards onto PlayerState and advance to initial_placement.
+// player's kept cards onto PlayerState, advance to initial_placement, and tell
+// seat 0 they're up.
 async function handlePickBonus(
 	admin: SupabaseClient,
 	me: string,
@@ -4589,6 +4590,23 @@ async function handlePickBonus(
 			})
 			.eq('id', game.id)
 		if (gameErr) return err(500, 'could not log event')
+
+		// Resolving the phase hands the game to seat 0, and every other phase
+		// change tells the next actor. Skipped when the last picker *is* seat
+		// 0: they're looking at the screen they just acted on.
+		const firstPlacerId = game.player_order[0]
+		if (firstPlacerId && firstPlacerId !== me) {
+			EdgeRuntime.waitUntil(
+				sendNotifications(admin, [
+					{
+						userId: firstPlacerId,
+						kind: 'your_turn',
+						gate: 'yourTurn',
+						gameId: game.id,
+					},
+				])
+			)
+		}
 	}
 
 	return json({ ok: true })
