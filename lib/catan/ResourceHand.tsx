@@ -132,7 +132,16 @@ function Card({
 				disabled && styles.cardDisabled,
 			]}
 		>
-			<Text style={[styles.name, { fontSize: dim.w < 50 ? 9 : 11 }]}>
+			<Text
+				style={[
+					styles.name,
+					{
+						fontSize:
+							(dim.w < 50 ? 9 : 11) -
+							(WIDE_LABELS.has(resource) ? 1 : 0),
+					},
+				]}
+			>
 				{RESOURCE_LABELS[resource]}
 			</Text>
 			{showCount ? (
@@ -190,6 +199,9 @@ const RESOURCE_LABELS: Record<Resource, string> = {
 	brick: 'Brick',
 	ore: 'Ore',
 }
+
+// Widest glyphs of the five labels — one point smaller keeps them on one line.
+const WIDE_LABELS = new Set<Resource>(['brick', 'sheep'])
 
 const CARD_TEXT = '#1A1A1A'
 
