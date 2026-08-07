@@ -2,7 +2,7 @@
 // `npx tsx dev/check-catan-bonuses.ts`. Exits 0 on success; throws on the
 // first failure. One `test*` function per bonus.
 
-import { boardFor, type Vertex } from '../lib/catan/board'
+import { boardFor, type Resource, type Vertex } from '../lib/catan/board'
 import {
 	BANNED_BONUSES_BY_CURSE,
 	BONUS_POOL,
@@ -24,6 +24,7 @@ import {
 	canChooseRoll,
 	canReroll,
 	canShepherdSwap,
+	applyShepherdPayout,
 	gamblerModeFor,
 	canTapKnight,
 	canBuildMoreSuperCities,
@@ -647,6 +648,99 @@ function testShepherdHandSize() {
 	const noSh: PlayerState = { ...big, bonus: undefined }
 	const r2 = requiredDiscards([noSh])
 	equal(r2[0], 5, 'non-shepherd 10 → discard 5')
+}
+
+function testShepherdPayout() {
+	const state = setBonus(baseState(), 0, 'shepherd')
+	const declared: GameState = {
+		...state,
+		players: state.players.map((p, i) =>
+			i === 0
+				? {
+						...p,
+						resources: {
+							brick: 0,
+							wood: 0,
+							sheep: 2,
+							wheat: 1,
+							ore: 0,
+						},
+						shepherdUsedThisTurn: true,
+						shepherdPending: ['wheat', 'ore'] as [
+							Resource,
+							Resource,
+						],
+					}
+				: p
+		),
+	}
+	const paid = applyShepherdPayout(declared, 0)
+	equal(paid.players[0].resources.wheat, 2, 'shepherd payout adds wheat')
+	equal(paid.players[0].resources.ore, 1, 'shepherd payout adds ore')
+	equal(paid.players[0].resources.sheep, 2, 'shepherd payout leaves sheep')
+	equal(
+		paid.players[0].shepherdPending,
+		undefined,
+		'shepherd payout clears the declaration'
+	)
+	equal(paid.events.length, 1, 'shepherd payout logs one event')
+
+	// Nothing owed (and a non-shepherd seat) is a no-op, events included.
+	const again = applyShepherdPayout({ ...declared, players: paid.players }, 0)
+	equal(again.events.length, 0, 'nothing owed → no payout')
+	equal(
+		applyShepherdPayout(declared, 1).events.length,
+		0,
+		'non-shepherd seat'
+	)
+
+	// A duplicate pair pays 2 of the one resource.
+	const twins: GameState = {
+		...declared,
+		players: declared.players.map((p, i) =>
+			i === 0
+				? {
+						...p,
+						shepherdPending: ['ore', 'ore'] as [Resource, Resource],
+					}
+				: p
+		),
+	}
+	equal(
+		applyShepherdPayout(twins, 0).players[0].resources.ore,
+		2,
+		'duplicate declaration pays 2'
+	)
+
+	// The whole point: while the pair is owed it is not in the hand, so a 7
+	// asks for exactly what the declaration left behind.
+	const overLimit: GameState = {
+		...declared,
+		players: declared.players.map((p, i) =>
+			i === 0
+				? {
+						...p,
+						resources: {
+							brick: 8,
+							wood: 0,
+							sheep: 2,
+							wheat: 0,
+							ore: 0,
+						},
+					}
+				: p
+		),
+	}
+	equal(
+		requiredDiscards([overLimit.players[0]])[0],
+		4,
+		'declared cards are outside the discard maths'
+	)
+	equal(
+		requiredDiscards([applyShepherdPayout(overLimit, 0).players[0]])[0],
+		5,
+		'…and inside it once they land'
+	)
 }
 
 function testRitualist() {
@@ -1550,6 +1644,7 @@ function main() {
 		['findWinner + thrill_seeker', testFindWinnerThrillSeeker],
 		['set2: populist', testPopulist],
 		['set2: shepherd', testShepherdHandSize],
+		['set2: shepherd payout', testShepherdPayout],
 		['set2: ritualist', testRitualist],
 		['set2: ritualist cost by size', testRitualistCostBySize],
 		['set2: fortune_teller', testFortuneTeller],

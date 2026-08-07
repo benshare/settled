@@ -26,7 +26,10 @@ import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
 import { ScoutCostPicker } from '@/lib/catan/ScoutCostPicker'
 import { seatColor } from '@/lib/catan/palette'
-import { ShepherdSwapPicker } from '@/lib/catan/ShepherdSwapPicker'
+import {
+	ShepherdSwapPicker,
+	shepherdPendingLabel,
+} from '@/lib/catan/ShepherdSwapPicker'
 import { TradePanel } from '@/lib/catan/TradePanel'
 import { monopolyCap, type DiceRoll } from '@/lib/catan/types'
 import {
@@ -471,6 +474,12 @@ function PrimaryAction() {
 		isMyActiveTurn &&
 		!!myPlayer &&
 		canShepherdSwap(myPlayer)
+	// Already declared this turn: the cards are owed until the roll resolves,
+	// so say so where the button was rather than letting the sheep vanish.
+	const shepherdPending =
+		phase.kind === 'roll' && isMyActiveTurn
+			? myPlayer?.shepherdPending
+			: undefined
 
 	return (
 		<View style={[styles.actionCol, styles.actionSlot]}>
@@ -500,6 +509,11 @@ function PrimaryAction() {
 				>
 					Shepherd
 				</Button>
+			)}
+			{shepherdPending && (
+				<Text style={styles.shepherdPending} numberOfLines={2}>
+					{shepherdPendingLabel(shepherdPending)}
+				</Text>
 			)}
 			{/* The phase's primary control, which stays put and disables itself
 			    off-turn. Neither the honk nudge nor the undo arrow is here —
@@ -641,6 +655,12 @@ const styles = StyleSheet.create({
 	actionCol: {
 		gap: spacing.xs,
 		alignItems: 'flex-end',
+	},
+	shepherdPending: {
+		fontSize: font.xs,
+		color: colors.textSecondary,
+		fontWeight: '600',
+		textAlign: 'right',
 	},
 	// Trade and the main-loop action column split the row evenly, so the phase
 	// button below stays the same width whether it says "Roll" or "Done

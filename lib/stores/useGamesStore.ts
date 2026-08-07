@@ -230,6 +230,13 @@ export type GameEvent =
 			take: [Resource, Resource]
 			at: string
 	  }
+	// The declared pair actually landing, one roll later.
+	| {
+			kind: 'shepherd_payout'
+			player: number
+			gain: ResourceHand
+			at: string
+	  }
 	// Same `gains` as `rolled`, but a ritual pays only the ritualist.
 	| {
 			kind: 'ritual_roll'

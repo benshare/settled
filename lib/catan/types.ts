@@ -431,6 +431,11 @@ export type PlayerState = {
 	// `shepherd`: set to true once the player has used their per-turn
 	// shepherd swap (4-sheep start-of-turn). Reset on end_turn.
 	shepherdUsedThisTurn?: boolean
+	// `shepherd`: the pair declared by that swap, owed until the roll fully
+	// resolves. The sheep leave the hand at declaration but the cards land
+	// only once the turn reaches `main`, which is what keeps them out of
+	// reach of a 7 (see `.claude/specs/shepherd-deferred-gain.md`).
+	shepherdPending?: [Resource, Resource]
 	// `forger`: hex where the forger token currently sits. Seeded to the
 	// robber's starting hex (the desert) when bonuses lock in, and moved by
 	// the forger alone — nothing else on the board relocates it. Undefined

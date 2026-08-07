@@ -123,7 +123,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'shepherd',
 		title: 'Shepherd',
 		description:
-			'If you begin your turn with four Sheep in your hand, you may discard two Sheep to receive two resource cards of your choice. Sheep do not count towards your 7 card hand limit.',
+			'If you begin your turn with four Sheep in hand, you may discard two to specify two resources of your choice. You receive them after rolling. Sheep do not count towards your 7 card hand limit.',
 		icon: 'paw-outline',
 		set: '2',
 	},

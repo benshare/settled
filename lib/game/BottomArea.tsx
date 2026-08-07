@@ -13,11 +13,15 @@ import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel } from '@/lib/catan/DiscardPanel'
 import { canShepherdSwap, ritualCardCost } from '@/lib/catan/bonus'
+import type { Resource } from '@/lib/catan/board'
 import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
-import { ShepherdSwapPicker } from '@/lib/catan/ShepherdSwapPicker'
+import {
+	ShepherdSwapPicker,
+	shepherdPendingLabel,
+} from '@/lib/catan/ShepherdSwapPicker'
 import { TradePanel } from '@/lib/catan/TradePanel'
 import { monopolyCap, type DiceRoll, type GameState } from '@/lib/catan/types'
 import { Button } from '@/lib/modules/Button'
@@ -166,6 +170,12 @@ export function BottomArea() {
 									? () => setShepherdOpen(true)
 									: undefined
 							}
+							shepherdPending={
+								isMyActiveTurn &&
+								gameState.phase.kind === 'roll'
+									? myPlayer?.shepherdPending
+									: undefined
+							}
 							forgerMustMove={forgerMustMove}
 							canUndo={canUndo}
 							onUndo={onUndo}
@@ -312,6 +322,7 @@ function MainLoopBar({
 	onHonk,
 	onRitualPress,
 	onShepherdPress,
+	shepherdPending,
 	forgerMustMove,
 	canUndo,
 	onUndo,
@@ -336,6 +347,9 @@ function MainLoopBar({
 	// reached).
 	onRitualPress?: () => void
 	onShepherdPress?: () => void
+	// Shepherd: the pair already declared this turn, owed until the roll
+	// resolves. Shown in place of the button so the sheep don't just vanish.
+	shepherdPending?: [Resource, Resource]
 	// Forger: the token move is compulsory and gates the roll. There is no
 	// button — the board pulses the valid hexes — so this only disables Roll
 	// and retitles the status line.
@@ -396,7 +410,8 @@ function MainLoopBar({
 			: `${currentName} rolled ${total}`
 	}
 
-	const showBonusRow = !!onRitualPress || !!onShepherdPress
+	const showBonusRow =
+		!!onRitualPress || !!onShepherdPress || !!shepherdPending
 	return (
 		<View style={styles.mainLoopBar}>
 			<View style={sharedStyles.mainLoopRow}>
@@ -502,6 +517,11 @@ function MainLoopBar({
 							Shepherd swap
 						</Button>
 					)}
+					{shepherdPending && (
+						<Text style={styles.shepherdPending}>
+							{shepherdPendingLabel(shepherdPending)}
+						</Text>
+					)}
 				</View>
 			)}
 		</View>
@@ -585,8 +605,14 @@ const styles = StyleSheet.create({
 	bonusRow: {
 		flexDirection: 'row',
 		flexWrap: 'wrap',
+		alignItems: 'center',
 		gap: spacing.xs,
 		marginTop: spacing.xs,
+	},
+	shepherdPending: {
+		fontSize: font.sm,
+		color: colors.textSecondary,
+		fontWeight: '600',
 	},
 	gamblerActions: {
 		flexDirection: 'row',
