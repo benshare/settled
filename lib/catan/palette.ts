@@ -25,6 +25,7 @@ export const HOT_NUMBERS = catanColors.hotNumbers
 export const playerColors = catanColors.players
 
 export const pieceStroke = catanColors.pieceStroke
+export const pieceStrokeSoft = catanColors.pieceStrokeSoft
 
 // The one seat → hex lookup. `state.colors` is resolved from every player's
 // ranking at game start and read back through `parseGameColors`, so it always

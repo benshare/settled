@@ -147,6 +147,9 @@ export const catanColors = {
 	} as Record<ColorId, string>,
 
 	pieceStroke: '#2B2B2B',
+	// A muted `pieceStroke`, for a board marker that is offered but not yet
+	// chosen. Same hue, so "chosen" reads purely as the darker of the two.
+	pieceStrokeSoft: '#9A9A9A',
 }
 
 export const spacing = {

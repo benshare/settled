@@ -14,10 +14,9 @@ settlement uncancellable the moment it landed.
 ## Locked decisions (confirmed with user)
 
 1. **`pick_last` stays as it is** — a separate step with its own backend call,
-   entered after the double seat's combined four-piece submission. It is
-   pre-seeded with the round-2 settlement exactly as today, so an untouched
-   confirm reproduces the standard rule. The combined flow does _not_ make the
-   nomination implicit in tap order.
+   entered after the double seat's combined four-piece submission. It opens
+   with nothing nominated (see `last-settlement-choice.md` §7); the combined
+   flow does _not_ make the nomination implicit in tap order.
 2. **Undo is one tap back, not a wipe.** An `UndoButton` beside the placement
    Confirm pops the most recent piece: a chosen road returns to road-picking, a
    chosen settlement returns to settlement-picking. Repeatable through all four
@@ -87,8 +86,8 @@ for each pair, in order:
 The grant rule is unchanged and stays in `applyStartingGrant`: granted on a
 round-2 settlement, or on **either** settlement for an aristocrat, and
 **deferred** to `pick_last` for a non-aristocrat double seat. Stamping
-`round: 1` / `round: 2` per pair is load-bearing — `roundTwoSettlementOf` and
-`swapPlacementPairs` both read it, so `pick_last` keeps working untouched.
+`round: 1` / `round: 2` per pair is load-bearing — `swapPlacementPairs` reads
+it, so `pick_last` keeps working untouched.
 
 Turn advance, after all pairs are applied:
 
@@ -145,7 +144,7 @@ stamps `placedTurn: state.round`, matching what the server will write.
 
 State on `gameScreenContext`: `placementDraft: PlacementDraftEntry[]`, plus
 `pickLast: Vertex | null` for the nomination step. Both reset on the existing
-`placementKey` change; `pickLast` still opens pre-seeded.
+`placementKey` change; `pickLast` opens null.
 
 Derived `placementStage`, for `step === 'settlement'` on my turn:
 

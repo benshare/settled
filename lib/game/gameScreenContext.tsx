@@ -179,7 +179,8 @@ function useGameScreenState(gameId: string) {
 	// The placement turn being drafted locally: a settlement, its road, and a
 	// second pair for the seat that places both back-to-back. Nothing is sent
 	// until the player confirms, which is what makes taking a piece back free.
-	// `pickLast` is the separate one-tap nomination of the `pick_last` step.
+	// `pickLast` is the separate one-tap nomination of the `pick_last` step,
+	// which starts empty — the confirm is disabled until the player answers.
 	const [placementDraft, setPlacementDraft] = useState<PlacementDraftEntry[]>(
 		[]
 	)
@@ -290,24 +291,18 @@ function useGameScreenState(gameId: string) {
 	const isMySpecialBuild =
 		sbActor !== null && sbActor === meIdx && game?.status === 'active'
 
-	// Reset selection when the turn or phase step changes under us — except on
-	// the `pick_last` step, which opens pre-seeded with the round-2 settlement
-	// so confirming untouched reproduces the standard rule. Which settlement
-	// that is has to come from the log: once both roads are down the board no
-	// longer says which one went second.
+	// Reset selection when the turn or phase step changes under us. The
+	// `pick_last` step opens with **nothing** nominated: the two settlements
+	// went down in one submitted turn, so seeding either one would be the app
+	// answering the question it is asking.
 	const placementKey =
 		gameState?.phase.kind === 'initial_placement'
 			? `${gameState?.currentTurn}-${gameState.phase.round}-${gameState.phase.step}`
 			: null
-	const pickLastSeed =
-		gameState?.phase.kind === 'initial_placement' &&
-		gameState.phase.step === 'pick_last'
-			? roundTwoSettlementOf((game?.events ?? []) as GameEvent[], meIdx)
-			: null
 	useEffect(() => {
-		setPickLast(pickLastSeed)
+		setPickLast(null)
 		setPlacementDraft([])
-	}, [placementKey, pickLastSeed])
+	}, [placementKey])
 
 	// How many settlement+road pairs this turn submits — two for the seat the
 	// snake order hands both of its turns to back-to-back.
@@ -1658,25 +1653,6 @@ function useGameScreenState(gameId: string) {
 // drop, or a second dropped resource means an unrelated hand change (a build,
 // a bank trade, a discard) is layered on top and the steal is unrecoverable —
 // answering anyway would attribute a random resource to the steal.
-// The settlement a seat placed on round 2 — the one today's rules pay out on,
-// and so the default answer on the `pick_last` step. Nominating it is a no-op
-// server-side; nominating the other swaps the pair in the log.
-function roundTwoSettlementOf(
-	events: GameEvent[],
-	playerIdx: number
-): string | null {
-	for (let i = events.length - 1; i >= 0; i--) {
-		const e = events[i]
-		if (
-			e.kind === 'settlement_placed' &&
-			e.player === playerIdx &&
-			e.round === 2
-		)
-			return e.vertex
-	}
-	return null
-}
-
 function diffStolenResource(
 	before: ResourceHandType,
 	after: ResourceHandType
