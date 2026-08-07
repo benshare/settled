@@ -2,6 +2,7 @@
 // Exits 0 on success; throws with a specific message on the first failure.
 
 import type { BonusId, CurseId } from '../lib/catan/bonuses'
+import type { GameSize } from '../lib/catan/types'
 import { cardStatKey, computeStats, indexCardStats } from '../lib/stats'
 import type { Game } from '../lib/stores/useGamesStore'
 import type { CardStatRow, GameResult } from '../lib/stores/useStatsStore'
@@ -325,16 +326,38 @@ const cardRow = (over: Partial<CardStatRow> = {}): CardStatRow => ({
 	...over,
 })
 
-assert(indexCardStats([]).size === 0, 'cards: empty in, empty out')
+const ALL: GameSize[] = ['small', 'standard', 'expanded']
 
-const cards = indexCardStats([
+assert(indexCardStats([], ALL).size === 0, 'cards: empty in, empty out')
+
+const ROWS: CardStatRow[] = [
 	cardRow(),
-	// Same card, other size: a separate bucket, never merged.
-	cardRow({ size: 'small', games: 2, wins: 2, played_games: 2 }),
+	// Same card at another size: folded into the same entry when both sizes
+	// are checked, dropped entirely when neither is.
+	cardRow({
+		size: 'small',
+		games: 2,
+		wins: 2,
+		played_games: 2,
+		points_sum: 18,
+		offers: 4,
+		keeps: 1,
+	}),
 	// Played, never offered a choice — every hand held a single card.
 	cardRow({ card_id: 'scout', offers: 0, keeps: 0 }),
 	// Offered plenty, never kept.
 	cardRow({ card_id: 'haunt', offers: 12, keeps: 0 }),
+	// Offered and always declined: the view's full join emits this, and there
+	// is no win rate in zero games.
+	cardRow({
+		card_id: 'forger',
+		games: 0,
+		wins: 0,
+		played_games: 0,
+		points_sum: 0,
+		offers: 4,
+		keeps: 0,
+	}),
 	// Every game of it ended in a forfeit: no score to average.
 	cardRow({
 		card_id: 'ritualist',
@@ -345,47 +368,74 @@ const cards = indexCardStats([
 	}),
 	// Curses share the shape and the key namespace.
 	cardRow({ kind: 'curse', card_id: 'avarice', games: 6, wins: 1 }),
-])
+]
 
-const gambler = cards.get(cardStatKey('bonus', 'gambler', 'standard'))
+const cards = indexCardStats(ROWS, ALL)
+
+const gambler = cards.get(cardStatKey('bonus', 'gambler'))
 assert(gambler, 'cards: gambler indexed')
-close(gambler.winRate, 0.4, 'cards: win rate over all games')
+// 4+2 wins over 10+2 games, 72+18 points over 8+2 played: counts are summed
+// before the division. Averaging the two sizes' rates would read 0.7 instead.
+close(gambler.winRate!, 0.5, 'cards: sizes summed before dividing')
 close(gambler.avgPoints!, 9, 'cards: avg points over played games only')
 close(gambler.pickRate!, 0.25, 'cards: pick rate is keeps / offers')
+assert(gambler.games === 12 && gambler.offers === 24, 'cards: samples summed')
 
-const gamblerSmall = cards.get(cardStatKey('bonus', 'gambler', 'small'))
-close(gamblerSmall!.winRate, 1, 'cards: sizes are separate buckets')
-
-assert(
-	cards.get(cardStatKey('bonus', 'gambler', 'expanded')) === undefined,
-	'cards: an unplayed size is a miss, not a zero'
+// One size checked reads exactly as its own row.
+const only = indexCardStats(ROWS, ['standard'])
+close(
+	only.get(cardStatKey('bonus', 'gambler'))!.winRate!,
+	0.4,
+	'cards: a single checked size is that size alone'
+)
+const smallOnly = indexCardStats(ROWS, ['small'])
+close(
+	smallOnly.get(cardStatKey('bonus', 'gambler'))!.winRate!,
+	1,
+	'cards: the other size, on its own'
 )
 assert(
-	cards.get(cardStatKey('bonus', 'avarice', 'standard')) === undefined,
+	smallOnly.get(cardStatKey('bonus', 'scout')) === undefined,
+	'cards: a card absent from every checked size is a miss, not a zero'
+)
+assert(
+	indexCardStats(ROWS, ['expanded']).size === 0,
+	'cards: a size nothing was played at indexes nothing'
+)
+
+assert(
+	cards.get(cardStatKey('curse', 'gambler')) === undefined,
 	'cards: kind is part of the key'
 )
-
 assert(
-	cards.get(cardStatKey('bonus', 'scout', 'standard'))!.pickRate === null,
+	cards.get(cardStatKey('bonus', 'scout'))!.pickRate === null,
 	'cards: no offers means no pick rate'
 )
 close(
-	cards.get(cardStatKey('bonus', 'haunt', 'standard'))!.pickRate!,
+	cards.get(cardStatKey('bonus', 'haunt'))!.pickRate!,
 	0,
 	'cards: offered but never kept is 0%, not null'
 )
 assert(
-	cards.get(cardStatKey('bonus', 'ritualist', 'standard'))!.avgPoints ===
-		null,
+	cards.get(cardStatKey('bonus', 'forger'))!.winRate === null,
+	'cards: offered but never played has no win rate, not 0%'
+)
+close(
+	cards.get(cardStatKey('bonus', 'forger'))!.pickRate!,
+	0,
+	'cards: an offer-only card still has a pick rate'
+)
+assert(
+	cards.get(cardStatKey('bonus', 'ritualist'))!.avgPoints === null,
 	'cards: an all-forfeit card has no average'
 )
 close(
-	cards.get(cardStatKey('bonus', 'ritualist', 'standard'))!.winRate,
+	cards.get(cardStatKey('bonus', 'ritualist'))!.winRate!,
 	1 / 3,
 	'cards: a forfeit still counts toward the win rate'
 )
 close(
-	cards.get(cardStatKey('curse', 'avarice', 'standard'))!.winRate,
+	cards.get(cardStatKey('curse', 'avarice'))!.winRate!,
 	1 / 6,
 	'cards: curses are indexed the same way'
 )

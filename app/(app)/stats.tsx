@@ -11,8 +11,9 @@ import {
 	type Bonus,
 	type Curse,
 } from '@/lib/catan/bonuses'
-import type { GameSize } from '@/lib/catan/types'
+import { GAME_SIZES, type GameSize } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
+import { Modal } from '@/lib/modules/Modal'
 import { SlidingArea } from '@/lib/modules/SlidingArea'
 import {
 	cardStatKey,
@@ -51,7 +52,7 @@ const BONUS_SETS: { set: Bonus['set']; label: string }[] = [
 	{ set: '3', label: 'Set 3' },
 ]
 
-// Player counts behind each GameSize, for the catalog's size picker. The
+// Player counts behind each GameSize, for the catalog's filter menu. The
 // labels double as the phrasing in a withheld card's note ("Not dealt in
 // 2-player games").
 const CATALOG_SIZES: { size: GameSize; label: string }[] = [
@@ -60,8 +61,17 @@ const CATALOG_SIZES: { size: GameSize; label: string }[] = [
 	{ size: 'expanded', label: '5-6 player' },
 ]
 
-function sizeLabelFor(size: GameSize): string {
-	return CATALOG_SIZES.find((s) => s.size === size)?.label ?? ''
+// The size every card's description is written against, and so the one the
+// catalog always reads: the filter is a lens on the sample, not a mode the
+// card is read in. See .claude/specs/card-stats-filter.md.
+const BASELINE_SIZE: GameSize = 'standard'
+
+function sizeLabelsFor(sizes: GameSize[]): string {
+	const labels = CATALOG_SIZES.filter((s) => sizes.includes(s.size)).map(
+		(s) => s.label
+	)
+	if (labels.length <= 1) return labels[0] ?? ''
+	return `${labels.slice(0, -1).join(', ')} or ${labels[labels.length - 1]}`
 }
 
 // Grid width at or above which the catalog uses 3 columns; narrower (phones in
@@ -263,14 +273,14 @@ function CatalogTab() {
 	// .claude/specs/card-global-stats.md. Undefined until loaded, which the
 	// cells render as no footer at all rather than a skeleton.
 	const cardStats = useStatsStore((s) => s.cardStats)
+	// Which table sizes the numbers are measured over. All of them by default:
+	// the sample is small enough that splitting it three ways leaves most cards
+	// reading "No games yet".
+	const [sizes, setSizes] = useState<GameSize[]>([...GAME_SIZES])
 	const statsByCard = useMemo(
-		() => (cardStats ? indexCardStats(cardStats) : undefined),
-		[cardStats]
+		() => (cardStats ? indexCardStats(cardStats, sizes) : undefined),
+		[cardStats, sizes]
 	)
-	// The catalog is read outside any game, so the table size it describes is
-	// the reader's choice. Defaults to the 3-4 player baseline the pool
-	// descriptions are written against.
-	const [size, setSize] = useState<GameSize>('standard')
 	// Measure the grid's real width rather than deriving it from the window —
 	// safe-area insets / max-width can leave the content narrower than the
 	// screen, which would misjudge how many columns fit.
@@ -282,12 +292,15 @@ function CatalogTab() {
 		gridWidth > 0
 			? Math.floor((gridWidth - (columns - 1) * spacing.sm) / columns)
 			: 0
+	// Only shown on a card withheld from every checked size, so it can name
+	// them all — there is no size left where the card is dealt.
+	const unavailableNote = `Not dealt in ${sizeLabelsFor(sizes)} games`
 	return (
 		<View
 			style={styles.pane}
 			onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
 		>
-			<SizeSelector size={size} onSize={setSize} />
+			<CatalogFilter sizes={sizes} onSizes={setSizes} />
 			{cardWidth > 0 && (
 				<>
 					{BONUS_SETS.map(({ set, label }) => (
@@ -301,12 +314,13 @@ function CatalogTab() {
 											card={b}
 											description={bonusDescriptionFor(
 												b.id,
-												size
+												BASELINE_SIZE
 											)}
-											unavailable={
-												!isBonusAvailableAt(b.id, size)
-											}
-											size={size}
+											unavailable={sizes.every(
+												(s) =>
+													!isBonusAvailableAt(b.id, s)
+											)}
+											unavailableNote={unavailableNote}
 											tint={colors.success}
 											width={cardWidth}
 											stats={statsByCard}
@@ -327,12 +341,12 @@ function CatalogTab() {
 									card={c}
 									description={curseDescriptionFor(
 										c.id,
-										size
+										BASELINE_SIZE
 									)}
-									unavailable={
-										!isCurseAvailableAt(c.id, size)
-									}
-									size={size}
+									unavailable={sizes.every(
+										(s) => !isCurseAvailableAt(c.id, s)
+									)}
+									unavailableNote={unavailableNote}
 									tint={colors.error}
 									width={cardWidth}
 									stats={statsByCard}
@@ -347,40 +361,90 @@ function CatalogTab() {
 	)
 }
 
-// Segmented pill row picking which table size the catalog describes.
-function SizeSelector({
-	size,
-	onSize,
+// The catalog's one filter: an icon that opens a menu of table sizes to
+// measure the numbers over. Built for more controls than it has — a second one
+// goes in the same sheet, under its own heading.
+function CatalogFilter({
+	sizes,
+	onSizes,
 }: {
-	size: GameSize
-	onSize: (s: GameSize) => void
+	sizes: GameSize[]
+	onSizes: (s: GameSize[]) => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
+	const [open, setOpen] = useState(false)
+	const narrowed = sizes.length < GAME_SIZES.length
+
+	function toggle(size: GameSize) {
+		// The last checked size doesn't uncheck: with none checked there is no
+		// table for the catalog to describe, and every cell would need a fourth
+		// empty state.
+		if (sizes.includes(size)) {
+			if (sizes.length === 1) return
+			onSizes(sizes.filter((s) => s !== size))
+		} else {
+			onSizes(GAME_SIZES.filter((s) => s === size || sizes.includes(s)))
+		}
+	}
+
 	return (
-		<View style={styles.sizeControl}>
-			{CATALOG_SIZES.map((s) => {
-				const active = s.size === size
-				return (
-					<Pressable
-						key={s.size}
-						style={[
-							styles.sizePill,
-							active && styles.sizePillActive,
-						]}
-						onPress={() => onSize(s.size)}
-					>
-						<Text
-							style={[
-								styles.sizeLabel,
-								active && styles.sizeLabelActive,
+		<View style={styles.filterBar}>
+			<Pressable
+				onPress={() => setOpen(true)}
+				style={({ pressed }) => [
+					styles.filterButton,
+					pressed && styles.pressed,
+				]}
+				accessibilityRole="button"
+				accessibilityLabel="Filter catalog"
+			>
+				<Ionicons
+					name="filter"
+					size={18}
+					color={narrowed ? colors.brand : colors.textSecondary}
+				/>
+				{/* The trigger carries no text, so this dot is the only sign
+				    that the numbers are measured over less than everything. */}
+				{narrowed && <View style={styles.filterDot} />}
+			</Pressable>
+
+			<Modal
+				visible={open}
+				onDismiss={() => setOpen(false)}
+				contentStyle={styles.filterSheet}
+			>
+				<Text style={styles.filterSheetTitle}>Players</Text>
+				{CATALOG_SIZES.map((s) => {
+					const checked = sizes.includes(s.size)
+					return (
+						<Pressable
+							key={s.size}
+							onPress={() => toggle(s.size)}
+							style={({ pressed }) => [
+								styles.filterRow,
+								pressed && styles.pressed,
 							]}
 						>
-							{s.label}
-						</Text>
-					</Pressable>
-				)
-			})}
+							<Text
+								style={[
+									styles.filterLabel,
+									checked && styles.filterLabelChecked,
+								]}
+							>
+								{s.label}
+							</Text>
+							<Ionicons
+								name={checked ? 'checkbox' : 'square-outline'}
+								size={20}
+								color={
+									checked ? colors.brand : colors.textMuted
+								}
+							/>
+						</Pressable>
+					)
+				})}
+			</Modal>
 		</View>
 	)
 }
@@ -389,7 +453,7 @@ function CardCell({
 	card,
 	description,
 	unavailable,
-	size,
+	unavailableNote,
 	tint,
 	width,
 	stats,
@@ -398,7 +462,7 @@ function CardCell({
 	card: Bonus | Curse
 	description: string
 	unavailable: boolean
-	size: GameSize
+	unavailableNote: string
 	tint: string
 	width: number
 	// Undefined while the global numbers are still loading.
@@ -421,13 +485,11 @@ function CardCell({
 			<Text style={styles.cardTitle}>{card.title}</Text>
 			<Text style={styles.cardDescription}>{description}</Text>
 			{unavailable ? (
-				<Text style={styles.cardUnavailable}>
-					Not dealt in {sizeLabelFor(size)} games
-				</Text>
+				<Text style={styles.cardUnavailable}>{unavailableNote}</Text>
 			) : (
 				stats && (
 					<CardStatFooter
-						stat={stats.get(cardStatKey(kind, card.id, size))}
+						stat={stats.get(cardStatKey(kind, card.id))}
 					/>
 				)
 			)}
@@ -435,7 +497,7 @@ function CardCell({
 	)
 }
 
-// Everyone's games with this card at the selected table size. The sample is
+// Everyone's games with this card, over the checked table sizes. The sample is
 // always printed: there is no minimum-games filter, so a 100% off three games
 // has to be able to read as what it is.
 function CardStatFooter({ stat }: { stat: CardStat | undefined }) {
@@ -451,7 +513,10 @@ function CardStatFooter({ stat }: { stat: CardStat | undefined }) {
 	return (
 		<View style={styles.statFooter}>
 			<View style={styles.statRow}>
-				<StatCol value={percent(stat.winRate)} label="win" />
+				<StatCol
+					value={stat.winRate === null ? '—' : percent(stat.winRate)}
+					label="win"
+				/>
 				<StatCol
 					value={
 						stat.avgPoints === null
@@ -460,12 +525,12 @@ function CardStatFooter({ stat }: { stat: CardStat | undefined }) {
 					}
 					label="pts"
 				/>
-				<StatCol
-					value={
-						stat.pickRate === null ? '—' : percent(stat.pickRate)
-					}
-					label="picked"
-				/>
+				{/* Dropped rather than dashed when nothing was ever a real
+				    choice — curses were dealt one per player until Aug 2026, so
+				    a column of em-dashes would be most of the catalog. */}
+				{stat.pickRate !== null && (
+					<StatCol value={percent(stat.pickRate)} label="picked" />
+				)}
 			</View>
 			<Text style={styles.statSample}>
 				{plural(stat.games, 'game')}
@@ -707,31 +772,58 @@ function makeStyles(colors: ColorScheme) {
 			flexWrap: 'wrap',
 			gap: spacing.sm,
 		},
-		sizeControl: {
+		filterBar: {
 			flexDirection: 'row',
+			justifyContent: 'flex-end',
+		},
+		filterButton: {
+			width: 34,
+			height: 34,
 			borderRadius: radius.full,
-			padding: 3,
-			gap: 2,
+			alignItems: 'center',
+			justifyContent: 'center',
 			backgroundColor: colors.cardAlt,
 			borderWidth: 1,
 			borderColor: colors.border,
 		},
-		sizePill: {
-			flex: 1,
-			paddingVertical: 6,
+		filterDot: {
+			position: 'absolute',
+			top: 4,
+			right: 4,
+			width: 7,
+			height: 7,
 			borderRadius: radius.full,
-			alignItems: 'center',
-		},
-		sizePillActive: {
 			backgroundColor: colors.brand,
 		},
-		sizeLabel: {
-			fontSize: font.xs,
-			fontWeight: '600',
-			color: colors.textSecondary,
+		pressed: {
+			opacity: 0.7,
 		},
-		sizeLabelActive: {
-			color: colors.white,
+		filterSheet: {
+			width: '100%',
+			maxWidth: 420,
+			backgroundColor: colors.card,
+			borderRadius: radius.md,
+			padding: spacing.lg,
+			gap: spacing.xs,
+		},
+		filterSheetTitle: {
+			fontSize: font.lg,
+			fontWeight: '700',
+			color: colors.text,
+		},
+		filterRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			paddingVertical: spacing.sm,
+		},
+		filterLabel: {
+			fontSize: font.base,
+			color: colors.text,
+		},
+		filterLabelChecked: {
+			color: colors.brand,
+			fontWeight: '600',
 		},
 		cardCell: {
 			// Width is set inline (fixed column width). No fixed height: the

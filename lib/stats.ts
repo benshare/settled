@@ -124,12 +124,15 @@ export function computeStats(
 	}
 }
 
-// One bonus or curse's global record at one table size, as the catalog shows
-// it. Rates are separated from their samples because there is no minimum-games
-// filter — a card played three times is shown, and says so.
+// One bonus or curse's global record over the table sizes the catalog's filter
+// has checked. Rates are separated from their samples because there is no
+// minimum-games filter — a card played three times is shown, and says so.
 export type CardStat = {
 	games: number
-	winRate: number
+	// Null when the card has never been played at these sizes: the view records
+	// cards that were offered and always declined, and a 0% win rate off zero
+	// games is a number the data doesn't contain.
+	winRate: number | null
 	// Null when every recorded game of this card ended in a forfeit: there is
 	// no meaningful score in one, so `pointsGames` is the smaller sample the
 	// average is measured over.
@@ -141,28 +144,48 @@ export type CardStat = {
 	offers: number
 }
 
-export function cardStatKey(
-	kind: 'bonus' | 'curse',
-	id: string,
-	size: GameSize
-): string {
-	return `${kind}:${id}:${size}`
+export function cardStatKey(kind: 'bonus' | 'curse', id: string): string {
+	return `${kind}:${id}`
 }
 
-// The view's rows, keyed for O(1) lookup per catalog cell. A miss means the
-// card has never been played or offered at that size, which the cell renders
-// as its own empty state — deliberately distinct from a zeroed entry.
-export function indexCardStats(rows: CardStatRow[]): Map<string, CardStat> {
-	const out = new Map<string, CardStat>()
+// The view's rows folded down to the sizes the reader has checked, keyed for
+// O(1) lookup per catalog cell. A miss means the card has never been played or
+// offered at any of them, which the cell renders as its own empty state —
+// deliberately distinct from a zeroed entry.
+//
+// Counts are summed before any division: three sizes' rates averaged together
+// would weight a 2-game bucket like a 40-game one.
+export function indexCardStats(
+	rows: CardStatRow[],
+	sizes: GameSize[]
+): Map<string, CardStat> {
+	const totals = new Map<string, CardStatRow>()
 	for (const r of rows) {
-		out.set(cardStatKey(r.kind, r.card_id, r.size), {
-			games: r.games,
-			winRate: r.games === 0 ? 0 : r.wins / r.games,
+		if (!sizes.includes(r.size)) continue
+		const key = cardStatKey(r.kind, r.card_id)
+		const at = totals.get(key)
+		if (!at) {
+			totals.set(key, { ...r })
+			continue
+		}
+		at.games += r.games
+		at.wins += r.wins
+		at.played_games += r.played_games
+		at.points_sum += r.points_sum
+		at.offers += r.offers
+		at.keeps += r.keeps
+	}
+
+	const out = new Map<string, CardStat>()
+	for (const [key, t] of totals) {
+		out.set(key, {
+			games: t.games,
+			winRate: t.games === 0 ? null : t.wins / t.games,
 			avgPoints:
-				r.played_games === 0 ? null : r.points_sum / r.played_games,
-			pointsGames: r.played_games,
-			pickRate: r.offers === 0 ? null : r.keeps / r.offers,
-			offers: r.offers,
+				t.played_games === 0 ? null : t.points_sum / t.played_games,
+			pointsGames: t.played_games,
+			pickRate: t.offers === 0 ? null : t.keeps / t.offers,
+			offers: t.offers,
 		})
 	}
 	return out

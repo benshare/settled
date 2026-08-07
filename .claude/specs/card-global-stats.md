@@ -18,6 +18,11 @@ games you sat at. Everything below follows from that.
   retuned at 2 players is not averaged with its 3-4 player version. Samples
   split three ways; the sample size is always printed so a thin bucket reads as
   thin.
+    > **Superseded** by [card-stats-filter](./card-stats-filter.md): splitting a
+    > sample this small three ways left most cards reading "No games yet". The
+    > single-select became a filter menu of checkboxes, all checked by default,
+    > and the numbers are summed over whatever is checked. Card text no longer
+    > follows the filter at all.
 - **Catalog cards only.** Not the in-game `BonusSelection` cards, not
   `PlayerDetailOverlay`.
 - **No minimum sample.** A card with three recorded games shows its rate and
