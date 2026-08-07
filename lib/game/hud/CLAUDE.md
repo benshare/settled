@@ -44,7 +44,10 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
   `status.ts`, "you" vs. name only. The banner is a status summary, never the
   instruction (the dock or a picker carries the affordance); precedence is live
   wait > the turn's own line on `roll` / `initial_placement` > recent action >
-  nothing. It **doesn't render during bonus selection**
+  nothing. The **initial-placement line is the one exception to uniformity**: it
+  names the piece the seat owes (settlement / road / ready to confirm) from
+  `placementStage`, which is a local draft — a watching viewer has no draft and
+  so sees the phase-level "settlement". It **doesn't render during bonus selection**
   for a seated viewer — the bonus pane owns the screen and already names who
   it's waiting on. A spectator has no pane, so they keep it.
 - **The banner is mounted inside the board layer, not beside it.** It shares its

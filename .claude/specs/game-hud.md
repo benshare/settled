@@ -118,6 +118,11 @@ waiting on. **One line of text; the turn dot is a separate set** (see §7).
   `TradeBanner` response UI, a picker modal). So on a 7 everyone reads "Waiting
   for {names} to discard" (the ower sees "you" in the list); the ower _also_
   gets the discard composer in their dock.
+- **Initial placement is the one exception to uniformity.** The line names the
+  piece the seat owes ("Your turn to place road", "Bea's placements are ready to
+  confirm"), and that stage is `placementStage` — a client-local draft, since a
+  placement turn submits its settlement and road together. A viewer who isn't
+  acting has no draft, so they read the phase-level "…turn to place settlement".
 - **Precedence:** live pending-wait > most-recent completed action > nothing.
   When any seat is pending, the wait line wins; a bare roll with nothing pending
   shows no banner. **All non-roll actions are shown, including the viewer's own.**

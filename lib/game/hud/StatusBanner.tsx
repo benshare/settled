@@ -29,6 +29,7 @@ export function StatusBanner() {
 		onHonk,
 		inBonusSelection,
 		isSpectator,
+		placementStage,
 	} = useGameScreen()
 	if (!game || !gameState) return null
 	// The bonus pane owns the screen while a player picks (BoardArea hides the
@@ -36,7 +37,7 @@ export function StatusBanner() {
 	// itself), and it already names who the table is waiting on. A spectator
 	// gets no pane, so the banner stays their readout.
 	if (inBonusSelection && !isSpectator) return null
-	const ctx = { game, gameState, meIdx, profilesById }
+	const ctx = { game, gameState, meIdx, profilesById, placementStage }
 	const { label, dice } = islandStatus(ctx)
 	const status = bannerStatus(ctx)
 
