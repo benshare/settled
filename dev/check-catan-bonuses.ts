@@ -1361,7 +1361,7 @@ function testInvestor() {
 		!canInvest(nonInvestor, 'wheat', 5, 'standard'),
 		'non-investor cannot'
 	)
-	// Token count + payout + cap.
+	// Token count + payout.
 	const withTokens: PlayerState = {
 		...base,
 		investments: { wheat: 2, ore: 1 },
@@ -1371,12 +1371,12 @@ function testInvestor() {
 	equal(payout.wheat, 2, 'wheat payout = tokens')
 	equal(payout.ore, 1, 'ore payout = tokens')
 	equal(payout.wood, 0, 'no wood tokens')
-	const capped: PlayerState = {
+	const loaded: PlayerState = {
 		...base,
 		resources: hand({ wheat: 9 }),
 		investments: { wheat: 3, ore: 3 },
 	}
-	assert(!canInvest(capped, 'wheat', 5, 'standard'), '6 tokens = cap reached')
+	assert(canInvest(loaded, 'wheat', 5, 'standard'), 'tokens are uncapped')
 }
 
 // Withheld entirely heads-up; active from turn one at a 5-6 player table.
@@ -1418,7 +1418,7 @@ function testInvestorBySize() {
 		'small still resolves a description'
 	)
 	assert(
-		bonusDescriptionFor('investor', 'expanded').includes('from the start'),
+		!bonusDescriptionFor('investor', 'expanded').includes('3 points'),
 		'expanded description drops the 3-point gate'
 	)
 }
@@ -1436,45 +1436,35 @@ function testMagician() {
 	equal(magicDiscardCount(7, 2, 'standard'), 6, '|7-2|+1 = 6')
 }
 
-// Heads-up: a cast blocks the magician's next turn but not the one after.
-// 5-6 players: the same cast costs one card less.
+// The magician declares no size variants: N + 1 and no cooldown everywhere.
+// The params survive in the table's types, so this guards the flat baseline.
 function testMagicianBySize() {
-	equal(magicDiscardCount(8, 6, 'small'), 3, 'small: N + 1')
-	equal(magicDiscardCount(8, 6, 'standard'), 3, 'standard: N + 1')
-	equal(magicDiscardCount(8, 6, 'expanded'), 2, 'expanded: N')
-	equal(magicDiscardCount(7, 2, 'expanded'), 5, 'expanded: distance only')
-
-	// Cooldown. A 2-player game's turns are 2 rounds apart, so a cast in
-	// round 4 blocks round 6 and clears by round 8.
-	const two = initialGameState('standard', 2, baseState().config)
-	const magician = (round: number, lastMagicRound?: number): GameState => ({
-		...two,
-		round,
-		players: two.players.map((p, i) =>
-			i === 0 ? { ...p, bonus: 'magician' as const, lastMagicRound } : p
-		),
-	})
-	assert(magicianCanCast(magician(4), 0), 'small: never cast → allowed')
-	assert(!magicianCanCast(magician(6, 4), 0), 'small: next turn blocked')
-	assert(magicianCanCast(magician(8, 4), 0), 'small: the turn after clears')
-	assert(!magicianCanCast(magician(6), 1), 'a non-magician never casts')
-
-	// No cooldown at the other sizes — the same stamp does not block.
-	const four = initialGameState('standard', 4, baseState().config)
-	const midMagician: GameState = {
-		...four,
-		round: 8,
-		players: four.players.map((p, i) =>
-			i === 0
-				? { ...p, bonus: 'magician' as const, lastMagicRound: 4 }
-				: p
-		),
+	for (const size of GAME_SIZES) {
+		equal(magicDiscardCount(8, 6, size), 3, `${size}: N + 1`)
+		equal(magicDiscardCount(7, 2, size), 6, `${size}: distance + 1`)
+		equal(
+			bonusDescriptionFor('magician', size),
+			bonusById('magician')?.description,
+			`${size}: baseline description`
+		)
 	}
-	assert(magicianCanCast(midMagician, 0), 'standard: no cooldown')
-	assert(
-		bonusDescriptionFor('magician', 'small').includes('two of your turns'),
-		'small description states the cooldown'
-	)
+
+	// A stale stamp never blocks a cast at any size while no cooldown exists.
+	// (2 players is where one would bite first — turns are 2 rounds apart.)
+	for (const count of [2, 4, 6]) {
+		const base = initialGameState('standard', count, baseState().config)
+		const cast: GameState = {
+			...base,
+			round: 6,
+			players: base.players.map((p, i) =>
+				i === 0
+					? { ...p, bonus: 'magician' as const, lastMagicRound: 4 }
+					: p
+			),
+		}
+		assert(magicianCanCast(cast, 0), `${count}p: no cooldown`)
+		assert(!magicianCanCast(cast, 1), `${count}p: non-magician never casts`)
+	}
 }
 
 // --- haunt ------------------------------------------------------------------

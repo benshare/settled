@@ -768,13 +768,12 @@ export function smithPortResourceOk(
 
 // --- Investor ---------------------------------------------------------------
 //
-// Once total VP ≥ 3, set aside 3 of a resource for an investment token (max 6
-// tokens / 18 cards). Each token pays 1 of its resource once the investor's
-// roll resolves — after any owed discard, so the payout can't push them over
-// the 7-card limit. Set-aside cards live in `player.investments`, immune to
-// steal and excluded from the 7-discard hand size.
+// Once total VP ≥ 3, set aside 3 of a resource for an investment token, with no
+// limit on how many. Each token pays 1 of its resource once the investor's roll
+// resolves — after any owed discard, so the payout can't push them over the
+// 7-card limit. Set-aside cards live in `player.investments`, immune to steal
+// and excluded from the 7-discard hand size.
 export const INVESTOR_ACTIVATE_VP = 3
-export const INVESTOR_MAX_TOKENS = 6
 export const INVEST_TRIO = 3
 
 export function investorTokenCount(p: PlayerState): number {
@@ -799,8 +798,7 @@ export function canInvest(
 ): boolean {
 	if (p.bonus !== 'investor') return false
 	if (totalVP < investorActivateVPFor(size)) return false
-	if (p.resources[resource] < INVEST_TRIO) return false
-	return investorTokenCount(p) < INVESTOR_MAX_TOKENS
+	return p.resources[resource] >= INVEST_TRIO
 }
 
 // Resources granted at the start of the investor's turn: 1 per token.
@@ -820,9 +818,9 @@ export function investorPayout(p: PlayerState): ResourceHand {
 // Baseline cost is the distance plus one card.
 export const MAGIC_DISCARD_PLUS = 1
 
-// May this player open a magician window on this roll? Everywhere but the
-// two-player table that is just "are they the magician"; there they must also
-// have skipped a turn since their last cast.
+// May this player open a magician window on this roll? No size declares a
+// cooldown today, so this is just "are they the magician" — the check stays
+// so re-adding one is a `sizes.ts` edit alone.
 export function magicianCanCast(state: GameState, playerIdx: number): boolean {
 	const p = state.players[playerIdx]
 	if (p?.bonus !== 'magician') return false

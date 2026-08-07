@@ -28,8 +28,9 @@ Player count comes from `state.players.length` in rules code, `playerOrder`
 ## Scope
 
 Shipped in two passes. The first landed the mechanism with both tables empty
-(a verified no-op); the second walked all 38 cards and retuned the 7 below.
-Every other card reads and behaves identically at every size.
+(a verified no-op); the second walked all 38 cards and retuned 7, of which the
+6 below are still tuned. Every other card reads and behaves identically at
+every size.
 
 ### Curses
 
@@ -40,15 +41,20 @@ Every other card reads and behaves identically at every size.
 
 ### Bonuses
 
-| Card               | small (2)                        | standard (3-4)       | expanded (5-6)                |
-| ------------------ | -------------------------------- | -------------------- | ----------------------------- |
-| **Gambler**        | reroll                           | reroll               | roll twice, keep either       |
-| **Ritualist**      | flat 3 cards                     | 2, or 3 after a city | flat 2 cards                  |
-| **Fortune Teller** | single gains                     | single gains         | double gains from bonus rolls |
-| **Investor**       | **not dealt**                    | active at 3 VP       | active immediately            |
-| **Magician**       | no cast on consecutive own turns | N + 1 cards          | N cards                       |
+| Card               | small (2)     | standard (3-4)       | expanded (5-6)                |
+| ------------------ | ------------- | -------------------- | ----------------------------- |
+| **Gambler**        | reroll        | reroll               | roll twice, keep either       |
+| **Ritualist**      | flat 3 cards  | 2, or 3 after a city | flat 2 cards                  |
+| **Fortune Teller** | single gains  | single gains         | double gains from bonus rolls |
+| **Investor**       | **not dealt** | active at 3 VP       | active immediately            |
 
-Three of these needed more than a number:
+The **Magician** was retuned in that pass too (a 2-player cooldown, and N
+rather than N + 1 at 5-6) and then pulled back to a flat N + 1 with no
+cooldown at every size. Its params (`discardPlus`, `cooldown`) and the two
+reads of them survive with no size declaring either, so re-tuning it is a
+`sizes.ts` edit alone.
+
+Two of the live variants needed more than a number:
 
 - **Provinciality** can't be expressed as a `BankKind` at either end. The
   small version is priced into the ratio (`bankSurchargeFor` → +1) so ports
@@ -58,11 +64,13 @@ Three of these needed more than a number:
   `phase.pending.{dice, altDice}`; `confirm_roll` takes a `which` to name the
   keeper and `reroll_dice` is rejected. Adds a `roll_choice` event so the
   choice is visible in the log the way a reroll already is.
-- **Magician**'s 2-player cooldown needs `PlayerState.lastMagicRound`, stamped
-  on cast (never on skip). `round` increments per turn, so a player's own
-  turns are `playerCount` apart and the gate is
-  `round > lastMagicRound + playerCount`. Enforced by `wrapMagicianWindow`
-  declining to open, so the player is never shown a sheet they can't use.
+
+A magician cooldown, were one declared again, needs `PlayerState.lastMagicRound`
+— still stamped on cast (never on skip), so nothing needs backfilling. `round`
+increments per turn, so a player's own turns are `playerCount` apart and the
+gate is `round > lastMagicRound + playerCount`. It is enforced by
+`wrapMagicianWindow` declining to open, so the player is never shown a sheet
+they can't use.
 
 ## Locked decisions (from clarification)
 
@@ -164,7 +172,8 @@ render a blank card.
 variant tables, and `isBonusAvailableAt` / `isCurseAvailableAt` for its
 `dealBonusHands` — plus every param a server-side rule reads, which today is
 all of them (the age limit, bank access, gambler mode, ritual cost, fortune
-teller multiplier, investor VP gate, and both magician params). It holds no
+teller multiplier, and investor VP gate; the magician's two params are read
+but no longer set by any size). It holds no
 descriptions (only `BONUS_IDS` / `BONUS_SET_OF`), so the description
 resolvers are **not** mirrored — the
 tables there carry availability only.

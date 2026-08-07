@@ -706,7 +706,7 @@ type PlayerState = {
 	forgerMovedThisTurn?: boolean
 	// Set 3.
 	// Round in which the magician last cast; only consulted where the bonus
-	// has a cooldown (2 players).
+	// has a cooldown, which no size declares today.
 	lastMagicRound?: number
 	investments?: Partial<Record<Resource, number>>
 	hauntSpots?: Vertex[]
@@ -1451,10 +1451,6 @@ const BONUS_SIZE_VARIANTS: Partial<
 	investor: {
 		small: { available: false },
 		expanded: { activateVP: 0 },
-	},
-	magician: {
-		small: { cooldown: true },
-		expanded: { discardPlus: 0 },
 	},
 }
 
@@ -3214,7 +3210,6 @@ function smithPortResourceOk(
 
 // Investor.
 const INVESTOR_ACTIVATE_VP = 3
-const INVESTOR_MAX_TOKENS = 6
 const INVEST_TRIO = 3
 
 function investorTokenCount(p: PlayerState): number {
@@ -3240,8 +3235,7 @@ function canInvest(
 ): boolean {
 	if (p.bonus !== 'investor') return false
 	if (vp < investorActivateVPFor(size)) return false
-	if (p.resources[resource] < INVEST_TRIO) return false
-	return investorTokenCount(p) < INVESTOR_MAX_TOKENS
+	return p.resources[resource] >= INVEST_TRIO
 }
 
 function investorPayout(p: PlayerState): ResourceHand {
@@ -3296,9 +3290,10 @@ function isValidMagicTarget(actualTotal: number, target: number): boolean {
 	return target !== actualTotal
 }
 
-// Mirror of lib/catan/bonus.ts magicianCanCast: at a two-player table the
-// magician must skip one of their own turns between casts. A player's turns
-// are exactly `players.length` rounds apart.
+// Mirror of lib/catan/bonus.ts magicianCanCast. No size declares a cooldown
+// today, so this reduces to "are they the magician"; the check stays so
+// re-adding one is a BONUS_SIZE_VARIANTS edit alone. A player's turns are
+// exactly `players.length` rounds apart.
 function magicianCanCast(state: GameState, playerIdx: number): boolean {
 	const p = state.players[playerIdx]
 	if (p?.bonus !== 'magician') return false
@@ -5086,9 +5081,9 @@ function wrapMagicianWindow(
 	roll: DiceRoll
 ): Phase {
 	if (phase.kind !== 'main') return phase
-	// Not just "are they the magician" — the two-player cooldown is enforced
-	// by never opening the window, so the player is never shown a sheet they
-	// cannot act on.
+	// Goes through magicianCanCast rather than the bonus id: a cooldown is
+	// enforced by never opening the window, so the player is never shown a
+	// sheet they cannot act on.
 	if (!magicianCanCast(state, rollerIdx)) return phase
 	return { kind: 'magician_pick', resume: phase, roller: rollerIdx, roll }
 }
@@ -9699,9 +9694,8 @@ async function handleCastMagic(
 	const nextResources = { ...meP.resources }
 	for (const r of RESOURCES)
 		nextResources[r] = nextResources[r] - discard[r] + gain[r]
-	// Stamp the round so the two-player cooldown can see it. Harmless
-	// everywhere else — `magicianCanCast` only reads it where the variant
-	// declares a cooldown.
+	// Stamp the round so a cooldown could see it. Harmless while none is
+	// declared — `magicianCanCast` only reads it where the variant sets one.
 	const nextPlayers = state.players.map((p, i) =>
 		i === meIdx
 			? { ...p, resources: nextResources, lastMagicRound: state.round }

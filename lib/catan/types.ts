@@ -412,9 +412,10 @@ export type PlayerState = {
 	// `gambler`: set to true once the player has used their one per-turn
 	// reroll. Reset on end_turn.
 	rerolledThisTurn?: boolean
-	// Round in which the magician last cast. Only used where the bonus has a
-	// cooldown (2 players): a player's turns are exactly `playerCount` rounds
-	// apart, so their next turn is blocked and the one after is not.
+	// Round in which the magician last cast. Only read where the bonus has a
+	// cooldown, which no size declares today — kept stamped so re-adding one
+	// costs nothing. A player's turns are exactly `playerCount` rounds apart,
+	// so a cooldown blocks their next turn and not the one after.
 	lastMagicRound?: number
 	// `carpenter`: set to true when the player has already bought a Wood→VP
 	// this turn. Reset on end_turn. Paired counter `carpenterVP` cumulative.
@@ -442,9 +443,9 @@ export type PlayerState = {
 	forgerMovedThisTurn?: boolean
 	// `investor`: set-aside investment tokens keyed by resource. Each token
 	// cost 3 of that resource and pays 1 back at the start of the player's
-	// turn. Capped at 6 tokens total (18 cards). Set-aside cards live here,
-	// NOT in `resources`, so they're immune to steal and don't count toward
-	// the 7-discard hand limit. Sparse — only written for investor players.
+	// turn, with no cap on how many. Set-aside cards live here, NOT in
+	// `resources`, so they're immune to steal and don't count toward the
+	// 7-discard hand limit. Sparse — only written for investor players.
 	investments?: Partial<Record<Resource, number>>
 	// Admin testing flag, set by hand in the `game_states.players` row — never
 	// written by the app. A dev player may name their own dice total on the

@@ -42,6 +42,8 @@ type BonusSizeParams = {
 	fortune_teller: { gainMultiplier: number }
 	// VP the investor needs before the bonus does anything at all.
 	investor: { activateVP: number }
+	// No size declares either today — the card is N + 1 with no cooldown
+	// everywhere. Kept so retuning it is a one-line table edit again.
 	// `discardPlus` is added to the distance when pricing a cast (baseline 1,
 	// i.e. N + 1); `cooldown` forbids casting on consecutive own turns.
 	magician: { discardPlus: number; cooldown: boolean }
@@ -88,21 +90,6 @@ export const BONUS_SIZE_VARIANTS: {
 			gainMultiplier: 2,
 		},
 	},
-	// Heads-up a cast every turn warps a two-player game, so it needs a turn
-	// off between casts; at a 5-6 player table it gets a discount instead,
-	// since the window comes around least often.
-	magician: {
-		small: {
-			description:
-				'After any roll, you may discard N + 1 cards to receive resources as if a number N away from the actual result had been rolled. You may not use this on two of your turns in a row.',
-			cooldown: true,
-		},
-		expanded: {
-			description:
-				'After any roll, you may discard N cards to receive resources as if a number N away from the actual result had been rolled.',
-			discardPlus: 0,
-		},
-	},
 	// Heads-up there is no field to out-scale, so the card is withheld
 	// entirely; at a 5-6 player table the slow start is the problem instead, so
 	// it comes online from the first turn.
@@ -110,7 +97,7 @@ export const BONUS_SIZE_VARIANTS: {
 		small: { available: false },
 		expanded: {
 			description:
-				'At any time during your turn you may set aside three of the same resource card to receive an "investment token" for that resource. Once your roll resolves, you receive one resource card from every investment token you have — so the payout never counts towards the seven-card limit on a 7. Active from the start of the game. Cards in investment cannot be stolen. Max 18 cards (6 trios) invested at once.',
+				'At any time during your turn you may set aside three of the same resource card to receive an "investment token" for that resource. After you roll, receive one resource card from each investment token you have.',
 			activateVP: 0,
 		},
 	},

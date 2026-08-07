@@ -8,7 +8,7 @@ import { Modal } from '../modules/Modal'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Resource } from './board'
-import { INVEST_TRIO, INVESTOR_MAX_TOKENS } from './bonus'
+import { INVEST_TRIO } from './bonus'
 import { resourceColor } from './palette'
 import type { ResourceHand } from './types'
 
@@ -40,8 +40,9 @@ export function InvestPicker({
 			<Text style={styles.title}>Invest</Text>
 			<Text style={styles.subtitle}>
 				Set aside {INVEST_TRIO} of a resource. Each token pays 1 back
-				after you roll — {tokenCount}/{INVESTOR_MAX_TOKENS} tokens used.
-				Set-aside cards can't be stolen.
+				after you roll — you have {tokenCount}{' '}
+				{tokenCount === 1 ? 'token' : 'tokens'}. Set-aside cards can't
+				be stolen.
 			</Text>
 			<View style={styles.grid}>
 				{RESOURCES.map((r) => {

@@ -13,7 +13,6 @@ import { colors, font, radius, spacing } from '../theme'
 import { RESOURCES } from './board'
 import {
 	INVEST_TRIO,
-	INVESTOR_MAX_TOKENS,
 	METROPOLITAN_SUPER_CITY_CAP,
 	superCityCount,
 } from './bonus'
@@ -473,7 +472,7 @@ function InvestmentsBlock({
 				/>
 				<Text style={styles.investTitle}>Invested</Text>
 				<Text style={styles.investTokens}>
-					{tokens}/{INVESTOR_MAX_TOKENS} tokens
+					{tokens} {tokens === 1 ? 'token' : 'tokens'}
 				</Text>
 			</View>
 			<CardFan

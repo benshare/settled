@@ -63,10 +63,11 @@ A bank trade is **not** priced at one chosen ratio. The give is cut into groups 
 
 `GameSize` (`types.ts`) is `'small'` (2p) / `'standard'` (3–4p) / `'expanded'` (5–6p), derived by `gameSizeFor(playerCount)` and **never persisted** — deliberately separate from `Variant`, since a card can vary at 2 players where the board doesn't.
 
-- **`bonuses/sizes.ts` is the one location for the deviations.** `BONUS_SIZE_VARIANTS` / `CURSE_SIZE_VARIANTS` are keyed card id → size → params; `BONUS_POOL`/`CURSE_POOL` stay the `standard` baseline and the fallback, so a card that doesn't vary needs no entry (31 of 38 have none). Full table in `.claude/specs/bonus-size-variants.md`.
+- **`bonuses/sizes.ts` is the one location for the deviations.** `BONUS_SIZE_VARIANTS` / `CURSE_SIZE_VARIANTS` are keyed card id → size → params; `BONUS_POOL`/`CURSE_POOL` stay the `standard` baseline and the fallback, so a card that doesn't vary needs no entry (32 of 38 have none). Full table in `.claude/specs/bonus-size-variants.md`.
 - **Retuning a card is two edits**: its entry in `sizes.ts`, and a `switch (size)` in that card's rule helper. Params are typed per card (`BonusSizeParams`/`CurseSizeParams`) so a param on the wrong card fails to compile.
 - **Never read `.description` off a pool entry where a player count is known** — use `bonusDescriptionFor` / `curseDescriptionFor`. **`available: false` gates the DEAL only** — a card someone already holds still resolves a description at every size, so a game in flight can never render blank.
-- **A variant that isn't just a number needs its own machinery**, and three do: provinciality (priced into the ratio via `bankSurchargeFor`, or an empty `availableBankOptions` the UI reads to disable the bank), the gambler's expanded second pair in `phase.pending.altDice`, and the magician's 2-player cooldown, the one rule here that needed **new player state** (`PlayerState.lastMagicRound`).
+- **A variant that isn't just a number needs its own machinery**, and two do: provinciality (priced into the ratio via `bankSurchargeFor`, or an empty `availableBankOptions` the UI reads to disable the bank) and the gambler's expanded second pair in `phase.pending.altDice`.
+- **The magician declares no variants** — flat N + 1, no cooldown, every size. Its `discardPlus` / `cooldown` params and the reads of them (`magicDiscardCount`, `magicianCanCast`) survive unset, as does `PlayerState.lastMagicRound`, which is still stamped on cast. Retuning it is a `sizes.ts` edit alone.
 
 ## Undo (one step)
 
