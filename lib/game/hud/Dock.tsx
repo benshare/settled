@@ -332,6 +332,7 @@ function DockTradeButton() {
 	return (
 		<TradeButton
 			compact
+			style={styles.actionSlot}
 			tradeEnabled={tradeButtonEnabled}
 			tradeActive={tradeButtonActive}
 			color={seatColor(gameState, meIdx)}
@@ -420,7 +421,7 @@ function PrimaryAction() {
 		const altDice = phase.pending.altDice ?? null
 		const rerolled = gameState.players[meIdx]?.rerolledThisTurn ?? false
 		return (
-			<View style={styles.actionCol}>
+			<View style={[styles.actionCol, styles.actionSlot]}>
 				{altDice ? (
 					<>
 						<RollChoice
@@ -472,7 +473,7 @@ function PrimaryAction() {
 		canShepherdSwap(myPlayer)
 
 	return (
-		<View style={styles.actionCol}>
+		<View style={[styles.actionCol, styles.actionSlot]}>
 			{phase.kind === 'roll' && isMyActiveTurn && isDev && (
 				<DevRollPicker
 					value={devRollTotal ?? null}
@@ -507,6 +508,7 @@ function PrimaryAction() {
 			{phase.kind === 'roll' ? (
 				<Button
 					size="small"
+					style={styles.phaseButton}
 					onPress={onRoll}
 					loading={submitting && isMyActiveTurn}
 					disabled={!isMyActiveTurn || forgerMustMove}
@@ -516,6 +518,7 @@ function PrimaryAction() {
 			) : phase.kind === 'main' ? (
 				<Button
 					size="small"
+					style={styles.phaseButton}
 					onPress={onEndTurn}
 					loading={submitting && isMyActiveTurn}
 					disabled={!isMyActiveTurn}
@@ -525,6 +528,7 @@ function PrimaryAction() {
 			) : (
 				<Button
 					size="small"
+					style={styles.phaseButton}
 					onPress={onEndSpecialBuild}
 					loading={submitting && isMySpecialBuild}
 					disabled={!isMySpecialBuild}
@@ -637,6 +641,21 @@ const styles = StyleSheet.create({
 	actionCol: {
 		gap: spacing.xs,
 		alignItems: 'flex-end',
+	},
+	// Trade and the main-loop action column split the row evenly, so the phase
+	// button below stays the same width whether it says "Roll" or "Done
+	// building". Placement's column is left off it — it has no trade beside it
+	// and its confirm labels need the whole row.
+	actionSlot: {
+		flex: 1,
+		minWidth: 0,
+	},
+	// Fills its (constant-width) column; the secondary bonus buttons above it
+	// stay content-sized and right-aligned. Tighter side padding than the
+	// default small button so the longest label still gets one line.
+	phaseButton: {
+		alignSelf: 'stretch',
+		paddingHorizontal: spacing.sm,
 	},
 	rollChoice: {
 		flexDirection: 'row',
