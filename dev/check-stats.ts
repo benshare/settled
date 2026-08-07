@@ -2,9 +2,9 @@
 // Exits 0 on success; throws with a specific message on the first failure.
 
 import type { BonusId, CurseId } from '../lib/catan/bonuses'
-import { computeStats } from '../lib/stats'
+import { cardStatKey, computeStats, indexCardStats } from '../lib/stats'
 import type { Game } from '../lib/stores/useGamesStore'
-import type { GameResult } from '../lib/stores/useStatsStore'
+import type { CardStatRow, GameResult } from '../lib/stores/useStatsStore'
 
 function assert(cond: unknown, msg: string): asserts cond {
 	if (!cond) throw new Error(`assert: ${msg}`)
@@ -305,6 +305,89 @@ assert(
 	canceled.topOpponents[0]?.userId === 'x' &&
 		canceled.topOpponents[0].games === 1,
 	"canceled: x's second game does not count"
+)
+
+// --- Global card stats -----------------------------------------------------
+// The counting happens in SQL (the `card_stats` view); what's checked here is
+// the arithmetic on top of it, and that a missing combination stays missing
+// rather than reading as a zeroed one.
+
+const cardRow = (over: Partial<CardStatRow> = {}): CardStatRow => ({
+	kind: 'bonus',
+	card_id: 'gambler',
+	size: 'standard',
+	games: 10,
+	wins: 4,
+	played_games: 8,
+	points_sum: 72,
+	offers: 20,
+	keeps: 5,
+	...over,
+})
+
+assert(indexCardStats([]).size === 0, 'cards: empty in, empty out')
+
+const cards = indexCardStats([
+	cardRow(),
+	// Same card, other size: a separate bucket, never merged.
+	cardRow({ size: 'small', games: 2, wins: 2, played_games: 2 }),
+	// Played, never offered a choice — every hand held a single card.
+	cardRow({ card_id: 'scout', offers: 0, keeps: 0 }),
+	// Offered plenty, never kept.
+	cardRow({ card_id: 'haunt', offers: 12, keeps: 0 }),
+	// Every game of it ended in a forfeit: no score to average.
+	cardRow({
+		card_id: 'ritualist',
+		games: 3,
+		wins: 1,
+		played_games: 0,
+		points_sum: 0,
+	}),
+	// Curses share the shape and the key namespace.
+	cardRow({ kind: 'curse', card_id: 'avarice', games: 6, wins: 1 }),
+])
+
+const gambler = cards.get(cardStatKey('bonus', 'gambler', 'standard'))
+assert(gambler, 'cards: gambler indexed')
+close(gambler.winRate, 0.4, 'cards: win rate over all games')
+close(gambler.avgPoints!, 9, 'cards: avg points over played games only')
+close(gambler.pickRate!, 0.25, 'cards: pick rate is keeps / offers')
+
+const gamblerSmall = cards.get(cardStatKey('bonus', 'gambler', 'small'))
+close(gamblerSmall!.winRate, 1, 'cards: sizes are separate buckets')
+
+assert(
+	cards.get(cardStatKey('bonus', 'gambler', 'expanded')) === undefined,
+	'cards: an unplayed size is a miss, not a zero'
+)
+assert(
+	cards.get(cardStatKey('bonus', 'avarice', 'standard')) === undefined,
+	'cards: kind is part of the key'
+)
+
+assert(
+	cards.get(cardStatKey('bonus', 'scout', 'standard'))!.pickRate === null,
+	'cards: no offers means no pick rate'
+)
+close(
+	cards.get(cardStatKey('bonus', 'haunt', 'standard'))!.pickRate!,
+	0,
+	'cards: offered but never kept is 0%, not null'
+)
+assert(
+	cards.get(cardStatKey('bonus', 'ritualist', 'standard'))!.avgPoints ===
+		null,
+	'cards: an all-forfeit card has no average'
+)
+close(
+	cards.get(cardStatKey('bonus', 'ritualist', 'standard'))!.winRate,
+	1 / 3,
+	'cards: a forfeit still counts toward the win rate'
+)
+close(
+	cards.get(cardStatKey('curse', 'avarice', 'standard'))!.winRate,
+	1 / 6,
+	'cards: curses are indexed the same way'
 )
 
 console.log('check-stats: all checks passed')

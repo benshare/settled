@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       friend_requests: {
@@ -448,7 +473,20 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      card_stats: {
+        Row: {
+          card_id: string | null
+          games: number | null
+          keeps: number | null
+          kind: string | null
+          offers: number | null
+          played_games: number | null
+          points_sum: number | null
+          size: string | null
+          wins: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       accept_friend_request: {
@@ -583,6 +621,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       friend_request_status: ["pending", "accepted", "rejected"],
