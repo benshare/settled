@@ -6,7 +6,7 @@
 // (`placementLine`).
 //
 //   islandStatus — the current turn + this turn's roll (a stable indicator).
-//   bannerStatus — the most recent action, or what the table is waiting on
+//   bannerStatus — this turn's most recent action, or what the table is waiting on
 //                  (a status summary, never the instruction — the dock carries
 //                  the actual affordance).
 //   actingSeats  — who owes an action right now, for the player chips' dots.
@@ -205,8 +205,20 @@ function waitLine(ctx: Ctx): string | null {
 	}
 }
 
-// The latest committed, non-roll action — `describeEvent` gives us the same
-// phrasing the log uses (and its own "You" substitution) for free.
+// The boundaries that open a turn: the previous turn ending, or setup finishing
+// for the very first one. Scanning past them is what made the banner stale —
+// see `recentActionLine`.
+const TURN_BOUNDARIES: ReadonlySet<GameEvent['kind']> = new Set([
+	'turn_ended',
+	'placement_complete',
+])
+
+// The latest committed, non-roll action **of the current turn** — `describeEvent`
+// gives us the same phrasing the log uses (and its own "You" substitution) for
+// free. Bounded by the turn that's open: without that, a seat who has only just
+// rolled reads as the previous player's last build (and the first turn of the
+// game reads as "Setup complete"). Nothing done yet this turn is nothing to say,
+// so the banner drops the line and the island carries the turn on its own.
 function recentActionLine(ctx: Ctx): string | null {
 	const events = (ctx.game.events ?? []) as GameEvent[]
 	const logCtx: LogContext = {
@@ -216,6 +228,7 @@ function recentActionLine(ctx: Ctx): string | null {
 	}
 	for (let i = events.length - 1; i >= 0; i--) {
 		const e = events[i]
+		if (TURN_BOUNDARIES.has(e.kind)) return null
 		if (ROLL_KINDS.has(e.kind)) continue
 		const line = describeEvent(e, logCtx)
 		if (line) return line.text

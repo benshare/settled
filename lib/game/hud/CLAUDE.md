@@ -43,8 +43,11 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
 - **Island and banner are uniform across viewers** — both derive from
   `status.ts`, "you" vs. name only. The banner is a status summary, never the
   instruction (the dock or a picker carries the affordance); precedence is live
-  wait > the turn's own line on `roll` / `initial_placement` > recent action >
-  nothing. The **initial-placement line is the one exception to uniformity**: it
+  wait > the turn's own line on `roll` / `initial_placement` > the most recent
+  action **of the open turn** > nothing. The recent-action scan stops at the
+  boundary that opened the turn (`turn_ended` / `placement_complete`) — reaching
+  past it narrated the previous seat's last build to a player who had only just
+  rolled. The **initial-placement line is the one exception to uniformity**: it
   names the piece the seat owes (settlement / road / ready to confirm) from
   `placementStage`, which is a local draft — a watching viewer has no draft and
   so sees the phase-level "settlement". It **doesn't render during bonus selection**
