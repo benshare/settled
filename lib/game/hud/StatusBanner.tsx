@@ -13,7 +13,7 @@
 // the text.
 
 import { useGameScreen } from '@/lib/game/gameScreenContext'
-import { HonkButton } from '@/lib/game/gameScreenShared'
+import { DieFaceView, HonkButton } from '@/lib/game/gameScreenShared'
 import type { GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, radius, spacing } from '@/lib/theme'
 import { StyleSheet, Text, View } from 'react-native'
@@ -47,8 +47,12 @@ export function StatusBanner() {
 				<View style={styles.islandRow}>
 					{dice && (
 						<View style={styles.dice}>
-							<Pip value={dice.a} />
-							<Pip value={dice.b} />
+							<DieFaceView value={dice.a} tone="red" size={22} />
+							<DieFaceView
+								value={dice.b}
+								tone="yellow"
+								size={22}
+							/>
 						</View>
 					)}
 					<Text style={styles.islandLabel} numberOfLines={1}>
@@ -77,14 +81,6 @@ export function StatusBanner() {
 				submitting={submitting}
 				onHonk={onHonk}
 			/>
-		</View>
-	)
-}
-
-function Pip({ value }: { value: number }) {
-	return (
-		<View style={styles.pip}>
-			<Text style={styles.pipText}>{value}</Text>
 		</View>
 	)
 }
@@ -121,21 +117,6 @@ const styles = StyleSheet.create({
 	dice: {
 		flexDirection: 'row',
 		gap: 4,
-	},
-	pip: {
-		width: 22,
-		height: 22,
-		borderRadius: radius.sm,
-		backgroundColor: '#F4EAD0',
-		borderWidth: 1,
-		borderColor: '#2B2B2B',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	pipText: {
-		fontSize: 13,
-		fontWeight: '700',
-		color: '#1A1A1A',
 	},
 	islandLabel: {
 		fontSize: 16,

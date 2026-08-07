@@ -547,8 +547,8 @@ function RobberStatus({
 			<View style={sharedStyles.mainLoopRow}>
 				{dice && (
 					<View style={sharedStyles.diceRow}>
-						<DieFaceView value={dice.a} />
-						<DieFaceView value={dice.b} />
+						<DieFaceView value={dice.a} tone="red" />
+						<DieFaceView value={dice.b} tone="yellow" />
 					</View>
 				)}
 				<Text style={sharedStyles.mainLoopStatus}>{status}</Text>

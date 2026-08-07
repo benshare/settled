@@ -394,8 +394,8 @@ function MainLoopBar({
 				<View style={styles.diceSlot}>
 					{dice && !altDice && (
 						<View style={sharedStyles.diceRow}>
-							<DieFaceView value={dice.a} />
-							<DieFaceView value={dice.b} />
+							<DieFaceView value={dice.a} tone="red" />
+							<DieFaceView value={dice.b} tone="yellow" />
 						</View>
 					)}
 				</View>
@@ -552,8 +552,8 @@ function RollChoice({
 			]}
 		>
 			<View style={sharedStyles.diceRow}>
-				<DieFaceView value={dice.a} />
-				<DieFaceView value={dice.b} />
+				<DieFaceView value={dice.a} tone="red" />
+				<DieFaceView value={dice.b} tone="yellow" />
 			</View>
 			<Text style={styles.rollChoiceTotal}>{dice.a + dice.b}</Text>
 		</Pressable>
