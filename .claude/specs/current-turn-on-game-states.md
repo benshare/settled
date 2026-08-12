@@ -142,7 +142,7 @@ where g.current_turn is distinct from s.current_turn
 - `.claude/specs/pending-action-signal.md` — its "not in scope" section becomes a
   pointer here.
 
-## Release 2: dropping the mirror
+## Release 2: dropping the mirror — **shipped 2026-08-12**
 
 The code half is small — the six `games` updates stop naming the column,
 `GameRow` stops declaring it, and a migration drops it. Nothing else in the repo
@@ -169,3 +169,8 @@ write, so every action in every game 500s until the deploy catches up.
 
 The client needs no release of its own. A release-1 build reads the column
 nowhere, and `select *` just returns one field fewer.
+
+Ran as written. The drift query found 0 of 13 live games disagreeing; the
+migration was renamed to `20260812130000` so it sorts after `20260812120000`,
+which was already applied remotely and would otherwise have forced
+`db push --include-all`.

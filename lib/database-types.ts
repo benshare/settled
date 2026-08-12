@@ -332,7 +332,6 @@ export type Database = {
           colors: string[]
           config: Json
           created_at: string
-          current_turn: number | null
           deadline_at: string | null
           end_votes: string[]
           events: Json[]
@@ -349,7 +348,6 @@ export type Database = {
           colors?: string[]
           config: Json
           created_at?: string
-          current_turn?: number | null
           deadline_at?: string | null
           end_votes?: string[]
           events?: Json[]
@@ -366,7 +364,6 @@ export type Database = {
           colors?: string[]
           config?: Json
           created_at?: string
-          current_turn?: number | null
           deadline_at?: string | null
           end_votes?: string[]
           events?: Json[]

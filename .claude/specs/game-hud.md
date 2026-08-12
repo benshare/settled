@@ -89,9 +89,10 @@ Top-to-bottom, per the agreed structural model:
 - Selecting a game navigates with `router.setParams({ id })` — **never
   `router.replace`** — so the screen (and its providers) survive the switch and
   the slide can animate. Same rule as today's `GameTitle`.
-- Cross-game turn dots in the dropdown use `games.current_turn` (the only turn
-  field available without loading each game's `game_states`) — approximate, and
-  the same source the Games list already uses.
+- Cross-game turn dots in the dropdown read each game's `game_states` row out of
+  `useGameStatesStore` — the same source the Games list uses. (Written when the
+  turn pointer still lived on `games`, where the dot was only approximate; see
+  `.claude/specs/current-turn-on-game-states.md`.)
 
 ## 5. Dynamic island (top center)
 
