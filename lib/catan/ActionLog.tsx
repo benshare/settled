@@ -59,7 +59,12 @@ const CATEGORIES = {
 		'largest_army_changed',
 		'longest_road_changed',
 	],
-	trades: ['trade_accepted', 'bank_trade', 'shepherd_swap'],
+	trades: [
+		'trade_accepted',
+		'bank_trade',
+		'shepherd_swap',
+		'shepherd_payout',
+	],
 	robber: ['discarded', 'robber_moved', 'stolen', 'hoarder_kept'],
 	bonuses: [
 		'bonus_chosen',
@@ -73,6 +78,7 @@ const CATEGORIES = {
 		'fortune_teller_roll',
 		'explorer_road',
 		'shepherd_swap',
+		'shepherd_payout',
 		'ritual_roll',
 		'curio_collected',
 		'forger_token_set',
@@ -81,7 +87,7 @@ const CATEGORIES = {
 		'scout_buy',
 		'liquidate',
 		'build_super_city',
-		'fence_token',
+		'fence_built',
 		'invest',
 		'investor_payout',
 		'magic_cast',
@@ -552,14 +558,20 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'shepherd_swap':
 			return {
-				text: `${who(e.player)} swapped sheep (shepherd)`,
+				text: `${who(e.player)} traded away sheep (shepherd)`,
 				player: e.player,
 				detail: [
 					{
-						label: 'Got',
+						label: 'Declared',
 						text: `1 ${RESOURCE_LABELS[e.take[0]]}, 1 ${RESOURCE_LABELS[e.take[1]]}`,
 					},
 				],
+			}
+		case 'shepherd_payout':
+			return {
+				text: `${who(e.player)} collected their declared cards (shepherd)`,
+				player: e.player,
+				detail: [{ label: 'Gained', text: handText(e.gain) }],
 			}
 		case 'ritual_roll':
 			return {
@@ -619,9 +631,9 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				player: e.player,
 				detail: [{ label: 'Cost', text: handText(e.cost) }],
 			}
-		case 'fence_token':
+		case 'fence_built':
 			return {
-				text: `${who(e.player)} reserved an edge (fencer)`,
+				text: `${who(e.player)} built a fence`,
 				player: e.player,
 			}
 		case 'invest':

@@ -134,9 +134,10 @@ export type CardStat = {
 	// meaningful score in one.
 	avgPoints: number | null
 	pointsGames: number
-	// Null when the card has never been part of a real choice.
+	// Null when the card has never been part of a real choice. Its sample is
+	// the view's offer count — a different population from `games`, and not
+	// surfaced.
 	pickRate: number | null
-	offers: number
 }
 
 export function indexCardStats(rows: CardStatRow[]): Map<string, CardStat>
@@ -174,9 +175,9 @@ description, a hairline-separated footer:
   a size that still fits three columns in a 2-column phone grid. A column with no denominator shows `—` rather than `0%`: `pts` for an
   all-forfeit card, `picked` for a card that has only ever been dealt without a
   choice.
-- Sample line, `font.xs` muted, centered: `128 games`, plus `· 310 offers` when
-  a pick rate is shown (the two samples are different populations and a single
-  count would misattribute one to the other). Allowed to wrap.
+- Sample line, `font.xs` muted, centered: `128 games`. The offer count behind
+  the pick rate is deliberately not printed — it is a different population from
+  `games`, and two counts on one line raised more questions than they answered.
 - **No footer at all** in three cases: the store is still loading
   (`cardStats === undefined`) — no skeleton, the catalog simply fills in; the
   card is `unavailable` at this size (it has no numbers by construction, and

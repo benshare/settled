@@ -13,11 +13,15 @@ import type {
 	ResourceHand,
 } from '../catan/types'
 import type { Database } from '../database-types'
-import { emitGameMutated } from '../gameSync'
+import { callGameService } from '../gameService'
 import { uniqueTopic } from '../realtime'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
-import { useProfileStore, type Profile } from './useProfileStore'
+import {
+	deletedProfile,
+	useProfileStore,
+	type Profile,
+} from './useProfileStore'
 
 type GameRow = Database['public']['Tables']['games']['Row']
 type GameRequestRow = Database['public']['Tables']['game_requests']['Row']
@@ -235,6 +239,13 @@ export type GameEvent =
 			take: [Resource, Resource]
 			at: string
 	  }
+	// The declared pair actually landing, one roll later.
+	| {
+			kind: 'shepherd_payout'
+			player: number
+			gain: ResourceHand
+			at: string
+	  }
 	// Same `gains` as `rolled`, but a ritual pays only the ritualist.
 	| {
 			kind: 'ritual_roll'
@@ -285,7 +296,7 @@ export type GameEvent =
 			cost: ResourceHand
 			at: string
 	  }
-	| { kind: 'fence_token'; player: number; edge: string; at: string }
+	| { kind: 'fence_built'; player: number; edge: string; at: string }
 	| { kind: 'invest'; player: number; resource: Resource; at: string }
 	| {
 			kind: 'investor_payout'
@@ -333,60 +344,6 @@ export type GameEvent =
 type ActionResult = { error: string | null }
 type RespondResult = { error: string | null; gameId?: string }
 type RollResult = ActionResult & { dice?: DiceRoll; total?: number }
-
-type ServiceData = Record<string, unknown>
-
-/**
- * The single entry point for every game-service call.
- *
- * Carries the edge function's own error string back to the caller — supabase-js
- * buries the body of a non-2xx response inside the thrown error, so it has to be
- * read back out — and pings `gameSync` on success so the acting player's board
- * advances without waiting on realtime.
- */
-async function callGameService(
-	body: ServiceData,
-	fallback: string
-): Promise<ActionResult & { data: ServiceData }> {
-	const { data, error } = await supabase.functions.invoke('game-service', {
-		body,
-	})
-
-	if (error) {
-		const message = await edgeErrorMessage(error)
-		return { error: message || fallback, data: {} }
-	}
-
-	const res = (data ?? {}) as ServiceData
-	if (!res.ok) {
-		return {
-			error: (res.error as string | undefined) || fallback,
-			data: res,
-		}
-	}
-
-	const gameId = body.game_id
-	if (typeof gameId === 'string') emitGameMutated(gameId)
-	return { error: null, data: res }
-}
-
-// A FunctionsHttpError carries the raw Response on `context`; its own `message`
-// is the same boilerplate for every failure ("non-2xx status code"), so the
-// body's `error` is the only thing that says what actually went wrong. Network
-// failures have no body — there `message` is all we have, and it's the truth.
-async function edgeErrorMessage(error: unknown): Promise<string | null> {
-	const context = (error as { context?: unknown }).context
-	if (context && typeof (context as Response).json === 'function') {
-		try {
-			const body = await (context as Response).json()
-			const message = (body as { error?: unknown })?.error
-			if (typeof message === 'string' && message) return message
-		} catch {
-			// Not a JSON body — fall through to the error's own message.
-		}
-	}
-	return (error as Error).message || null
-}
 
 type GamesStore = {
 	pendingRequests: GameRequest[] | undefined
@@ -481,16 +438,12 @@ type GamesStore = {
 	// `useBricklayer`: pay 4 Brick instead of the standard cost. Ignored by
 	// the edge if the caller doesn't have the bricklayer bonus.
 	// `smithSwap`: units of the cost's brick/ore component to pay in the other
-	// resource (smith bonus). `fencePay`: when building on the fencer's own
-	// reserved edge, pay 1 of this resource instead of 1 wood + 1 brick.
+	// resource (smith bonus). A road onto the fencer's own fence needs no
+	// payload — the edge itself sets the price at 1 brick.
 	buildRoad: (
 		gameId: string,
 		edge: string,
-		opts?: {
-			useBricklayer?: boolean
-			smithSwap?: number
-			fencePay?: 'wood' | 'brick'
-		}
+		opts?: { useBricklayer?: boolean; smithSwap?: number }
 	) => Promise<ActionResult>
 	buildSettlement: (
 		gameId: string,
@@ -605,8 +558,8 @@ type GamesStore = {
 
 	// --- Set-3 bonus actions -------------------------------------------------
 
-	// Fencer: place one of the 2 post-placement reserved-edge tokens.
-	placeFenceToken: (gameId: string, edge: string) => Promise<ActionResult>
+	// Fencer: build a fence (1 wood) on a connected edge.
+	buildFence: (gameId: string, edge: string) => Promise<ActionResult>
 
 	// Haunt: secretly commit the two ghost-spawn locations at post-placement.
 	setHauntSpots: (
@@ -734,6 +687,15 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 				.in('id', Array.from(ids))
 			if (profiles) {
 				for (const p of profiles) profilesById[p.id] = p
+				// An id we asked for and didn't get back is a deleted account:
+				// the profile row is gone but its uuid still sits in
+				// `participants` and `invited`. Standing a placeholder in makes
+				// every consumer render `[deleted user]` unchanged — see
+				// `deletedProfile`. Only ever after a query has answered, so a
+				// missing key still means "not loaded yet".
+				for (const id of ids) {
+					if (!profilesById[id]) profilesById[id] = deletedProfile(id)
+				}
 			}
 		}
 
@@ -813,9 +775,15 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			.from('profiles')
 			.select(PROFILE_COLS)
 			.in('id', missing)
-		if (!profiles || profiles.length === 0) return
+		if (!profiles) return
 		const next = { ...get().profilesById }
 		for (const p of profiles) next[p.id] = p
+		// Placeholder the ones that came back empty, same as `loadForUser`.
+		// Recording the absence also settles the id: without it, a deleted
+		// account is missing forever and every render asks the server again.
+		for (const id of missing) {
+			if (!next[id]) next[id] = deletedProfile(id)
+		}
 		set({ profilesById: next })
 	},
 
@@ -992,7 +960,6 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 				edge,
 				use_bricklayer: !!opts?.useBricklayer,
 				smith_swap: opts?.smithSwap ?? 0,
-				fence_pay: opts?.fencePay ?? null,
 			},
 			"Couldn't build road"
 		)
@@ -1201,10 +1168,10 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async placeFenceToken(gameId, edge) {
+	async buildFence(gameId, edge) {
 		return callGameService(
-			{ action: 'place_fence_token', game_id: gameId, edge },
-			"Couldn't place fence token"
+			{ action: 'build_fence', game_id: gameId, edge },
+			"Couldn't build fence"
 		)
 	},
 

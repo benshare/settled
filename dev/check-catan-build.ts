@@ -4,7 +4,9 @@
 
 import {
 	adjacentEdges,
+	boardFor,
 	edgeBetween,
+	edgeEndpoints,
 	neighborVertices,
 	type Edge,
 	type Vertex,
@@ -12,16 +14,17 @@ import {
 import {
 	BUILD_COSTS,
 	canAfford,
-	canAffordFenceRoad,
+	canBuildFence,
 	deductHand,
-	fencePayChoice,
 	isValidBuildCityVertex,
 	isValidBuildRoadEdge,
 	payableBuildRoadEdges,
 	validBuildCityVertices,
+	validBuildFenceEdges,
 	validBuildRoadEdges,
 	validBuildSettlementVertices,
 } from '../lib/catan/build'
+import { isOwnFence } from '../lib/catan/bonus'
 import { initialGameState } from '../lib/catan/generate'
 import type { GameState, ResourceHand } from '../lib/catan/types'
 
@@ -278,10 +281,14 @@ function testCityValidity() {
 	)
 }
 
-// A fencer's own reserved edge costs 1 Wood *or* 1 Brick, so a single card of
-// either narrows them to those edges instead of blocking the build outright.
-function testFencerPayableRoads() {
-	let s = initialGameState('standard', 3, {
+function placeFence(s: GameState, e: Edge, player: number): GameState {
+	return { ...s, fenceTokens: { ...(s.fenceTokens ?? {}), [e]: player } }
+}
+
+// A 3-player set-3 game with seat 0 settled at 3F. Every fencer test builds
+// off this.
+function fencerState(): GameState {
+	const s = initialGameState('standard', 3, {
 		bonuses: true,
 		bonusSets: ['3'],
 		bannedCombos: true,
@@ -301,52 +308,177 @@ function testFencerPayableRoads() {
 			moreThanSeven: false,
 		},
 	})
-	s = placeSettlement(s, '3F', 0)
-	const fenced = adjacentEdges['3F'][0] as Edge
-	s = { ...s, fenceTokens: { [fenced]: 0 } }
-	const withHand = (
-		h: ResourceHand,
-		bonus: 'fencer' | 'smith'
-	): GameState => ({
+	return placeSettlement(
+		{
+			...s,
+			players: s.players.map((p, i) =>
+				i === 0 ? { ...p, bonus: 'fencer' } : p
+			),
+		},
+		'3F',
+		0
+	)
+}
+
+function withHand(s: GameState, h: ResourceHand, player = 0): GameState {
+	return {
 		...s,
 		players: s.players.map((p, i) =>
-			i === 0 ? { ...p, bonus, resources: h } : p
+			i === player ? { ...p, resources: h } : p
 		),
-	})
+	}
+}
 
-	const both = withHand(hand({ wood: 1, brick: 1 }), 'fencer')
+// A fence places under road connectivity, except that the fencer's own fences
+// chain where roads do not.
+function testFenceValidity() {
+	const s = fencerState()
+	const first = adjacentEdges['3F'][0] as Edge
+	assert(
+		validBuildFenceEdges(s, 0).includes(first),
+		'a fence reaches an edge off the settlement'
+	)
+
+	const fenced = placeFence(s, first, 0)
+	assert(
+		!validBuildFenceEdges(fenced, 0).includes(first),
+		'an already-fenced edge is taken'
+	)
+	// Edges past the far end of `first` — reachable only through the fence.
+	const far = edgeEndpoints(first).find((v) => v !== '3F') as Vertex
+	const beyond = adjacentEdges[far].filter((e) => e !== first) as Edge[]
+	assert(beyond.length > 0, 'the fenced edge has an onward edge')
+	for (const e of beyond) {
+		assert(
+			validBuildFenceEdges(fenced, 0).includes(e),
+			'a fence chains off another fence'
+		)
+		assert(
+			!validBuildRoadEdges(fenced, 0).includes(e),
+			'a road does NOT chain off a fence'
+		)
+		assert(
+			!validBuildSettlementVertices(fenced, 0).length ||
+				!validBuildSettlementVertices(fenced, 0).includes(
+					edgeEndpoints(e).find((v) => v !== '3F') as Vertex
+				),
+			'a fence does not satisfy settlement adjacency'
+		)
+	}
+
+	// Occupied edges are out, and a non-fencer gets nothing at all.
+	const roaded = placeRoad(s, first, 0)
+	assert(
+		!validBuildFenceEdges(roaded, 0).includes(first),
+		'an occupied edge is out'
+	)
+	const notFencer: GameState = {
+		...s,
+		players: s.players.map((p, i) =>
+			i === 0 ? { ...p, bonus: 'smith' } : p
+		),
+	}
+	equal(
+		validBuildFenceEdges(notFencer, 0).length,
+		0,
+		'a non-fencer has no fence targets'
+	)
+
+	// Another player's fence blocks their roads but leaves their fences alone
+	// (they have none there to chain from anyway).
+	const theirs = placeFence(s, first, 1)
+	assert(
+		!validBuildRoadEdges(theirs, 0).includes(first),
+		"an opponent's fence blocks a road"
+	)
+	assert(
+		!validBuildFenceEdges(theirs, 0).includes(first),
+		"an opponent's fence blocks a fence"
+	)
+}
+
+// Roads and fences come out of one 15-piece supply, but the upgrade is
+// supply-neutral and stays legal at the cap.
+function testFenceSupplyCap() {
+	const s = fencerState()
+	const first = adjacentEdges['3F'][0] as Edge
+	// 14 roads elsewhere on the board + the one fence = 15 pieces.
+	let full = placeFence(s, first, 0)
+	const filler = boardFor(full.variant)
+		.edges.filter((e) => e !== first)
+		.slice(0, 14)
+	for (const e of filler) full = placeRoad(full, e, 0)
+
+	full = withHand(full, hand({ wood: 4, brick: 4 }))
+	equal(validBuildFenceEdges(full, 0).length, 0, 'at the cap, no new fence')
+	assert(
+		validBuildRoadEdges(full, 0).includes(first),
+		'the upgrade is supply-neutral, so it survives the cap'
+	)
+	assert(
+		!validBuildRoadEdges(full, 0).some((e) => e !== first),
+		'but no fresh road at the cap'
+	)
+}
+
+// A fencer short of Wood + Brick is narrowed to the 1-brick upgrade on their
+// own fences instead of being blocked outright.
+function testFencerPayableRoads() {
+	const s = placeFence(fencerState(), adjacentEdges['3F'][0] as Edge, 0)
+	const fenced = adjacentEdges['3F'][0] as Edge
+
+	const both = withHand(s, hand({ wood: 1, brick: 1 }))
 	equal(
 		payableBuildRoadEdges(both, 0).length,
 		validBuildRoadEdges(both, 0).length,
 		'full cost in hand keeps every legal edge'
 	)
-	assert(fencePayChoice(both.players[0]), 'both cards is a real choice')
 
-	const woodOnly = withHand(hand({ wood: 1 }), 'fencer')
+	const brickOnly = withHand(s, hand({ brick: 1 }))
+	equal(
+		payableBuildRoadEdges(brickOnly, 0).length,
+		1,
+		'brick-only: the upgrade only'
+	)
+	equal(payableBuildRoadEdges(brickOnly, 0)[0], fenced, 'and it is the fence')
+
+	equal(
+		payableBuildRoadEdges(withHand(s, hand({ wood: 3 })), 0).length,
+		0,
+		'wood alone buys no road — the upgrade needs brick'
+	)
+
+	const smith: GameState = {
+		...s,
+		players: s.players.map((p, i) =>
+			i === 0
+				? { ...p, bonus: 'smith', resources: hand({ brick: 1 }) }
+				: p
+		),
+	}
+	equal(
+		payableBuildRoadEdges(smith, 0).length,
+		0,
+		'a non-fencer gets no upgrade price'
+	)
+}
+
+function testFenceCostAndGate() {
+	const s = placeFence(fencerState(), adjacentEdges['3F'][0] as Edge, 0)
+	const fenced = adjacentEdges['3F'][0] as Edge
+	const other = adjacentEdges['3F'][1] as Edge
+
+	assert(isOwnFence(s, fenced, 0), "the fence is the owner's")
+	assert(!isOwnFence(s, other, 0), 'a bare edge is not a fence')
+	assert(!isOwnFence(s, fenced, 1), "and it is not anyone else's")
+
 	assert(
-		canAffordFenceRoad(woodOnly.players[0]),
-		'1 wood covers a fence road'
+		canBuildFence(withHand(s, hand({ wood: 1 })), 0),
+		'1 wood and a legal edge is enough'
 	)
-	assert(!fencePayChoice(woodOnly.players[0]), 'one card is no choice')
-	equal(payableBuildRoadEdges(woodOnly, 0).length, 1, 'wood-only: fence only')
-	equal(payableBuildRoadEdges(woodOnly, 0)[0], fenced, 'and it is the fence')
-
-	const brickOnly = withHand(hand({ brick: 2 }), 'fencer')
-	equal(
-		payableBuildRoadEdges(brickOnly, 0)[0],
-		fenced,
-		'brick-only: fence only'
-	)
-
-	equal(
-		payableBuildRoadEdges(withHand(hand({ sheep: 3 }), 'fencer'), 0).length,
-		0,
-		'neither card: nothing payable'
-	)
-	equal(
-		payableBuildRoadEdges(withHand(hand({ wood: 1 }), 'smith'), 0).length,
-		0,
-		'non-fencer gets no discount on a reserved edge'
+	assert(
+		!canBuildFence(withHand(s, hand({ brick: 5 })), 0),
+		'no wood, no fence'
 	)
 }
 
@@ -363,7 +495,10 @@ const tests: [string, () => void][] = [
 	['settlement validity + distance rule', testSettlementValidity],
 	['settlement needs connected road', testSettlementNeedsRoad],
 	['city validity', testCityValidity],
+	['fence validity', testFenceValidity],
+	['fence shares the road supply', testFenceSupplyCap],
 	['fencer payable road edges', testFencerPayableRoads],
+	['fence cost + build gate', testFenceCostAndGate],
 ]
 
 for (const [name, fn] of tests) {

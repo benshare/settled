@@ -42,6 +42,8 @@ export function BuildTradeBar({
 	carpenterEnabled,
 	superCityEnabled,
 	superCityActive,
+	fenceEnabled,
+	fenceActive,
 	accountantEnabled,
 	investorEnabled,
 	onSelect,
@@ -49,10 +51,11 @@ export function BuildTradeBar({
 	onBuyDevCard,
 	onBuyCarpenterVP,
 	onSelectSuperCity,
+	onSelectFence,
 	onAccountant,
 	onInvest,
 }: {
-	active: BuildKind | 'super_city' | null
+	active: BuildKind | 'super_city' | 'fence' | null
 	enabled: BuildEnablement
 	// Per-kind curse hint: when present, the button shows a curse-icon badge
 	// and a tooltip with the reason, even if the button is also disabled for
@@ -80,6 +83,10 @@ export function BuildTradeBar({
 	// hidden. Boolean = eligible to upgrade.
 	superCityEnabled?: boolean
 	superCityActive?: boolean
+	// Fencer-bonus-only board tool. Undefined = not a fencer and hidden.
+	// Boolean = a fence is affordable and some edge is legal.
+	fenceEnabled?: boolean
+	fenceActive?: boolean
 	// Accountant-bonus-only button. Undefined = not accountant and hidden.
 	// Boolean = liquidation modal can be opened.
 	accountantEnabled?: boolean
@@ -93,6 +100,7 @@ export function BuildTradeBar({
 	onBuyDevCard: () => void
 	onBuyCarpenterVP?: () => void
 	onSelectSuperCity?: () => void
+	onSelectFence?: () => void
 	onAccountant?: () => void
 	onInvest?: () => void
 }) {
@@ -130,6 +138,14 @@ export function BuildTradeBar({
 					active={!!superCityActive}
 					color={color}
 					onPress={() => onSelectSuperCity?.()}
+				/>
+			)}
+			{fenceEnabled !== undefined && (
+				<FenceButton
+					enabled={fenceEnabled}
+					active={!!fenceActive}
+					color={color}
+					onPress={() => onSelectFence?.()}
 				/>
 			)}
 			{accountantEnabled !== undefined && (
@@ -405,6 +421,55 @@ function SuperCityButton({
 	)
 }
 
+function FenceButton({
+	enabled,
+	active,
+	color,
+	onPress,
+}: {
+	enabled: boolean
+	active: boolean
+	color: string
+	onPress: () => void
+}) {
+	const interactive = enabled || active
+	return (
+		<Pressable
+			disabled={!interactive}
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.iconBtn,
+				styles.fenceBtn,
+				active && { borderColor: color, borderWidth: 2 },
+				!interactive && styles.iconBtnDisabled,
+				pressed && interactive && styles.pressed,
+			]}
+			accessibilityLabel={
+				active ? 'Cancel fence' : 'Fencer: build a fence for 1 Wood'
+			}
+		>
+			<Ionicons
+				name="lock-closed-outline"
+				size={20}
+				color={interactive ? colors.white : colors.textMuted}
+			/>
+			<Text
+				style={[
+					styles.carpenterCostLabel,
+					!interactive && { color: colors.textMuted },
+				]}
+			>
+				Fence
+			</Text>
+			{active && (
+				<View style={styles.cancelBadge}>
+					<Ionicons name="close" size={12} color={colors.white} />
+				</View>
+			)}
+		</Pressable>
+	)
+}
+
 function AccountantButton({
 	enabled,
 	onPress,
@@ -572,6 +637,12 @@ const styles = StyleSheet.create({
 	superCityBtn: {
 		backgroundColor: '#3B5BA5',
 		borderColor: '#1F326B',
+		flexDirection: 'column',
+		gap: 2,
+	},
+	fenceBtn: {
+		backgroundColor: '#4A5568',
+		borderColor: '#272E3B',
 		flexDirection: 'column',
 		gap: 2,
 	},

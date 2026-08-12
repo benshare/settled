@@ -290,25 +290,25 @@ calls `dispatch(admin, thatUserId, body)` — the ordinary handler, with its own
 validation, events, notifications and end-of-game checks. An auto-action is
 indistinguishable from that player having tapped the button.
 
-| Phase                              | Auto action                                                                                                                                                                                |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `select_bonus`                     | `pick_bonus` with `hands[i].offered[0]`                                                                                                                                                    |
-| `initial_placement` / `settlement` | `place_start` — a random legal vertex, then a random legal edge off it, twice for the back-to-back seat (a whole turn, like a player's)                                                    |
-| `initial_placement` / `pick_last`  | `choose_last_settlement` with the round-2 settlement (the value the UI pre-seeds)                                                                                                          |
-| `post_placement`                   | `set_specialist_resource` (arbitrary resource) / `place_explorer_road` / `place_fence_token` at random legal edges / `set_haunt_spots` at random legal vertices, one per outstanding entry |
-| `roll` (no pending dice)           | `roll`, then `end_turn` once the phase is back to `main`                                                                                                                                   |
-| `roll` (gambler pending)           | `confirm_roll`                                                                                                                                                                             |
-| `discard`                          | `discard` a random legal selection of the owed count                                                                                                                                       |
-| `move_robber`                      | `move_robber` to a random hex other than the current one                                                                                                                                   |
-| `steal`                            | `steal` from a random candidate                                                                                                                                                            |
-| `road_building`                    | `build_road` at a random legal edge, per remaining road                                                                                                                                    |
-| `main`                             | `end_turn`                                                                                                                                                                                 |
-| `special_build`                    | `end_special_build`                                                                                                                                                                        |
-| `scout_pick`                       | `confirm_scout_card` with index 0                                                                                                                                                          |
-| `curio_pick`                       | `claim_curio` with an arbitrary legal take                                                                                                                                                 |
-| `forger_pick`                      | `pick_forger_target` with the first candidate                                                                                                                                              |
-| `magician_pick`                    | `skip_magic`                                                                                                                                                                               |
-| `game_over`                        | nothing (and `deadline_at` is cleared)                                                                                                                                                     |
+| Phase                              | Auto action                                                                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `select_bonus`                     | `pick_bonus` with `hands[i].offered[0]`                                                                                                                              |
+| `initial_placement` / `settlement` | `place_start` — a random legal vertex, then a random legal edge off it, twice for the back-to-back seat (a whole turn, like a player's)                              |
+| `initial_placement` / `pick_last`  | `choose_last_settlement` with the round-2 settlement (the standard-rule answer)                                                                                      |
+| `post_placement`                   | `set_specialist_resource` (arbitrary resource) / `place_explorer_road` at random legal edges / `set_haunt_spots` at random legal vertices, one per outstanding entry |
+| `roll` (no pending dice)           | `roll`, then `end_turn` once the phase is back to `main`                                                                                                             |
+| `roll` (gambler pending)           | `confirm_roll`                                                                                                                                                       |
+| `discard`                          | `discard` a random legal selection of the owed count                                                                                                                 |
+| `move_robber`                      | `move_robber` to a random hex other than the current one                                                                                                             |
+| `steal`                            | `steal` from a random candidate                                                                                                                                      |
+| `road_building`                    | `build_road` at a random legal edge, per remaining road                                                                                                              |
+| `main`                             | `end_turn`                                                                                                                                                           |
+| `special_build`                    | `end_special_build`                                                                                                                                                  |
+| `scout_pick`                       | `confirm_scout_card` with index 0                                                                                                                                    |
+| `curio_pick`                       | `claim_curio` with an arbitrary legal take                                                                                                                           |
+| `forger_pick`                      | `pick_forger_target` with the first candidate                                                                                                                        |
+| `magician_pick`                    | `skip_magic`                                                                                                                                                         |
+| `game_over`                        | nothing (and `deadline_at` is cleared)                                                                                                                               |
 
 **Bounded loop.** After each auto action the runner re-reads the game and
 repeats, up to `MAX_TIMEOUT_STEPS` (12) per game per tick, stopping as soon as

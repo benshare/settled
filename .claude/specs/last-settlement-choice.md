@@ -224,21 +224,20 @@ everyone else, so the branch self-gates):
 - Both of the player's settlements get a **ring** around the piece rather than
   a dot on top of it — a filled `PulsingDot` would cover the very thing being
   pointed at. `PulsingRing` is added alongside `PulsingDot` in
-  `PulsingDot.tsx`, sharing its clock so rings and dots breathe together.
-- The selected one swaps the pulse for a static ring of the same radius, so
-  "chosen" reads as settled rather than still-asking. Both are drawn in
-  `pieceStroke` (the piece outline colour) so they read against the player's
-  own colour underneath.
+  `PulsingDot.tsx`, sharing its clock so rings and dots breathe together. The
+  ring hugs the piece (`r = 0.32s`, inside the `0.45s` hit target) so it reads
+  as belonging to that settlement rather than to the vertex's neighbourhood.
+- **Both rings pulse, always. The only difference is colour**: the nominated
+  one is drawn in `pieceStroke`, the other in the muted `pieceStrokeSoft`.
+  Freezing the chosen ring instead — the original design — reads backwards in
+  practice: the pulse is the "tap me" signal, so the still ring looks disabled
+  and the player concludes only the other settlement can be nominated.
 - A transparent `Circle` hit target over each, calling
   `onSelect({ kind: 'settlement', vertex })` — the existing
   `PlacementSelection` type covers this with no change.
-- The round-2 settlement is **pre-selected**, so confirming without touching
-  anything reproduces today's behaviour and the change costs the common case
-  nothing. Seeded in `gameScreenContext` by the same `placementKey` effect
-  that otherwise clears `selection`, from `roundTwoSettlementOf(events, meIdx)`
-  — the seat's `settlement_placed` event carrying `round: 2`. It has to come
-  from the log: once both roads are down, the board no longer distinguishes
-  the two settlements.
+- **Nothing is pre-selected.** Both settlements go down in one submitted turn,
+  so seeding either would be the app answering its own question; `pickLast`
+  opens null and Confirm stays disabled until the player taps one.
 
 `BoardArea` needs no change: it already passes `selection` / `setSelection`
 into the placement interaction whenever `inPlacement && isMyPlacementTurn`.
@@ -253,9 +252,8 @@ into the placement interaction whenever `inPlacement && isMyPlacementTurn`.
   becomes step-aware — `"{name} is choosing their starting settlement"` for
   `pick_last`, unchanged otherwise. (It currently interpolates `phase.step`
   directly, which would read "placing a pick_last".)
-- `lib/game/BottomArea.tsx` → `confirmLabel`: "Confirm starting settlement" for
-  `pick_last` (a selection is always present there, given the pre-select), with
-  "Tap the settlement you placed last" as the empty-selection fallback.
+- `lib/game/BottomArea.tsx` → `confirmLabel`: "Tap the settlement you placed
+  last" until one is nominated, "Confirm starting settlement" after.
 
 ### Handler — `lib/game/gameScreenContext.tsx`
 

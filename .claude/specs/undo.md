@@ -14,7 +14,7 @@ time, and it is destroyed by the next action of any kind.
 ```
 build_road          build_settlement    build_city      build_super_city
 bank_trade          liquidate           invest          buy_carpenter_vp
-tap_knight          place_fence_token   place_explorer_road
+tap_knight          build_fence         place_explorer_road
 ```
 
 Deliberately **not** undoable: `roll` / `confirm_roll` / `reroll_dice` /

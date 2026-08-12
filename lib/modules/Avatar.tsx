@@ -22,7 +22,11 @@ export function Avatar({ profile, size = 72 }: AvatarProps) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 
-	const initial = profile?.username?.[0]?.toUpperCase() ?? '?'
+	// A deleted account's placeholder username is bracketed, so its first
+	// character isn't a letter — fall back to the same glyph as no profile.
+	const initial = profile?.deleted
+		? '?'
+		: (profile?.username?.[0]?.toUpperCase() ?? '?')
 	const fontSize = Math.round(size * 0.42)
 
 	const containerStyle = {

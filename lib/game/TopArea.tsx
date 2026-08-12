@@ -15,7 +15,6 @@ import { seatColor } from '@/lib/catan/palette'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
 import {
 	ExplorerStatusBanner,
-	FenceStatusBanner,
 	HauntStatusBanner,
 	SpecialistDeclareOverlay,
 } from '@/lib/catan/PostPlacementOverlay'
@@ -65,6 +64,7 @@ export function TopArea() {
 		tradeButtonEnabled,
 		tradeButtonActive,
 		superCityEnabled,
+		fenceEnabled,
 		accountantEnabled,
 		investorEnabled,
 		hauntPicks,
@@ -235,6 +235,12 @@ export function TopArea() {
 										: undefined
 								}
 								superCityActive={buildTool === 'super_city'}
+								fenceEnabled={
+									myPlayer?.bonus === 'fencer'
+										? fenceEnabled
+										: undefined
+								}
+								fenceActive={buildTool === 'fence'}
 								accountantEnabled={
 									myPlayer?.bonus === 'accountant'
 										? accountantEnabled
@@ -252,6 +258,7 @@ export function TopArea() {
 								onSelectSuperCity={() =>
 									onBuildToolSelect('super_city')
 								}
+								onSelectFence={() => onBuildToolSelect('fence')}
 								onAccountant={() => setAccountantOpen(true)}
 								onInvest={() => setInvestOpen(true)}
 							/>
@@ -312,27 +319,19 @@ export function TopArea() {
 					}
 					// Specialist still pending for someone else: the top status
 					// line handles the "waiting" message; don't fall through to
-					// the explorer/fencer/haunt banners until it resolves.
+					// the explorer/haunt banners until it resolves.
 					if (waitingSpecialist.length > 0) return null
 					// Specialist done — explorer placements happen inline on
 					// the board; surface a status banner so the player sees
 					// the count.
-					const fencer = phase.pending.fencer ?? {}
 					const haunt = phase.pending.haunt ?? []
 					const nameOf = (i: number) =>
 						profilesById[game.player_order[i]]?.username ?? 'Player'
 					const explorerRemaining = explorer[meIdx] ?? 0
-					const fencerRemaining = fencer[meIdx] ?? 0
 					const amHauntPending = haunt.includes(meIdx)
 					const othersWaiting = Array.from(
 						new Set<number>([
 							...Object.entries(explorer)
-								.filter(
-									([i, n]) =>
-										Number(i) !== meIdx && (n ?? 0) > 0
-								)
-								.map(([i]) => Number(i)),
-							...Object.entries(fencer)
 								.filter(
 									([i, n]) =>
 										Number(i) !== meIdx && (n ?? 0) > 0
@@ -346,14 +345,6 @@ export function TopArea() {
 						return (
 							<ExplorerStatusBanner
 								remaining={explorerRemaining}
-								waitingOn={othersWaiting}
-							/>
-						)
-					}
-					if (fencerRemaining > 0) {
-						return (
-							<FenceStatusBanner
-								remaining={fencerRemaining}
 								waitingOn={othersWaiting}
 							/>
 						)

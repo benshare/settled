@@ -431,6 +431,11 @@ export type PlayerState = {
 	// `shepherd`: set to true once the player has used their per-turn
 	// shepherd swap (4-sheep start-of-turn). Reset on end_turn.
 	shepherdUsedThisTurn?: boolean
+	// `shepherd`: the pair declared by that swap, owed until the roll fully
+	// resolves. The sheep leave the hand at declaration but the cards land
+	// only once the turn reaches `main`, which is what keeps them out of
+	// reach of a 7 (see `.claude/specs/shepherd-deferred-gain.md`).
+	shepherdPending?: [Resource, Resource]
 	// `forger`: hex where the forger token currently sits. Seeded to the
 	// robber's starting hex (the desert) when bonuses lock in, and moved by
 	// the forger alone — nothing else on the board relocates it. Undefined
@@ -568,11 +573,8 @@ export type Phase =
 			pending: {
 				specialist: number[]
 				explorer?: Partial<Record<number, number>>
-				// `fencer` maps fencer player indices to the number of edge
-				// tokens they still owe (2 → 0). `haunt` lists haunt player
-				// indices owing their two-spot pick. Both drain in parallel
-				// with specialist/explorer.
-				fencer?: Partial<Record<number, number>>
+				// `haunt` lists haunt player indices owing their two-spot
+				// pick, draining in parallel with specialist/explorer.
 				haunt?: number[]
 			}
 	  }
@@ -700,10 +702,11 @@ export type GameState = {
 	// Optional so games created before ports existed still parse. New games
 	// always seed 9 ports; readers should default a missing array to empty.
 	ports?: Port[]
-	// `fencer` bonus: edges reserved by a fence token, keyed by edge → owning
-	// player index. No other player may build a road on a reserved edge; the
-	// owner builds there for 1 card (Wood or Brick). The token is deleted when
-	// the owner finally builds the road. Sparse — absent when no fencer plays.
+	// `fencer` bonus: fences, keyed by edge → owning player index. A fence is
+	// deliberately NOT an entry in `edges`, which is what keeps it invisible to
+	// Longest Road, road counts, and opponent road chaining. No other player
+	// may build on a fenced edge; the owner overbuilds it with a road for 1
+	// brick, which deletes the entry. Sparse — absent when no fencer plays.
 	fenceTokens?: Partial<Record<Edge, number>>
 	config: GameConfig
 	// One color per seat, in seat order. Like `config` this is persisted on the
@@ -747,7 +750,7 @@ export const UNDOABLE_ACTIONS = [
 	'invest',
 	'buy_carpenter_vp',
 	'tap_knight',
-	'place_fence_token',
+	'build_fence',
 	'place_explorer_road',
 ] as const
 

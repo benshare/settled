@@ -10,11 +10,46 @@ import {
 	type TradeMode,
 } from '../catan/types'
 import type { Database } from '../database-types'
+import { callGameService } from '../gameService'
 import type { NotificationPrefs } from '../notifications'
 import { supabase } from '../supabase'
 import type { AutoLoadedStore } from './index'
 
-export type Profile = Database['public']['Tables']['profiles']['Row']
+// `deleted` is never present on a row that came from the database — it marks the
+// placeholder below, so a renderer can tell a real profile from a gone one
+// without matching on the display string.
+export type Profile = Database['public']['Tables']['profiles']['Row'] & {
+	deleted?: true
+}
+
+// A deleted account's profile row is gone, but its uuid survives in
+// `games.participants` / `player_order` / `events`, where rewriting it would
+// corrupt the seat indices every finished game is scored against. So the stores
+// answer a dangling id with this: an ordinary-looking `Profile` that every
+// existing `profilesById[uid]?.username ?? 'Player'` site renders correctly.
+//
+// The display string is unforgeable — `profiles_username_format` (see
+// .claude/specs/account-deletion.md) rejects the space and brackets — so nobody
+// can register an account that impersonates a deleted one.
+export const DELETED_USERNAME = '[deleted user]'
+
+const EPOCH = '1970-01-01T00:00:00.000Z'
+
+export function deletedProfile(id: string): Profile {
+	return {
+		id,
+		username: DELETED_USERNAME,
+		avatar_path: null,
+		created_at: EPOCH,
+		updated_at: EPOCH,
+		dev: false,
+		game_defaults: null,
+		notification_prefs: null,
+		spectating: [],
+		color_prefs: null,
+		deleted: true,
+	}
+}
 
 // Per-user defaults for the create-game screen. Mirrors the form's visual
 // grouping so both sides can compare values directly.
@@ -174,6 +209,12 @@ type ProfileStore = {
 	// Drop any recorded id no longer in the watchable set (a game that ended
 	// while the app was closed, an unfriended host). Writes only on a change.
 	pruneSpectating: (validIds: string[]) => void
+	// Permanent, irreversible: cancels every unfinished game the user sits at,
+	// deletes the invitations they're a party to, and deletes the auth user
+	// (cascading the profile row and everything keyed to it). Touches no local
+	// state — the caller tears the whole session down on success. See
+	// `.claude/specs/account-deletion.md`.
+	deleteAccount: () => Promise<UpdateResult>
 }
 
 export const useProfileStore = create<ProfileStore>((set, get) => ({
@@ -331,6 +372,14 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 		const next = current.spectating.filter((id) => valid.has(id))
 		if (next.length === current.spectating.length) return
 		setSpectating(get, set, next)
+	},
+
+	async deleteAccount() {
+		const { error } = await callGameService(
+			{ action: 'delete_account' },
+			"Couldn't delete your account"
+		)
+		return { error }
 	},
 }))
 

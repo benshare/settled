@@ -1,7 +1,6 @@
-// A fencer's reserved-edge marker: a dashed segment in the owner's colour
-// with a small centre node, rendered along an edge that carries a fence token.
-// Distinct from a solid road (EdgePiece) so a reserved-but-unbuilt edge reads
-// as "claimed, not built".
+// A fence (fencer bonus): a dashed segment in the owner's colour with a small
+// centre node. Deliberately unlike a solid road (EdgePiece) — a fence claims
+// the edge against everyone else but is not a road, so it must not read as one.
 
 import { Circle, Line } from 'react-native-svg'
 

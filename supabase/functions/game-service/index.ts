@@ -123,8 +123,6 @@ type BuildRoadBody = {
 	use_bricklayer?: boolean
 	// Smith: units of the cost's brick/ore component paid in the other.
 	smith_swap?: number
-	// Fencer: pay 1 of this resource on the fencer's own reserved edge.
-	fence_pay?: 'wood' | 'brick' | null
 }
 type BuildSettlementBody = {
 	action: 'build_settlement'
@@ -269,8 +267,8 @@ type ConfirmScoutCardBody = {
 	game_id: string
 	index: unknown
 }
-type PlaceFenceTokenBody = {
-	action: 'place_fence_token'
+type BuildFenceBody = {
+	action: 'build_fence'
 	game_id: string
 	edge: string
 }
@@ -297,6 +295,8 @@ type SkipMagicBody = {
 // The one action with no user behind it and no game_id: the cron sweep. See
 // handleRunTimeouts.
 type RunTimeoutsBody = { action: 'run_timeouts' }
+// No fields: the subject is always the caller. See handleDeleteAccount.
+type DeleteAccountBody = { action: 'delete_account' }
 type Body =
 	| HonkBody
 	| SendMessageBody
@@ -337,7 +337,7 @@ type Body =
 	| MoveForgerTokenBody
 	| PickForgerTargetBody
 	| ConfirmScoutCardBody
-	| PlaceFenceTokenBody
+	| BuildFenceBody
 	| SetHauntSpotsBody
 	| InvestBody
 	| CastMagicBody
@@ -346,6 +346,7 @@ type Body =
 	| UndoBody
 	| SetForfeitBody
 	| SetEndVoteBody
+	| DeleteAccountBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -703,6 +704,7 @@ type PlayerState = {
 	// Set 2.
 	ritualWasUsedThisTurn?: boolean
 	shepherdUsedThisTurn?: boolean
+	shepherdPending?: [Resource, Resource]
 	forgerToken?: Hex
 	forgerMovedThisTurn?: boolean
 	// Set 3.
@@ -1693,7 +1695,6 @@ type Phase =
 			pending: {
 				specialist: number[]
 				explorer?: Partial<Record<number, number>>
-				fencer?: Partial<Record<number, number>>
 				haunt?: number[]
 			}
 	  }
@@ -2057,9 +2058,11 @@ function settlementKeepsYouthOK(
 	return next.size < RESOURCES.length
 }
 
+// Roads and fences share the 15-piece supply. Mirror of build.canBuildMoreRoads.
 function canBuildMoreRoads(state: GameState, playerIdx: number): boolean {
 	return (
-		roadCountFor(state, playerIdx) < maxRoadsFor(curseOf(state, playerIdx))
+		roadCountFor(state, playerIdx) + fenceCountFor(state, playerIdx) <
+		maxRoadsFor(curseOf(state, playerIdx))
 	)
 }
 
@@ -2374,6 +2377,7 @@ function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
 	if (state.config.extraBuild?.moreThanSeven && handSize(p.resources) <= 7)
 		return false
 	if (payableBuildRoadEdges(state, idx).length > 0) return true
+	if (canBuildFence(state, idx)) return true
 	if (
 		canAffordAnyCost(p, BUILD_COSTS.settlement) &&
 		boardFor(state.variant).vertices.some((v) =>
@@ -2445,11 +2449,14 @@ function deductHand(hand: ResourceHand, cost: ResourceHand): ResourceHand {
 	return out
 }
 
-function roadConnectsVia(
+// `fencesChain` lets the player's own fences extend the network, which is the
+// one difference between fence and road placement. Mirror of build.connectsVia.
+function connectsVia(
 	state: GameState,
 	playerIdx: number,
 	edge: Edge,
-	vertex: Vertex
+	vertex: Vertex,
+	fencesChain: boolean
 ): boolean {
 	const vs = vertexStateOf(state, vertex)
 	// A ghost (haunt bonus) is transparent — never blocks road chaining.
@@ -2457,7 +2464,11 @@ function roadConnectsVia(
 	for (const e of boardFor(state.variant).adjacentEdges[vertex]) {
 		if (e === edge) continue
 		const es = edgeStateOf(state, e)
-		if (es.occupied && es.player === playerIdx) return true
+		if (es.occupied) {
+			if (es.player === playerIdx) return true
+			continue
+		}
+		if (fencesChain && isOwnFence(state, e, playerIdx)) return true
 	}
 	return false
 }
@@ -2468,13 +2479,35 @@ function isValidBuildRoadEdge(
 	edge: Edge
 ): boolean {
 	if (edgeStateOf(state, edge).occupied) return false
-	// A fence token (fencer bonus) reserves the edge for its owner.
+	// A fence (fencer bonus) reserves the edge for its owner.
 	if (isFenceReservedAgainst(state, edge, playerIdx)) return false
+	// Overbuilding your own fence is supply-neutral, so it survives the cap.
+	if (
+		!isOwnFence(state, edge, playerIdx) &&
+		!canBuildMoreRoads(state, playerIdx)
+	)
+		return false
+	const [a, b] = edgeEndpoints(edge)
+	return (
+		connectsVia(state, playerIdx, edge, a, false) ||
+		connectsVia(state, playerIdx, edge, b, false)
+	)
+}
+
+function isValidBuildFenceEdge(
+	state: GameState,
+	playerIdx: number,
+	edge: Edge
+): boolean {
+	if (state.players[playerIdx]?.bonus !== 'fencer') return false
+	if (edgeStateOf(state, edge).occupied) return false
+	// Any fence takes the edge, the player's own included.
+	if (fenceOwner(state, edge) !== null) return false
 	if (!canBuildMoreRoads(state, playerIdx)) return false
 	const [a, b] = edgeEndpoints(edge)
 	return (
-		roadConnectsVia(state, playerIdx, edge, a) ||
-		roadConnectsVia(state, playerIdx, edge, b)
+		connectsVia(state, playerIdx, edge, a, true) ||
+		connectsVia(state, playerIdx, edge, b, true)
 	)
 }
 
@@ -2674,44 +2707,69 @@ function recomputeLargestArmy(state: GameState): number | null {
 	return bestIdx !== null ? bestIdx : state.largestArmy
 }
 
-function validBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
+function candidateEdges(
+	state: GameState,
+	meIdx: number,
+	fencesChain: boolean
+): Edge[] {
 	const out: Edge[] = []
 	const seen = new Set<Edge>()
 	for (const v of boardFor(state.variant).vertices) {
 		const vs = vertexStateOf(state, v)
 		const ownsVertex = vs.occupied && vs.player === meIdx
-		const hasAdjOwnRoad = boardFor(state.variant).adjacentEdges[v].some(
+		const hasAdjOwnPiece = boardFor(state.variant).adjacentEdges[v].some(
 			(e) => {
 				const es = edgeStateOf(state, e)
-				return es.occupied && es.player === meIdx
+				if (es.occupied) return es.player === meIdx
+				return fencesChain && isOwnFence(state, e, meIdx)
 			}
 		)
-		if (!ownsVertex && !hasAdjOwnRoad) continue
+		if (!ownsVertex && !hasAdjOwnPiece) continue
 		if (vs.occupied && vs.player !== meIdx && !isGhost(vs)) continue
 		for (const e of boardFor(state.variant).adjacentEdges[v]) {
 			if (seen.has(e)) continue
 			seen.add(e)
-			if (isValidBuildRoadEdge(state, meIdx, e)) out.push(e)
+			out.push(e)
 		}
 	}
 	return out
+}
+
+function validBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
+	return candidateEdges(state, meIdx, false).filter((e) =>
+		isValidBuildRoadEdge(state, meIdx, e)
+	)
+}
+
+function validBuildFenceEdges(state: GameState, meIdx: number): Edge[] {
+	if (state.players[meIdx]?.bonus !== 'fencer') return []
+	return candidateEdges(state, meIdx, true).filter((e) =>
+		isValidBuildFenceEdge(state, meIdx, e)
+	)
+}
+
+function canBuildFence(state: GameState, meIdx: number): boolean {
+	const p = state.players[meIdx]
+	if (!p || p.bonus !== 'fencer') return false
+	if (!canAfford(p.resources, FENCE_COST)) return false
+	return validBuildFenceEdges(state, meIdx).length > 0
 }
 
 function hasLegalRoadPlacement(state: GameState, meIdx: number): boolean {
 	return validBuildRoadEdges(state, meIdx).length > 0
 }
 
-// Legal road targets `meIdx` can actually pay for. A fencer holding only one of
-// Wood/Brick is narrowed to their own reserved edges, where a single card
-// covers the build. Mirror of build.payableBuildRoadEdges.
+// Legal road targets `meIdx` can actually pay for. A fencer short of the
+// standard pair is narrowed to their own fences, where a lone brick covers the
+// upgrade. Mirror of build.payableBuildRoadEdges.
 function payableBuildRoadEdges(state: GameState, meIdx: number): Edge[] {
 	const p = state.players[meIdx]
 	if (!p) return []
 	if (canAffordAnyCost(p, BUILD_COSTS.road))
 		return validBuildRoadEdges(state, meIdx)
-	if (p.bonus === 'fencer' && (p.resources.wood > 0 || p.resources.brick > 0))
-		return validBuildRoadEdges(state, meIdx).filter(
-			(e) => fenceOwner(state, e) === meIdx
+	if (p.bonus === 'fencer' && canAfford(p.resources, FENCE_UPGRADE_COST))
+		return validBuildRoadEdges(state, meIdx).filter((e) =>
+			isOwnFence(state, e, meIdx)
 		)
 	return []
 }
@@ -2930,6 +2988,40 @@ function shepherdEffectiveHandSize(p: PlayerState): number {
 	return n
 }
 
+// Hand over the pair declared by `shepherd_swap` and clear it. Called at every
+// point a roll resolves to `main` — all three exits of the 7-chain included —
+// so the declared cards are never in hand while a discard or a steal can reach
+// them. Mirror of lib/catan/bonus.ts.
+function applyShepherdPayout(
+	state: GameState,
+	idx: number
+): { players: PlayerState[]; events: unknown[] } {
+	const pending = state.players[idx]?.shepherdPending
+	if (!pending) return { players: state.players, events: [] }
+	const gain = emptyHand()
+	gain[pending[0]] += 1
+	gain[pending[1]] += 1
+	const players = state.players.map((p, i) => {
+		if (i !== idx) return p
+		const next = { ...p.resources }
+		for (const r of RESOURCES) next[r] += gain[r]
+		const paid: PlayerState = { ...p, resources: next }
+		delete paid.shepherdPending
+		return paid
+	})
+	return {
+		players,
+		events: [
+			{
+				kind: 'shepherd_payout',
+				player: idx,
+				gain,
+				at: new Date().toISOString(),
+			},
+		],
+	}
+}
+
 // Flat where the table size says so; otherwise 2 before the player's first
 // city, 3 after. Mirror of lib/catan/bonus.ts.
 function ritualCardCost(state: GameState, playerIdx: number): number {
@@ -3144,7 +3236,20 @@ function isValidMerchantAddon(
 }
 
 // Fencer.
-const FENCE_TOKEN_COUNT = 2
+const FENCE_COST: ResourceHand = {
+	brick: 0,
+	wood: 1,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
+}
+const FENCE_UPGRADE_COST: ResourceHand = {
+	brick: 1,
+	wood: 0,
+	sheep: 0,
+	wheat: 0,
+	ore: 0,
+}
 
 function fenceOwner(state: GameState, edge: Edge): number | null {
 	const owner = state.fenceTokens?.[edge]
@@ -3160,14 +3265,16 @@ function isFenceReservedAgainst(
 	return owner !== null && owner !== playerIdx
 }
 
-function fenceRoadCost(pay: 'wood' | 'brick'): ResourceHand {
-	return {
-		brick: pay === 'brick' ? 1 : 0,
-		wood: pay === 'wood' ? 1 : 0,
-		sheep: 0,
-		wheat: 0,
-		ore: 0,
+function isOwnFence(state: GameState, edge: Edge, playerIdx: number): boolean {
+	return fenceOwner(state, edge) === playerIdx
+}
+
+function fenceCountFor(state: GameState, playerIdx: number): number {
+	let n = 0
+	for (const owner of Object.values(state.fenceTokens ?? {})) {
+		if (owner === playerIdx) n++
 	}
+	return n
 }
 
 // Smith: brick ↔ ore fungible for builds, dev cards, ports.
@@ -4768,25 +4875,21 @@ function placeRoadPiece(
 function endOfPlacementPhase(state: GameState): Phase {
 	const specialistIdxs: number[] = []
 	const explorerOwed: Partial<Record<number, number>> = {}
-	const fencerOwed: Partial<Record<number, number>> = {}
 	const hauntIdxs: number[] = []
 	state.players.forEach((p, i) => {
 		if (p.bonus === 'specialist') specialistIdxs.push(i)
 		if (p.bonus === 'explorer') explorerOwed[i] = 3
-		if (p.bonus === 'fencer') fencerOwed[i] = FENCE_TOKEN_COUNT
 		if (p.bonus === 'haunt') hauntIdxs.push(i)
 	})
 	const explorerHas = Object.keys(explorerOwed).length > 0
-	const fencerHas = Object.keys(fencerOwed).length > 0
 	const hauntHas = hauntIdxs.length > 0
-	if (specialistIdxs.length === 0 && !explorerHas && !fencerHas && !hauntHas)
+	if (specialistIdxs.length === 0 && !explorerHas && !hauntHas)
 		return { kind: 'roll' }
 	return {
 		kind: 'post_placement',
 		pending: {
 			specialist: specialistIdxs,
 			...(explorerHas ? { explorer: explorerOwed } : {}),
-			...(fencerHas ? { fencer: fencerOwed } : {}),
 			...(hauntHas ? { haunt: hauntIdxs } : {}),
 		},
 	}
@@ -5146,17 +5249,28 @@ async function applyRollOutcome(
 				{ ...state, players: nomadResult.players },
 				activeIdx
 			)
-			const rollEvents = [...nomadResult.events, ...investorResult.events]
+			// The friendly robber is the one 7 that resolves straight to main,
+			// so the shepherd's declared pair lands here rather than at the end
+			// of a robber chain that never runs.
+			const shepherdResult = applyShepherdPayout(
+				{ ...state, players: investorResult.players },
+				activeIdx
+			)
+			const rollEvents = [
+				...nomadResult.events,
+				...investorResult.events,
+				...shepherdResult.events,
+			]
 			const mainPhase: Phase = { kind: 'main', roll: dice, trade: null }
 			const nextPhase = wrapMagicianWindow(
 				mainPhase,
-				{ ...state, players: investorResult.players },
+				{ ...state, players: shepherdResult.players },
 				activeIdx,
 				dice
 			)
 			const stateUpdate: Record<string, unknown> = { phase: nextPhase }
 			if (rollEvents.length > 0) {
-				stateUpdate.players = investorResult.players
+				stateUpdate.players = shepherdResult.players
 			}
 			const { error: stateErr } = await admin
 				.from('game_states')
@@ -5314,6 +5428,15 @@ async function applyRollOutcome(
 		nextPlayers = investorResult.players
 		stateAfter = { ...stateAfter, players: nextPlayers }
 		events.push(...investorResult.events)
+	}
+
+	// Shepherd: the pair declared before this roll. Nothing on a non-7 can
+	// take it, so it lands as soon as production is in.
+	const shepherdResult = applyShepherdPayout(stateAfter, activeIdx)
+	if (shepherdResult.events.length > 0) {
+		nextPlayers = shepherdResult.players
+		stateAfter = { ...stateAfter, players: nextPlayers }
+		events.push(...shepherdResult.events)
 	}
 
 	// Curio collector: queue picks for any curio_collector who gained ≥ 1
@@ -6017,6 +6140,114 @@ async function handleSetEndVote(
 	return json({ ok: true })
 }
 
+// --- Account deletion ------------------------------------------------------
+
+/**
+ * delete_account: erase the caller's account, permanently. Account-shaped work
+ * in a games-shaped function, because ending a game is the bulk of it and
+ * `commitActionWrite` is the only place that's allowed to do that.
+ *
+ * Only the things a foreign key can't express are done here. Everything that
+ * references `profiles(id)` — friends, friend requests, chat, read cursors,
+ * game results, push tokens, proposed requests — cascades off the auth user
+ * delete at the end, which is therefore the whole data deletion.
+ *
+ * Not undone: the user's uuid stays in `games.participants` / `player_order` /
+ * `events` for games that already finished. It's a bare id with no PII behind
+ * it once the profile is gone, and rewriting it would corrupt the seat indices
+ * those games' histories are scored against. Clients render a dangling id as
+ * `[deleted user]` — see .claude/specs/account-deletion.md.
+ */
+async function handleDeleteAccount(
+	admin: SupabaseClient,
+	me: string
+): Promise<Response> {
+	const { data: unfinished, error: gamesErr } = await admin
+		.from('games')
+		.select('id')
+		.in('status', ['placement', 'active'])
+		.contains('participants', [me])
+	if (gamesErr) return err(500, gamesErr.message || 'load games failed')
+
+	// Every unfinished game is canceled rather than completed: a forfeit has no
+	// mechanical effect on turn order, so awarding the win and walking away
+	// would leave a 3+ player table stalled on a seat nobody can play — with
+	// the timeout sweep auto-playing a deleted account forever. No winner and
+	// no game_results rows, so such a game contributes nothing to anyone's
+	// stats.
+	const at = new Date().toISOString()
+	const targets: NotifyTarget[] = []
+	for (const row of unfinished ?? []) {
+		const loaded = await loadGame(admin, row.id)
+		if (!loaded.ok) return loaded.response
+		const { game, state } = loaded
+
+		const gameOverPhase: Phase = { kind: 'game_over' }
+		const commitErr = await commitActionWrite(
+			admin,
+			game,
+			{ phase: gameOverPhase },
+			[{ kind: 'game_canceled', at }],
+			null,
+			state,
+			{ canceled: true, gameFields: { deadline_at: null } }
+		)
+		if (commitErr) return commitErr
+
+		for (const userId of game.player_order) {
+			if (userId === me) continue
+			targets.push({ userId, kind: 'game_canceled', gameId: game.id })
+		}
+	}
+
+	// Awaited rather than backgrounded: `waitUntil` would race the auth delete
+	// below, and the fan-out reads recipient rows to gate and to badge.
+	if (targets.length > 0) await sendNotifications(admin, targets)
+
+	// A request the user proposed dies with them (that FK cascades anyway); one
+	// they were invited to can never reach all-accepted, so it's dead too. The
+	// invited side is the one place a uuid is held with no foreign key
+	// (`invited` is jsonb), so it's filtered here rather than cascaded. Like
+	// `cancel_request`, no push goes out — the invite just disappears from the
+	// other parties' Play tab over the existing realtime channel.
+	const { data: requests, error: reqErr } = await admin
+		.from('game_requests')
+		.select('id, proposer, invited')
+	if (reqErr) return err(500, reqErr.message || 'load requests failed')
+
+	const deadRequestIds = (requests ?? [])
+		.filter(
+			(r) =>
+				r.proposer === me ||
+				(Array.isArray(r.invited) &&
+					(r.invited as InvitedEntry[]).some((i) => i?.user === me))
+		)
+		.map((r) => r.id)
+
+	if (deadRequestIds.length > 0) {
+		const { error: delErr } = await admin
+			.from('game_requests')
+			.delete()
+			.in('id', deadRequestIds)
+		if (delErr) return err(500, delErr.message || 'could not clear invites')
+	}
+
+	// Best-effort: an orphaned storage object is a leak, not a privacy failure —
+	// the path is unguessable without the profile row, and what the user is owed
+	// is the account delete below. Path mirrors the upload in account.tsx.
+	const { error: avatarErr } = await admin.storage
+		.from('avatars')
+		.remove([`${me}/avatar.jpg`])
+	if (avatarErr) console.error('[delete_account] avatar', avatarErr.message)
+
+	// Hard delete, not soft: this frees the phone number, so the same person can
+	// sign up again later rather than being locked out of their own number.
+	const { error: authErr } = await admin.auth.admin.deleteUser(me)
+	if (authErr) return err(500, authErr.message || 'could not delete account')
+
+	return json({ ok: true })
+}
+
 // --- Move timeouts ---------------------------------------------------------
 //
 // Mirror of lib/catan/timeout.ts, plus the two halves the client has no
@@ -6613,18 +6844,6 @@ function autoActionFor(
 					? { action: 'place_explorer_road', game_id: gid, edge: e }
 					: null
 			}
-			if ((p.fencer?.[seat] ?? 0) > 0) {
-				const e = randomOf(
-					board.edges.filter(
-						(e) =>
-							!edgeStateOf(state, e).occupied &&
-							state.fenceTokens?.[e] === undefined
-					)
-				)
-				return e
-					? { action: 'place_fence_token', game_id: gid, edge: e }
-					: null
-			}
 			if ((p.haunt ?? []).includes(seat)) {
 				const spots = shuffle(
 					board.vertices.filter((v) =>
@@ -6895,6 +7114,9 @@ async function handleEndTurn(
 		if (p.boughtCarpenterVPThisTurn) next.boughtCarpenterVPThisTurn = false
 		if (p.ritualWasUsedThisTurn) next.ritualWasUsedThisTurn = false
 		if (p.shepherdUsedThisTurn) next.shepherdUsedThisTurn = false
+		// Belt and braces: every path out of the roll phase pays the pair out,
+		// so a declaration should never still be owed here.
+		if (p.shepherdPending) delete next.shepherdPending
 		if (p.forgerMovedThisTurn) next.forgerMovedThisTurn = false
 		return next
 	})
@@ -7139,21 +7361,11 @@ async function handleBuildRoad(
 		}
 	} else {
 		const meP = state.players[meIdx]
-		// Fencer building on their own reserved edge → pay 1 Wood or Brick.
-		const onOwnFence =
-			meP.bonus === 'fencer' && fenceOwner(state, edge) === meIdx
+		// Overbuilding your own fence is priced by the edge — 1 brick, no
+		// payload and no cost substitution.
 		let cost: ResourceHand | null
-		if (onOwnFence) {
-			const want = body.fence_pay === 'brick' ? 'brick' : 'wood'
-			// Fall back to the other card when the requested one isn't in hand:
-			// a fencer holding only one of the two has no choice to express.
-			const pay =
-				meP.resources[want] > 0
-					? want
-					: want === 'wood'
-						? 'brick'
-						: 'wood'
-			cost = fenceRoadCost(pay)
+		if (isOwnFence(state, edge, meIdx)) {
+			cost = FENCE_UPGRADE_COST
 			if (!canAfford(meP.resources, cost))
 				return err(400, 'insufficient resources')
 		} else {
@@ -7185,8 +7397,8 @@ async function handleBuildRoad(
 		},
 	}
 
-	// Consume the fence token once the fencer builds a road on the reserved
-	// edge (whether paid or a free Road Building placement).
+	// The fence is consumed when a road is built over it — including a free
+	// Road Building placement, which gets no rebate for it.
 	let nextFenceTokens = state.fenceTokens
 	if (state.fenceTokens?.[edge] === meIdx) {
 		nextFenceTokens = { ...state.fenceTokens }
@@ -7607,6 +7819,18 @@ async function handleMoveRobber(
 		}
 	}
 
+	// Shepherd: the 7-chain is over the moment it lands in main with no steal
+	// to come, so the declared pair is paid here — after the discard AND after
+	// the steal that would otherwise have been able to take it.
+	if (state.phase.from7 && nextPhase.kind === 'main') {
+		const shepherdResult = applyShepherdPayout(
+			{ ...state, players: nextPlayers },
+			state.currentTurn ?? 0
+		)
+		nextPlayers = shepherdResult.players
+		events.push(...shepherdResult.events)
+	}
+
 	// If we're transitioning straight to main (no steal needed), apply
 	// the post-roll FT chain for the active player.
 	const stateAfterRobber: GameState = {
@@ -7732,10 +7956,21 @@ async function handleSteal(
 		},
 	]
 
+	// Shepherd: the steal was the last thing that could have taken the pair,
+	// so it lands now (see applyShepherdPayout).
+	const shepherdResult =
+		state.phase.from7 && nextPhase.kind === 'main'
+			? applyShepherdPayout(
+					{ ...state, players: nextPlayers },
+					state.currentTurn ?? 0
+				)
+			: { players: nextPlayers, events: [] as unknown[] }
+	events.push(...shepherdResult.events)
+
 	// FT chain after a 7 → steal → main transition.
 	let finalState: GameState = {
 		...state,
-		players: nextPlayers,
+		players: shepherdResult.players,
 		phase: nextPhase,
 	}
 	if (
@@ -8818,7 +9053,6 @@ async function handleLiquidate(
 type PostPlacementPending = {
 	specialist: number[]
 	explorer?: Partial<Record<number, number>>
-	fencer?: Partial<Record<number, number>>
 	haunt?: number[]
 }
 
@@ -8826,7 +9060,6 @@ function postPlacementDrained(pending: PostPlacementPending): boolean {
 	if (pending.specialist.length > 0) return false
 	if (pending.explorer && Object.keys(pending.explorer).length > 0)
 		return false
-	if (pending.fencer && Object.keys(pending.fencer).length > 0) return false
 	if (pending.haunt && pending.haunt.length > 0) return false
 	return true
 }
@@ -8840,8 +9073,6 @@ function postPlacementPhaseFrom(pending: PostPlacementPending): Phase {
 	const out: PostPlacementPending = { specialist: pending.specialist }
 	if (pending.explorer && Object.keys(pending.explorer).length > 0)
 		out.explorer = pending.explorer
-	if (pending.fencer && Object.keys(pending.fencer).length > 0)
-		out.fencer = pending.fencer
 	if (pending.haunt && pending.haunt.length > 0) out.haunt = pending.haunt
 	return { kind: 'post_placement', pending: out }
 }
@@ -9012,13 +9243,19 @@ async function handleShepherdSwap(
 	const r2 = parseResource(take[1])
 	if (!r1 || !r2) return err(400, 'invalid resource')
 
+	// A declaration, not a swap: the sheep go now, the pair is owed until the
+	// roll resolves (applyShepherdPayout), which is what puts it out of reach
+	// of a 7.
 	const nextPlayers = state.players.map((p, i) => {
 		if (i !== meIdx) return p
 		const r = p.resources
 		const next: ResourceHand = { ...r, sheep: r.sheep - 2 }
-		next[r1] = next[r1] + 1
-		next[r2] = next[r2] + 1
-		return { ...p, resources: next, shepherdUsedThisTurn: true }
+		return {
+			...p,
+			resources: next,
+			shepherdUsedThisTurn: true,
+			shepherdPending: [r1, r2] as [Resource, Resource],
+		}
 	})
 
 	const events: unknown[] = [
@@ -9460,22 +9697,20 @@ async function handleSetSpecialistResource(
 
 // --- Set 3 handlers --------------------------------------------------------
 
-async function handlePlaceFenceToken(
+// A fence is an ordinary build: 1 wood, main turn or a special-build slot.
+// Unlike a road it never touches `edges`, so nothing here recomputes Longest
+// Road.
+async function handleBuildFence(
 	admin: SupabaseClient,
 	me: string,
-	body: PlaceFenceTokenBody
+	body: BuildFenceBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-	if (state.phase.kind !== 'post_placement')
-		return err(400, 'expected post_placement phase')
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
+	const pre = await preflightBuild(admin, me, body.game_id, true)
+	if (!pre.ok) return pre.response
+	const { game, state, meIdx } = pre
+
 	if (state.players[meIdx]?.bonus !== 'fencer')
 		return err(400, 'not a fencer')
-	const remaining = state.phase.pending.fencer?.[meIdx] ?? 0
-	if (remaining <= 0) return err(400, 'no fence tokens remaining')
 	if (
 		!(boardFor(state.variant).edges as readonly string[]).includes(
 			body.edge
@@ -9483,36 +9718,53 @@ async function handlePlaceFenceToken(
 	)
 		return err(400, 'unknown edge')
 	const edge = body.edge as Edge
-	if (edgeStateOf(state, edge).occupied) return err(400, 'edge occupied')
-	if (state.fenceTokens?.[edge] !== undefined)
-		return err(400, 'edge already fenced')
+
+	if (!isValidBuildFenceEdge(state, meIdx, edge))
+		return err(400, 'invalid fence')
+	const cost = FENCE_COST
+	if (!canAfford(state.players[meIdx].resources, cost))
+		return err(400, 'insufficient resources')
+	if (
+		!canSpendUnderAge(
+			state.players[meIdx],
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
+		return err(400, 'age limit reached this turn')
 
 	const nextFenceTokens = { ...(state.fenceTokens ?? {}), [edge]: meIdx }
-	const newRemaining = remaining - 1
-	const newFencer = { ...(state.phase.pending.fencer ?? {}) }
-	if (newRemaining <= 0) delete newFencer[meIdx]
-	else newFencer[meIdx] = newRemaining
-	const nextPhase = postPlacementPhaseFrom({
-		...state.phase.pending,
-		fencer: newFencer,
-	})
-
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ fence_tokens: nextFenceTokens, phase: nextPhase })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-	const event = {
-		kind: 'fence_token',
-		player: meIdx,
-		edge,
-		at: new Date().toISOString(),
+	const nextPlayers = applyCost(state.players, meIdx, cost)
+	const update: Record<string, unknown> = {
+		fence_tokens: nextFenceTokens,
+		players: nextPlayers,
 	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
+	const nextState: GameState = {
+		...state,
+		players: nextPlayers,
+		fenceTokens: nextFenceTokens,
+	}
+	const events: unknown[] = [
+		{
+			kind: 'fence_built',
+			player: meIdx,
+			edge,
+			at: new Date().toISOString(),
+		},
+	]
+	const winner = applyEndOfActionChecks(nextState, update, events, {
+		recomputeRoads: false,
+	})
+	const commitErr = await commitActionWrite(
+		admin,
+		game,
+		update,
+		events,
+		winner,
+		nextState
+	)
+	if (commitErr) return commitErr
+
 	return json({ ok: true })
 }
 
@@ -9960,7 +10212,7 @@ const UNDOABLE_ACTIONS = new Set<string>([
 	'invest',
 	'buy_carpenter_vp',
 	'tap_knight',
-	'place_fence_token',
+	'build_fence',
 	'place_explorer_road',
 ])
 
@@ -10248,8 +10500,8 @@ function dispatch(
 			return handlePickForgerTarget(admin, me, body)
 		case 'confirm_scout_card':
 			return handleConfirmScoutCard(admin, me, body)
-		case 'place_fence_token':
-			return handlePlaceFenceToken(admin, me, body)
+		case 'build_fence':
+			return handleBuildFence(admin, me, body)
 		case 'set_haunt_spots':
 			return handleSetHauntSpots(admin, me, body)
 		case 'invest':
@@ -10264,6 +10516,8 @@ function dispatch(
 			return handleSetForfeit(admin, me, body)
 		case 'set_end_vote':
 			return handleSetEndVote(admin, me, body)
+		case 'delete_account':
+			return handleDeleteAccount(admin, me)
 		default:
 			return Promise.resolve(err(400, 'unknown action'))
 	}

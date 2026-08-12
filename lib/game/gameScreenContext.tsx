@@ -14,15 +14,15 @@ import {
 	affordableScoutSwaps,
 	canBuildMoreSuperCities,
 	canInvest,
-	fenceOwner,
 	forgerTokenHex,
+	isOwnFence,
 	mustMoveForgerToken,
 	type ScoutSwap,
 } from '@/lib/catan/bonus'
 import {
 	canAffordPurchase,
 	canAffordMetropolitanCost,
-	fencePayChoice,
+	canBuildFence,
 	handSize,
 	payableBuildRoadEdges,
 	shouldUseBricklayer,
@@ -167,7 +167,7 @@ function useGameScreenState(gameId: string) {
 	const moveForgerToken = useGamesStore((s) => s.moveForgerToken)
 	const pickForgerTarget = useGamesStore((s) => s.pickForgerTarget)
 	const confirmScoutCard = useGamesStore((s) => s.confirmScoutCard)
-	const placeFenceToken = useGamesStore((s) => s.placeFenceToken)
+	const buildFence = useGamesStore((s) => s.buildFence)
 	const setHauntSpots = useGamesStore((s) => s.setHauntSpots)
 	const invest = useGamesStore((s) => s.invest)
 	const castMagic = useGamesStore((s) => s.castMagic)
@@ -179,15 +179,16 @@ function useGameScreenState(gameId: string) {
 	// The placement turn being drafted locally: a settlement, its road, and a
 	// second pair for the seat that places both back-to-back. Nothing is sent
 	// until the player confirms, which is what makes taking a piece back free.
-	// `pickLast` is the separate one-tap nomination of the `pick_last` step.
+	// `pickLast` is the separate one-tap nomination of the `pick_last` step,
+	// which starts empty — the confirm is disabled until the player answers.
 	const [placementDraft, setPlacementDraft] = useState<PlacementDraftEntry[]>(
 		[]
 	)
 	const [pickLast, setPickLast] = useState<string | null>(null)
 	const [submitting, setSubmitting] = useState(false)
-	const [buildTool, setBuildTool] = useState<BuildKind | 'super_city' | null>(
-		null
-	)
+	const [buildTool, setBuildTool] = useState<
+		BuildKind | 'super_city' | 'fence' | null
+	>(null)
 	const [tradePanelOpen, setTradePanelOpen] = useState(false)
 	const [ritualOpen, setRitualOpen] = useState(false)
 	const [shepherdOpen, setShepherdOpen] = useState(false)
@@ -201,9 +202,6 @@ function useGameScreenState(gameId: string) {
 		| { kind: 'super_city'; vertex: string }
 		| null
 	>(null)
-	// A fencer's road on one of their own reserved edges, held until they pick
-	// which single card (Wood or Brick) pays for it.
-	const [fencePending, setFencePending] = useState<string | null>(null)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		run: () => void | Promise<void>
@@ -290,24 +288,18 @@ function useGameScreenState(gameId: string) {
 	const isMySpecialBuild =
 		sbActor !== null && sbActor === meIdx && game?.status === 'active'
 
-	// Reset selection when the turn or phase step changes under us — except on
-	// the `pick_last` step, which opens pre-seeded with the round-2 settlement
-	// so confirming untouched reproduces the standard rule. Which settlement
-	// that is has to come from the log: once both roads are down the board no
-	// longer says which one went second.
+	// Reset selection when the turn or phase step changes under us. The
+	// `pick_last` step opens with **nothing** nominated: the two settlements
+	// went down in one submitted turn, so seeding either one would be the app
+	// answering the question it is asking.
 	const placementKey =
 		gameState?.phase.kind === 'initial_placement'
 			? `${gameState?.currentTurn}-${gameState.phase.round}-${gameState.phase.step}`
 			: null
-	const pickLastSeed =
-		gameState?.phase.kind === 'initial_placement' &&
-		gameState.phase.step === 'pick_last'
-			? roundTwoSettlementOf((game?.events ?? []) as GameEvent[], meIdx)
-			: null
 	useEffect(() => {
-		setPickLast(pickLastSeed)
+		setPickLast(null)
 		setPlacementDraft([])
-	}, [placementKey, pickLastSeed])
+	}, [placementKey])
 
 	// How many settlement+road pairs this turn submits — two for the seat the
 	// snake order hands both of its turns to back-to-back.
@@ -680,11 +672,9 @@ function useGameScreenState(gameId: string) {
 				? null
 				: (gameState.phase.pending.explorer?.[meIdx] ?? 0) > 0
 					? 'explorer_road'
-					: (gameState.phase.pending.fencer?.[meIdx] ?? 0) > 0
-						? 'fence_token'
-						: (gameState.phase.pending.haunt ?? []).includes(meIdx)
-							? 'haunt_spot'
-							: null
+					: (gameState.phase.pending.haunt ?? []).includes(meIdx)
+						? 'haunt_spot'
+						: null
 			: null
 	const inMainLoop =
 		game?.status === 'active' &&
@@ -866,14 +856,6 @@ function useGameScreenState(gameId: string) {
 		if (!game) return
 		setSubmitting(true)
 		const res = await placeExplorerRoad(game.id, edge)
-		setSubmitting(false)
-		if (res.error) notify('Placement failed', res.error)
-	}
-
-	async function onPlaceFenceToken(edge: string) {
-		if (!game) return
-		setSubmitting(true)
-		const res = await placeFenceToken(game.id, edge)
 		setSubmitting(false)
 		if (res.error) notify('Placement failed', res.error)
 	}
@@ -1137,7 +1119,7 @@ function useGameScreenState(gameId: string) {
 		if (res.error) notify('Play failed', res.error)
 	}
 
-	function onBuildToolSelect(tool: BuildKind | 'super_city') {
+	function onBuildToolSelect(tool: BuildKind | 'super_city' | 'fence') {
 		setBuildTool((prev) => (prev === tool ? null : tool))
 	}
 
@@ -1146,11 +1128,6 @@ function useGameScreenState(gameId: string) {
 		// placement layer is informational; just commit).
 		if (sel.kind === 'explorer_road') {
 			onPlaceExplorerRoad(sel.edge)
-			return
-		}
-		// Fencer: tapping an empty edge drops a reserve token immediately.
-		if (sel.kind === 'fence_token') {
-			onPlaceFenceToken(sel.edge)
 			return
 		}
 		// Haunt: toggle the tapped vertex in the local 2-spot selection; the
@@ -1174,26 +1151,19 @@ function useGameScreenState(gameId: string) {
 			setMetroPending({ kind: sel.kind, vertex: sel.vertex })
 			return
 		}
-		// Fencer: a paid road on one of their own reserved edges costs a single
-		// card, so when they hold both Wood and Brick the picker decides which.
-		// Road Building's free placements skip it — nothing is spent.
-		if (
-			sel.kind === 'road' &&
-			gameState &&
-			gameState.phase.kind !== 'road_building' &&
-			myPlayer &&
-			fencePayChoice(myPlayer) &&
-			fenceOwner(gameState, sel.edge) === meIdx
-		) {
-			setFencePending(sel.edge)
-			return
-		}
-		// At this point sel is one of road/settlement/city (the non-
+		// At this point sel is one of road/fence/settlement/city (the non-
 		// metropolitan branch). Narrow for confirmAction + commitBuild.
 		if (sel.kind === 'super_city') return
 		const standardSel = sel
+		// Road Building's placements are free, so they overbuild a fence
+		// without paying the upgrade — the title must not quote a price.
+		const upgradingFence =
+			standardSel.kind === 'road' &&
+			!!gameState &&
+			gameState.phase.kind !== 'road_building' &&
+			isOwnFence(gameState, standardSel.edge, meIdx)
 		confirmAction(
-			confirmBuildTitle(standardSel.kind),
+			confirmBuildTitle(standardSel.kind, upgradingFence),
 			() => commitBuild(standardSel),
 			standardSel
 		)
@@ -1204,12 +1174,8 @@ function useGameScreenState(gameId: string) {
 			BuildSelection,
 			| { kind: 'explorer_road' }
 			| { kind: 'super_city' }
-			| { kind: 'fence_token' }
 			| { kind: 'haunt_spot' }
-		>,
-		// Fencer only: which card pays for a road on their own reserved edge.
-		// Omitted when the hand leaves no choice — the lone card is used.
-		fencePay?: 'wood' | 'brick'
+		>
 	) {
 		if (!game || !gameState) return
 		setSubmitting(true)
@@ -1226,17 +1192,13 @@ function useGameScreenState(gameId: string) {
 							: false,
 					}
 		let res
-		if (sel.kind === 'road') {
-			// Fencer building on their own reserved edge → 1-card discount.
-			const onOwnFence =
-				myPlayer?.bonus === 'fencer' &&
-				fenceOwner(gameState, sel.edge) === meIdx
-			res = onOwnFence
-				? await buildRoad(game.id, sel.edge, {
-						fencePay:
-							fencePay ??
-							(myPlayer!.resources.wood > 0 ? 'wood' : 'brick'),
-					})
+		if (sel.kind === 'fence') {
+			res = await buildFence(game.id, sel.edge)
+		} else if (sel.kind === 'road') {
+			// A road onto the fencer's own fence is priced by the edge (1
+			// brick), so no cost-substitution payload applies.
+			res = isOwnFence(gameState, sel.edge, meIdx)
+				? await buildRoad(game.id, sel.edge)
 				: await buildRoad(game.id, sel.edge, buildOpts('road'))
 		} else if (sel.kind === 'settlement') {
 			res = await buildSettlement(
@@ -1253,14 +1215,6 @@ function useGameScreenState(gameId: string) {
 			return
 		}
 		setBuildTool(null)
-		setFencePending(null)
-	}
-
-	// The fencer's Wood-or-Brick pick commits the held road directly — the
-	// picker stands in for the confirm bar, as metropolitan's does.
-	async function onConfirmFenceCost(pay: 'wood' | 'brick') {
-		if (!fencePending) return
-		await commitBuild({ kind: 'road', edge: fencePending }, pay)
 	}
 
 	async function onDiscard(selection: ResourceHandType) {
@@ -1387,9 +1341,9 @@ function useGameScreenState(gameId: string) {
 		dev_card: true,
 	}
 	const buildEnabled = {
-		// A fencer holding only Wood or only Brick can still build — but only on
-		// their own reserved edges, so gate on the payable set rather than the
-		// standard cost.
+		// A fencer short of Wood + Brick can still build — but only the 1-brick
+		// upgrade on their own fences, so gate on the payable set rather than
+		// the standard cost.
 		road:
 			canBuildBasic &&
 			!!gameState &&
@@ -1450,6 +1404,10 @@ function useGameScreenState(gameId: string) {
 		canBuildMoreSuperCities(gameState, meIdx) &&
 		validBuildSuperCityVertices(gameState, meIdx).length > 0 &&
 		superCityCanAfford
+	// A fence is an ordinary build, so it rides `canBuildBasic` (main turn or
+	// a special-build slot) rather than main-turn-only like the modal bonuses.
+	const fenceEnabled =
+		canBuildBasic && !!gameState && canBuildFence(gameState, meIdx)
 	const accountantEnabled =
 		canBuildThisTurn && !!myPlayer && myPlayer.bonus === 'accountant'
 	const investorEnabled =
@@ -1543,6 +1501,7 @@ function useGameScreenState(gameId: string) {
 		tradeButtonEnabled,
 		tradeButtonActive,
 		superCityEnabled,
+		fenceEnabled,
 		accountantEnabled,
 		investorEnabled,
 
@@ -1582,8 +1541,6 @@ function useGameScreenState(gameId: string) {
 		setInvestOpen,
 		metroPending,
 		setMetroPending,
-		fencePending,
-		setFencePending,
 
 		// --- Animations -------------------------------------------------
 		// Each dismiss releases the animation's hold on the fanned hand, so the
@@ -1622,7 +1579,6 @@ function useGameScreenState(gameId: string) {
 		onSkipMagic,
 		onUndo,
 		onConfirmMetropolitanCost,
-		onConfirmFenceCost,
 		onPlacementSelect,
 		onUndoPlacement,
 		onConfirm,
@@ -1658,25 +1614,6 @@ function useGameScreenState(gameId: string) {
 // drop, or a second dropped resource means an unrelated hand change (a build,
 // a bank trade, a discard) is layered on top and the steal is unrecoverable —
 // answering anyway would attribute a random resource to the steal.
-// The settlement a seat placed on round 2 — the one today's rules pay out on,
-// and so the default answer on the `pick_last` step. Nominating it is a no-op
-// server-side; nominating the other swaps the pair in the log.
-function roundTwoSettlementOf(
-	events: GameEvent[],
-	playerIdx: number
-): string | null {
-	for (let i = events.length - 1; i >= 0; i--) {
-		const e = events[i]
-		if (
-			e.kind === 'settlement_placed' &&
-			e.player === playerIdx &&
-			e.round === 2
-		)
-			return e.vertex
-	}
-	return null
-}
-
 function diffStolenResource(
 	before: ResourceHandType,
 	after: ResourceHandType
@@ -1691,10 +1628,19 @@ function diffStolenResource(
 	return stolen
 }
 
-function confirmBuildTitle(kind: BuildKind): string {
+function confirmBuildTitle(
+	kind: BuildKind | 'fence',
+	upgradingFence: boolean
+): string {
 	switch (kind) {
 		case 'road':
-			return 'Confirm road placement'
+			// Name the price: overbuilding your own fence costs 1 brick, not
+			// the standard pair, and the bar is the only place that says so.
+			return upgradingFence
+				? 'Upgrade fence to road (1 Brick)'
+				: 'Confirm road placement'
+		case 'fence':
+			return 'Confirm fence placement'
 		case 'settlement':
 			return 'Confirm settlement placement'
 		case 'city':

@@ -15,9 +15,13 @@ import {
 	BRICKLAYER_COST,
 	canBuildMoreSuperCities,
 	canScoutAffordDevCard,
+	FENCE_COST,
+	FENCE_UPGRADE_COST,
+	fenceCountFor,
 	fenceOwner,
 	isFenceReservedAgainst,
 	isGhost,
+	isOwnFence,
 	metropolitanCityCost,
 	smithCostOf,
 } from './bonus'
@@ -181,22 +185,62 @@ export function shouldUseBricklayer(
 //   - V is empty AND one of V's other adjacent edges is one of the player's
 //     own roads. An opponent building on V blocks the chain through V
 //     (standard "no road through opponent settlement" rule).
-function roadConnectsVia(
+// `fencesChain` extends that to the player's own fences, which is the one
+// difference between road and fence placement: a fence network grows itself,
+// but never carries a road (or a settlement's adjacency requirement).
+function connectsVia(
 	state: GameState,
 	playerIdx: number,
 	edge: Edge,
-	vertex: Vertex
+	vertex: Vertex,
+	fencesChain: boolean
 ): boolean {
 	const vs = vertexStateOf(state, vertex)
 	// A ghost (haunt bonus) is non-interfering: it never blocks road chaining,
-	// so it's transparent here (fall through to the adjacent-own-road check).
+	// so it's transparent here (fall through to the adjacent-own-piece check).
 	if (vs.occupied && !isGhost(vs)) return vs.player === playerIdx
 	for (const e of boardFor(state.variant).adjacentEdges[vertex]) {
 		if (e === edge) continue
 		const es = edgeStateOf(state, e)
-		if (es.occupied && es.player === playerIdx) return true
+		if (es.occupied) {
+			if (es.player === playerIdx) return true
+			continue
+		}
+		if (fencesChain && isOwnFence(state, e, playerIdx)) return true
 	}
 	return false
+}
+
+// The edges worth testing for validity: those touching a vertex the player
+// owns, or that one of their own pieces already reaches. Keeps both `valid*`
+// walks off the ~72 edges most players never touch.
+function candidateEdges(
+	state: GameState,
+	playerIdx: number,
+	fencesChain: boolean
+): Edge[] {
+	const out: Edge[] = []
+	const seen = new Set<Edge>()
+	const board = boardFor(state.variant)
+	for (const v of board.vertices) {
+		const vs = vertexStateOf(state, v)
+		const ownsVertex = vs.occupied && vs.player === playerIdx
+		const hasAdjOwnPiece = board.adjacentEdges[v].some((e) => {
+			const es = edgeStateOf(state, e)
+			if (es.occupied) return es.player === playerIdx
+			return fencesChain && isOwnFence(state, e, playerIdx)
+		})
+		if (!ownsVertex && !hasAdjOwnPiece) continue
+		// An opponent's building blocks chaining through it — except a ghost,
+		// which is transparent to road networks.
+		if (vs.occupied && vs.player !== playerIdx && !isGhost(vs)) continue
+		for (const e of board.adjacentEdges[v]) {
+			if (seen.has(e)) continue
+			seen.add(e)
+			out.push(e)
+		}
+	}
+	return out
 }
 
 export function isValidBuildRoadEdge(
@@ -205,26 +249,33 @@ export function isValidBuildRoadEdge(
 	edge: Edge
 ): boolean {
 	if (edgeStateOf(state, edge).occupied) return false
-	// A fence token (fencer bonus) reserves the edge for its owner — no other
+	// A fence (fencer bonus) reserves the edge for its owner — no other
 	// player may ever build there.
 	if (isFenceReservedAgainst(state, edge, playerIdx)) return false
-	if (!canBuildMoreRoads(state, playerIdx)) return false
+	// Overbuilding your own fence is supply-neutral (one fence out, one road
+	// in), so it stays legal at the cap.
+	if (
+		!isOwnFence(state, edge, playerIdx) &&
+		!canBuildMoreRoads(state, playerIdx)
+	)
+		return false
 	const [a, b] = edgeEndpoints(edge)
 	return (
-		roadConnectsVia(state, playerIdx, edge, a) ||
-		roadConnectsVia(state, playerIdx, edge, b)
+		connectsVia(state, playerIdx, edge, a, false) ||
+		connectsVia(state, playerIdx, edge, b, false)
 	)
 }
 
-// Supply + curse cap check. Returns false when the player already has as
-// many roads on the board as their cap allows. Classic Catan is 15; the
-// `compaction` curse lowers that to 7.
+// Supply + curse cap check. Roads and fences come out of the same 15-piece
+// supply (the `compaction` curse lowers it to 7, though that curse and the
+// fencer bonus are a banned combo, so a fence never meets it).
 export function canBuildMoreRoads(
 	state: GameState,
 	playerIdx: number
 ): boolean {
 	return (
-		roadCountFor(state, playerIdx) < maxRoadsFor(curseOf(state, playerIdx))
+		roadCountFor(state, playerIdx) + fenceCountFor(state, playerIdx) <
+		maxRoadsFor(curseOf(state, playerIdx))
 	)
 }
 
@@ -250,56 +301,15 @@ export function validBuildRoadEdges(
 	state: GameState,
 	playerIdx: number
 ): Edge[] {
-	const out: Edge[] = []
-	const seen = new Set<Edge>()
-	const board = boardFor(state.variant)
-	// Iterate candidate edges via the player's owned roads + buildings so we
-	// don't scan every edge when most aren't touched by the player at all.
-	for (const v of board.vertices) {
-		const vs = vertexStateOf(state, v)
-		const ownsVertex = vs.occupied && vs.player === playerIdx
-		const hasAdjOwnRoad = board.adjacentEdges[v].some((e) => {
-			const es = edgeStateOf(state, e)
-			return es.occupied && es.player === playerIdx
-		})
-		if (!ownsVertex && !hasAdjOwnRoad) continue
-		// An opponent's building blocks chaining through it — except a ghost,
-		// which is transparent to road networks.
-		if (vs.occupied && vs.player !== playerIdx && !isGhost(vs)) continue
-		for (const e of board.adjacentEdges[v]) {
-			if (seen.has(e)) continue
-			seen.add(e)
-			if (isValidBuildRoadEdge(state, playerIdx, e)) out.push(e)
-		}
-	}
-	return out
-}
-
-// A road on the fencer's OWN reserved edge costs 1 Wood *or* 1 Brick, so a
-// single card of either kind is enough to build there.
-export function canAffordFenceRoad(p: PlayerState): boolean {
-	return (
-		p.bonus === 'fencer' && (p.resources.wood > 0 || p.resources.brick > 0)
-	)
-}
-
-// Does the fencer have both halves of the fence cost, i.e. a real choice of
-// which card to spend? (The picker only opens when they do.)
-export function fencePayChoice(p: PlayerState): boolean {
-	return p.bonus === 'fencer' && p.resources.wood > 0 && p.resources.brick > 0
-}
-
-// The player's own reserved edges that are legal road targets right now.
-export function ownFenceRoadEdges(state: GameState, playerIdx: number): Edge[] {
-	return validBuildRoadEdges(state, playerIdx).filter(
-		(e) => fenceOwner(state, e) === playerIdx
+	return candidateEdges(state, playerIdx, false).filter((e) =>
+		isValidBuildRoadEdge(state, playerIdx, e)
 	)
 }
 
 // Legal road targets the player can actually PAY for. Same as
-// `validBuildRoadEdges` once the standard cost is affordable; a fencer holding
-// only one of Wood/Brick is narrowed to their own reserved edges, where that
-// single card covers the build.
+// `validBuildRoadEdges` once the standard cost is affordable; a fencer short of
+// the pair is narrowed to their own fences, where a lone brick covers the
+// upgrade.
 export function payableBuildRoadEdges(
 	state: GameState,
 	playerIdx: number
@@ -308,8 +318,49 @@ export function payableBuildRoadEdges(
 	if (!p) return []
 	if (canAffordPurchase(p, 'road'))
 		return validBuildRoadEdges(state, playerIdx)
-	if (canAffordFenceRoad(p)) return ownFenceRoadEdges(state, playerIdx)
+	if (p.bonus === 'fencer' && canAfford(p.resources, FENCE_UPGRADE_COST))
+		return validBuildRoadEdges(state, playerIdx).filter((e) =>
+			isOwnFence(state, e, playerIdx)
+		)
 	return []
+}
+
+// --- Fences (fencer bonus only) ---------------------------------------------
+
+export function isValidBuildFenceEdge(
+	state: GameState,
+	playerIdx: number,
+	edge: Edge
+): boolean {
+	if (state.players[playerIdx]?.bonus !== 'fencer') return false
+	if (edgeStateOf(state, edge).occupied) return false
+	// Any fence takes the edge, the player's own included.
+	if (fenceOwner(state, edge) !== null) return false
+	if (!canBuildMoreRoads(state, playerIdx)) return false
+	const [a, b] = edgeEndpoints(edge)
+	return (
+		connectsVia(state, playerIdx, edge, a, true) ||
+		connectsVia(state, playerIdx, edge, b, true)
+	)
+}
+
+export function validBuildFenceEdges(
+	state: GameState,
+	playerIdx: number
+): Edge[] {
+	if (state.players[playerIdx]?.bonus !== 'fencer') return []
+	return candidateEdges(state, playerIdx, true).filter((e) =>
+		isValidBuildFenceEdge(state, playerIdx, e)
+	)
+}
+
+// Bonus + hand + a legal edge. Gates the build-bar button and the
+// special-build auto-skip.
+export function canBuildFence(state: GameState, playerIdx: number): boolean {
+	const p = state.players[playerIdx]
+	if (!p || p.bonus !== 'fencer') return false
+	if (!canAfford(p.resources, FENCE_COST)) return false
+	return validBuildFenceEdges(state, playerIdx).length > 0
 }
 
 // --- Settlements ------------------------------------------------------------
@@ -443,6 +494,7 @@ export function canTakeSpecialBuildAction(
 	if (!p) return false
 	if (state.config.extraBuild.moreThanSeven && handSize(p) <= 7) return false
 	if (payableBuildRoadEdges(state, idx).length > 0) return true
+	if (canBuildFence(state, idx)) return true
 	if (
 		canAffordPurchase(p, 'settlement') &&
 		validBuildSettlementVertices(state, idx).length > 0

@@ -9,7 +9,8 @@ Shared, app-agnostic UI primitives (not Catan-specific). Style with `StyleSheet.
 - `Select.tsx` — single-choice select, for when a choice outgrows `SegmentedRow`'s three-or-four-pill ceiling. `value` is `T | null`; `null` renders `placeholder` as a **real option in the list**, so a select whose "off" is a legitimate choice needs no second control.
 - `SlidingArea.tsx` — horizontal slide between a fixed set of children selected by `index`; direction follows the sign of the index delta. **Keep-alive**: every pane stays mounted, so each keeps its own state; non-consecutive jumps slide the two panes directly past each other. Width is measured via `onLayout`. Used by the Stats tabs and the game screen's zones — the latter is the non-obvious case (see `lib/game/CLAUDE.md`): every switchable game gets a pane but only the active one has content, because a single `GameProvider` means there's no second game's data to show.
 - `Toast.tsx` — brief non-interactive confirmation ("Copied"). Deliberately **not** built on `Modal`: an RN `<Modal>` claims the touch responder for its whole window, so a toast on one would swallow taps for its lifetime. It's an in-tree `pointerEvents="none"` overlay, mounted at the root of the screen it belongs to with a `z` token above what it floats over.
-- `Button.tsx`, `Input.tsx`, `Avatar.tsx`, `Tooltip.tsx`, `TabBarIcon.tsx` — the rest of the shared primitives.
+- `Avatar.tsx` — image if the profile has one, first initial otherwise. A **deleted account's placeholder profile** (`profile.deleted`, see `lib/stores/CLAUDE.md`) falls back to the same neutral glyph as no profile at all, since its display name is bracketed and has no meaningful initial.
+- `Button.tsx`, `Input.tsx`, `Tooltip.tsx`, `TabBarIcon.tsx` — the rest of the shared primitives.
 
 ## Overlays
 

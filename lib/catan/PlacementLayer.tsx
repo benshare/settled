@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { Circle, G } from 'react-native-svg'
 import { edgeEndpoints, type Edge, type Vertex } from './board'
 import { EdgePiece } from './EdgePiece'
-import { pieceStroke, seatColor } from './palette'
+import { pieceStroke, pieceStrokeSoft, seatColor } from './palette'
 import {
 	applyPlacementDraft,
 	ownSettlementVertices,
@@ -47,8 +47,8 @@ export function PlacementLayer({
 	vertexPositions: Record<Vertex, { x: number; y: number }>
 	draft: readonly PlacementDraftEntry[]
 	pairsExpected: 1 | 2
-	// The settlement nominated on the `pick_last` step, pre-seeded with the
-	// round-2 one. Unused on the drafting step.
+	// The settlement nominated on the `pick_last` step; null until the player
+	// answers. Unused on the drafting step.
 	pickLast: Vertex | null
 	onSelect: (s: PlacementSelection) => void
 }) {
@@ -60,6 +60,11 @@ export function PlacementLayer({
 	// its settlements are already on the board, so the affordance rings the
 	// pieces rather than marking empty spots. Self-gating: nobody else has two
 	// settlements to choose between, and a spectator (meIdx -1) owns none.
+	//
+	// Both rings pulse identically — the ONLY difference is that the nominated
+	// one is darker. Freezing the chosen ring instead reads backwards: the
+	// pulse is the "tap me" signal, so the still one looks disabled and the
+	// player concludes they can only nominate the other settlement.
 	if (step === 'pick_last') {
 		const mine = ownSettlementVertices(state, meIdx)
 		return (
@@ -69,24 +74,15 @@ export function PlacementLayer({
 					const isSelected = pickLast === v
 					return (
 						<Fragment key={v}>
-							{isSelected ? (
-								<Circle
-									cx={p.x}
-									cy={p.y}
-									r={layoutS * 0.5}
-									fill="none"
-									stroke={pieceStroke}
-									strokeWidth={layoutS * 0.12}
-								/>
-							) : (
-								<PulsingRing
-									cx={p.x}
-									cy={p.y}
-									r={layoutS * 0.5}
-									color={pieceStroke}
-									width={layoutS * 0.08}
-								/>
-							)}
+							<PulsingRing
+								cx={p.x}
+								cy={p.y}
+								r={layoutS * 0.32}
+								color={
+									isSelected ? pieceStroke : pieceStrokeSoft
+								}
+								width={layoutS * 0.07}
+							/>
 							<Circle
 								cx={p.x}
 								cy={p.y}
