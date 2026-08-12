@@ -44,7 +44,7 @@ Any component that subscribes outside a store (e.g. `GameProvider`) owes the sam
 
 - **A realtime UPDATE payload can be missing columns — never apply one wholesale.** Postgres omits unchanged TOASTed columns, so once a jsonb column outgrows the TOAST threshold every write that doesn't touch it delivers a row without it. On `games` that column is `events`, and the writes that leave it alone are routine (the deadline stamp, the timeout warning bump), so the partial payload is the _common_ case. `isPartialGameRow` is the test; both subscribers (store and `GameProvider`) **merge the payload onto the row they already hold** rather than re-reading (an omitted column is an unchanged one, so the merge is exact). `game_states` re-reads instead (`isPartialStateRow` in `useGameStatesStore`), because there the omitted columns are the whole board. Applying such a row as-is empties `game.events` for a beat — enough to make the game screen's animation cursors re-seed at zero and replay every animation in the game.
 - **Refetch from the `subscribe()` status callback on `SUBSCRIBED`.** The fetch and the join race, so an event landing between the fetch's snapshot and the join reaches nobody. Reading once the channel is live closes that gap, on first join and every automatic rejoin.
-- **Never make a player wait on realtime to see their own move.** Every game-service call goes through `callGameService`, which pings `lib/gameSync.ts` on success and re-reads the changed rows. The edge function's 200 already confirmed the write. This is a re-read, not an optimistic update.
+- **Never make a player wait on realtime to see their own move.** Every game-service call goes through `callGameService` (`lib/gameService.ts` — outside this directory because `useProfileStore` calls the function too, for `deleteAccount`, and it can't import the games store that imports it), which pings `lib/gameSync.ts` on success and re-reads the changed rows. The edge function's 200 already confirmed the write. This is a re-read, not an optimistic update.
 
 `lib/appState.ts` also force-bounces the socket (`disconnect()` → `connect()`) on foreground, because React Native doesn't reliably surface the close and supabase-js will otherwise keep rejoining a dead one.
 
@@ -61,6 +61,17 @@ With the spectator RLS policies in place (see `.claude/specs/spectating.md`), `s
 ## Profile columns are listed per store
 
 `PROFILE_COLS` is declared separately in `useProfileStore`, `useFriendsStore` and `useGamesStore`, and all three must select the **same** set — each constructs a full `Profile` row, so a column added to the table must be added to all three or the two that missed it fail to typecheck. Only `useProfileStore` ever writes profile fields (`updateColorPrefs`, optimistic with rollback); the other two fetch them purely to build `Profile` objects.
+
+## A deleted account is a dangling id, answered with a placeholder
+
+Account deletion hard-deletes the `profiles` row (`.claude/specs/account-deletion.md`), but the uuid survives in `games.participants` / `player_order` / `events`, where rewriting it would corrupt the seat indices every finished game is scored against. So both places `useGamesStore` builds `profilesById` — `loadForUser` and `ensureProfiles` — fill any id the query didn't answer with `deletedProfile(id)` (owned by `useProfileStore`, alongside the `DELETED_USERNAME` sentinel and the `deleted?: true` marker on `Profile`).
+
+- **The synthesis happens only after a query returns.** A missing key still means "not loaded yet", which is what lets the ~40 `profilesById[uid]?.username ?? 'Player'` sites stay untouched and still be right in both cases.
+- **Recording the absence is what settles the id.** Without it a permanently-missing id never leaves `ensureProfiles`' `missing` list, so every render re-asks the server for a row that will never exist.
+- **The sentinel is unforgeable**, which is the point of the `profiles_username_format` check constraint — a real account able to call itself `[deleted user]` could impersonate one.
+- **The placeholder reads `dev: false`**, so the production dev filter below treats a canceled game with a deleted player as ordinary.
+
+`useFriendsStore` needs none of this: every id it holds comes from a row that references `profiles(id)` `on delete cascade`, so the row and the reference disappear together.
 
 ## Dev-flagged profiles
 

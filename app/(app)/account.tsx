@@ -1,7 +1,9 @@
+import { useAdminStore } from '@/lib/admin'
 import { useAuth } from '@/lib/auth'
 import { parseColorPrefs } from '@/lib/catan/colors'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
+import { ConfirmModal } from '@/lib/modules/ConfirmModal'
 import { Input } from '@/lib/modules/Input'
 import {
 	DEFAULT_NOTIFICATION_PREFS,
@@ -61,6 +63,8 @@ export default function AccountScreen() {
 	const updateUsername = useProfileStore((s) => s.updateUsername)
 	const updateAvatarPath = useProfileStore((s) => s.updateAvatarPath)
 	const clearProfile = useProfileStore((s) => s.clearProfile)
+	const deleteAccount = useProfileStore((s) => s.deleteAccount)
+	const actingAs = useAdminStore((s) => s.actingAs)
 
 	const [editing, setEditing] = useState(false)
 	const [draft, setDraft] = useState('')
@@ -71,6 +75,9 @@ export default function AccountScreen() {
 	const [saveError, setSaveError] = useState<string | null>(null)
 	const [uploading, setUploading] = useState(false)
 	const [uploadError, setUploadError] = useState<string | null>(null)
+	const [confirmingDelete, setConfirmingDelete] = useState(false)
+	const [deleting, setDeleting] = useState(false)
+	const [deleteError, setDeleteError] = useState<string | null>(null)
 
 	const checkSeq = useRef(0)
 
@@ -196,6 +203,21 @@ export default function AccountScreen() {
 		clearAllUserStores()
 		await signOut()
 		router.replace('/')
+	}
+
+	async function handleDeleteAccount() {
+		setDeleting(true)
+		setDeleteError(null)
+		const { error } = await deleteAccount()
+		if (error) {
+			setDeleting(false)
+			setDeleteError(error)
+			return
+		}
+		setConfirmingDelete(false)
+		// The account is gone; the local teardown is the same as a sign out.
+		// Its `push_tokens` delete is a no-op — the row went with the profile.
+		await handleSignOut()
 	}
 
 	const colorPrefsSet = parseColorPrefs(profile?.color_prefs).length > 0
@@ -325,8 +347,41 @@ export default function AccountScreen() {
 					<Button variant="secondary" onPress={handleSignOut}>
 						Sign out
 					</Button>
+					{/* Irreversible against whoever the borrowed session
+					    belongs to, so it isn't offered while impersonating. */}
+					{!actingAs && (
+						<Pressable
+							onPress={() => {
+								setDeleteError(null)
+								setConfirmingDelete(true)
+							}}
+							style={({ pressed }) =>
+								pressed && styles.rowPressed
+							}
+						>
+							<Text style={styles.deleteAccount}>
+								Delete account
+							</Text>
+						</Pressable>
+					)}
 				</View>
 			</ScrollView>
+
+			<ConfirmModal
+				visible={confirmingDelete}
+				title="Delete account?"
+				message={
+					'Your profile, stats, and friends will be permanently deleted. ' +
+					'Games in progress will end and pending invites will be canceled. ' +
+					"This can't be undone."
+				}
+				confirmLabel="Delete account"
+				destructive
+				submitting={deleting}
+				error={deleteError}
+				onConfirm={handleDeleteAccount}
+				onCancel={() => setConfirmingDelete(false)}
+			/>
 		</SafeAreaView>
 	)
 }
@@ -714,6 +769,14 @@ function makeStyles(colors: ColorScheme) {
 		},
 		signOutWrap: {
 			marginTop: spacing.xl,
+			gap: spacing.md,
+		},
+		deleteAccount: {
+			fontSize: font.base,
+			fontWeight: '600',
+			color: colors.error,
+			textAlign: 'center',
+			paddingVertical: spacing.sm,
 		},
 		segmentControl: {
 			flexDirection: 'row',

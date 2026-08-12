@@ -295,6 +295,8 @@ type SkipMagicBody = {
 // The one action with no user behind it and no game_id: the cron sweep. See
 // handleRunTimeouts.
 type RunTimeoutsBody = { action: 'run_timeouts' }
+// No fields: the subject is always the caller. See handleDeleteAccount.
+type DeleteAccountBody = { action: 'delete_account' }
 type Body =
 	| HonkBody
 	| SendMessageBody
@@ -344,6 +346,7 @@ type Body =
 	| UndoBody
 	| SetForfeitBody
 	| SetEndVoteBody
+	| DeleteAccountBody
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -6159,6 +6162,114 @@ async function handleSetEndVote(
 	return json({ ok: true })
 }
 
+// --- Account deletion ------------------------------------------------------
+
+/**
+ * delete_account: erase the caller's account, permanently. Account-shaped work
+ * in a games-shaped function, because ending a game is the bulk of it and
+ * `commitActionWrite` is the only place that's allowed to do that.
+ *
+ * Only the things a foreign key can't express are done here. Everything that
+ * references `profiles(id)` — friends, friend requests, chat, read cursors,
+ * game results, push tokens, proposed requests — cascades off the auth user
+ * delete at the end, which is therefore the whole data deletion.
+ *
+ * Not undone: the user's uuid stays in `games.participants` / `player_order` /
+ * `events` for games that already finished. It's a bare id with no PII behind
+ * it once the profile is gone, and rewriting it would corrupt the seat indices
+ * those games' histories are scored against. Clients render a dangling id as
+ * `[deleted user]` — see .claude/specs/account-deletion.md.
+ */
+async function handleDeleteAccount(
+	admin: SupabaseClient,
+	me: string
+): Promise<Response> {
+	const { data: unfinished, error: gamesErr } = await admin
+		.from('games')
+		.select('id')
+		.in('status', ['placement', 'active'])
+		.contains('participants', [me])
+	if (gamesErr) return err(500, gamesErr.message || 'load games failed')
+
+	// Every unfinished game is canceled rather than completed: a forfeit has no
+	// mechanical effect on turn order, so awarding the win and walking away
+	// would leave a 3+ player table stalled on a seat nobody can play — with
+	// the timeout sweep auto-playing a deleted account forever. No winner and
+	// no game_results rows, so such a game contributes nothing to anyone's
+	// stats.
+	const at = new Date().toISOString()
+	const targets: NotifyTarget[] = []
+	for (const row of unfinished ?? []) {
+		const loaded = await loadGame(admin, row.id)
+		if (!loaded.ok) return loaded.response
+		const { game, state } = loaded
+
+		const gameOverPhase: Phase = { kind: 'game_over' }
+		const commitErr = await commitActionWrite(
+			admin,
+			game,
+			{ phase: gameOverPhase },
+			[{ kind: 'game_canceled', at }],
+			null,
+			state,
+			{ canceled: true, gameFields: { deadline_at: null } }
+		)
+		if (commitErr) return commitErr
+
+		for (const userId of game.player_order) {
+			if (userId === me) continue
+			targets.push({ userId, kind: 'game_canceled', gameId: game.id })
+		}
+	}
+
+	// Awaited rather than backgrounded: `waitUntil` would race the auth delete
+	// below, and the fan-out reads recipient rows to gate and to badge.
+	if (targets.length > 0) await sendNotifications(admin, targets)
+
+	// A request the user proposed dies with them (that FK cascades anyway); one
+	// they were invited to can never reach all-accepted, so it's dead too. The
+	// invited side is the one place a uuid is held with no foreign key
+	// (`invited` is jsonb), so it's filtered here rather than cascaded. Like
+	// `cancel_request`, no push goes out — the invite just disappears from the
+	// other parties' Play tab over the existing realtime channel.
+	const { data: requests, error: reqErr } = await admin
+		.from('game_requests')
+		.select('id, proposer, invited')
+	if (reqErr) return err(500, reqErr.message || 'load requests failed')
+
+	const deadRequestIds = (requests ?? [])
+		.filter(
+			(r) =>
+				r.proposer === me ||
+				(Array.isArray(r.invited) &&
+					(r.invited as InvitedEntry[]).some((i) => i?.user === me))
+		)
+		.map((r) => r.id)
+
+	if (deadRequestIds.length > 0) {
+		const { error: delErr } = await admin
+			.from('game_requests')
+			.delete()
+			.in('id', deadRequestIds)
+		if (delErr) return err(500, delErr.message || 'could not clear invites')
+	}
+
+	// Best-effort: an orphaned storage object is a leak, not a privacy failure —
+	// the path is unguessable without the profile row, and what the user is owed
+	// is the account delete below. Path mirrors the upload in account.tsx.
+	const { error: avatarErr } = await admin.storage
+		.from('avatars')
+		.remove([`${me}/avatar.jpg`])
+	if (avatarErr) console.error('[delete_account] avatar', avatarErr.message)
+
+	// Hard delete, not soft: this frees the phone number, so the same person can
+	// sign up again later rather than being locked out of their own number.
+	const { error: authErr } = await admin.auth.admin.deleteUser(me)
+	if (authErr) return err(500, authErr.message || 'could not delete account')
+
+	return json({ ok: true })
+}
+
 // --- Move timeouts ---------------------------------------------------------
 //
 // Mirror of lib/catan/timeout.ts, plus the two halves the client has no
@@ -10432,6 +10543,8 @@ function dispatch(
 			return handleSetForfeit(admin, me, body)
 		case 'set_end_vote':
 			return handleSetEndVote(admin, me, body)
+		case 'delete_account':
+			return handleDeleteAccount(admin, me)
 		default:
 			return Promise.resolve(err(400, 'unknown action'))
 	}
