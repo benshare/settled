@@ -1,6 +1,7 @@
 import { IS_ADMIN, useAdminStore } from '@/lib/admin'
 import { useAppForeground } from '@/lib/appState'
 import { AuthProvider, useAuth } from '@/lib/auth'
+import { DebugPrompt } from '@/lib/DebugPrompt'
 import { GameLayoutProvider } from '@/lib/GameLayoutContext'
 import { useAppBadge, useNotificationRouting } from '@/lib/notifications'
 import { loadAllUserStores } from '@/lib/stores'
@@ -140,6 +141,7 @@ function RootNav() {
 				}}
 			>
 				<ImpersonationBanner />
+				<DebugPrompt />
 				<Stack
 					screenOptions={{ headerShown: false, animation: 'fade' }}
 				>
