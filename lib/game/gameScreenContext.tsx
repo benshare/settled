@@ -88,6 +88,16 @@ type EventCursor = { gameId: string; count: number } | null
 export type PlacementStage =
 	'settlement' | 'road' | 'ready' | 'pick_last' | null
 
+// The one start-of-game bonus affordance this seat owes, or `waiting` when the
+// only thing left is somebody else's. `null` outside post_placement, or once
+// this seat is done and nobody is left to wait on.
+export type PostPlacementData =
+	| { kind: 'specialist'; waitingOn: string[] }
+	| { kind: 'explorer'; remaining: number; waitingOn: string[] }
+	| { kind: 'haunt'; waitingOn: string[] }
+	| { kind: 'waiting'; waitingOn: string[] }
+	| null
+
 type GameScreenValue = ReturnType<typeof useGameScreenState>
 
 const GameScreenContext = createContext<GameScreenValue | null>(null)
@@ -1422,6 +1432,47 @@ function useGameScreenState(gameId: string) {
 			)
 		)
 
+	// Which post_placement affordance this seat owes, already resolved to the
+	// one thing to render. Derived here rather than in the view because both
+	// layouts render it from `BoardArea` and the ordering rule is subtle:
+	// specialists declare first (their overlay blocks the board), so nobody
+	// falls through to an explorer/haunt banner until every specialist is in —
+	// the same gate `postPlacementTool` applies to the board itself.
+	const postPlacementData = ((): PostPlacementData => {
+		if (!inPostPlacement || !game) return null
+		if (gameState?.phase.kind !== 'post_placement') return null
+		const {
+			specialist,
+			explorer = {},
+			haunt = [],
+		} = gameState.phase.pending
+		const nameOf = (i: number) =>
+			profilesById[game.player_order[i]]?.username ?? 'Player'
+		const others = (idxs: number[]) => idxs.filter((i) => i !== meIdx)
+
+		if (specialist.includes(meIdx))
+			return {
+				kind: 'specialist',
+				waitingOn: others(specialist).map(nameOf),
+			}
+		// Somebody else is still declaring: nothing to render here, since both
+		// layouts' status surfaces already narrate the wait from the phase.
+		if (specialist.length > 0) return null
+
+		const waitingOn = others([
+			...new Set([
+				...Object.entries(explorer)
+					.filter(([, n]) => (n ?? 0) > 0)
+					.map(([i]) => Number(i)),
+				...haunt,
+			]),
+		]).map(nameOf)
+		const remaining = explorer[meIdx] ?? 0
+		if (remaining > 0) return { kind: 'explorer', remaining, waitingOn }
+		if (haunt.includes(meIdx)) return { kind: 'haunt', waitingOn }
+		return waitingOn.length > 0 ? { kind: 'waiting', waitingOn } : null
+	})()
+
 	const bonusSelectionData =
 		inBonusSelection && game && gameState?.phase.kind === 'select_bonus'
 			? {
@@ -1491,6 +1542,7 @@ function useGameScreenState(gameId: string) {
 		canEndGame,
 		canUndo,
 		postPlacementTool,
+		postPlacementData,
 		liveOffer,
 		bonusSelectionData,
 

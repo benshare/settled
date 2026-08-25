@@ -38,7 +38,9 @@ app/game/[id].tsx
   and the phase bars that replace it. Owns `spectatorStatus()` and
   `PlacementHeader`.
 - `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus the
-  inline `ConfirmBar`.
+  inline `ConfirmBar`. Shared by both layouts, so it is also where every
+  affordance that has to exist in both lives — including the `post_placement`
+  ones (`SpecialistDeclareOverlay` and the explorer/haunt banners).
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and the
   viewer's own hand. `TradePanel` and `DiscardPanel` each **replace** the hand
   rather than being a bar of their own, because both are composed by tapping the
@@ -79,6 +81,14 @@ app/game/[id].tsx
 - **An overlay lives with what opens it, not with what it covers.** All screen
   overlays are `Modal`-based (which portals out of the tree), so where they sit in
   the JSX is a legibility choice, not a layout one.
+- **An affordance only a phase can clear belongs in `BoardArea`, never in
+  `TopArea` / `BottomArea`.** Those two zones exist only in the classic layout;
+  the HUD renders `BoardArea` and its own chrome. A required action mounted in a
+  classic-only zone is unreachable for everyone on the default layout, and
+  because the status surfaces derive from the phase independently the player is
+  told they owe a move with no way to make it — a softlock with no timeout out
+  of it. `post_placement` shipped that way. Status _lines_ may be per-layout;
+  the thing you tap may not.
 - **An event-driven animation's cursor is tagged with its game.** The steal,
   nomad and fortune-teller animations fire on events past a remembered position in
   `games.events`. The provider survives a tab switch, so a bare count would carry

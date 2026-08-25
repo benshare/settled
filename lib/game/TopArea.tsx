@@ -13,11 +13,6 @@ import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
 import { seatColor } from '@/lib/catan/palette'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
-import {
-	ExplorerStatusBanner,
-	HauntStatusBanner,
-	SpecialistDeclareOverlay,
-} from '@/lib/catan/PostPlacementOverlay'
 import { ScoutCostPicker } from '@/lib/catan/ScoutCostPicker'
 import { formatRemaining } from '@/lib/catan/timeout'
 import type { GameState } from '@/lib/catan/types'
@@ -67,7 +62,6 @@ export function TopArea() {
 		fenceEnabled,
 		accountantEnabled,
 		investorEnabled,
-		hauntPicks,
 		openPlayerIdx,
 		setOpenPlayerIdx,
 		accountantOpen,
@@ -84,8 +78,6 @@ export function TopArea() {
 		onEndSpecialBuild,
 		onHonk,
 		onUndo,
-		onSetSpecialistResource,
-		onSetHauntSpots,
 		onLiquidate,
 		onInvest,
 		submitBuyDevCard,
@@ -294,88 +286,6 @@ export function TopArea() {
 						)}
 					</>
 				)}
-
-			{inPostPlacement &&
-				gameState?.phase.kind === 'post_placement' &&
-				(() => {
-					const phase = gameState.phase
-					const specialistPending = phase.pending.specialist
-					const explorer = phase.pending.explorer ?? {}
-					const waitingSpecialist = specialistPending
-						.filter((i) => i !== meIdx)
-						.map(
-							(i) =>
-								profilesById[game.player_order[i]]?.username ??
-								'Player'
-						)
-					if (specialistPending.includes(meIdx)) {
-						return (
-							<SpecialistDeclareOverlay
-								waitingOn={waitingSpecialist}
-								submitting={submitting}
-								onConfirm={onSetSpecialistResource}
-							/>
-						)
-					}
-					// Specialist still pending for someone else: the top status
-					// line handles the "waiting" message; don't fall through to
-					// the explorer/haunt banners until it resolves.
-					if (waitingSpecialist.length > 0) return null
-					// Specialist done — explorer placements happen inline on
-					// the board; surface a status banner so the player sees
-					// the count.
-					const haunt = phase.pending.haunt ?? []
-					const nameOf = (i: number) =>
-						profilesById[game.player_order[i]]?.username ?? 'Player'
-					const explorerRemaining = explorer[meIdx] ?? 0
-					const amHauntPending = haunt.includes(meIdx)
-					const othersWaiting = Array.from(
-						new Set<number>([
-							...Object.entries(explorer)
-								.filter(
-									([i, n]) =>
-										Number(i) !== meIdx && (n ?? 0) > 0
-								)
-								.map(([i]) => Number(i)),
-							...haunt.filter((i) => i !== meIdx),
-						])
-					).map(nameOf)
-
-					if (explorerRemaining > 0) {
-						return (
-							<ExplorerStatusBanner
-								remaining={explorerRemaining}
-								waitingOn={othersWaiting}
-							/>
-						)
-					}
-					if (amHauntPending) {
-						return (
-							<HauntStatusBanner
-								picked={hauntPicks.length}
-								waitingOn={othersWaiting}
-								submitting={submitting}
-								onConfirm={() => {
-									if (hauntPicks.length === 2) {
-										onSetHauntSpots([
-											hauntPicks[0],
-											hauntPicks[1],
-										])
-									}
-								}}
-							/>
-						)
-					}
-					if (othersWaiting.length > 0) {
-						return (
-							<ExplorerStatusBanner
-								remaining={0}
-								waitingOn={othersWaiting}
-							/>
-						)
-					}
-					return null
-				})()}
 
 			{accountantOpen && gameState && (
 				<AccountantPicker

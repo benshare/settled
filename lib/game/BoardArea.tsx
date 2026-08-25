@@ -19,6 +19,11 @@ import { ForgerPickOverlay } from '@/lib/catan/ForgerPickOverlay'
 import { ChatButton } from '@/lib/catan/GameChat'
 import { MagicianPickOverlay } from '@/lib/catan/MagicianPickOverlay'
 import { MetropolitanCostPicker } from '@/lib/catan/MetropolitanCostPicker'
+import {
+	ExplorerStatusBanner,
+	HauntStatusBanner,
+	SpecialistDeclareOverlay,
+} from '@/lib/catan/PostPlacementOverlay'
 import { ScoutPickOverlay } from '@/lib/catan/ScoutPickOverlay'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
 import { gameSizeFor, type PlayerState } from '@/lib/catan/types'
@@ -72,6 +77,7 @@ export function BoardArea({
 		inRoadBuilding,
 		inBonusSelection,
 		postPlacementTool,
+		postPlacementData,
 		hauntPicks,
 		buildTool,
 		tradePanelOpen,
@@ -101,6 +107,8 @@ export function BoardArea({
 		onCastMagic,
 		onSkipMagic,
 		onConfirmMetropolitanCost,
+		onSetSpecialistResource,
+		onSetHauntSpots,
 	} = useGameScreen()
 
 	if (!game) return null
@@ -170,6 +178,14 @@ export function BoardArea({
 					/>
 				)}
 
+			{active && postPlacementData?.kind === 'specialist' && (
+				<SpecialistDeclareOverlay
+					waitingOn={postPlacementData.waitingOn}
+					submitting={submitting}
+					onConfirm={onSetSpecialistResource}
+				/>
+			)}
+
 			{active && metroPending && myHand && (
 				<MetropolitanCostPicker
 					hand={myHand}
@@ -194,6 +210,34 @@ export function BoardArea({
 					onConfirm={onConfirmTrade}
 					onCancel={onCancelTrade}
 					onReject={onRejectTrade}
+				/>
+			)}
+			{/* Explorer roads and haunt spots are picked on the board itself,
+			    so their status rides above it like the trade banner rather
+			    than blocking it. The specialist's own modal is the exception
+			    (above), and until every specialist has declared these don't
+			    render at all — `postPlacementData` holds that ordering. */}
+			{postPlacementData?.kind === 'explorer' && (
+				<ExplorerStatusBanner
+					remaining={postPlacementData.remaining}
+					waitingOn={postPlacementData.waitingOn}
+				/>
+			)}
+			{postPlacementData?.kind === 'haunt' && (
+				<HauntStatusBanner
+					picked={hauntPicks.length}
+					waitingOn={postPlacementData.waitingOn}
+					submitting={submitting}
+					onConfirm={() => {
+						if (hauntPicks.length === 2)
+							onSetHauntSpots([hauntPicks[0], hauntPicks[1]])
+					}}
+				/>
+			)}
+			{postPlacementData?.kind === 'waiting' && (
+				<ExplorerStatusBanner
+					remaining={0}
+					waitingOn={postPlacementData.waitingOn}
 				/>
 			)}
 			{gameState ? (
