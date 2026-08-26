@@ -14,7 +14,6 @@ import {
 	investorTokenCount,
 	ritualCardCost,
 } from '@/lib/catan/bonus'
-import { AccountantPicker } from '@/lib/catan/AccountantPicker'
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel } from '@/lib/catan/DiscardPanel'
@@ -89,13 +88,10 @@ export function Dock({
 		setRitualOpen,
 		shepherdOpen,
 		setShepherdOpen,
-		accountantOpen,
-		setAccountantOpen,
 		investOpen,
 		setInvestOpen,
 		scoutCostOpen,
 		setScoutCostOpen,
-		onLiquidate,
 		onInvest,
 		submitBuyDevCard,
 		onRitualRoll,
@@ -227,15 +223,6 @@ export function Dock({
 					onConfirm={onShepherdSwap}
 				/>
 			)}
-			{active && accountantOpen && (
-				<AccountantPicker
-					state={gameState}
-					playerIdx={meIdx}
-					submitting={submitting}
-					onCancel={() => setAccountantOpen(false)}
-					onConfirm={onLiquidate}
-				/>
-			)}
 			{active && investOpen && myPlayer && (
 				<InvestPicker
 					hand={myPlayer.resources}
@@ -275,7 +262,6 @@ function BuildBar() {
 		onBuildToolSelect,
 		onBuyDevCard,
 		onBuyCarpenterVP,
-		setAccountantOpen,
 		setInvestOpen,
 	} = useGameScreen()
 	if (!gameState) return null
@@ -313,6 +299,7 @@ function BuildBar() {
 			accountantEnabled={
 				myPlayer?.bonus === 'accountant' ? accountantEnabled : undefined
 			}
+			accountantActive={buildTool === 'liquidate'}
 			investorEnabled={
 				myPlayer?.bonus === 'investor' ? investorEnabled : undefined
 			}
@@ -321,7 +308,7 @@ function BuildBar() {
 			onBuyCarpenterVP={onBuyCarpenterVP}
 			onSelectSuperCity={() => onBuildToolSelect('super_city')}
 			onSelectFence={() => onBuildToolSelect('fence')}
-			onAccountant={() => setAccountantOpen(true)}
+			onAccountant={() => onBuildToolSelect('liquidate')}
 			onInvest={() => setInvestOpen(true)}
 		/>
 	)

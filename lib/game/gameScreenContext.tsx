@@ -8,7 +8,6 @@
 
 import { useAuth } from '@/lib/auth'
 import { RESOURCES, type Hex, type Resource } from '@/lib/catan/board'
-import type { LiquidationTarget } from '@/lib/catan/AccountantPicker'
 import type { BonusId, CurseId } from '@/lib/catan/bonuses'
 import {
 	affordableScoutSwaps,
@@ -16,7 +15,10 @@ import {
 	canInvest,
 	forgerTokenHex,
 	isOwnFence,
+	LIQUIDATION_REFUND,
+	liquidatableTargets,
 	mustMoveForgerToken,
+	type LiquidationTarget,
 	type ScoutSwap,
 } from '@/lib/catan/bonus'
 import {
@@ -97,6 +99,13 @@ export type PostPlacementData =
 	| { kind: 'haunt'; waitingOn: string[] }
 	| { kind: 'waiting'; waitingOn: string[] }
 	| null
+
+// What the build bar's tool row has selected. Each entry drives a pulse layer
+// on the board; `liquidate` is the accountant's, which marks their own pieces
+// rather than empty spots and so is mutually exclusive with the build tools by
+// construction.
+export type BoardToolChoice =
+	BuildKind | 'super_city' | 'fence' | 'liquidate' | null
 
 type GameScreenValue = ReturnType<typeof useGameScreenState>
 
@@ -196,13 +205,10 @@ function useGameScreenState(gameId: string) {
 	)
 	const [pickLast, setPickLast] = useState<string | null>(null)
 	const [submitting, setSubmitting] = useState(false)
-	const [buildTool, setBuildTool] = useState<
-		BuildKind | 'super_city' | 'fence' | null
-	>(null)
+	const [buildTool, setBuildTool] = useState<BoardToolChoice>(null)
 	const [tradePanelOpen, setTradePanelOpen] = useState(false)
 	const [ritualOpen, setRitualOpen] = useState(false)
 	const [shepherdOpen, setShepherdOpen] = useState(false)
-	const [accountantOpen, setAccountantOpen] = useState(false)
 	const [scoutCostOpen, setScoutCostOpen] = useState(false)
 	// When a city / super_city build is pending and the metropolitan
 	// player can swap wheat→ore, this carries the picked vertex until the
@@ -218,6 +224,9 @@ function useGameScreenState(gameId: string) {
 		// A build spot awaiting confirmation, previewed on the board so the
 		// choice is visible while the confirm bar is up.
 		preview?: BuildSelection
+		// The same for a liquidation: the tapped piece, darkened on the board
+		// while the bar is up.
+		liquidating?: LiquidationTarget
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
 	// Haunt: the vertices the local haunt player has tapped (needs 2) during
@@ -847,19 +856,22 @@ function useGameScreenState(gameId: string) {
 		if (res.error) notify('Pick failed', res.error)
 	}
 
-	async function onLiquidate(target: LiquidationTarget) {
+	// A tapped piece goes through the same confirm bar as a build — the board
+	// is full of pulsing rings, and cashing in the wrong one is not undoable
+	// by taking it back.
+	function onLiquidateSelect(target: LiquidationTarget) {
 		if (!game) return
-		setSubmitting(true)
-		// The picker carries an `id` for dev_card target rows so the player
-		// can see what they're dropping; the edge wants only kind+index.
-		const payload =
-			target.kind === 'dev_card'
-				? { kind: 'dev_card' as const, index: target.index }
-				: target
-		const res = await liquidate(game.id, payload)
-		setSubmitting(false)
-		if (res.error) notify('Liquidate failed', res.error)
-		else setAccountantOpen(false)
+		setPendingConfirm({
+			title: confirmLiquidateTitle(target.kind),
+			liquidating: target,
+			run: async () => {
+				setSubmitting(true)
+				const res = await liquidate(game.id, target)
+				setSubmitting(false)
+				if (res.error) notify('Liquidate failed', res.error)
+				else setBuildTool(null)
+			},
+		})
 	}
 
 	async function onPlaceExplorerRoad(edge: string) {
@@ -1129,7 +1141,7 @@ function useGameScreenState(gameId: string) {
 		if (res.error) notify('Play failed', res.error)
 	}
 
-	function onBuildToolSelect(tool: BuildKind | 'super_city' | 'fence') {
+	function onBuildToolSelect(tool: NonNullable<BoardToolChoice>) {
 		setBuildTool((prev) => (prev === tool ? null : tool))
 	}
 
@@ -1418,8 +1430,15 @@ function useGameScreenState(gameId: string) {
 	// a special-build slot) rather than main-turn-only like the modal bonuses.
 	const fenceEnabled =
 		canBuildBasic && !!gameState && canBuildFence(gameState, meIdx)
+	// Gated on having something to cash in, the same way the build buttons are
+	// gated on a legal spot: the tool's only affordance is the board pulse, so
+	// arming it with nothing to pulse would leave the player nowhere to tap.
 	const accountantEnabled =
-		canBuildThisTurn && !!myPlayer && myPlayer.bonus === 'accountant'
+		canBuildThisTurn &&
+		!!myPlayer &&
+		myPlayer.bonus === 'accountant' &&
+		!!gameState &&
+		liquidatableTargets(gameState, meIdx).length > 0
 	const investorEnabled =
 		canBuildThisTurn &&
 		!!myPlayer &&
@@ -1585,8 +1604,6 @@ function useGameScreenState(gameId: string) {
 		setRitualOpen,
 		shepherdOpen,
 		setShepherdOpen,
-		accountantOpen,
-		setAccountantOpen,
 		scoutCostOpen,
 		setScoutCostOpen,
 		investOpen,
@@ -1624,7 +1641,7 @@ function useGameScreenState(gameId: string) {
 		onMoveForgerTokenRequest,
 		onPickForgerTarget,
 		onConfirmScoutCard,
-		onLiquidate,
+		onLiquidateSelect,
 		onSetHauntSpots,
 		onInvest,
 		onCastMagic,
@@ -1698,6 +1715,24 @@ function confirmBuildTitle(
 		case 'city':
 			return 'Confirm city placement'
 	}
+}
+
+// The accountant's confirm line. It names the refund because that price is
+// the whole decision, and the board pulse says nothing about it.
+function confirmLiquidateTitle(kind: LiquidationTarget['kind']): string {
+	const refund = LIQUIDATION_REFUND[kind]
+	const gain = RESOURCES.filter((r) => refund[r] > 0)
+		.map((r) => `+${refund[r]} ${r[0].toUpperCase()}${r.slice(1)}`)
+		.join(', ')
+	const what =
+		kind === 'road'
+			? 'Liquidate road'
+			: kind === 'settlement'
+				? 'Liquidate settlement'
+				: kind === 'city'
+					? 'City → settlement'
+					: 'Super city → city'
+	return `${what} (${gain})`
 }
 
 // Best-effort error notice. Alert.alert is a no-op on react-native-web;

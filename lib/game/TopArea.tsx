@@ -3,10 +3,9 @@
 // only — the background it slides against belongs to the frame (see
 // `styles.topMenu` in `[id].tsx`).
 //
-// Also owns the modals opened from this zone (the build bar's accountant /
-// invest / scout-cost pickers, and a player's detail sheet from the strip).
+// Also owns the modals opened from this zone (the build bar's invest /
+// scout-cost pickers, and a player's detail sheet from the strip).
 
-import { AccountantPicker } from '@/lib/catan/AccountantPicker'
 import { investorTokenCount } from '@/lib/catan/bonus'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
@@ -64,8 +63,6 @@ export function TopArea() {
 		investorEnabled,
 		openPlayerIdx,
 		setOpenPlayerIdx,
-		accountantOpen,
-		setAccountantOpen,
 		investOpen,
 		setInvestOpen,
 		scoutCostOpen,
@@ -78,7 +75,6 @@ export function TopArea() {
 		onEndSpecialBuild,
 		onHonk,
 		onUndo,
-		onLiquidate,
 		onInvest,
 		submitBuyDevCard,
 	} = useGameScreen()
@@ -238,6 +234,7 @@ export function TopArea() {
 										? accountantEnabled
 										: undefined
 								}
+								accountantActive={buildTool === 'liquidate'}
 								investorEnabled={
 									myPlayer?.bonus === 'investor'
 										? investorEnabled
@@ -251,7 +248,9 @@ export function TopArea() {
 									onBuildToolSelect('super_city')
 								}
 								onSelectFence={() => onBuildToolSelect('fence')}
-								onAccountant={() => setAccountantOpen(true)}
+								onAccountant={() =>
+									onBuildToolSelect('liquidate')
+								}
 								onInvest={() => setInvestOpen(true)}
 							/>
 						)}
@@ -286,16 +285,6 @@ export function TopArea() {
 						)}
 					</>
 				)}
-
-			{accountantOpen && gameState && (
-				<AccountantPicker
-					state={gameState}
-					playerIdx={meIdx}
-					submitting={submitting}
-					onCancel={() => setAccountantOpen(false)}
-					onConfirm={onLiquidate}
-				/>
-			)}
 
 			{investOpen && myPlayer && (
 				<InvestPicker

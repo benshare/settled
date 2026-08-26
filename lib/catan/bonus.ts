@@ -656,6 +656,50 @@ export function roadLiquidationBlocked(
 	return endpointHeld(a) && endpointHeld(b)
 }
 
+// One tap on the board. Dev cards are liquidatable server-side too, but they
+// have no board spot and so are not offered anywhere in the UI.
+export type LiquidationTarget =
+	| { kind: 'road'; edge: Edge }
+	| { kind: 'settlement'; vertex: Vertex }
+	| { kind: 'city'; vertex: Vertex }
+	| { kind: 'super_city'; vertex: Vertex }
+
+export const LIQUIDATION_REFUND: Record<
+	LiquidationTarget['kind'],
+	ResourceHand
+> = {
+	road: ROAD_REFUND,
+	settlement: SETTLEMENT_REFUND,
+	city: CITY_REFUND,
+	super_city: SUPER_CITY_REFUND,
+}
+
+// Every board piece the accountant may liquidate right now — what the board's
+// pulse layer marks and the button's enablement counts. Client-only: the edge
+// function validates a submitted target instead of enumerating them, so this
+// has no server mirror.
+export function liquidatableTargets(
+	state: GameState,
+	playerIdx: number
+): LiquidationTarget[] {
+	const out: LiquidationTarget[] = []
+	for (const [eid, es] of Object.entries(state.edges)) {
+		if (!es?.occupied || es.player !== playerIdx) continue
+		if (es.placedTurn >= state.round) continue
+		if (roadLiquidationBlocked(state, playerIdx, eid as Edge)) continue
+		out.push({ kind: 'road', edge: eid as Edge })
+	}
+	for (const [vid, vs] of Object.entries(state.vertices)) {
+		if (!vs?.occupied || vs.player !== playerIdx) continue
+		if (vs.placedTurn >= state.round) continue
+		// A haunt's ghost is not a piece the player bought, so it has no
+		// refund and never appears here.
+		if (vs.building === 'ghost') continue
+		out.push({ kind: vs.building, vertex: vid as Vertex })
+	}
+	return out
+}
+
 export const ACCOUNTANT_DEV_CARD_REFUND = DEV_CARD_REFUND
 
 // === Set 3 ==================================================================

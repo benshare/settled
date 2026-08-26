@@ -93,6 +93,7 @@ export function BoardArea({
 		forgerMustMove,
 		forgerTokenFrom,
 		onBuildSpotSelect,
+		onLiquidateSelect,
 		onMoveForgerTokenRequest,
 		onMoveRobberRequest,
 		onStealRequest,
@@ -261,6 +262,7 @@ export function BoardArea({
 					}
 					build={
 						buildTool &&
+						buildTool !== 'liquidate' &&
 						(isMyActiveTurn || isMySpecialBuild) &&
 						!tradePanelOpen
 							? {
@@ -288,6 +290,18 @@ export function BoardArea({
 													: undefined,
 										}
 									: undefined
+					}
+					liquidate={
+						buildTool === 'liquidate' &&
+						isMyActiveTurn &&
+						!tradePanelOpen
+							? {
+									meIdx,
+									pending:
+										pendingConfirm?.liquidating ?? null,
+									onSelect: onLiquidateSelect,
+								}
+							: undefined
 					}
 					forgerMove={
 						forgerMustMove && forgerTokenFrom

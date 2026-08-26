@@ -14,13 +14,14 @@ import {
 	type Hex,
 	type Vertex,
 } from './board'
-import { forgerTokenHex } from './bonus'
+import { forgerTokenHex, type LiquidationTarget } from './bonus'
 import { BuildLayer, type BoardTool, type BuildSelection } from './BuildLayer'
 import { EdgePiece } from './EdgePiece'
 import { FenceTokenPiece } from './FenceTokenPiece'
 import { ForgerMoveLayer } from './ForgerMoveLayer'
 import { ForgerTokenPiece } from './ForgerTokenPiece'
 import { HexTile } from './HexTile'
+import { LiquidateLayer } from './LiquidateLayer'
 import {
 	computeBoardLayout,
 	computePortLayout,
@@ -73,6 +74,14 @@ export type ForgerMoveInteraction = {
 	onMove: (hex: Hex) => void
 }
 
+// The accountant's liquidate tool: their own cashable pieces pulse. Mutually
+// exclusive with `build` — both hang off the same build-bar tool.
+export type LiquidateInteraction = {
+	meIdx: number
+	pending: LiquidationTarget | null
+	onSelect: (target: LiquidationTarget) => void
+}
+
 const MIN_SCALE = 1
 const MAX_SCALE = 4
 
@@ -81,6 +90,7 @@ export function BoardView({
 	viewerIdx,
 	interaction,
 	build,
+	liquidate,
 	robber,
 	forgerMove,
 	robberDormant,
@@ -91,6 +101,7 @@ export function BoardView({
 	viewerIdx?: number
 	interaction?: BoardInteraction
 	build?: BuildInteraction
+	liquidate?: LiquidateInteraction
 	robber?: RobberInteraction
 	forgerMove?: ForgerMoveInteraction
 	robberDormant?: boolean
@@ -172,6 +183,7 @@ export function BoardView({
 								boxH={box.h}
 								interaction={interaction}
 								build={build}
+								liquidate={liquidate}
 								robber={robber}
 								forgerMove={forgerMove}
 								robberDormant={robberDormant}
@@ -191,6 +203,7 @@ function BoardSvg({
 	boxH,
 	interaction,
 	build,
+	liquidate,
 	robber,
 	forgerMove,
 	robberDormant,
@@ -201,6 +214,7 @@ function BoardSvg({
 	boxH: number
 	interaction?: BoardInteraction
 	build?: BuildInteraction
+	liquidate?: LiquidateInteraction
 	robber?: RobberInteraction
 	forgerMove?: ForgerMoveInteraction
 	robberDormant?: boolean
@@ -361,6 +375,16 @@ function BoardSvg({
 						onSelect={build.onSelect}
 						pending={build.pending}
 						selected={build.selected}
+					/>
+				)}
+				{liquidate && (
+					<LiquidateLayer
+						state={state}
+						meIdx={liquidate.meIdx}
+						layoutS={layout.s}
+						vertexPositions={vertexPositions}
+						pending={liquidate.pending}
+						onSelect={liquidate.onSelect}
 					/>
 				)}
 				{forgerMove && (

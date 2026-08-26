@@ -45,6 +45,7 @@ export function BuildTradeBar({
 	fenceEnabled,
 	fenceActive,
 	accountantEnabled,
+	accountantActive,
 	investorEnabled,
 	onSelect,
 	onTradePress,
@@ -55,7 +56,10 @@ export function BuildTradeBar({
 	onAccountant,
 	onInvest,
 }: {
-	active: BuildKind | 'super_city' | 'fence' | null
+	// The board tool currently armed. `liquidate` is the accountant's and is
+	// reflected by `accountantActive`, not by any icon in the build row — it's
+	// accepted here only so callers can pass their tool state straight through.
+	active: BuildKind | 'super_city' | 'fence' | 'liquidate' | null
 	enabled: BuildEnablement
 	// Per-kind curse hint: when present, the button shows a curse-icon badge
 	// and a tooltip with the reason, even if the button is also disabled for
@@ -87,9 +91,10 @@ export function BuildTradeBar({
 	// Boolean = a fence is affordable and some edge is legal.
 	fenceEnabled?: boolean
 	fenceActive?: boolean
-	// Accountant-bonus-only button. Undefined = not accountant and hidden.
-	// Boolean = liquidation modal can be opened.
+	// Accountant-bonus-only board tool. Undefined = not accountant and hidden.
+	// Boolean = at least one piece is liquidatable.
 	accountantEnabled?: boolean
+	accountantActive?: boolean
 	// Investor-bonus-only button. Undefined = not investor and hidden.
 	// Boolean = eligible to set aside a trio (≥3 VP, ≥3 of a resource, cap).
 	investorEnabled?: boolean
@@ -151,6 +156,8 @@ export function BuildTradeBar({
 			{accountantEnabled !== undefined && (
 				<AccountantButton
 					enabled={accountantEnabled}
+					active={!!accountantActive}
+					color={color}
 					onPress={() => onAccountant?.()}
 				/>
 			)}
@@ -472,36 +479,51 @@ function FenceButton({
 
 function AccountantButton({
 	enabled,
+	active,
+	color,
 	onPress,
 }: {
 	enabled: boolean
+	active: boolean
+	color: string
 	onPress: () => void
 }) {
+	const interactive = enabled || active
 	return (
 		<Pressable
-			disabled={!enabled}
+			disabled={!interactive}
 			onPress={onPress}
 			style={({ pressed }) => [
 				styles.iconBtn,
 				styles.accountantBtn,
-				!enabled && styles.iconBtnDisabled,
-				pressed && enabled && styles.pressed,
+				active && { borderColor: color, borderWidth: 2 },
+				!interactive && styles.iconBtnDisabled,
+				pressed && interactive && styles.pressed,
 			]}
-			accessibilityLabel="Accountant: liquidate a piece for resources"
+			accessibilityLabel={
+				active
+					? 'Cancel liquidation'
+					: 'Accountant: liquidate a piece for resources'
+			}
 		>
 			<Ionicons
 				name="calculator-outline"
 				size={20}
-				color={enabled ? colors.white : colors.textMuted}
+				color={interactive ? colors.white : colors.textMuted}
 			/>
 			<Text
 				style={[
 					styles.carpenterCostLabel,
-					!enabled && { color: colors.textMuted },
+					!interactive && { color: colors.textMuted },
 				]}
 			>
 				Liquid
 			</Text>
+			{active && (
+				<View style={styles.cancelBadge}>
+					<Ionicons name="close" size={12} color={colors.white} />
+				</View>
+			)}
 		</Pressable>
 	)
 }
