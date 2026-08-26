@@ -53,7 +53,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'accountant',
 		title: 'Accountant',
 		description:
-			'At any time during your turn, you may "liquidate" buildings or unused development cards of yours into their corresponding resources. You may not liquidate something the same turn it is bought, and you may not liquidate a road if doing so creates a disconnection between your pieces.',
+			'At any time during your turn, you may "liquidate" your roads and buildings back into their corresponding resources. You may not liquidate something the same turn it is built, and you may not liquidate a road if doing so creates a disconnection between your pieces.',
 		icon: 'calculator-outline',
 		set: '2',
 	},

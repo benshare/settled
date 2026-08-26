@@ -48,6 +48,7 @@ import {
 	pipsAtVertex,
 	populistBonusVPFor,
 	ritualCardCost,
+	liquidatableTargets,
 	roadLiquidationBlocked,
 	scoutDevCardCost,
 	shepherdEffectiveHandSize,
@@ -1045,6 +1046,60 @@ function testAccountantLiquidation() {
 	)
 }
 
+// What the board's liquidate layer pulses. The gates it applies beyond
+// `roadLiquidationBlocked`: ownership, the this-round bar, and the two
+// building kinds that are nobody's purchase (a haunt's ghost).
+function testLiquidatableTargets() {
+	const s = { ...baseState(), round: 3 }
+	const vertex = (
+		player: number,
+		building: 'settlement' | 'city' | 'ghost',
+		placedTurn = 0
+	) => ({ occupied: true as const, player, building, placedTurn })
+
+	const state: GameState = {
+		...s,
+		vertices: {
+			...s.vertices,
+			'1A': vertex(0, 'settlement'),
+			'2A': vertex(0, 'city'),
+			'3A': vertex(0, 'ghost'),
+			'4A': vertex(0, 'settlement', 3),
+			'5A': vertex(1, 'settlement'),
+		},
+		// Dead-ends on 1B, so the road itself is liquidatable.
+		edges: {
+			...s.edges,
+			'1A - 1B': { occupied: true, player: 0, placedTurn: 0 },
+			'2A - 2B': { occupied: true, player: 0, placedTurn: 3 },
+		},
+	}
+	const targets = liquidatableTargets(state, 0)
+	const has = (kind: string, id: string) =>
+		targets.some(
+			(t) =>
+				t.kind === kind &&
+				(t.kind === 'road' ? t.edge : t.vertex) === id
+		)
+	assert(has('settlement', '1A'), 'own settlement is liquidatable')
+	assert(has('city', '2A'), 'own city is liquidatable')
+	assert(has('road', '1A - 1B'), 'own dead-ending road is liquidatable')
+	assert(!has('ghost', '3A'), 'a ghost is not liquidatable')
+	assert(
+		!has('settlement', '4A'),
+		'a piece placed this round is not liquidatable'
+	)
+	assert(!has('settlement', '5A'), "an opponent's piece is not liquidatable")
+	assert(
+		!has('road', '2A - 2B'),
+		'a road built this round is not liquidatable'
+	)
+	assert(
+		targets.length === 3,
+		`nothing else is liquidatable (got ${targets.length})`
+	)
+}
+
 // A player's two offered bonuses are always distinct, and no bonus or curse is
 // offered to two players while the pool is big enough for the table. Set 3 (7
 // bonuses) with 4 players is the oversubscribed case: cross-player repeats are
@@ -1670,6 +1725,7 @@ function main() {
 		['set2: forger', testForger],
 		['set2: scout', testScout],
 		['set2: accountant liquidation gate', testAccountantLiquidation],
+		['set2: accountant liquidatable targets', testLiquidatableTargets],
 		['set3: plutocrat', testPlutocrat],
 		['set3: smith', testSmith],
 		['set3: merchant', testMerchant],

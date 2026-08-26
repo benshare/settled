@@ -812,6 +812,7 @@ const LIQUIDATION_LABELS: Record<string, string> = {
 	settlement: 'a settlement',
 	city: 'a city',
 	super_city: 'a super city',
+	// Historical only: dev cards are no longer liquidatable, but old logs are.
 	dev_card: 'a development card',
 }
 

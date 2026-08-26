@@ -13,9 +13,9 @@ PlayerStrip bonus badge, GameOverOverlay scoreboard line per bonus VP).
 - `scout` — buying a dev card: may swap one required resource for a
   duplicate of one of the others, then draw 3 from the deck, choose 1,
   return the other two to the bottom in their drawn order.
-- `accountant` — during your turn, liquidate any of your own buildings or
-  unused dev cards back into their full resource cost. Cannot liquidate
-  something bought this turn; cannot liquidate a road that, removed,
+- `accountant` — during your turn, liquidate any of your own roads and
+  buildings back into their full resource cost. Cannot liquidate
+  something built this turn; cannot liquidate a road that, removed,
   would split your road network so two of your buildings are no longer
   road-connected.
 - `explorer` — start of game: place 3 free roads. Standard road
@@ -122,19 +122,22 @@ cards: DevCardId[] }`. Only the owner can act; others see a "waiting
 
 ### accountant
 
+> **Superseded:** dev cards were liquidatable as designed below and are
+> not any more. When the affordance became a board tool (pulse the piece,
+> tap it) a card had no spot to pulse, so the rule was dropped on both
+> sides: the edge function rejects a `dev_card` target, and only the
+> `liquidate` **event** still carries the variant so older games render.
+> Everything else in this section stands.
+
 - New action `liquidate { game_id, target }` where `target` is one of:
     - `{ kind: 'road', edge: Edge }`
     - `{ kind: 'settlement', vertex: Vertex }`
     - `{ kind: 'city', vertex: Vertex }`
     - `{ kind: 'super_city', vertex: Vertex }`
-    - `{ kind: 'dev_card', index: number }` — index into
-      `player.devCards`. Includes VP cards (the player loses 1 VP per
-      VP card liquidated and is refunded the dev-card cost).
 - Validity:
     - phase = `main`; current turn = me; bonus = accountant.
     - Piece is mine.
-    - Piece's `placedTurn` (new field) < `state.round`. Same for dev
-      cards via existing `purchasedTurn`.
+    - Piece's `placedTurn` (new field) < `state.round`.
     - Roads: removing the edge must not split the player's
       road-connected building set into multiple components. We compute
       this with a graph BFS over the player's roads + buildings: build
@@ -149,12 +152,9 @@ cards: DevCardId[] }`. Only the owner can act; others see a "waiting
       wheat↔ore swap, refund is the canonical cost; the swap is pay-
       time only). City liquidation reverts the vertex to a settlement.
     - super_city: 2 wheat + 3 ore. Reverts the vertex to a city.
-    - dev_card: 1 sheep + 1 wheat + 1 ore.
 - Refund credits resources back to the player's hand.
-- Largest army: liquidating a Knight that has been played is impossible
-  (only unused dev cards qualify). Liquidating a Knight that hasn't
-  been played reduces the player's deck count but doesn't touch
-  `devCardsPlayed`, so largest army doesn't move.
+- Largest army and hidden VP cards are untouched — nothing about a hand
+  of dev cards can change through liquidation.
 - Longest Road: removing a road triggers `recomputeLongestRoad` after
   the action (already wired for road builds).
 - Win check: liquidation runs `findWinner` afterwards; possible (though
@@ -491,8 +491,8 @@ section per set-2 bonus.
    `min(3, deck.length)` cards. Empty deck → buy is rejected.
 4. **Accountant refund** — full standard cost (city → settlement
    reverts the vertex; super_city → city reverts).
-5. **Accountant dev card scope** — all dev cards in hand including
-   VP cards (player loses 1 VP per VP card liquidated).
+5. **Accountant scope** — board pieces only; a dev card can't be
+   liquidated (see the superseded note above).
 6. **Explorer connectivity** — same as paid roads (must connect to
    the player's own settlement/city or to one of their existing
    roads, including previously placed explorer roads).

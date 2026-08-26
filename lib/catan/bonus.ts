@@ -597,9 +597,12 @@ export const SCOUT_PEEK_SIZE = 2
 // --- Accountant -------------------------------------------------------------
 //
 // Liquidate one of your own pieces back into its full resource cost. Cannot
-// liquidate something placed/bought this turn. Cannot liquidate a road that,
-// removed, would split the player's road-network into multiple components
-// such that two of their buildings are no longer road-connected.
+// liquidate something placed this turn. Cannot liquidate a road that, removed,
+// would split the player's road-network into multiple components such that two
+// of their buildings are no longer road-connected.
+//
+// Pieces on the board only — dev cards were liquidatable in the original set-2
+// design and are not any more, on either side.
 
 export const ROAD_REFUND: ResourceHand = {
 	brick: 1,
@@ -623,13 +626,6 @@ export const CITY_REFUND: ResourceHand = {
 	ore: 3,
 }
 export const SUPER_CITY_REFUND: ResourceHand = CITY_REFUND
-export const DEV_CARD_REFUND: ResourceHand = {
-	brick: 0,
-	wood: 0,
-	sheep: 1,
-	wheat: 1,
-	ore: 1,
-}
 
 // True if the accountant may NOT liquidate `edge`: the player owns another
 // road, or a building, at BOTH of its endpoints, so the road sits in the
@@ -656,8 +652,7 @@ export function roadLiquidationBlocked(
 	return endpointHeld(a) && endpointHeld(b)
 }
 
-// One tap on the board. Dev cards are liquidatable server-side too, but they
-// have no board spot and so are not offered anywhere in the UI.
+// One tap on the board — the whole set of things that can be liquidated.
 export type LiquidationTarget =
 	| { kind: 'road'; edge: Edge }
 	| { kind: 'settlement'; vertex: Vertex }
@@ -699,8 +694,6 @@ export function liquidatableTargets(
 	}
 	return out
 }
-
-export const ACCOUNTANT_DEV_CARD_REFUND = DEV_CARD_REFUND
 
 // === Set 3 ==================================================================
 

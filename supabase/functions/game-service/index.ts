@@ -3168,13 +3168,6 @@ const CITY_REFUND: ResourceHand = {
 	ore: 3,
 }
 const SUPER_CITY_REFUND: ResourceHand = CITY_REFUND
-const DEV_CARD_REFUND: ResourceHand = {
-	brick: 0,
-	wood: 0,
-	sheep: 1,
-	wheat: 1,
-	ore: 1,
-}
 
 function roadLiquidationBlocked(
 	state: GameState,
@@ -8929,23 +8922,9 @@ async function handleLiquidate(
 				},
 			}
 		}
-		if (kind === 'dev_card') {
-			const idx = target.index as number
-			if (typeof idx !== 'number' || !Number.isInteger(idx)) return null
-			const meP = state.players[meIdx]
-			if (idx < 0 || idx >= meP.devCards.length) return null
-			const entry = meP.devCards[idx]
-			if (entry.purchasedTurn >= state.round) return null
-			return {
-				hand: DEV_CARD_REFUND,
-				eventDetail: {
-					kind: 'dev_card',
-					id: entry.id,
-					at,
-					refund: DEV_CARD_REFUND,
-				},
-			}
-		}
+		// Dev cards are not liquidatable: the accountant cashes in pieces on
+		// the board only. A legacy client sending `dev_card` falls through to
+		// the invalid-target error below.
 		return null
 	})()
 
@@ -8989,12 +8968,6 @@ async function handleLiquidate(
 				placedTurn: vs.occupied ? vs.placedTurn : 0,
 			},
 		}
-	} else if (kind === 'dev_card') {
-		const idx = target.index as number
-		nextPlayers = state.players.map((p, i) => {
-			if (i !== meIdx) return p
-			return { ...p, devCards: p.devCards.filter((_, j) => j !== idx) }
-		})
 	}
 
 	// Credit the refund to the player's hand.

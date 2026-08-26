@@ -286,6 +286,9 @@ export type GameEvent =
 				| { kind: 'settlement'; vertex: string; refund: ResourceHand }
 				| { kind: 'city'; vertex: string; refund: ResourceHand }
 				| { kind: 'super_city'; vertex: string; refund: ResourceHand }
+				// No longer writable — the accountant can't cash in a dev
+				// card any more — but games played before that change carry
+				// these in their log and still have to render.
 				| { kind: 'dev_card'; id: DevCardId; refund: ResourceHand }
 			at: string
 	  }
@@ -513,7 +516,7 @@ type GamesStore = {
 		swapDelta?: number
 	) => Promise<ActionResult>
 
-	// Accountant: trade a piece back into resources.
+	// Accountant: trade a piece on the board back into resources.
 	liquidate: (
 		gameId: string,
 		target:
@@ -521,7 +524,6 @@ type GamesStore = {
 			| { kind: 'settlement'; vertex: string }
 			| { kind: 'city'; vertex: string }
 			| { kind: 'super_city'; vertex: string }
-			| { kind: 'dev_card'; index: number }
 	) => Promise<ActionResult>
 
 	// Explorer: place one of the 3 free post-placement roads.
