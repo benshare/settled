@@ -661,7 +661,7 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'haunt_spots_set':
 			return {
-				text: `${who(e.player)} chose their haunted spots`,
+				text: `${who(e.player)} chose ${possessive(e.player, ctx)} haunt spots`,
 				player: e.player,
 			}
 		case 'ghost_spawned':
