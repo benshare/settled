@@ -261,6 +261,16 @@ function useGameScreenState(gameId: string) {
 		await run()
 	}
 
+	// The one way to arm, switch, or drop a board tool. Everything a tool has
+	// raised goes with it: a confirm bar names a spot on a layer that is about
+	// to disappear, and a metropolitan cost picker is a build that no longer
+	// has a tool behind it. Both would otherwise stand there and still commit.
+	function selectBoardTool(next: BoardToolChoice) {
+		setBuildTool(next)
+		setPendingConfirm(null)
+		setMetroPending(null)
+	}
+
 	const meIdx = useMemo(() => {
 		if (!game || !user) return -1
 		return game.player_order.indexOf(user.id)
@@ -361,7 +371,7 @@ function useGameScreenState(gameId: string) {
 		: 'off'
 	useEffect(() => {
 		if (mainTurnKey === 'off') {
-			setBuildTool(null)
+			selectBoardTool(null)
 			setTradePanelOpen(false)
 		}
 	}, [mainTurnKey])
@@ -398,12 +408,14 @@ function useGameScreenState(gameId: string) {
 		return () => clearTimeout(id)
 	}, [proposerOfferAllRejected, game, serverOffer, cancelTrade])
 
-	// Any pending confirm is tied to the current phase/turn. If either flips
-	// under us (realtime), drop the stale confirm so its closure doesn't
-	// fire against the wrong state.
+	// A pending confirm — and the metropolitan cost picker, which is the same
+	// thing behind a sheet — is tied to the current phase/turn. If either flips
+	// under us (realtime), drop it so its closure doesn't fire against the
+	// wrong state.
 	const confirmScopeKey = `${gameState?.currentTurn ?? 'x'}:${gameState?.phase.kind ?? 'x'}`
 	useEffect(() => {
 		setPendingConfirm(null)
+		setMetroPending(null)
 	}, [confirmScopeKey])
 
 	// --- Held hand ---------------------------------------------------------
@@ -869,7 +881,7 @@ function useGameScreenState(gameId: string) {
 				const res = await liquidate(game.id, target)
 				setSubmitting(false)
 				if (res.error) notify('Liquidate failed', res.error)
-				else setBuildTool(null)
+				else selectBoardTool(null)
 			},
 		})
 	}
@@ -924,7 +936,7 @@ function useGameScreenState(gameId: string) {
 		if (res.error) notify('Undo failed', res.error)
 		// The board state the tool was selected against is gone. Nothing to
 		// clear for placement — it holds no undoable action.
-		else setBuildTool(null)
+		else selectBoardTool(null)
 	}
 
 	async function onBuildSuperCity(vertex: string, swapDelta: number) {
@@ -936,8 +948,7 @@ function useGameScreenState(gameId: string) {
 			notify('Upgrade failed', res.error)
 			return
 		}
-		setBuildTool(null)
-		setMetroPending(null)
+		selectBoardTool(null)
 	}
 
 	// Metropolitan's wheat→ore swap picker resolves for both build kinds it
@@ -957,8 +968,7 @@ function useGameScreenState(gameId: string) {
 			notify('Build failed', res.error)
 			return
 		}
-		setMetroPending(null)
-		setBuildTool(null)
+		selectBoardTool(null)
 	}
 
 	// A board tap during placement: it appends to the locally-drafted turn, or
@@ -1142,7 +1152,7 @@ function useGameScreenState(gameId: string) {
 	}
 
 	function onBuildToolSelect(tool: NonNullable<BoardToolChoice>) {
-		setBuildTool((prev) => (prev === tool ? null : tool))
+		selectBoardTool(buildTool === tool ? null : tool)
 	}
 
 	function onBuildSpotSelect(sel: BuildSelection) {
@@ -1236,7 +1246,7 @@ function useGameScreenState(gameId: string) {
 			notify('Build failed', res.error)
 			return
 		}
-		setBuildTool(null)
+		selectBoardTool(null)
 	}
 
 	async function onDiscard(selection: ResourceHandType) {
@@ -1282,7 +1292,14 @@ function useGameScreenState(gameId: string) {
 			})()
 			return
 		}
-		setTradePanelOpen((prev) => !prev)
+		// Opening the composer hides the board's tool layers, so anything they
+		// raised has to go with them — the same rule as putting a tool away.
+		const opening = !tradePanelOpen
+		setTradePanelOpen(opening)
+		if (opening) {
+			setPendingConfirm(null)
+			setMetroPending(null)
+		}
 	}
 
 	async function onProposeTrade(

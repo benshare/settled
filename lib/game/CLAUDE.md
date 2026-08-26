@@ -59,6 +59,12 @@ app/game/[id].tsx
   deliberately **not memoized** — every field derives from the same
   `game`/`gameState` pair, so a stable identity would only survive renders that
   don't happen anyway.
+- **A board tool owns everything it raised.** Arming, switching, or putting one
+  away goes through `selectBoardTool()`, which drops the confirm bar and the
+  metropolitan cost picker with it — both name a spot on a layer that is about
+  to disappear, and both would otherwise still commit. Opening the trade
+  composer (which hides those layers) and a phase/turn flip under us do the
+  same. Never call `setBuildTool` directly.
 - **What slides is content, never a frame.** A zone renders only the travelling
   content; its background lives on the `ZoneSlide` container in the shell.
   Translating the frames too drags the backgrounds off and the screen reads as
