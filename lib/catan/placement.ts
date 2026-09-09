@@ -32,8 +32,9 @@ export function placementTurnPlayer(
 
 // Snake order makes the last seat of round 1 the first of round 2, so that
 // seat — and only that seat — places both settlements back-to-back with no
-// intervening turn. Nothing fixes which of the two it placed first, so it gets
-// to nominate the one that pays out (`step: 'pick_last'`).
+// intervening turn. Nothing fixes which of the two it placed first, so it
+// drafts both pairs at once and submits them in whichever order it nominates:
+// the second pair is stamped round 2 and pays the starting resources.
 export function isDoublePlacementSeat(
 	playerIdx: number,
 	playerCount: number
@@ -110,30 +111,11 @@ export function validSettlementVertices(
 	)
 }
 
-// A player's own settlements. During initial placement this is the pair the
-// `pick_last` step chooses between. Ghosts (haunt) are excluded — they don't
-// exist this early, but they aren't the player's own placements either.
-export function ownSettlementVertices(
-	state: GameState,
-	playerIdx: number
-): Vertex[] {
-	return boardFor(state.variant).vertices.filter((v) => {
-		const vs = vertexStateOf(state, v)
-		return (
-			vs.occupied &&
-			vs.player === playerIdx &&
-			vs.building === 'settlement' &&
-			!isGhost(vs)
-		)
-	})
-}
-
 // --- Road validity ----------------------------------------------------------
 
-// During step='road', the just-placed settlement is the player's settlement
-// that has no incident road they own. Round 1 after settlement: 1 settlement,
-// 0 roads — trivially that vertex. Round 2 after settlement: 2 settlements,
-// 1 road — the second settlement is the one without an owned adjacent edge.
+// While a road is being chosen, the settlement it must attach to is the
+// player's settlement with no incident road they own — the one just placed.
+// Every earlier settlement of theirs already got its road in the same turn.
 export function targetSettlement(
 	state: GameState,
 	playerIdx: number
@@ -213,6 +195,24 @@ export function applyPlacementDraft(
 	return { ...state, vertices, edges }
 }
 
+// The draft as it is submitted: complete pairs only, with the nominated
+// settlement's pair last. The server stamps the last pair round 2 and pays its
+// starting resources, so pair order *is* the nomination — see
+// `.claude/specs/inline-last-settlement.md`. Reordering can't invalidate a
+// draft the client already accepted: the distance rule is symmetric and the
+// `power`/`youth` curse checks are monotone in the settlements owned, so if
+// the pair of pairs is legal at all, it is legal in either order.
+export function orderedPlacementPairs(
+	draft: readonly PlacementDraftEntry[],
+	nominated: Vertex | null
+): { vertex: Vertex; edge: Edge }[] {
+	const pairs = draft.flatMap((e) =>
+		e.edge === undefined ? [] : [{ vertex: e.vertex, edge: e.edge }]
+	)
+	if (pairs.length !== 2 || nominated === null) return pairs
+	return pairs[0].vertex === nominated ? [pairs[1], pairs[0]] : pairs
+}
+
 // --- Starting resources -----------------------------------------------------
 
 // Standard rule: placing the second settlement grants 1 of each adjacent
@@ -240,51 +240,6 @@ export function addHand(a: ResourceHand, b: ResourceHand): ResourceHand {
 	const out: ResourceHand = { ...a }
 	for (const r of RESOURCES) out[r] = a[r] + b[r]
 	return out
-}
-
-// --- Nominating the last-placed settlement ----------------------------------
-
-// Rewrites a seat's two placement pairs in `games.events` so the log shows the
-// order the player nominated on the `pick_last` step. Only the payloads move —
-// `round` and `at` stay put, which keeps timestamps monotonic and keeps each
-// road with the settlement it was placed from (a road is always incident to
-// its own settlement, so swapping pairwise is the whole operation).
-//
-// Events are located by scanning backwards for the seat's last two
-// `settlement_placed` / `road_placed` entries rather than by index arithmetic,
-// so an unrelated event landing between them can't corrupt the rewrite. A log
-// missing either pair is returned untouched — the resource grant is the part
-// that matters and it applies either way. Typed loosely because the caller is
-// the edge function, which handles `games.events` as `unknown[]`.
-export function swapPlacementPairs(
-	events: readonly unknown[],
-	playerIdx: number
-): unknown[] {
-	const indicesOf = (kind: string) => {
-		const out: number[] = []
-		for (let i = events.length - 1; i >= 0 && out.length < 2; i--) {
-			const e = events[i] as { kind?: string; player?: number }
-			if (e?.kind === kind && e.player === playerIdx) out.unshift(i)
-		}
-		return out
-	}
-	const settlements = indicesOf('settlement_placed')
-	const roads = indicesOf('road_placed')
-	if (settlements.length < 2 || roads.length < 2) return events.slice()
-
-	const next = events.slice()
-	const swap = (idxs: number[], key: 'vertex' | 'edge') => {
-		const a = { ...(next[idxs[0]] as Record<string, unknown>) }
-		const b = { ...(next[idxs[1]] as Record<string, unknown>) }
-		const tmp = a[key]
-		a[key] = b[key]
-		b[key] = tmp
-		next[idxs[0]] = a
-		next[idxs[1]] = b
-	}
-	swap(settlements, 'vertex')
-	swap(roads, 'edge')
-	return next
 }
 
 // --- Misc -------------------------------------------------------------------

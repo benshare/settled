@@ -118,7 +118,10 @@ app/game/[id].tsx
   (`place_start`); `placementStage` on the context is what every placement
   affordance reads, since the server's `step` stays `'settlement'` for the whole
   turn. The placement arrow (`canUndoPlacement`, pops a drafted piece) is **not**
-  the undo arrow (`canUndo`) — placement isn't an undoable action.
+  the undo arrow (`canUndo`) — placement isn't an undoable action. Seat `N-1`'s
+  draft carries one more choice: `nominatedVertex` (which of its two settlements
+  counts as the second), tapped on the board at the `'ready'` stage and sent as
+  pair order.
 - **`canUndo` is read off `gameState.undo`, never derived from the event log.**
   The edge function stashes a pre-action snapshot there for undoable actions, and
   that column _is_ the availability signal. The context adds only what the server

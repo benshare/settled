@@ -551,15 +551,10 @@ export type Phase =
 	// piece is being placed — that stage is local (see `placementStage` in
 	// lib/game/gameScreenContext.tsx).
 	//
-	// `pick_last` is only ever reached with round 2 by the one seat that places
-	// both settlements back-to-back (see placement.ts `isDoublePlacementSeat`):
-	// they nominate which settlement they placed last, and that one pays the
-	// starting resources. Skipped for an aristocrat, who collects on both.
-	| {
-			kind: 'initial_placement'
-			round: 1 | 2
-			step: 'settlement' | 'pick_last'
-	  }
+	// The seat that places both settlements back-to-back submits all four
+	// pieces — and its choice of which settlement counts as the second, which
+	// rides on the order of the submitted pairs — in that same one turn.
+	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' }
 	// Start-of-game bonus resolutions (specialist declaration, explorer free
 	// roads, etc). Inserted between the final initial_placement road and
 	// the first roll when any player has a bonus that requires an up-front

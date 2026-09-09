@@ -1,5 +1,11 @@
 # Choosing which starting settlement was placed "last"
 
+> **Superseded** by [inline-last-settlement](./inline-last-settlement.md): the
+> nomination is no longer a separate `pick_last` step with its own action and
+> log rewrite. It happens inside the placement draft, before the one confirm,
+> and reaches the server as the order of the submitted pairs. Everything below
+> about _who_ chooses and _why_ still holds; §3–§7's mechanism does not.
+
 In real Catan the player who goes last in round 1 places **both** of their
 starting settlements back-to-back, so nothing forces one to be "first". They may
 legitimately treat either as their second settlement — the one that pays out

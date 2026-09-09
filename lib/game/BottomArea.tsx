@@ -56,7 +56,6 @@ export function BottomArea() {
 		profilesById,
 		isSpectator,
 		submitting,
-		pickLast,
 		placementDraft,
 		placementPairs,
 		placementStage,
@@ -126,8 +125,7 @@ export function BottomArea() {
 							{confirmLabel(
 								placementStage,
 								placementPairs,
-								placementDraft.length,
-								!!pickLast
+								placementDraft.length
 							)}
 						</Button>
 					</View>
@@ -528,14 +526,13 @@ function MainLoopBar({
 	)
 }
 
-// The placement bar's one button: an instruction until the step's choice is
-// complete, then the confirm. `pairs` is 2 only for the seat that places both
+// The placement bar's one button: an instruction until every piece is chosen,
+// then the confirm. `pairs` is 2 only for the seat that places both
 // settlements back-to-back, whose whole four-piece turn is one confirm.
 function confirmLabel(
 	stage: PlacementStage,
 	pairs: 1 | 2,
-	drafted: number,
-	hasPickLast: boolean
+	drafted: number
 ): string {
 	switch (stage) {
 		case 'settlement':
@@ -550,10 +547,6 @@ function confirmLabel(
 			return pairs === 2
 				? 'Confirm both placements'
 				: 'Confirm settlement and road'
-		case 'pick_last':
-			return hasPickLast
-				? 'Confirm starting settlement'
-				: 'Tap the settlement you placed last'
 		default:
 			return 'Select a spot'
 	}

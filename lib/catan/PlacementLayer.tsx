@@ -5,7 +5,6 @@ import { EdgePiece } from './EdgePiece'
 import { pieceStroke, pieceStrokeSoft, seatColor } from './palette'
 import {
 	applyPlacementDraft,
-	ownSettlementVertices,
 	validRoadEdges,
 	validSettlementVertices,
 	type PlacementDraftEntry,
@@ -14,23 +13,25 @@ import { PulsingDot, PulsingRing } from './PulsingDot'
 import type { GameState } from './types'
 import { VertexPiece } from './VertexPiece'
 
-// One board tap: a settlement spot, a road edge, or — on the `pick_last` step
-// — one of the tapper's own two settlements.
+// One board tap: a settlement spot, a road edge, or — once a two-pair draft is
+// complete — one of the tapper's own two drafted settlements, nominating it as
+// the one placed second.
 export type PlacementSelection =
 	{ kind: 'settlement'; vertex: Vertex } | { kind: 'road'; edge: Edge }
 
 // Overlay inside BoardSvg's transformed group. Shows valid-spot dots + hit
 // targets during the current user's initial-placement turn, plus ghost previews
-// of everything chosen so far — or, on the `pick_last` step, rings around the
-// two settlements being chosen between. Does nothing if the game isn't in the
+// of everything chosen so far. Does nothing if the game isn't in the
 // initial-placement phase.
 //
-// The ordinary `settlement` step is a whole turn: the draft accumulates a
-// settlement, its road, and — for the seat that places both back-to-back — a
-// second pair, with nothing sent until the player confirms. Each piece's valid
-// spots are computed against the draft applied, so the second settlement
-// respects the first's distance footprint and its road attaches to it rather
-// than to the first.
+// A placement turn is a whole turn: the draft accumulates a settlement, its
+// road, and — for the seat that places both back-to-back — a second pair, with
+// nothing sent until the player confirms. Each piece's valid spots are computed
+// against the draft applied, so the second settlement respects the first's
+// distance footprint and its road attaches to it rather than to the first.
+//
+// With both pairs down, that seat also nominates which settlement counts as its
+// second (the one that pays starting resources) by tapping its ring.
 export function PlacementLayer({
 	state,
 	meIdx,
@@ -38,7 +39,8 @@ export function PlacementLayer({
 	vertexPositions,
 	draft,
 	pairsExpected,
-	pickLast,
+	canNominate,
+	nominated,
 	onSelect,
 }: {
 	state: GameState
@@ -47,59 +49,18 @@ export function PlacementLayer({
 	vertexPositions: Record<Vertex, { x: number; y: number }>
 	draft: readonly PlacementDraftEntry[]
 	pairsExpected: 1 | 2
-	// The settlement nominated on the `pick_last` step; null until the player
-	// answers. Unused on the drafting step.
-	pickLast: Vertex | null
+	// Whether this seat chooses which of its two settlements counts as the
+	// second — false for everyone but the back-to-back seat, and for an
+	// aristocrat in it (which collects on both, so there is nothing to pick).
+	canNominate: boolean
+	// The settlement currently nominated as the second-placed one. Seeded to
+	// the one drafted second, so it is never null while the rings are up.
+	nominated: Vertex | null
 	onSelect: (s: PlacementSelection) => void
 }) {
 	if (state.phase.kind !== 'initial_placement') return null
-	const step = state.phase.step
 	const color = seatColor(state, meIdx)
 
-	// The back-to-back seat nominating which settlement it placed last. Both of
-	// its settlements are already on the board, so the affordance rings the
-	// pieces rather than marking empty spots. Self-gating: nobody else has two
-	// settlements to choose between, and a spectator (meIdx -1) owns none.
-	//
-	// Both rings pulse identically — the ONLY difference is that the nominated
-	// one is darker. Freezing the chosen ring instead reads backwards: the
-	// pulse is the "tap me" signal, so the still one looks disabled and the
-	// player concludes they can only nominate the other settlement.
-	if (step === 'pick_last') {
-		const mine = ownSettlementVertices(state, meIdx)
-		return (
-			<G>
-				{mine.map((v) => {
-					const p = vertexPositions[v]
-					const isSelected = pickLast === v
-					return (
-						<Fragment key={v}>
-							<PulsingRing
-								cx={p.x}
-								cy={p.y}
-								r={layoutS * 0.32}
-								color={
-									isSelected ? pieceStroke : pieceStrokeSoft
-								}
-								width={layoutS * 0.07}
-							/>
-							<Circle
-								cx={p.x}
-								cy={p.y}
-								r={layoutS * 0.45}
-								fill="transparent"
-								onPress={() =>
-									onSelect({ kind: 'settlement', vertex: v })
-								}
-							/>
-						</Fragment>
-					)
-				})}
-			</G>
-		)
-	}
-
-	// step === 'settlement' — the whole turn, drafted locally.
 	const drafted = applyPlacementDraft(state, meIdx, draft)
 	const open = draft[draft.length - 1]
 	const stage: 'settlement' | 'road' | 'ready' =
@@ -132,6 +93,39 @@ export function PlacementLayer({
 					)}
 				</Fragment>
 			))}
+
+			{stage === 'ready' &&
+				canNominate &&
+				draft.map((entry) => {
+					const p = vertexPositions[entry.vertex]
+					return (
+						<Fragment key={`pick-${entry.vertex}`}>
+							<PulsingRing
+								cx={p.x}
+								cy={p.y}
+								r={layoutS * 0.32}
+								color={
+									nominated === entry.vertex
+										? pieceStroke
+										: pieceStrokeSoft
+								}
+								width={layoutS * 0.07}
+							/>
+							<Circle
+								cx={p.x}
+								cy={p.y}
+								r={layoutS * 0.45}
+								fill="transparent"
+								onPress={() =>
+									onSelect({
+										kind: 'settlement',
+										vertex: entry.vertex,
+									})
+								}
+							/>
+						</Fragment>
+					)
+				})}
 
 			{stage === 'settlement' &&
 				validSettlementVertices(drafted, meIdx).map((v) => {

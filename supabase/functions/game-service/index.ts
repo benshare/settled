@@ -10,14 +10,11 @@
 //   - place_start: place a whole initial-placement turn at once — one
 //     settlement+road pair, or two for the seat that places both settlements
 //     back-to-back. Each pair is validated against the previous one applied.
-//     Grants starting resources on the second settlement, except for that
-//     back-to-back seat — see choose_last_settlement. Advances the snake-order
-//     turn; on the final road, transitions the game to status='active' /
-//     phase='roll' (or 'post_placement').
-//   - choose_last_settlement: for the seat that places both settlements
-//     back-to-back, nominates which one it placed last. Grants that
-//     settlement's starting resources, rewrites the seat's placement events
-//     into the nominated order, and resumes the snake order.
+//     Grants starting resources on the second settlement, which for that
+//     back-to-back seat means the pair it submitted last: the client orders
+//     the pairs by which settlement the player nominated as their second.
+//     Advances the snake-order turn; on the final road, transitions the game
+//     to status='active' / phase='roll' (or 'post_placement').
 //   - roll: during phase='roll', rolls 2d6. On a non-7, distributes resources
 //     to every settlement/city adjacent to a matching hex (except the hex the
 //     robber sits on), transitions to phase='main'. On a 7, transitions to
@@ -85,11 +82,6 @@ type PlaceStartBody = {
 	action: 'place_start'
 	game_id: string
 	placements: unknown
-}
-type ChooseLastSettlementBody = {
-	action: 'choose_last_settlement'
-	game_id: string
-	vertex: string
 }
 // `total` is the admin-testing roll override — honoured only for a seat whose
 // player row carries `dev: true`. Absent on every normal roll.
@@ -305,7 +297,6 @@ type Body =
 	| CancelRequestBody
 	| PickBonusBody
 	| PlaceStartBody
-	| ChooseLastSettlementBody
 	| RollBody
 	| ConfirmRollBody
 	| RerollDiceBody
@@ -1682,14 +1673,9 @@ type ForgerPickEntry = {
 type Phase =
 	| { kind: 'select_bonus'; hands: Record<number, SelectBonusHand> }
 	// `settlement` is a whole turn — the settlement and its road are submitted
-	// together. `pick_last` is only ever reached with round 2 by the one seat
-	// that places both settlements back-to-back: they nominate which they
-	// placed last, and that one pays the starting resources.
-	| {
-			kind: 'initial_placement'
-			round: 1 | 2
-			step: 'settlement' | 'pick_last'
-	  }
+	// together, and all four pieces at once for the seat that places both
+	// settlements back-to-back.
+	| { kind: 'initial_placement'; round: 1 | 2; step: 'settlement' }
 	| {
 			kind: 'post_placement'
 			pending: {
@@ -2098,8 +2084,8 @@ function isValidSettlementVertex(
 }
 
 // Snake order makes the last seat of round 1 the first of round 2, so only
-// that seat places both settlements back-to-back and gets to nominate which
-// one it placed last (`step: 'pick_last'`).
+// that seat places both settlements back-to-back — which is what lets it
+// choose which of the two counts as its second, by the order it submits them.
 function isDoublePlacementSeat(
 	playerIdx: number,
 	playerCount: number
@@ -2115,18 +2101,6 @@ function placementPairsExpected(
 	playerCount: number
 ): 1 | 2 {
 	return round === 1 && isDoublePlacementSeat(playerIdx, playerCount) ? 2 : 1
-}
-
-function ownSettlementVertices(state: GameState, playerIdx: number): Vertex[] {
-	return boardFor(state.variant).vertices.filter((v) => {
-		const vs = vertexStateOf(state, v)
-		return (
-			vs.occupied &&
-			vs.player === playerIdx &&
-			vs.building === 'settlement' &&
-			!isGhost(vs)
-		)
-	})
 }
 
 function targetSettlement(state: GameState, playerIdx: number): Vertex | null {
@@ -4726,8 +4700,7 @@ async function handlePickBonus(
 // non-desert hex's resource. Nomad: a starting settlement on the desert
 // produces a resource, same as a 7-roll. One d5 per adjacent desert hex
 // (settlement = 1 each), and each rolls a `nomad_produce` event so the reveal
-// animation plays. Shared by `placeSettlementPiece` and the deferred grant in
-// `choose_last_settlement` so the two can't drift.
+// animation plays.
 function applyStartingGrant(
 	state: GameState,
 	playerIdx: number,
@@ -4784,22 +4757,16 @@ function placeSettlementPiece(
 	state: GameState,
 	meIdx: number,
 	round: 1 | 2,
-	vertex: Vertex,
-	playerCount: number
+	vertex: Vertex
 ): PlacedPiece | { error: string } {
 	if (!isValidSettlementVertex(state, vertex, meIdx))
 		return { error: 'invalid settlement placement' }
 
-	const myBonus = bonusOf(state, meIdx)
-	// The seat that places both settlements back-to-back nominates which one it
-	// placed last (`step: 'pick_last'`) and is granted there instead. An
-	// aristocrat collects on both, so it has nothing to defer or choose.
-	const deferGrant =
-		round === 2 &&
-		myBonus !== 'aristocrat' &&
-		isDoublePlacementSeat(meIdx, playerCount)
+	// The second settlement pays the starting resources; an aristocrat collects
+	// on both. For the seat that places both back-to-back, "second" is whichever
+	// pair the client submitted last — that ordering is the player's nomination.
 	const granted =
-		(round === 2 || myBonus === 'aristocrat') && !deferGrant
+		round === 2 || bonusOf(state, meIdx) === 'aristocrat'
 			? applyStartingGrant(state, meIdx, vertex)
 			: null
 
@@ -4903,7 +4870,6 @@ async function handlePlaceStart(
 
 	if (game.status !== 'placement') return err(400, 'not in placement')
 	if (state.phase.kind !== 'initial_placement') return err(400, 'wrong phase')
-	// `pick_last` has its own action.
 	if (state.phase.step !== 'settlement')
 		return err(400, 'expected settlement step')
 
@@ -4936,15 +4902,14 @@ async function handlePlaceStart(
 			return err(400, 'unknown edge')
 
 		// The second pair is that seat's round-2 turn, which the snake order
-		// hands straight back to it — the events have to say so, since
-		// `pick_last` reads the round stamp to find the round-2 settlement.
+		// hands straight back to it. The round stamp is what pays out, so a
+		// seat's nomination is simply which pair it put last.
 		const pairRound: 1 | 2 = i === 0 ? round : 2
 		const settled = placeSettlementPiece(
 			working,
 			meIdx,
 			pairRound,
-			pair.vertex as Vertex,
-			playerCount
+			pair.vertex as Vertex
 		)
 		if ('error' in settled) return err(400, settled.error)
 		const roaded = placeRoadPiece(
@@ -4964,37 +4929,6 @@ async function handlePlaceStart(
 		vertices: working.vertices,
 		edges: working.edges,
 		players: working.players,
-	}
-
-	// Both of this seat's settlements are now down and its grant was deferred:
-	// it nominates which one it placed last, and that one pays. The turn stays
-	// put, and there's no notification — the player who acts next is the one
-	// who just acted.
-	const pickLast =
-		lastRound === 2 &&
-		isDoublePlacementSeat(meIdx, playerCount) &&
-		bonusOf(state, meIdx) !== 'aristocrat'
-	if (pickLast) {
-		const { error: stateErr } = await admin
-			.from('game_states')
-			.update({
-				...pieces,
-				phase: {
-					kind: 'initial_placement',
-					round: 2,
-					step: 'pick_last',
-				} satisfies Phase,
-			})
-			.eq('game_id', game.id)
-		if (stateErr) return err(500, 'could not update state')
-
-		const { error: gameErr } = await admin
-			.from('games')
-			.update({ events: [...(game.events ?? []), ...events] })
-			.eq('id', game.id)
-		if (gameErr) return err(500, 'could not log event')
-
-		return json({ ok: true })
 	}
 
 	const next = nextPlacementTurn(lastRound, meIdx, playerCount)
@@ -5043,133 +4977,6 @@ async function handlePlaceStart(
 	const { error: gameErr } = await admin
 		.from('games')
 		.update({ events: [...(game.events ?? []), ...events] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not update game')
-
-	const nextUserId = game.player_order[next.currentTurn]
-	if (nextUserId) {
-		EdgeRuntime.waitUntil(
-			sendNotifications(admin, [
-				{
-					userId: nextUserId,
-					kind: 'your_turn',
-					gate: 'yourTurn',
-					gameId: game.id,
-				},
-			])
-		)
-	}
-
-	return json({ ok: true })
-}
-
-// Mirror of `swapPlacementPairs` in lib/catan/placement.ts — rewrites the
-// acting seat's two placement pairs in `games.events` so the log shows the
-// order the player just nominated. Only the payloads move: `round` and `at`
-// stay put, which keeps timestamps monotonic and each road with its own
-// settlement. Located by scanning backwards rather than by index arithmetic,
-// so an unrelated event landing between them can't corrupt the swap.
-function swapPlacementPairs(events: unknown[], playerIdx: number): unknown[] {
-	const indicesOf = (kind: string) => {
-		const out: number[] = []
-		for (let i = events.length - 1; i >= 0 && out.length < 2; i--) {
-			const e = events[i] as { kind?: string; player?: number }
-			if (e?.kind === kind && e.player === playerIdx) out.unshift(i)
-		}
-		return out
-	}
-	const settlements = indicesOf('settlement_placed')
-	const roads = indicesOf('road_placed')
-	// A legacy or hand-edited log that doesn't have both pairs: leave it be.
-	// The grant is the part that matters and it applies either way.
-	if (settlements.length < 2 || roads.length < 2) return events.slice()
-
-	const next = events.slice()
-	const swap = (idxs: number[], key: 'vertex' | 'edge') => {
-		const a = { ...(next[idxs[0]] as Record<string, unknown>) }
-		const b = { ...(next[idxs[1]] as Record<string, unknown>) }
-		const tmp = a[key]
-		a[key] = b[key]
-		b[key] = tmp
-		next[idxs[0]] = a
-		next[idxs[1]] = b
-	}
-	swap(settlements, 'vertex')
-	swap(roads, 'edge')
-	return next
-}
-
-async function handleChooseLastSettlement(
-	admin: SupabaseClient,
-	me: string,
-	body: ChooseLastSettlementBody
-): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-
-	if (game.status !== 'placement') return err(400, 'not in placement')
-	if (state.phase.kind !== 'initial_placement') return err(400, 'wrong phase')
-	if (state.phase.step !== 'pick_last')
-		return err(400, 'expected pick_last step')
-
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
-
-	const mine = ownSettlementVertices(state, meIdx)
-	if (!mine.includes(body.vertex as Vertex))
-		return err(400, 'not your settlement')
-	const vertex = body.vertex as Vertex
-
-	const applied = applyStartingGrant(state, meIdx, vertex)
-
-	const playerCount = game.player_order.length
-	// Round 2 with meIdx = playerCount - 1, so this is never the final
-	// placement — round 2 still has to walk back down to seat 0.
-	const next = nextPlacementTurn(2, meIdx, playerCount)
-	if (next === null) return err(500, 'unexpected end of placement')
-
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({
-			players: applied.players,
-			phase: {
-				kind: 'initial_placement',
-				round: next.round,
-				step: 'settlement',
-			} satisfies Phase,
-			current_turn: next.currentTurn,
-		})
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
-	// The round-2 settlement is the one already recorded last, so nominating
-	// it is a no-op for the log.
-	const roundTwoVertex = (game.events ?? []).reduce<string | null>(
-		(found, e) => {
-			const ev = e as {
-				kind?: string
-				player?: number
-				round?: number
-				vertex?: string
-			}
-			return ev?.kind === 'settlement_placed' &&
-				ev.player === meIdx &&
-				ev.round === 2
-				? (ev.vertex ?? null)
-				: found
-		},
-		null
-	)
-	const events =
-		roundTwoVertex === vertex
-			? (game.events ?? [])
-			: swapPlacementPairs(game.events ?? [], meIdx)
-
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...events, ...applied.nomadEvents] })
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not update game')
 
@@ -6770,57 +6577,41 @@ function autoActionFor(
 			}
 		}
 		case 'initial_placement': {
-			if (phase.step === 'settlement') {
-				// A whole turn, the same way a player submits one: each piece
-				// is picked against the board the previous pieces leave
-				// behind, so the road attaches to the settlement just chosen.
-				const playerCount = game.player_order.length
-				const pairs: { vertex: string; edge: string }[] = []
-				let working = state
-				const wanted = placementPairsExpected(
-					phase.round,
-					seat,
-					playerCount
+			// A whole turn, the same way a player submits one: each piece is
+			// picked against the board the previous pieces leave behind, so the
+			// road attaches to the settlement just chosen. The pairs go out in
+			// the order they were picked — for the back-to-back seat that is a
+			// nomination like any other, paying out on the second settlement.
+			const playerCount = game.player_order.length
+			const pairs: { vertex: string; edge: string }[] = []
+			let working = state
+			const wanted = placementPairsExpected(
+				phase.round,
+				seat,
+				playerCount
+			)
+			for (let i = 0; i < wanted; i++) {
+				const round: 1 | 2 = i === 0 ? phase.round : 2
+				const v = randomOf(
+					board.vertices.filter((v) =>
+						isValidSettlementVertex(working, v, seat)
+					)
 				)
-				for (let i = 0; i < wanted; i++) {
-					const round: 1 | 2 = i === 0 ? phase.round : 2
-					const v = randomOf(
-						board.vertices.filter((v) =>
-							isValidSettlementVertex(working, v, seat)
-						)
+				if (!v) return null
+				const settled = placeSettlementPiece(working, seat, round, v)
+				if ('error' in settled) return null
+				const e = randomOf(
+					board.edges.filter((e) =>
+						isValidRoadEdge(settled.state, seat, e)
 					)
-					if (!v) return null
-					const settled = placeSettlementPiece(
-						working,
-						seat,
-						round,
-						v,
-						playerCount
-					)
-					if ('error' in settled) return null
-					const e = randomOf(
-						board.edges.filter((e) =>
-							isValidRoadEdge(settled.state, seat, e)
-						)
-					)
-					if (!e) return null
-					const roaded = placeRoadPiece(settled.state, seat, round, e)
-					if ('error' in roaded) return null
-					working = roaded.state
-					pairs.push({ vertex: v, edge: e })
-				}
-				return {
-					action: 'place_start',
-					game_id: gid,
-					placements: pairs,
-				}
+				)
+				if (!e) return null
+				const roaded = placeRoadPiece(settled.state, seat, round, e)
+				if ('error' in roaded) return null
+				working = roaded.state
+				pairs.push({ vertex: v, edge: e })
 			}
-			// pick_last: nominate the round-2 settlement — the value the UI
-			// pre-seeds, and a no-op against today's rules.
-			const v = roundTwoSettlementOf(game.events ?? [], seat)
-			return v
-				? { action: 'choose_last_settlement', game_id: gid, vertex: v }
-				: null
+			return { action: 'place_start', game_id: gid, placements: pairs }
 		}
 		case 'post_placement': {
 			const p = phase.pending
@@ -6912,27 +6703,6 @@ function autoActionFor(
 function randomOf<T>(xs: readonly T[]): T | null {
 	if (xs.length === 0) return null
 	return xs[Math.floor(Math.random() * xs.length)]
-}
-
-// The settlement this seat placed on round 2 — the default answer on the
-// `pick_last` step. Mirrors roundTwoSettlementOf in lib/game/gameScreenContext.
-function roundTwoSettlementOf(events: unknown[], seat: number): string | null {
-	for (let i = events.length - 1; i >= 0; i--) {
-		const e = events[i] as {
-			kind?: string
-			player?: number
-			round?: number
-			vertex?: string
-		}
-		if (
-			e?.kind === 'settlement_placed' &&
-			e.player === seat &&
-			e.round === 2 &&
-			typeof e.vertex === 'string'
-		)
-			return e.vertex
-	}
-	return null
 }
 
 // Any legal discard of `required` cards, taken off the hand in resource order.
@@ -10410,8 +10180,6 @@ function dispatch(
 			return handlePickBonus(admin, me, body)
 		case 'place_start':
 			return handlePlaceStart(admin, me, body)
-		case 'choose_last_settlement':
-			return handleChooseLastSettlement(admin, me, body)
 		case 'roll':
 			return handleRoll(admin, me, body)
 		case 'confirm_roll':

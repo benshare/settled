@@ -51,6 +51,7 @@ export function TopArea() {
 		isMyPlacementTurn,
 		placementStage,
 		placementPairs,
+		canNominate,
 		buildTool,
 		buildEnabled,
 		buildCurseHints,
@@ -123,6 +124,7 @@ export function TopArea() {
 					isMyTurn={isMyPlacementTurn}
 					stage={placementStage}
 					pairs={placementPairs}
+					canNominate={canNominate}
 					profilesById={profilesById}
 				/>
 			)}
@@ -332,6 +334,7 @@ function PlacementHeader({
 	isMyTurn,
 	stage,
 	pairs,
+	canNominate,
 	profilesById,
 }: {
 	game: Game
@@ -340,6 +343,7 @@ function PlacementHeader({
 	isMyTurn: boolean
 	stage: PlacementStage
 	pairs: 1 | 2
+	canNominate: boolean
 	profilesById: Record<string, Profile>
 }) {
 	if (gameState.phase.kind !== 'initial_placement') return null
@@ -351,18 +355,19 @@ function PlacementHeader({
 			: (profilesById[currentId]?.username ?? 'Player')
 
 	const waitingFor =
-		gameState.phase.step === 'pick_last'
-			? 'choose their starting settlement'
-			: pairs === 2
-				? 'place both their settlements and roads'
-				: 'place a settlement and road'
+		pairs === 2
+			? 'place both their settlements and roads'
+			: 'place a settlement and road'
+	// With both pairs drafted, the back-to-back seat still has the ring tap in
+	// front of it — the only place the nomination is named, since the confirm
+	// button stays a confirm.
 	const message = !isMyTurn
 		? `Waiting for ${currentName} to ${waitingFor}`
-		: stage === 'pick_last'
-			? 'Your turn — choose the settlement you placed last'
-			: stage === 'ready'
-				? 'Your turn — confirm your placements'
-				: `Your turn — place ${prefix(stage ?? '')} ${stage}`
+		: stage === 'ready'
+			? canNominate
+				? 'Your turn — tap the settlement you placed second, then confirm'
+				: 'Your turn — confirm your placements'
+			: `Your turn — place ${prefix(stage ?? '')} ${stage}`
 
 	return (
 		<View style={styles.statusWrap}>
@@ -559,9 +564,7 @@ function spectatorStatus(
 			return 'Players are choosing bonuses'
 		case 'initial_placement':
 			// A whole turn is one step, so 'settlement' covers the road too.
-			return phase.step === 'pick_last'
-				? `${current} is choosing their starting settlement`
-				: `${current} is placing a settlement and road`
+			return `${current} is placing a settlement and road`
 		case 'post_placement':
 			return 'Players are setting up their bonuses'
 		case 'roll':
