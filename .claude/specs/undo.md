@@ -15,17 +15,38 @@ time, and it is destroyed by the next action of any kind.
 build_road          build_settlement    build_city      build_super_city
 bank_trade          liquidate           invest          buy_carpenter_vp
 tap_knight          build_fence         place_explorer_road
+cast_magic          skip_magic
 ```
 
 Deliberately **not** undoable: `roll` / `confirm_roll` / `reroll_dice` /
 `ritual_roll` (dice), `buy_dev_card` / `play_dev_card` / `confirm_scout_card`
 (reveals a card), every trade action other than `bank_trade` (another player is
 involved), `discard` / `move_robber` / `steal` / `claim_curio` /
-`pick_forger_target` / `cast_magic` (robber + reaction chains), `end_turn`,
+`pick_forger_target` (robber + reaction chains), `end_turn`,
 `end_special_build`, `shepherd_swap`, `move_forger_token`,
 `set_specialist_resource`, `set_haunt_spots`, `pick_bonus`, `place_settlement` /
 `place_road` / `choose_last_settlement` (initial placement — the snake order and
 starting-resource grant make a rollback its own feature).
+
+### Why the magician window is the exception
+
+`cast_magic` and `skip_magic` are the one part of a reaction chain that is
+undoable, because the magician's decision is **fully deterministic**: the
+phantom number is chosen rather than drawn, the production it pays is public
+board data the player could read off the hexes before committing, and only the
+magician gains from it. Nothing is learned by acting, so nothing leaks by
+taking it back — the same test `bank_trade` passes. Skip is included for the
+same reason and because it is easy to fire by accident:
+`MagicianPickOverlay` wires `onDismiss` to `onSkip`, so a backdrop tap closes
+the window for good.
+
+The arrow appears once the window's `resume` lands the magician back in `main`,
+which is the ordinary case. Where the roll also queued a `curio_pick` or
+`forger_pick` (magician wraps outermost, so those resume _after_ it), the
+floor passes to another player and no arrow renders — `canUndo`'s phase test
+has no branch for a phase this seat isn't acting in, and yanking the floor back
+out from under a player mid-prompt would be worse than the gap. The snapshot is
+cleared by their action anyway.
 
 ## 2. Mechanism: snapshot, not inverse
 

@@ -72,7 +72,7 @@ A bank trade is **not** priced at one chosen ratio. The give is cut into groups 
 
 ## Undo (one step)
 
-A player may take back their own last action when it was **solo and information-free** — `UNDOABLE_ACTIONS` in `types.ts`, mirrored in the edge function (the authority). Rolling, buying/playing a dev card, and every multi-player trade are excluded on principle: taking those reveals something. Three load-bearing points:
+A player may take back their own last action when it was **solo and information-free** — `UNDOABLE_ACTIONS` in `types.ts`, mirrored in the edge function (the authority). Rolling, buying/playing a dev card, and every multi-player trade are excluded on principle: taking those reveals something. The magician window (`cast_magic` / `skip_magic`) is the one reaction-chain step that is undoable, because its phantom number is chosen rather than drawn — the player learns nothing by acting. Three load-bearing points:
 
 - **It restores a snapshot, it does not compute an inverse.** The edge dispatcher stashes the pre-action `game_states` row on `game_states.undo` (jsonb) and `handleUndo` writes it back. A single road build can move Longest Road, consume a fence token, apply a cost substitution, and bump the age curse's counter — an inverse would rot the first time one bonus was missed.
 - **The snapshot is maintained in `serve`, not the handlers.** An action opts in by joining `UNDOABLE_ACTIONS` and doing nothing else; every other action clears the column on success. `send_message` is the sole exemption (chat writes neither table); `honk` is deliberately _not_ exempt (it appends to `games.events`, which undo truncates by length).

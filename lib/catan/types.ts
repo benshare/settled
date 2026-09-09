@@ -752,6 +752,11 @@ export const UNDOABLE_ACTIONS = [
 	'tap_knight',
 	'build_fence',
 	'place_explorer_road',
+	// The magician window is the one reaction-chain step that qualifies: the
+	// phantom number is chosen, not drawn, so casting (or skipping) teaches the
+	// magician nothing they didn't already know before they acted.
+	'cast_magic',
+	'skip_magic',
 ] as const
 
 export type UndoableAction = (typeof UNDOABLE_ACTIONS)[number]

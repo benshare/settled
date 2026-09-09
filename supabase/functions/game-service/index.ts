@@ -10187,6 +10187,11 @@ const UNDOABLE_ACTIONS = new Set<string>([
 	'tap_knight',
 	'build_fence',
 	'place_explorer_road',
+	// The magician window is the one reaction-chain step that qualifies: the
+	// phantom number is chosen, not drawn, so casting (or skipping) teaches the
+	// magician nothing they didn't already know before they acted.
+	'cast_magic',
+	'skip_magic',
 ])
 
 // Chat is the one action that invalidates nothing — it writes neither
