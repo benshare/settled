@@ -78,8 +78,8 @@ badge pattern, tooltip primitive).
 - Gambler: a boolean `PlayerState.rerolledThisTurn` flag; reset on `end_turn`.
 - Carpenter: `PlayerState.carpenterVP?: number` counter; `PlayerState.boughtCarpenterVPThisTurn?: boolean` flag, reset on `end_turn`.
 - Nomad: transient `GameState.nomadDesertResource` is not stored — the die
-  roll happens inline in the 7-chain handler and is applied to the robber's
-  current hex at distribution time. See "nomad" notes.
+  roll happens inline in the 7-chain handler, per unblocked desert hex. See
+  "nomad" notes.
 
 ## Per-bonus implementation notes
 
@@ -166,8 +166,8 @@ hand > 7`.
 
 ### nomad
 
-- Unrelated to the robber. Every 7 rolled, every nomad player receives 1
-  resource chosen by a server-side d5 roll. Applied AFTER discards: the
+- Every 7 rolled, every nomad player receives 1 resource chosen by a
+  server-side d5 roll. Applied AFTER discards: the
   7-branch computes `pending` from the pre-nomad hands, and the grant fires
   either inline (when nobody owes a discard) or in `handleDiscard` once the
   last pending discard is submitted. This keeps the nomad's gain from being
@@ -175,8 +175,16 @@ hand > 7`.
 - The d5 is rolled **per desert hex**, not per player. On the expanded
   (5-6 player) board's two deserts, a nomad with buildings on both rolls
   twice and can collect two different resources.
+- **The robber blocks a desert the same way it blocks any hex**, judged at the
+  position the robber held when the 7 was rolled. Every grant site runs before
+  `move_robber`, so a robber sent to the desert _by_ this 7 arrives too late to
+  stop the payout, while one already parked there stops it. On the expanded
+  board the block is per desert — the other one still pays.
 - Logged as a `nomad_produce` event per grant (so one player can emit two
   events on a single 7).
+- The starting-resource grant is **not** robber-gated: initial placement pays
+  out regardless of where the robber sits, for the nomad's desert settlement
+  the same as for anyone's ordinary hexes.
 
 ### carpenter
 
@@ -325,7 +333,8 @@ Parallel to `check-catan-curses.ts`.
    how many have already been used for the 2-resource grant.
 4. **Underdog** — hex numbers {2, 3, 11, 12} (1-pip and 2-pip).
 5. **Nomad** — every 7, each nomad player gets 1 random resource via
-   server-side d5 roll. Unrelated to robber destination.
+   server-side d5 roll, unless the robber was already on that desert when
+   the 7 came up.
 6. **Carpenter UI** — specially-styled button on BuildTradeBar.
 7. **Carpenter × age** — carpenter VP purchase does NOT count against
    age's turn cap. Only standard builds count toward age.

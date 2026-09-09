@@ -1796,6 +1796,11 @@ const BRICKLAYER_COST: ResourceHand = {
 // on desert means no production (and no event). Boards with more than one
 // desert (5-6 players) roll the d5 separately per desert, so a nomad
 // building on both can collect two different resources.
+//
+// "Like a regular hex" includes the robber: a desert the robber was already
+// sitting on when the 7 was rolled pays nothing. Every call site runs before
+// the robber is moved, so a robber sent to the desert *by* this 7 arrives too
+// late to block it.
 const NOMAD_RESOURCES: readonly Resource[] = [
 	'brick',
 	'wood',
@@ -1828,7 +1833,7 @@ function applyNomadProduce(state: GameState): {
 } {
 	const events: unknown[] = []
 	const desertHexes = boardFor(state.variant).hexes.filter(
-		(h) => state.hexes[h].resource === null
+		(h) => state.hexes[h].resource === null && h !== state.robber
 	)
 	const nextPlayers = state.players.map((p, i) => {
 		if (p.bonus !== 'nomad') return p

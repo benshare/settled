@@ -26,7 +26,7 @@ import {
 } from '@/lib/catan/PostPlacementOverlay'
 import { ScoutPickOverlay } from '@/lib/catan/ScoutPickOverlay'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
-import { gameSizeFor, type PlayerState } from '@/lib/catan/types'
+import { gameSizeFor } from '@/lib/catan/types'
 import { StopWatchingButton, WatcherButton } from '@/lib/catan/Watchers'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, font, radius, shadow, spacing, z } from '@/lib/theme'
@@ -245,10 +245,6 @@ export function BoardArea({
 				<BoardView
 					state={gameState}
 					viewerIdx={meIdx}
-					robberDormant={robberIsDormant(
-						gameState.players,
-						(game.events ?? []) as GameEvent[]
-					)}
 					interaction={
 						inPlacement && isMyPlacementTurn
 							? {
@@ -426,21 +422,6 @@ function ConfirmBar({
 				</Pressable>
 			</View>
 		</View>
-	)
-}
-
-// While a nomad is in the game the robber sits idle on the desert — the nomad's
-// resource hex — until it first matters: the first 7 rolled or the first knight
-// played. We surface that idle period by rendering the robber faded so a robber
-// parked on the desert doesn't misread as blocking the nomad. Purely cosmetic:
-// nomad desert production ignores the robber, so the first 7 pays out either
-// way. Derived from the events log so it clears the instant a 7/knight lands.
-function robberIsDormant(players: PlayerState[], events: GameEvent[]): boolean {
-	if (!players.some((p) => p.bonus === 'nomad')) return false
-	return !events.some(
-		(e) =>
-			(e.kind === 'rolled' && e.total === 7) ||
-			(e.kind === 'dev_played' && e.id === 'knight')
 	)
 }
 

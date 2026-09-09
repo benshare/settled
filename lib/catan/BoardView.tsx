@@ -93,7 +93,6 @@ export function BoardView({
 	liquidate,
 	robber,
 	forgerMove,
-	robberDormant,
 }: {
 	state: GameState
 	// The seat watching the board (-1 for a spectator). Purely for information
@@ -104,7 +103,6 @@ export function BoardView({
 	liquidate?: LiquidateInteraction
 	robber?: RobberInteraction
 	forgerMove?: ForgerMoveInteraction
-	robberDormant?: boolean
 }) {
 	const [box, setBox] = useState<{ w: number; h: number } | null>(null)
 
@@ -186,7 +184,6 @@ export function BoardView({
 								liquidate={liquidate}
 								robber={robber}
 								forgerMove={forgerMove}
-								robberDormant={robberDormant}
 							/>
 						</Animated.View>
 					</GestureDetector>
@@ -206,7 +203,6 @@ function BoardSvg({
 	liquidate,
 	robber,
 	forgerMove,
-	robberDormant,
 }: {
 	state: GameState
 	viewerIdx?: number
@@ -217,7 +213,6 @@ function BoardSvg({
 	liquidate?: LiquidateInteraction
 	robber?: RobberInteraction
 	forgerMove?: ForgerMoveInteraction
-	robberDormant?: boolean
 }) {
 	// Ports sit ~1s outside the hex grid on each edge, so the true bounding
 	// box is (naturalW + 2)s × (naturalH + 2)s rather than the bare grid.
@@ -334,7 +329,6 @@ function BoardSvg({
 							cx={robberHex.cx}
 							cy={robberHex.cy}
 							size={layout.s}
-							dormant={robberDormant}
 						/>
 					)
 				})()}
