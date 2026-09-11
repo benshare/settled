@@ -947,6 +947,25 @@ export function magicDiscardCount(
 	return Math.abs(target - actualTotal) + plus
 }
 
+// The numbers worth offering: 2..12, further narrowed to the targets this hand
+// can actually pay for. The two ends truncate independently — a 3 with a big
+// hand reaches 12 long before it reaches below 2. Not a server check (the cast
+// handler already refuses a discard the hand can't cover), just the rule the
+// window's arc is drawn from.
+export function magicTargetRange(
+	actualTotal: number,
+	handSize: number,
+	size: GameSize
+): { lo: number; hi: number } {
+	const plus =
+		bonusVariantFor('magician', size)?.discardPlus ?? MAGIC_DISCARD_PLUS
+	const reach = Math.max(0, handSize - plus)
+	return {
+		lo: Math.max(2, actualTotal - reach),
+		hi: Math.min(12, actualTotal + reach),
+	}
+}
+
 // --- Haunt ------------------------------------------------------------------
 //
 // Secretly pick two buildable vertices at post_placement. When a spot becomes

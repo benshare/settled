@@ -24,12 +24,15 @@ import {
 	HauntStatusBanner,
 	SpecialistDeclareOverlay,
 } from '@/lib/catan/PostPlacementOverlay'
+import { distributeResources } from '@/lib/catan/roll'
 import { ScoutPickOverlay } from '@/lib/catan/ScoutPickOverlay'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
-import { gameSizeFor } from '@/lib/catan/types'
+import { emptyHand } from '@/lib/catan/trade'
+import { gameSizeFor, type ResourceHand } from '@/lib/catan/types'
 import { StopWatchingButton, WatcherButton } from '@/lib/catan/Watchers'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, font, radius, shadow, spacing, z } from '@/lib/theme'
+import { useMemo } from 'react'
 import {
 	ActivityIndicator,
 	Pressable,
@@ -112,6 +115,25 @@ export function BoardArea({
 		onSetHauntSpots,
 	} = useGameScreen()
 
+	// What every number in range would pay the viewer, for the magician
+	// window's arc. Eleven `distributeResources` passes over the live board, so
+	// the preview and the cast read the same robber and the same buildings.
+	const magicianGains = useMemo(() => {
+		if (
+			!gameState ||
+			gameState.phase.kind !== 'magician_pick' ||
+			gameState.phase.roller !== meIdx
+		) {
+			return null
+		}
+		const out: Record<number, ResourceHand> = {}
+		for (let total = 2; total <= 12; total++) {
+			out[total] =
+				distributeResources(gameState, total)[meIdx] ?? emptyHand()
+		}
+		return out
+	}, [gameState, meIdx])
+
 	if (!game) return null
 
 	return (
@@ -172,6 +194,8 @@ export function BoardArea({
 						actualTotal={
 							gameState.phase.roll.a + gameState.phase.roll.b
 						}
+						rolledGain={gameState.phase.pendingGain ?? emptyHand()}
+						gainsByTotal={magicianGains ?? {}}
 						size={gameSizeFor(gameState.players.length)}
 						submitting={submitting}
 						onSkip={onSkipMagic}

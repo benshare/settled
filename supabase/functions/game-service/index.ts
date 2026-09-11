@@ -1741,6 +1741,11 @@ type Phase =
 			resume: Phase
 			roller: number
 			roll: DiceRoll
+			// The roller's own production from `roll`, held out of their hand
+			// until they answer and paid out by both exits — they cannot spend
+			// what the roll paid on the phantom number. Absent on a legacy
+			// phase; empty whenever the roll was a 7.
+			pendingGain?: ResourceHand
 	  }
 	// Special build phase (5-6 player games). queue[0] acts; end_special_build
 	// pops the head; empty → roll for the already-advanced current_turn.
@@ -5214,7 +5219,15 @@ function wrapMagicianWindow(
 	// enforced by never opening the window, so the player is never shown a
 	// sheet they cannot act on.
 	if (!magicianCanCast(state, rollerIdx)) return phase
-	return { kind: 'magician_pick', resume: phase, roller: rollerIdx, roll }
+	// Reached only from the 7-chain, which distributes nothing — there is no
+	// production to hold back.
+	return {
+		kind: 'magician_pick',
+		resume: phase,
+		roller: rollerIdx,
+		roll,
+		pendingGain: emptyHand(),
+	}
 }
 
 async function applyRollOutcome(
@@ -5400,9 +5413,21 @@ async function applyRollOutcome(
 		}
 	}
 
+	// Magician: their own production waits out their window (below) instead of
+	// landing now, so the phantom number is paid for with the hand they rolled
+	// with. Everything downstream of here reads `gains`, not hands, so holding
+	// the cards back is invisible to the curio / forger / log paths.
+	const magicianWindow =
+		options.distributeOnlyTo === undefined &&
+		magicianCanCast(state, activeIdx)
+	const heldForMagician = magicianWindow
+		? (gains[activeIdx] ?? emptyHand())
+		: emptyHand()
+
 	let nextPlayers = state.players.map((p, i) => {
 		const g = gains[i]
 		if (!g) return p
+		if (i === activeIdx && magicianWindow) return p
 		const r = p.resources
 		return {
 			...p,
@@ -5536,12 +5561,13 @@ async function applyRollOutcome(
 				: afterForger
 		// Magician: if the roller is a magician, open the post-roll window
 		// first (outermost), before any curio/forger reactions from others.
-		if (stateAfter.players[activeIdx]?.bonus === 'magician') {
+		if (magicianWindow) {
 			nextPhase = {
 				kind: 'magician_pick',
 				resume: nextPhase,
 				roller: activeIdx,
 				roll: dice,
+				pendingGain: heldForMagician,
 			}
 		}
 	}
@@ -9895,14 +9921,17 @@ async function handleCastMagic(
 	)
 		return err(400, 'wrong discard count')
 	const meP = state.players[meIdx]
+	// The roll's own cards are still on the phase, so this is the hand they
+	// rolled with — the real constraint on what a cast can cost.
 	if (!canAfford(meP.resources, discard))
 		return err(400, 'insufficient cards to discard')
 
 	// Phantom production: gains for the magician only, from the target number.
 	const gain = distributeResources(state, target)[meIdx] ?? emptyHand()
+	const pending = state.phase.pendingGain ?? emptyHand()
 	const nextResources = { ...meP.resources }
 	for (const r of RESOURCES)
-		nextResources[r] = nextResources[r] - discard[r] + gain[r]
+		nextResources[r] = nextResources[r] - discard[r] + gain[r] + pending[r]
 	// Stamp the round so a cooldown could see it. Harmless while none is
 	// declared — `magicianCanCast` only reads it where the variant sets one.
 	const nextPlayers = state.players.map((p, i) =>
@@ -9948,10 +9977,20 @@ async function handleSkipMagic(
 	if (state.phase.roller !== meIdx)
 		return err(403, 'not your magician window')
 
+	// Keeping the roll still collects it: the held production lands here, the
+	// window's other exit.
+	const pending = state.phase.pendingGain ?? emptyHand()
+	const meP = state.players[meIdx]
+	const nextResources = { ...meP.resources }
+	for (const r of RESOURCES) nextResources[r] = nextResources[r] + pending[r]
+	const nextPlayers = state.players.map((p, i) =>
+		i === meIdx ? { ...p, resources: nextResources } : p
+	)
+
 	const resume = state.phase.resume
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ phase: resume })
+		.update({ players: nextPlayers, phase: resume })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 	const event = {

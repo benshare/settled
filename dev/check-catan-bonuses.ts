@@ -71,6 +71,7 @@ import {
 	isValidSmithSwap,
 	magicDiscardCount,
 	magicianCanCast,
+	magicTargetRange,
 	plutocratGain,
 	resolveHauntGhosts,
 	smithCostOf,
@@ -1601,6 +1602,53 @@ function testMagician() {
 	equal(magicDiscardCount(7, 2, 'standard'), 6, '|7-2|+1 = 6')
 }
 
+// The arc's reach: every offered number is one the hand can pay for, and the
+// two ends clamp to 2 / 12 independently of each other.
+function testMagicTargetRange() {
+	function range(
+		roll: number,
+		hand: number,
+		lo: number,
+		hi: number,
+		msg: string
+	) {
+		const got = magicTargetRange(roll, hand, 'standard')
+		equal(got.lo, lo, `${msg} (lo)`)
+		equal(got.hi, hi, `${msg} (hi)`)
+	}
+	// 7 cards buys a distance of 6 — the whole board from any roll.
+	range(7, 7, 2, 12, 'a big hand reaches everything')
+	// 4 cards buys a distance of 3, truncated at 2 on the low side.
+	range(4, 4, 2, 7, 'low end clamps to 2')
+	range(11, 4, 8, 12, 'high end clamps to 12')
+	// One card pays for the neighbours only; none pays for nothing.
+	range(8, 2, 7, 9, 'distance 1 costs 2')
+	range(8, 1, 8, 8, 'a hand under the base price reaches nothing')
+	range(8, 0, 8, 8, 'an empty hand reaches nothing')
+	// Every number in reach is affordable, at every size.
+	for (const size of GAME_SIZES) {
+		for (let hand = 0; hand <= 12; hand++) {
+			for (let roll = 2; roll <= 12; roll++) {
+				const { lo, hi } = magicTargetRange(roll, hand, size)
+				for (let t = lo; t <= hi; t++) {
+					if (t === roll) continue
+					assert(
+						magicDiscardCount(roll, t, size) <= hand,
+						`${size}: ${roll}->${t} payable from ${hand}`
+					)
+				}
+				const beyond = [lo - 1, hi + 1].filter((t) => t >= 2 && t <= 12)
+				for (const t of beyond) {
+					assert(
+						magicDiscardCount(roll, t, size) > hand,
+						`${size}: ${roll}->${t} unpayable from ${hand}`
+					)
+				}
+			}
+		}
+	}
+}
+
 // The magician declares no size variants: N + 1 and no cooldown everywhere.
 // The params survive in the table's types, so this guards the flat baseline.
 function testMagicianBySize() {
@@ -1733,6 +1781,7 @@ function main() {
 		['set3: investor', testInvestor],
 		['set3: investor by size', testInvestorBySize],
 		['set3: magician', testMagician],
+		['set3: magician target range', testMagicTargetRange],
 		['set3: magician by size', testMagicianBySize],
 		['set3: haunt ghosts', testHaunt],
 		['deal: no duplicate offers', testDealNoDuplicates],

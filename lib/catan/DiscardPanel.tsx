@@ -4,7 +4,7 @@ import { colors, font, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { Button } from '../modules/Button'
 import { handSize } from './robber'
-import { CardFan, type CardFanEntry } from './ResourceHand'
+import { CardFan, type CardFanEntry, type CardFanSize } from './ResourceHand'
 import type { ResourceHand } from './types'
 
 const EMPTY: ResourceHand = {
@@ -50,16 +50,6 @@ export function DiscardPanel({
 		setSel({ ...sel, [r]: sel[r] - 1 })
 	}
 
-	const pile: CardFanEntry[] = RESOURCES.filter((r) => sel[r] > 0).map(
-		(r) => ({
-			resource: r,
-			count: sel[r],
-		})
-	)
-	const remaining: CardFanEntry[] = RESOURCES.filter(
-		(r) => hand[r] - sel[r] > 0
-	).map((r) => ({ resource: r, count: hand[r] - sel[r] }))
-
 	return (
 		<View style={styles.wrap}>
 			<View style={styles.headerRow}>
@@ -74,20 +64,12 @@ export function DiscardPanel({
 				</Text>
 			)}
 
-			<CardFan
-				entries={pile}
-				size="compact"
-				onCardPress={take}
-				emptyLabel="Tap cards below to discard them"
-			/>
-			<View style={styles.divider} />
-			{/* At the cap every hand card is inert, so the fan reads as locked
-			    rather than silently ignoring taps. */}
-			<CardFan
-				entries={remaining}
-				onCardPress={add}
-				disabledResources={atCap ? RESOURCES : undefined}
-				emptyLabel="Your hand is empty"
+			<DiscardComposer
+				hand={hand}
+				selection={sel}
+				required={required}
+				onAdd={add}
+				onTake={take}
 			/>
 
 			<Button
@@ -98,6 +80,57 @@ export function DiscardPanel({
 				Confirm discard
 			</Button>
 		</View>
+	)
+}
+
+// The gesture itself, without the framing: the pile of cards being given up
+// above, the hand they came from below, a tap moving one either way. Shared so
+// anything that asks for a discard asks for it the same way the 7 does — the
+// magician's window is the other caller.
+export function DiscardComposer({
+	hand,
+	selection,
+	required,
+	handFanSize = 'full',
+	pileEmptyLabel = 'Tap cards below to discard them',
+	onAdd,
+	onTake,
+}: {
+	hand: ResourceHand
+	selection: ResourceHand
+	required: number
+	handFanSize?: CardFanSize
+	pileEmptyLabel?: string
+	onAdd: (r: Resource) => void
+	onTake: (r: Resource) => void
+}) {
+	const atCap = handSize(selection) >= required
+	const pile: CardFanEntry[] = RESOURCES.filter((r) => selection[r] > 0).map(
+		(r) => ({ resource: r, count: selection[r] })
+	)
+	const remaining: CardFanEntry[] = RESOURCES.filter(
+		(r) => hand[r] - selection[r] > 0
+	).map((r) => ({ resource: r, count: hand[r] - selection[r] }))
+
+	return (
+		<>
+			<CardFan
+				entries={pile}
+				size="compact"
+				onCardPress={onTake}
+				emptyLabel={pileEmptyLabel}
+			/>
+			<View style={styles.divider} />
+			{/* At the cap every hand card is inert, so the fan reads as locked
+			    rather than silently ignoring taps. */}
+			<CardFan
+				entries={remaining}
+				size={handFanSize}
+				onCardPress={onAdd}
+				disabledResources={atCap ? RESOURCES : undefined}
+				emptyLabel="Your hand is empty"
+			/>
+		</>
 	)
 }
 

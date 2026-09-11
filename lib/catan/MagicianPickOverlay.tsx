@@ -1,24 +1,51 @@
 // Magician post-roll window. After the magician's own roll resolves they may
 // discard N+1 cards to also collect production as if a number N away from the
-// actual result had rolled — or skip. Only the magician gains from it.
+// actual result had rolled — or keep the roll as it came. Only the magician
+// gains from it.
+//
+// The roll's own cards are not in hand yet (`pendingGain` on the phase): they
+// land when this window is answered, either way. That is what makes the arc
+// honest — every card in it is production the player does not have yet — and
+// what makes the discard a real choice, since it can only be paid out of the
+// hand they rolled with. See `.claude/specs/magician-window-ui.md`.
 
-import { useMemo, useState } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+	Pressable,
+	ScrollView,
+	StyleSheet,
+	Text,
+	View,
+	type LayoutChangeEvent,
+} from 'react-native'
 import { MinimizableModal } from '../modules/MinimizableModal'
 import { Button } from '../modules/Button'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor } from './palette'
-import { magicDiscardCount } from './bonus'
+import { magicDiscardCount, magicTargetRange } from './bonus'
+import { DiscardComposer } from './DiscardPanel'
 import { handSize } from './robber'
+import { emptyHand } from './trade'
 import type { GameSize, ResourceHand } from './types'
 
-const TOTALS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
+// Fan geometry for the roll arc — the hand's `CardFan` proportions, shrunk and
+// splayed a little wider, since these cards carry a number and a payout rather
+// than one word.
+const ARC = { w: 62, h: 104, overlap: 10, step: 4, lift: 3 } as const
 
 export function MagicianPickOverlay({
 	hand,
 	actualTotal,
+	// What the rolled number pays this player — withheld from `hand` until
+	// this window closes, so the arc's center card is a promise like the rest.
+	rolledGain,
+	// Per candidate number, what it would pay this player. Computed against the
+	// live board (robber included), so it matches what the cast will grant.
+	gainsByTotal,
+	// Table size sets the price of a cast — N + 1 cards, or N at a 5-6
+	// player table.
 	size,
 	submitting,
 	onSkip,
@@ -26,8 +53,8 @@ export function MagicianPickOverlay({
 }: {
 	hand: ResourceHand
 	actualTotal: number
-	// Table size sets the price of a cast — N + 1 cards, or N at a 5-6
-	// player table.
+	rolledGain: ResourceHand
+	gainsByTotal: Record<number, ResourceHand>
 	size: GameSize
 	submitting: boolean
 	onSkip: () => void
@@ -36,89 +63,102 @@ export function MagicianPickOverlay({
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const [target, setTarget] = useState<number | null>(null)
-	const [discard, setDiscard] = useState<ResourceHand>(empty())
+	const [discard, setDiscard] = useState<ResourceHand>(emptyHand)
+
+	const totals = useMemo(() => {
+		const { lo, hi } = magicTargetRange(actualTotal, handSize(hand), size)
+		const out: number[] = []
+		for (let t = lo; t <= hi; t++) out.push(t)
+		return out
+	}, [actualTotal, hand, size])
+
 	const cost =
 		target === null ? 0 : magicDiscardCount(actualTotal, target, size)
 	const discardSize = handSize(discard)
 	const ready = target !== null && discardSize === cost && !submitting
 
+	// Picking a different number reprices the discard, so the pile starts over
+	// rather than silently carrying cards into a cost it no longer matches.
 	function pickTarget(t: number) {
-		setTarget(t)
-		setDiscard(empty())
+		setTarget(t === actualTotal ? null : t)
+		setDiscard(emptyHand())
 	}
 
-	function setRes(r: Resource, delta: number) {
-		const next = discard[r] + delta
-		if (next < 0 || next > hand[r]) return
-		if (delta > 0 && discardSize >= cost) return
-		setDiscard({ ...discard, [r]: next })
+	function add(r: Resource) {
+		if (discardSize >= cost || discard[r] >= hand[r]) return
+		setDiscard({ ...discard, [r]: discard[r] + 1 })
+	}
+	function take(r: Resource) {
+		if (discard[r] <= 0) return
+		setDiscard({ ...discard, [r]: discard[r] - 1 })
 	}
 
 	return (
 		<MinimizableModal
-			title="Magician"
+			title="Activate magician?"
 			onDismiss={onSkip}
 			contentStyle={styles.sheet}
 		>
 			<Text style={styles.subtitle}>
-				You rolled {actualTotal}. Discard cards to also collect
-				resources as if another number had been rolled — 1 card plus 1
-				per step away. Only you gain.
+				Discard 1 card plus 1 per step from {actualTotal} to also
+				collect that number — only you gain. Your roll&apos;s own cards
+				land either way.
 			</Text>
-			<Text style={styles.section}>1 · Pick a number</Text>
-			<View style={styles.totalGrid}>
-				{TOTALS.filter((t) => t !== actualTotal).map((t) => {
-					const c = magicDiscardCount(actualTotal, t, size)
-					return (
-						<Pressable
-							key={t}
-							onPress={() => pickTarget(t)}
-							style={({ pressed }) => [
-								styles.totalChip,
-								target === t && styles.totalChipPicked,
-								pressed && styles.pressed,
-							]}
-						>
-							<Text style={styles.totalChipText}>{t}</Text>
-							<Text style={styles.totalChipCost}>−{c}</Text>
-						</Pressable>
-					)
-				})}
-			</View>
-			{target !== null && (
-				<>
-					<Text style={styles.section}>
-						2 · Discard {cost} cards ({discardSize} / {cost})
+
+			<RollArc
+				totals={totals}
+				actualTotal={actualTotal}
+				target={target}
+				gainFor={(t) =>
+					t === actualTotal ? rolledGain : (gainsByTotal[t] ?? null)
+				}
+				costFor={(t) => magicDiscardCount(actualTotal, t, size)}
+				onPick={pickTarget}
+				styles={styles}
+			/>
+
+			{totals.length === 1 ? (
+				<Text style={styles.hint}>
+					Not enough cards in hand to conjure another number.
+				</Text>
+			) : target === null ? (
+				<Text style={styles.hint}>
+					Tap a number above to conjure its production too.
+				</Text>
+			) : (
+				<View style={styles.headerRow}>
+					<Text style={styles.section}>Discard for {target}</Text>
+					<Text style={styles.counter}>
+						{discardSize} / {cost}
 					</Text>
-					<View style={styles.row}>
-						{RESOURCES.filter((r) => hand[r] > 0).map((r) => (
-							<ResourceStepper
-								key={r}
-								resource={r}
-								available={hand[r]}
-								value={discard[r]}
-								canInc={
-									discardSize < cost && discard[r] < hand[r]
-								}
-								onDec={() => setRes(r, -1)}
-								onInc={() => setRes(r, +1)}
-								styles={styles}
-							/>
-						))}
-					</View>
-				</>
+				</View>
 			)}
+
+			<DiscardComposer
+				hand={hand}
+				selection={discard}
+				required={cost}
+				handFanSize="compact"
+				pileEmptyLabel={
+					target === null
+						? undefined
+						: 'Tap cards below to pay for it'
+				}
+				onAdd={add}
+				onTake={take}
+			/>
+
 			<View style={styles.actions}>
-				<Pressable
-					style={({ pressed }) => [
-						styles.cancelBtn,
-						pressed && styles.pressed,
-					]}
-					onPress={onSkip}
-				>
-					<Text style={styles.cancelText}>Skip</Text>
-				</Pressable>
-				<View style={{ flex: 1 }}>
+				<View style={styles.action}>
+					<Button
+						variant="secondary"
+						onPress={onSkip}
+						disabled={submitting}
+					>
+						Keep roll
+					</Button>
+				</View>
+				<View style={styles.action}>
 					<Button
 						onPress={() =>
 							target !== null && onCast(target, discard)
@@ -126,7 +166,7 @@ export function MagicianPickOverlay({
 						disabled={!ready}
 						loading={submitting}
 					>
-						Cast {target ?? ''}
+						Confirm
 					</Button>
 				</View>
 			</View>
@@ -134,78 +174,146 @@ export function MagicianPickOverlay({
 	)
 }
 
-function empty(): ResourceHand {
-	return { brick: 0, wood: 0, sheep: 0, wheat: 0, ore: 0 }
-}
-
-function ResourceStepper({
-	resource,
-	available,
-	value,
-	canInc,
-	onDec,
-	onInc,
+// The arc: one card per number in reach, in order, fanned around the number
+// that actually came up. Eleven cards never fit a phone, so it scrolls — and
+// opens scrolled to the rolled card, which is the arc's apex and the thing the
+// player is comparing everything against.
+function RollArc({
+	totals,
+	actualTotal,
+	target,
+	gainFor,
+	costFor,
+	onPick,
 	styles,
 }: {
-	resource: Resource
-	available: number
-	value: number
-	canInc: boolean
-	onDec: () => void
-	onInc: () => void
+	totals: number[]
+	actualTotal: number
+	target: number | null
+	gainFor: (total: number) => ResourceHand | null
+	costFor: (total: number) => number
+	onPick: (total: number) => void
 	styles: ReturnType<typeof makeStyles>
 }) {
+	const scrollRef = useRef<ScrollView>(null)
+	const [viewport, setViewport] = useState(0)
+	const center = totals.indexOf(actualTotal)
+	const step = ARC.w - ARC.overlap
+	const contentWidth = totals.length * step + ARC.overlap
+	const centerX = spacing.sm + center * step + ARC.w / 2
+
+	useEffect(() => {
+		if (viewport <= 0) return
+		scrollRef.current?.scrollTo({
+			x: Math.max(
+				0,
+				Math.min(centerX - viewport / 2, contentWidth - viewport)
+			),
+			animated: false,
+		})
+	}, [viewport, centerX, contentWidth])
+
 	return (
-		<View style={styles.stepper}>
-			<View
-				style={[
-					styles.swatch,
-					{ backgroundColor: resourceColor[resource] },
-				]}
-			>
-				<Text style={styles.swatchText}>{available}</Text>
-			</View>
-			<View style={styles.stepperControls}>
-				<StepButton
-					label="-"
-					onPress={onDec}
-					disabled={value <= 0}
-					styles={styles}
-				/>
-				<Text style={styles.stepperValue}>{value}</Text>
-				<StepButton
-					label="+"
-					onPress={onInc}
-					disabled={!canInc}
-					styles={styles}
-				/>
-			</View>
-		</View>
+		<ScrollView
+			ref={scrollRef}
+			horizontal
+			showsHorizontalScrollIndicator={false}
+			onLayout={(e: LayoutChangeEvent) =>
+				setViewport(e.nativeEvent.layout.width)
+			}
+			contentContainerStyle={[
+				styles.arc,
+				contentWidth < viewport && styles.arcCentered,
+			]}
+		>
+			{totals.map((t, i) => {
+				const offset = i - center
+				return (
+					<View
+						key={t}
+						style={{
+							width: ARC.w,
+							height: ARC.h,
+							marginLeft: i === 0 ? 0 : -ARC.overlap,
+							transform: [
+								{ translateY: Math.abs(offset) * ARC.lift },
+								{ rotate: `${offset * ARC.step}deg` },
+							],
+							// The rolled card and the picked one read as one
+							// piece each, over their neighbours on both sides.
+							zIndex:
+								t === target
+									? totals.length + 1
+									: t === actualTotal
+										? totals.length
+										: i,
+						}}
+					>
+						<RollCard
+							total={t}
+							gain={gainFor(t)}
+							cost={costFor(t)}
+							rolled={t === actualTotal}
+							picked={t === target}
+							onPress={() => onPick(t)}
+							styles={styles}
+						/>
+					</View>
+				)
+			})}
+		</ScrollView>
 	)
 }
 
-function StepButton({
-	label,
+function RollCard({
+	total,
+	gain,
+	cost,
+	rolled,
+	picked,
 	onPress,
-	disabled,
 	styles,
 }: {
-	label: string
+	total: number
+	gain: ResourceHand | null
+	cost: number
+	rolled: boolean
+	picked: boolean
 	onPress: () => void
-	disabled: boolean
 	styles: ReturnType<typeof makeStyles>
 }) {
+	const pips = RESOURCES.filter((r) => (gain?.[r] ?? 0) > 0)
 	return (
 		<Pressable
 			onPress={onPress}
-			disabled={disabled}
 			style={({ pressed }) => [
-				styles.stepBtn,
-				disabled && styles.stepBtnDisabled,
-				pressed && !disabled && styles.pressed,
+				styles.rollCard,
+				rolled && styles.rollCardRolled,
+				picked && styles.rollCardPicked,
+				pressed && styles.pressed,
 			]}
 		>
-			<Text style={styles.stepBtnText}>{label}</Text>
+			<Text style={styles.rollNumber}>{total}</Text>
+			<View style={styles.pips}>
+				{pips.length === 0 ? (
+					<Text style={styles.pipsEmpty}>—</Text>
+				) : (
+					pips.map((r) => (
+						<View
+							key={r}
+							style={[
+								styles.pip,
+								{ backgroundColor: resourceColor[r] },
+							]}
+						>
+							<Text style={styles.pipCount}>{gain?.[r]}</Text>
+						</View>
+					))
+				)}
+			</View>
+			<Text style={[styles.rollCost, rolled && styles.rollCostRolled]}>
+				{rolled ? 'Rolled' : `−${cost}`}
+			</Text>
 		</Pressable>
 	)
 }
@@ -220,6 +328,84 @@ function makeStyles(colors: ColorScheme) {
 			color: colors.textSecondary,
 			lineHeight: 20,
 		},
+		arc: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			paddingHorizontal: spacing.sm,
+			// Room for the outermost cards' lift and rotation, which reach
+			// past the card box on both edges.
+			paddingTop: spacing.xs,
+			paddingBottom: spacing.md,
+		},
+		arcCentered: {
+			flexGrow: 1,
+			justifyContent: 'center',
+		},
+		rollCard: {
+			flex: 1,
+			paddingVertical: spacing.xs,
+			paddingHorizontal: 4,
+			borderRadius: radius.sm,
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.background,
+			alignItems: 'center',
+			justifyContent: 'space-between',
+		},
+		rollCardRolled: {
+			borderWidth: 2,
+			borderColor: colors.text,
+			backgroundColor: colors.card,
+		},
+		rollCardPicked: {
+			borderWidth: 2,
+			borderColor: colors.brand,
+			backgroundColor: colors.card,
+		},
+		rollNumber: {
+			fontSize: font.md,
+			fontWeight: '800',
+			color: colors.text,
+		},
+		pips: {
+			flex: 1,
+			flexDirection: 'row',
+			flexWrap: 'wrap',
+			alignItems: 'center',
+			justifyContent: 'center',
+			gap: 2,
+		},
+		pip: {
+			width: 15,
+			height: 20,
+			borderRadius: 3,
+			borderWidth: 1,
+			borderColor: '#2B2B2B',
+			alignItems: 'center',
+			justifyContent: 'center',
+		},
+		pipCount: {
+			fontSize: 10,
+			fontWeight: '800',
+			color: '#1A1A1A',
+		},
+		pipsEmpty: {
+			fontSize: font.sm,
+			color: colors.textMuted,
+		},
+		rollCost: {
+			fontSize: font.xs,
+			fontWeight: '700',
+			color: colors.textSecondary,
+		},
+		rollCostRolled: {
+			color: colors.text,
+		},
+		headerRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+		},
 		section: {
 			fontSize: font.sm,
 			fontWeight: '700',
@@ -227,101 +413,22 @@ function makeStyles(colors: ColorScheme) {
 			textTransform: 'uppercase',
 			letterSpacing: 0.3,
 		},
-		totalGrid: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: spacing.xs,
-		},
-		totalChip: {
-			minWidth: 40,
-			paddingHorizontal: 8,
-			paddingVertical: 6,
-			borderRadius: radius.sm,
-			backgroundColor: colors.background,
-			borderWidth: 1,
-			borderColor: colors.border,
-			alignItems: 'center',
-		},
-		totalChipPicked: {
-			borderWidth: 2,
-			borderColor: colors.brand,
-		},
-		totalChipText: {
+		counter: {
 			fontSize: font.base,
 			fontWeight: '700',
 			color: colors.text,
 		},
-		totalChipCost: {
-			fontSize: font.xs,
+		hint: {
+			fontSize: font.sm,
 			color: colors.textSecondary,
-			fontWeight: '600',
-		},
-		row: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: spacing.sm,
-		},
-		stepper: {
-			alignItems: 'center',
-			gap: spacing.xs,
-		},
-		swatch: {
-			width: 40,
-			height: 40,
-			borderRadius: radius.sm,
-			borderWidth: 1,
-			borderColor: '#2B2B2B',
-			alignItems: 'center',
-			justifyContent: 'center',
-		},
-		swatchText: {
-			fontSize: font.base,
-			fontWeight: '800',
-			color: colors.white,
-		},
-		stepperControls: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: spacing.xs,
-		},
-		stepBtn: {
-			width: 28,
-			height: 28,
-			borderRadius: radius.sm,
-			backgroundColor: colors.white,
-			borderWidth: 1,
-			borderColor: colors.border,
-			alignItems: 'center',
-			justifyContent: 'center',
-		},
-		stepBtnDisabled: {
-			opacity: 0.4,
-		},
-		stepBtnText: {
-			fontSize: font.base,
-			fontWeight: '700',
-			color: colors.text,
-		},
-		stepperValue: {
-			minWidth: 18,
-			textAlign: 'center',
-			fontSize: font.base,
-			fontWeight: '700',
-			color: colors.text,
+			fontStyle: 'italic',
 		},
 		actions: {
 			flexDirection: 'row',
 			gap: spacing.sm,
-			alignItems: 'center',
 		},
-		cancelBtn: {
-			paddingVertical: spacing.sm,
-			paddingHorizontal: spacing.md,
-		},
-		cancelText: {
-			fontSize: font.base,
-			color: colors.textSecondary,
-			fontWeight: '600',
+		action: {
+			flex: 1,
 		},
 		pressed: {
 			opacity: 0.85,

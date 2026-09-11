@@ -663,6 +663,12 @@ export type Phase =
 			resume: Phase
 			roller: number
 			roll: DiceRoll
+			// The roller's own production from `roll`, held out of their hand
+			// until they answer and paid out by both exits. It is not theirs
+			// to discard while deciding. Absent on a phase written before the
+			// field existed, and empty whenever the roll was a 7 (nothing
+			// distributes). See `.claude/specs/magician-window-ui.md`.
+			pendingGain?: ResourceHand
 	  }
 	// Special build phase (5-6 player games, `config.extraBuild`). Sits between
 	// a player's `end_turn` and the next player's `roll`. `queue[0]` is the
