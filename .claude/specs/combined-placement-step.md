@@ -17,6 +17,9 @@ settlement uncancellable the moment it landed.
    entered after the double seat's combined four-piece submission. It opens
    with nothing nominated (see `last-settlement-choice.md` §7); the combined
    flow does _not_ make the nomination implicit in tap order.
+    > **Reversed** by [inline-last-settlement](./inline-last-settlement.md): the
+    > nomination moved into the draft, defaults to the settlement drafted
+    > second, and the `pick_last` step is gone. The rest of this spec stands.
 2. **Undo is one tap back, not a wipe.** An `UndoButton` beside the placement
    Confirm pops the most recent piece: a chosen road returns to road-picking, a
    chosen settlement returns to settlement-picking. Repeatable through all four

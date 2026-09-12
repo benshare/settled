@@ -14,8 +14,8 @@ import type { GameState } from './types'
 // The pieces are the player's own colour, so the ring is drawn in the shared
 // piece stroke instead — a same-colour halo around a same-colour piece reads as
 // a glow rather than a target. The tapped one darkens while it waits on the
-// confirm bar; like `pick_last`, it keeps pulsing, since a frozen ring in a
-// field of pulsing ones reads as disabled.
+// confirm bar; like the placement nomination rings, it keeps pulsing, since a
+// frozen ring in a field of pulsing ones reads as disabled.
 export function LiquidateLayer({
 	state,
 	meIdx,

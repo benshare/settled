@@ -398,16 +398,11 @@ type GamesStore = {
 	) => Promise<ActionResult>
 
 	// A whole placement turn at once: one settlement+road pair, or two for the
-	// seat that places both of its settlements back-to-back.
+	// seat that places both of its settlements back-to-back — in the order it
+	// nominated, since the last pair is the one that pays starting resources.
 	placeStart: (
 		gameId: string,
 		placements: { vertex: string; edge: string }[]
-	) => Promise<ActionResult>
-	// Only the seat that places both starting settlements back-to-back is ever
-	// asked this; `vertex` is the one it nominates as placed last.
-	chooseLastSettlement: (
-		gameId: string,
-		vertex: string
 	) => Promise<ActionResult>
 
 	// `forcedTotal` is the admin-testing override; the edge function honours it
@@ -856,13 +851,6 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'place_start', game_id: gameId, placements },
 			"Couldn't place"
-		)
-	},
-
-	async chooseLastSettlement(gameId, vertex) {
-		return callGameService(
-			{ action: 'choose_last_settlement', game_id: gameId, vertex },
-			"Couldn't choose settlement"
 		)
 	},
 

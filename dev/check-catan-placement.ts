@@ -20,8 +20,7 @@ import {
 	placementPairsExpected,
 	isValidSettlementVertex,
 	nextPlacementTurn,
-	ownSettlementVertices,
-	swapPlacementPairs,
+	orderedPlacementPairs,
 	placementTurnPlayer,
 	startingResourcesForVertex,
 	targetSettlement,
@@ -313,7 +312,7 @@ function testNextPlacementTurnBoundaries() {
 }
 
 // Only the seat that places both settlements back-to-back — the last of round
-// 1, first of round 2 — gets the `pick_last` step.
+// 1, first of round 2 — drafts two pairs and nominates one of them.
 function testDoublePlacementSeat() {
 	for (const n of [2, 3, 4, 5, 6]) {
 		for (let i = 0; i < n; i++) {
@@ -328,8 +327,47 @@ function testDoublePlacementSeat() {
 	}
 }
 
-function testOwnSettlementVertices() {
-	let s = initialGameState('standard', 3, {
+// Pair order is the nomination: the nominated settlement's pair is submitted
+// last, which is the one the server stamps round 2 and pays out on.
+function testOrderedPlacementPairs() {
+	const draft = [
+		{ vertex: 'A' as Vertex, edge: 'a' as Edge },
+		{ vertex: 'B' as Vertex, edge: 'b' as Edge },
+	]
+
+	const asDrafted = orderedPlacementPairs(draft, 'B' as Vertex)
+	equal(asDrafted[0].vertex, 'A', 'nominating the second-drafted keeps order')
+	equal(asDrafted[1].vertex, 'B', 'nominated pair is last')
+
+	const swapped = orderedPlacementPairs(draft, 'A' as Vertex)
+	equal(swapped[0].vertex, 'B', 'nominating the first swaps the pairs')
+	equal(swapped[1].vertex, 'A', 'nominated pair is last')
+	equal(swapped[0].edge, 'b', 'each road travels with its settlement')
+	equal(swapped[1].edge, 'a', 'each road travels with its settlement')
+	equal(draft[0].vertex, 'A', 'input draft not mutated')
+
+	// No nomination (every seat but the back-to-back one) — drafted order.
+	equal(
+		orderedPlacementPairs(draft, null)[1].vertex,
+		'B',
+		'no nomination leaves the drafted order'
+	)
+	// A single pair has nothing to reorder, and a half-drafted pair is not
+	// submittable — the caller compares the length against what it owes.
+	equal(orderedPlacementPairs([draft[0]], null).length, 1, 'one pair')
+	equal(
+		orderedPlacementPairs([{ vertex: 'A' as Vertex }], null).length,
+		0,
+		'a settlement with no road is not a pair'
+	)
+}
+
+// Reordering the pairs can never turn a draft the client accepted into one the
+// server rejects — the property `orderedPlacementPairs` relies on. Checked
+// against a real board for a plain seat and a `youth`-cursed one, whose rule
+// is the order-sensitive-looking case (it caps distinct resources touched).
+function testReorderStaysValid() {
+	const s0 = initialGameState('standard', 3, {
 		bonuses: false,
 		bonusSets: ['1'],
 		bannedCombos: true,
@@ -349,114 +387,81 @@ function testOwnSettlementVertices() {
 			moreThanSeven: false,
 		},
 	})
+
+	// Two legal pairs: settlements far enough apart, each road on its own.
 	const blocked = new Set<Vertex>([
 		'3F',
 		...(neighborVertices['3F'] as readonly Vertex[]),
 	])
 	const second = VERTICES.find((v) => !blocked.has(v))
-	assert(second, 'need a non-adjacent vertex')
-	const other = VERTICES.find(
-		(v) =>
-			!blocked.has(v) &&
-			v !== second &&
-			!(neighborVertices[second] as readonly Vertex[]).includes(v)
-	)
-	assert(other, 'need a third non-adjacent vertex')
-
-	s = placeSettlement(s, '3F', 2)
-	s = placeSettlement(s, second, 2)
-	s = placeSettlement(s, other, 0)
-
-	assertVerticesEqual(
-		ownSettlementVertices(s, 2),
-		['3F', second],
-		'seat 2 owns both of its settlements'
-	)
-	assertVerticesEqual(
-		ownSettlementVertices(s, 0),
-		[other],
-		'seat 0 owns only its own'
-	)
-	assertVerticesEqual(ownSettlementVertices(s, 1), [], 'seat 1 owns none')
-
-	// Ghosts (haunt) sit on the board but are not the player's placements.
-	s = {
-		...s,
-		vertices: {
-			...s.vertices,
-			[other]: {
-				occupied: true,
-				player: 0,
-				building: 'ghost',
-				placedTurn: 0,
-			},
-		},
-	}
-	assertVerticesEqual(
-		ownSettlementVertices(s, 0),
-		[],
-		'ghosts are not own settlements'
-	)
-}
-
-// The `pick_last` log rewrite: the two (settlement, road) pairs trade
-// payloads, everything else — including other seats' events — stays put.
-function testSwapPlacementPairs() {
-	const log = [
-		{
-			kind: 'settlement_placed',
-			player: 0,
-			vertex: 'A0',
-			round: 1,
-			at: '1',
-		},
-		{ kind: 'road_placed', player: 0, edge: 'a0', round: 1, at: '2' },
-		{
-			kind: 'settlement_placed',
-			player: 2,
-			vertex: 'X',
-			round: 1,
-			at: '3',
-		},
-		{ kind: 'road_placed', player: 2, edge: 'x', round: 1, at: '4' },
-		{
-			kind: 'settlement_placed',
-			player: 2,
-			vertex: 'Y',
-			round: 2,
-			at: '5',
-		},
-		{ kind: 'road_placed', player: 2, edge: 'y', round: 2, at: '6' },
+	assert(second, 'need a far vertex')
+	const pairs = [
+		{ vertex: '3F' as Vertex, edge: adjacentEdges['3F'][0] as Edge },
+		{ vertex: second, edge: adjacentEdges[second][0] as Edge },
 	]
-	const out = swapPlacementPairs(log, 2) as typeof log
 
-	equal(out.length, log.length, 'length unchanged')
-	equal(out[0].vertex, 'A0', "another seat's settlement untouched")
-	equal(out[1].edge, 'a0', "another seat's road untouched")
-	equal(out[2].vertex, 'Y', 'round-1 slot now holds the round-2 settlement')
-	equal(out[3].edge, 'y', 'its road came with it')
-	equal(out[4].vertex, 'X', 'round-2 slot now holds the round-1 settlement')
-	equal(out[5].edge, 'x', 'its road came with it')
-	// Rounds and timestamps describe the slot, not the piece, so they stay.
-	equal(out[2].round, 1, 'round stays with the slot')
-	equal(out[4].round, 2, 'round stays with the slot')
-	equal(out.map((e) => e.at).join(''), '123456', 'timestamps stay monotonic')
-	// Input is not mutated.
-	equal(log[2].vertex, 'X', 'input log untouched')
+	// The server's loop: each pair validated against the previous applied.
+	const validatesInOrder = (
+		state: GameState,
+		seat: number,
+		ordered: { vertex: Vertex; edge: Edge }[]
+	) => {
+		let working = state
+		for (const pair of ordered) {
+			if (!isValidSettlementVertex(working, pair.vertex, seat))
+				return false
+			working = applyPlacementDraft(working, seat, [
+				{ vertex: pair.vertex },
+			])
+			if (!isValidRoadEdge(working, seat, pair.edge)) return false
+			working = applyPlacementDraft(working, seat, [pair])
+		}
+		return true
+	}
 
-	// Swapping twice is the identity, so nominating the round-2 settlement
-	// (which the caller skips) would have been a no-op either way.
-	const back = swapPlacementPairs(out, 2) as typeof log
-	equal(
-		back.map((e) => e.vertex ?? e.edge).join(','),
-		'A0,a0,X,x,Y,y',
-		'swap is an involution'
-	)
+	const cursed: GameState = {
+		...s0,
+		players: s0.players.map((p, i) =>
+			i === 2 ? { ...p, curse: 'youth' as const } : p
+		),
+	}
 
-	// A log missing a pair is returned as-is rather than half-rewritten.
-	const partial = [log[0], log[1], log[2], log[3]]
-	const untouched = swapPlacementPairs(partial, 0) as typeof log
-	equal(untouched[0].vertex, 'A0', 'incomplete pairs left alone')
+	for (const [label, state] of [
+		['plain seat', s0],
+		['youth-cursed seat', cursed],
+	] as [string, GameState][]) {
+		assert(
+			validatesInOrder(state, 2, pairs),
+			`${label}: draft is legal as tapped`
+		)
+		assert(
+			validatesInOrder(state, 2, [pairs[1], pairs[0]]),
+			`${label}: and still legal with the pairs swapped`
+		)
+	}
+
+	// The property itself, over every non-adjacent settlement pair on the
+	// board: the two orders always agree. Under `youth` plenty of these are
+	// illegal (two settlements can touch all five resources), so the check is
+	// not just re-testing legal drafts.
+	let legal = 0
+	let illegal = 0
+	for (const a of VERTICES) {
+		for (const b of VERTICES) {
+			if (a === b) continue
+			if ((neighborVertices[a] as readonly Vertex[]).includes(b)) continue
+			const two = [
+				{ vertex: a, edge: adjacentEdges[a][0] as Edge },
+				{ vertex: b, edge: adjacentEdges[b][0] as Edge },
+			]
+			const asIs = validatesInOrder(cursed, 2, two)
+			const flipped = validatesInOrder(cursed, 2, [two[1], two[0]])
+			equal(asIs, flipped, `youth: ${a}+${b} agrees in both orders`)
+			if (asIs) legal += 1
+			else illegal += 1
+		}
+	}
+	assert(legal > 0 && illegal > 0, 'both outcomes exercised')
 }
 
 function testValidSettlementExcludesAllNeighbors() {
@@ -592,8 +597,8 @@ const tests: [string, () => void][] = [
 	['starting resources — interior', testStartingResourcesInterior],
 	['nextPlacementTurn boundaries', testNextPlacementTurnBoundaries],
 	['double-placement seat', testDoublePlacementSeat],
-	['own settlement vertices', testOwnSettlementVertices],
-	['pick_last log swap', testSwapPlacementPairs],
+	['nominated pair ordering', testOrderedPlacementPairs],
+	['reordered pairs stay valid', testReorderStaysValid],
 	['local draft simulation', testApplyPlacementDraft],
 	['pairs expected per turn', testPlacementPairsExpected],
 ]

@@ -44,8 +44,10 @@ export type BoardInteraction = {
 	// for the seat that places both back-to-back. Nothing here has been sent.
 	draft: readonly PlacementDraftEntry[]
 	pairsExpected: 1 | 2
-	// The settlement nominated on the `pick_last` step.
-	pickLast: Vertex | null
+	// Whether this seat picks which settlement counts as its second, and which
+	// one it currently has nominated.
+	canNominate: boolean
+	nominated: Vertex | null
 	onSelect: (s: PlacementSelection) => void
 }
 
@@ -355,7 +357,8 @@ function BoardSvg({
 						vertexPositions={vertexPositions}
 						draft={interaction.draft}
 						pairsExpected={interaction.pairsExpected}
-						pickLast={interaction.pickLast}
+						canNominate={interaction.canNominate}
+						nominated={interaction.nominated}
 						onSelect={interaction.onSelect}
 					/>
 				)}

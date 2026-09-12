@@ -29,6 +29,9 @@ type Ctx = {
 	// The one non-uniform input: a placement turn is drafted locally, so only
 	// the acting client knows which piece is owed (see `placementLine`).
 	placementStage: PlacementStage
+	// Whether the viewer is the seat that also nominates which of its two
+	// settlements counts as the second.
+	canNominate: boolean
 }
 
 // Roll-family events never populate the banner: an ordinary roll is what the
@@ -134,11 +137,11 @@ function placementLine(ctx: Ctx): string | null {
 	const phase = ctx.gameState.phase
 	if (phase.kind !== 'initial_placement') return null
 	const turn = ctx.gameState.currentTurn ?? 0
-	if (phase.step === 'pick_last')
-		return `${isPhrase(turn, ctx)} choosing a starting settlement`
 	const whose = turn === ctx.meIdx ? 'Your' : `${nameOf(turn, ctx)}'s`
 	if (ctx.placementStage === 'ready')
-		return `${whose} placements are ready to confirm`
+		return ctx.canNominate
+			? 'Tap the settlement you placed second, then confirm'
+			: `${whose} placements are ready to confirm`
 	const piece = ctx.placementStage === 'road' ? 'road' : 'settlement'
 	return `${whose} turn to place ${piece}`
 }

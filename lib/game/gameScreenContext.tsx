@@ -43,6 +43,7 @@ import { canBuyDevCard } from '@/lib/catan/dev'
 import type { DevPlayPayload } from '@/lib/catan/DevCardHand'
 import { useGame } from '@/lib/catan/gameContext'
 import {
+	orderedPlacementPairs,
 	placementPairsExpected,
 	type PlacementDraftEntry,
 } from '@/lib/catan/placement'
@@ -84,11 +85,10 @@ const STEAL_DIFF_GRACE_MS = 5000
 // new, replaying the whole game's animations back-to-back on load.
 type EventCursor = { gameId: string; count: number } | null
 
-// What the placement board is waiting on. The first three are stages of one
-// locally-drafted turn ('ready' = every piece chosen, awaiting confirm); the
-// last is the server's own step. `null` outside initial placement.
-export type PlacementStage =
-	'settlement' | 'road' | 'ready' | 'pick_last' | null
+// What the placement board is waiting on — stages of one locally-drafted turn
+// ('ready' = every piece chosen, awaiting confirm). All local: `phase.step`
+// stays 'settlement' for the whole turn. `null` outside initial placement.
+export type PlacementStage = 'settlement' | 'road' | 'ready' | null
 
 // The one start-of-game bonus affordance this seat owes, or `waiting` when the
 // only thing left is somebody else's. `null` outside post_placement, or once
@@ -153,7 +153,6 @@ function useGameScreenState(gameId: string) {
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const pickBonus = useGamesStore((s) => s.pickBonus)
 	const placeStart = useGamesStore((s) => s.placeStart)
-	const chooseLastSettlement = useGamesStore((s) => s.chooseLastSettlement)
 	const roll = useGamesStore((s) => s.roll)
 	const confirmRoll = useGamesStore((s) => s.confirmRoll)
 	const rerollDice = useGamesStore((s) => s.rerollDice)
@@ -198,8 +197,8 @@ function useGameScreenState(gameId: string) {
 	// The placement turn being drafted locally: a settlement, its road, and a
 	// second pair for the seat that places both back-to-back. Nothing is sent
 	// until the player confirms, which is what makes taking a piece back free.
-	// `pickLast` is the separate one-tap nomination of the `pick_last` step,
-	// which starts empty — the confirm is disabled until the player answers.
+	// `pickLast` overrides which of those two settlements counts as the second
+	// — null means "the one I drafted second", which is the default answer.
 	const [placementDraft, setPlacementDraft] = useState<PlacementDraftEntry[]>(
 		[]
 	)
@@ -317,10 +316,7 @@ function useGameScreenState(gameId: string) {
 	const isMySpecialBuild =
 		sbActor !== null && sbActor === meIdx && game?.status === 'active'
 
-	// Reset selection when the turn or phase step changes under us. The
-	// `pick_last` step opens with **nothing** nominated: the two settlements
-	// went down in one submitted turn, so seeding either one would be the app
-	// answering the question it is asking.
+	// Reset the draft when the turn or round changes under us.
 	const placementKey =
 		gameState?.phase.kind === 'initial_placement'
 			? `${gameState?.currentTurn}-${gameState.phase.round}-${gameState.phase.step}`
@@ -346,19 +342,28 @@ function useGameScreenState(gameId: string) {
 	const placementStage: PlacementStage =
 		gameState?.phase.kind !== 'initial_placement'
 			? null
-			: gameState.phase.step === 'pick_last'
-				? 'pick_last'
-				: openPair && openPair.edge === undefined
-					? 'road'
-					: placementDraft.length < placementPairs
-						? 'settlement'
-						: 'ready'
-	const canUndoPlacement = isMyPlacementTurn && placementDraft.length > 0
-	const canConfirmPlacement =
+			: openPair && openPair.edge === undefined
+				? 'road'
+				: placementDraft.length < placementPairs
+					? 'settlement'
+					: 'ready'
+	// The back-to-back seat also says which settlement counts as its second —
+	// the one that pays starting resources. An aristocrat collects on both, so
+	// it has nothing to choose. See `.claude/specs/inline-last-settlement.md`.
+	const canNominate =
 		isMyPlacementTurn &&
-		(placementStage === 'pick_last'
-			? !!pickLast
-			: placementStage === 'ready')
+		placementPairs === 2 &&
+		gameState?.players[meIdx]?.bonus !== 'aristocrat'
+	// Seeded to the settlement drafted second — they did place it second, so
+	// that is the honest default, and the rings only exist to change it. An
+	// override for a vertex that has since been undone falls back on its own.
+	const nominatedVertex = canNominate
+		? (placementDraft.find((e) => e.vertex === pickLast)?.vertex ??
+			placementDraft[1]?.vertex ??
+			null)
+		: null
+	const canUndoPlacement = isMyPlacementTurn && placementDraft.length > 0
+	const canConfirmPlacement = isMyPlacementTurn && placementStage === 'ready'
 
 	// Clear build tool + trade panel when we can no longer build — the turn
 	// flips away / we leave main, or a special-build slot passes to someone
@@ -972,11 +977,11 @@ function useGameScreenState(gameId: string) {
 	}
 
 	// A board tap during placement: it appends to the locally-drafted turn, or
-	// — on `pick_last`, where the pieces are already down — nominates one of
-	// the tapper's own two settlements.
+	// — once every piece is drafted, where the only tappable things are the
+	// seat's own two settlements — nominates the one placed second.
 	function onPlacementSelect(s: PlacementSelection) {
-		if (placementStage === 'pick_last') {
-			if (s.kind === 'settlement') setPickLast(s.vertex)
+		if (placementStage === 'ready') {
+			if (canNominate && s.kind === 'settlement') setPickLast(s.vertex)
 			return
 		}
 		setPlacementDraft((draft) => {
@@ -1002,22 +1007,15 @@ function useGameScreenState(gameId: string) {
 
 	async function onConfirm() {
 		if (!game || gameState?.phase.kind !== 'initial_placement') return
-		const pairs = placementDraft.flatMap((e) =>
-			e.edge === undefined ? [] : [{ vertex: e.vertex, edge: e.edge }]
-		)
-
-		// Both guards are the condition the confirm button is disabled on, so a
-		// stray call can't half-submit a turn.
-		let submit: null | (() => Promise<{ error: string | null }>) = null
-		if (gameState.phase.step === 'pick_last') {
-			if (pickLast) submit = () => chooseLastSettlement(game.id, pickLast)
-		} else if (pairs.length === placementPairs) {
-			submit = () => placeStart(game.id, pairs)
-		}
-		if (!submit) return
+		// The nominated pair goes last, which is how the server is told: it
+		// stamps the last pair round 2 and pays its starting resources.
+		const pairs = orderedPlacementPairs(placementDraft, nominatedVertex)
+		// The same condition the confirm button is disabled on, so a stray call
+		// can't half-submit a turn.
+		if (pairs.length !== placementPairs) return
 
 		setSubmitting(true)
-		const res = await submit()
+		const res = await placeStart(game.id, pairs)
 		setSubmitting(false)
 		if (res.error) {
 			notify('Placement failed', res.error)
@@ -1595,7 +1593,8 @@ function useGameScreenState(gameId: string) {
 
 		// --- Local UI state --------------------------------------------
 		submitting,
-		pickLast,
+		canNominate,
+		nominatedVertex,
 		placementDraft,
 		placementPairs,
 		placementStage,

@@ -361,7 +361,6 @@ function PrimaryAction() {
 		placementStage,
 		placementPairs,
 		placementDraft,
-		pickLast,
 		onRoll,
 		onConfirmRoll,
 		onRerollDice,
@@ -393,8 +392,7 @@ function PrimaryAction() {
 					{confirmLabel(
 						placementStage,
 						placementPairs,
-						placementDraft.length,
-						!!pickLast
+						placementDraft.length
 					)}
 				</Button>
 			</View>
@@ -578,8 +576,7 @@ function RollChoice({
 function confirmLabel(
 	stage: PlacementStage,
 	pairs: 1 | 2,
-	drafted: number,
-	hasPickLast: boolean
+	drafted: number
 ): string {
 	switch (stage) {
 		case 'settlement':
@@ -588,8 +585,6 @@ function confirmLabel(
 			return drafted === 2 ? 'Second road' : 'Place road'
 		case 'ready':
 			return pairs === 2 ? 'Confirm both' : 'Confirm'
-		case 'pick_last':
-			return hasPickLast ? 'Confirm' : 'Tap last settlement'
 		default:
 			return 'Select'
 	}
