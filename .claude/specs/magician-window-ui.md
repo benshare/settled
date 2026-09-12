@@ -10,9 +10,9 @@ Two things, one behavioral and one visual.
    spent on the discard — the phantom number is paid for with the cards they
    held before rolling.
 2. **The window asks one question instead of two.** It used to be a grid of
-   eleven numbers with a price tag, then a stepper bar. It is now a row of roll
-   cards opening on the number that actually came up, each showing what that
-   number pays _this player_, over the hand itself with the 7-discard
+   eleven numbers with a price tag, then a stepper bar. It is now an arc of
+   roll cards opening on the number that actually came up, each showing what
+   that number pays _this player_, over the hand itself with the 7-discard
    tap-to-pick gesture.
 
 ## Deferred gain
@@ -42,13 +42,13 @@ Consequences worth knowing:
 
 ## Reach
 
-A target is only offered when its price is payable, so the row runs
+A target is only offered when its price is payable, so the arc runs
 `[max(2, roll − reach), min(12, roll + reach)]` where `reach = handSize −
 discardPlus` — the two ends truncate independently. `magicTargetRange` in
 `bonus.ts` is that rule; it is a UI convenience rather than a new server check,
 since the server already refuses an unaffordable discard.
 
-With `reach ≤ 0` the row is the rolled card alone and the only move is keeping
+With `reach ≤ 0` the arc is the rolled card alone and the only move is keeping
 the roll.
 
 ## Layout
@@ -57,14 +57,16 @@ the roll.
 the choice is "what does that number pay me", which is a question about the
 board.
 
-- **The row.** One small card per number in reach, in numeric order, flat and
-  separated — deliberately not the hand's overlapping fan, since these are
-  options being compared and each has to be readable in full. Each card is the
-  number over the cards that number would pay this player, and under that its
-  price. The rolled number's card is labeled as the roll rather than priced;
-  tapping it clears a selection (the same outcome as **Keep roll**). The row
-  scrolls horizontally when it outruns the screen and opens scrolled to the
-  roll, since eleven cards never fit a phone.
+- **The arc.** One small card per number in reach, in numeric order, tilted and
+  dipped away from the rolled number like the hand's `CardFan` — but **never
+  overlapping**, since these are options being compared and each has to be
+  readable in full. The gap between cards is sized to stay clear of the corner
+  a tilted card swings toward its neighbour, so the tilt stays shallow by
+  construction. Each card is the number over the cards that number would pay
+  this player, and under that its price. The rolled number's card is labeled as
+  the roll rather than priced; tapping it clears a selection (the same outcome
+  as **Keep roll**). The arc scrolls horizontally when it outruns the screen
+  and opens scrolled to the roll, since eleven cards never fit a phone.
 - **The hand.** The 7-discard composer verbatim (`DiscardComposer`, factored
   out of `DiscardPanel` for this): the pile above, the hand below, cards move
   between them on tap. It is inert until a number is picked, because until then
@@ -76,7 +78,7 @@ board.
 
 - `lib/catan/types.ts` — `pendingGain` on the phase.
 - `lib/catan/bonus.ts` — `magicTargetRange`.
-- `lib/catan/MagicianPickOverlay.tsx` — the redesign, plus the roll-card row.
+- `lib/catan/MagicianPickOverlay.tsx` — the redesign, plus the roll-card arc.
 - `lib/catan/DiscardPanel.tsx` — `DiscardComposer` extracted and reused.
 - `lib/game/BoardArea.tsx` — per-number gains (`distributeResources` over the
   reach) and the pending gain, passed in.

@@ -4,7 +4,7 @@
 // gains from it.
 //
 // The roll's own cards are not in hand yet (`pendingGain` on the phase): they
-// land when this window is answered, either way. That is what makes the row of
+// land when this window is answered, either way. That is what makes the arc of
 // numbers honest — every card in it is production the player does not have yet
 // — and what makes the discard a real choice, since it can only be paid out of
 // the hand they rolled with. See `.claude/specs/magician-window-ui.md`.
@@ -30,10 +30,12 @@ import { handSize } from './robber'
 import { emptyHand } from './trade'
 import type { GameSize, ResourceHand } from './types'
 
-// Roll-card geometry. Deliberately not the hand's fan: these are options being
-// compared, so they sit flat and apart rather than overlapping, and every one
-// is read in full.
-const CARD = { w: 62, h: 104, gap: spacing.xs } as const
+// Roll-card geometry. A gentler version of the hand's fan: the cards tilt and
+// dip away from the center the same way, but they never overlap — these are
+// options being compared, so each has to be readable in full. The gap is what
+// buys that: at `tilt` per step it stays wider than the corner a rotated card
+// swings toward its neighbour.
+const CARD = { w: 62, h: 104, gap: 10, tilt: 2, dip: 4 } as const
 
 export function MagicianPickOverlay({
 	hand,
@@ -100,12 +102,10 @@ export function MagicianPickOverlay({
 			contentStyle={styles.sheet}
 		>
 			<Text style={styles.subtitle}>
-				Discard 1 card plus 1 per step from {actualTotal} to also
-				collect that number — only you gain. Your roll&apos;s own cards
-				land either way.
+				Discard N + 1 cards to receive cards from a roll N away.
 			</Text>
 
-			<RollRow
+			<RollArc
 				totals={totals}
 				actualTotal={actualTotal}
 				target={target}
@@ -174,10 +174,11 @@ export function MagicianPickOverlay({
 	)
 }
 
-// One card per number in reach, in order. Eleven never fit a phone, so the row
-// scrolls — and opens scrolled to the rolled card, which is the thing every
-// other number is being compared against.
-function RollRow({
+// One card per number in reach, in order, bowed into a shallow arc around the
+// rolled number. Eleven never fit a phone, so it scrolls — and opens scrolled
+// to the rolled card, which is the thing every other number is being compared
+// against.
+function RollArc({
 	totals,
 	actualTotal,
 	target,
@@ -225,9 +226,23 @@ function RollRow({
 				contentWidth < viewport && styles.rowCentered,
 			]}
 		>
-			{totals.map((t) => {
+			{totals.map((t, i) => {
+				const offset = i - center
 				return (
-					<View key={t} style={styles.slot}>
+					<View
+						key={t}
+						style={[
+							styles.slot,
+							{
+								transform: [
+									{
+										translateY: Math.abs(offset) * CARD.dip,
+									},
+									{ rotate: `${offset * CARD.tilt}deg` },
+								],
+							},
+						]}
+					>
 						<RollCard
 							total={t}
 							gain={gainFor(t)}
@@ -312,7 +327,10 @@ function makeStyles(colors: ColorScheme) {
 			alignItems: 'flex-start',
 			gap: CARD.gap,
 			paddingHorizontal: spacing.sm,
-			paddingVertical: spacing.xs,
+			// Room for the outermost cards' dip and the corners their tilt
+			// lifts above the card box.
+			paddingTop: spacing.sm,
+			paddingBottom: spacing.lg,
 		},
 		rowCentered: {
 			flexGrow: 1,
