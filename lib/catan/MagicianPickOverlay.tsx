@@ -4,10 +4,10 @@
 // gains from it.
 //
 // The roll's own cards are not in hand yet (`pendingGain` on the phase): they
-// land when this window is answered, either way. That is what makes the arc
-// honest — every card in it is production the player does not have yet — and
-// what makes the discard a real choice, since it can only be paid out of the
-// hand they rolled with. See `.claude/specs/magician-window-ui.md`.
+// land when this window is answered, either way. That is what makes the row of
+// numbers honest — every card in it is production the player does not have yet
+// — and what makes the discard a real choice, since it can only be paid out of
+// the hand they rolled with. See `.claude/specs/magician-window-ui.md`.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -30,16 +30,16 @@ import { handSize } from './robber'
 import { emptyHand } from './trade'
 import type { GameSize, ResourceHand } from './types'
 
-// Fan geometry for the roll arc — the hand's `CardFan` proportions, shrunk and
-// splayed a little wider, since these cards carry a number and a payout rather
-// than one word.
-const ARC = { w: 62, h: 104, overlap: 10, step: 4, lift: 3 } as const
+// Roll-card geometry. Deliberately not the hand's fan: these are options being
+// compared, so they sit flat and apart rather than overlapping, and every one
+// is read in full.
+const CARD = { w: 62, h: 104, gap: spacing.xs } as const
 
 export function MagicianPickOverlay({
 	hand,
 	actualTotal,
 	// What the rolled number pays this player — withheld from `hand` until
-	// this window closes, so the arc's center card is a promise like the rest.
+	// this window closes, so its card is a promise like every other one.
 	rolledGain,
 	// Per candidate number, what it would pay this player. Computed against the
 	// live board (robber included), so it matches what the cast will grant.
@@ -105,7 +105,7 @@ export function MagicianPickOverlay({
 				land either way.
 			</Text>
 
-			<RollArc
+			<RollRow
 				totals={totals}
 				actualTotal={actualTotal}
 				target={target}
@@ -174,11 +174,10 @@ export function MagicianPickOverlay({
 	)
 }
 
-// The arc: one card per number in reach, in order, fanned around the number
-// that actually came up. Eleven cards never fit a phone, so it scrolls — and
-// opens scrolled to the rolled card, which is the arc's apex and the thing the
-// player is comparing everything against.
-function RollArc({
+// One card per number in reach, in order. Eleven never fit a phone, so the row
+// scrolls — and opens scrolled to the rolled card, which is the thing every
+// other number is being compared against.
+function RollRow({
 	totals,
 	actualTotal,
 	target,
@@ -198,9 +197,9 @@ function RollArc({
 	const scrollRef = useRef<ScrollView>(null)
 	const [viewport, setViewport] = useState(0)
 	const center = totals.indexOf(actualTotal)
-	const step = ARC.w - ARC.overlap
-	const contentWidth = totals.length * step + ARC.overlap
-	const centerX = spacing.sm + center * step + ARC.w / 2
+	const step = CARD.w + CARD.gap
+	const contentWidth = 2 * spacing.sm + totals.length * step - CARD.gap
+	const centerX = spacing.sm + center * step + CARD.w / 2
 
 	useEffect(() => {
 		if (viewport <= 0) return
@@ -222,33 +221,13 @@ function RollArc({
 				setViewport(e.nativeEvent.layout.width)
 			}
 			contentContainerStyle={[
-				styles.arc,
-				contentWidth < viewport && styles.arcCentered,
+				styles.row,
+				contentWidth < viewport && styles.rowCentered,
 			]}
 		>
-			{totals.map((t, i) => {
-				const offset = i - center
+			{totals.map((t) => {
 				return (
-					<View
-						key={t}
-						style={{
-							width: ARC.w,
-							height: ARC.h,
-							marginLeft: i === 0 ? 0 : -ARC.overlap,
-							transform: [
-								{ translateY: Math.abs(offset) * ARC.lift },
-								{ rotate: `${offset * ARC.step}deg` },
-							],
-							// The rolled card and the picked one read as one
-							// piece each, over their neighbours on both sides.
-							zIndex:
-								t === target
-									? totals.length + 1
-									: t === actualTotal
-										? totals.length
-										: i,
-						}}
-					>
+					<View key={t} style={styles.slot}>
 						<RollCard
 							total={t}
 							gain={gainFor(t)}
@@ -328,18 +307,20 @@ function makeStyles(colors: ColorScheme) {
 			color: colors.textSecondary,
 			lineHeight: 20,
 		},
-		arc: {
+		row: {
 			flexDirection: 'row',
 			alignItems: 'flex-start',
+			gap: CARD.gap,
 			paddingHorizontal: spacing.sm,
-			// Room for the outermost cards' lift and rotation, which reach
-			// past the card box on both edges.
-			paddingTop: spacing.xs,
-			paddingBottom: spacing.md,
+			paddingVertical: spacing.xs,
 		},
-		arcCentered: {
+		rowCentered: {
 			flexGrow: 1,
 			justifyContent: 'center',
+		},
+		slot: {
+			width: CARD.w,
+			height: CARD.h,
 		},
 		rollCard: {
 			flex: 1,
