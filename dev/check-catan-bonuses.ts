@@ -72,6 +72,7 @@ import {
 	magicDiscardCount,
 	magicianCanCast,
 	magicTargetRange,
+	canCastAnyMagicTarget,
 	plutocratGain,
 	resolveHauntGhosts,
 	smithCostOf,
@@ -1671,12 +1672,61 @@ function testMagicianBySize() {
 			round: 6,
 			players: base.players.map((p, i) =>
 				i === 0
-					? { ...p, bonus: 'magician' as const, lastMagicRound: 4 }
+					? {
+							...p,
+							bonus: 'magician' as const,
+							lastMagicRound: 4,
+							resources: { ...emptyHand(), wood: 2 },
+						}
 					: p
 			),
 		}
 		assert(magicianCanCast(cast, 0), `${count}p: no cooldown`)
 		assert(!magicianCanCast(cast, 1), `${count}p: non-magician never casts`)
+	}
+}
+
+// A hand too small to buy even a neighbouring number opens no window at all:
+// `magicianCanCast` is the one gate, so the sheet never appears with nothing
+// on offer.
+function testMagicianEmptyHandedOpensNothing() {
+	const base = initialGameState('standard', 4, baseState().config)
+	const withHand = (n: number): GameState => ({
+		...base,
+		players: base.players.map((p, i) =>
+			i === 0
+				? {
+						...p,
+						bonus: 'magician' as const,
+						resources: { ...emptyHand(), sheep: n },
+					}
+				: p
+		),
+	})
+	for (const size of GAME_SIZES) {
+		assert(
+			!canCastAnyMagicTarget(emptyHand(), size),
+			`${size}: an empty hand buys nothing`
+		)
+		assert(
+			!canCastAnyMagicTarget({ ...emptyHand(), ore: 1 }, size),
+			`${size}: one card is under the base price`
+		)
+		assert(
+			canCastAnyMagicTarget({ ...emptyHand(), ore: 2 }, size),
+			`${size}: two cards buy a neighbour`
+		)
+	}
+	assert(!magicianCanCast(withHand(0), 0), 'empty hand: no window')
+	assert(!magicianCanCast(withHand(1), 0), 'one card: no window')
+	assert(magicianCanCast(withHand(2), 0), 'two cards: window opens')
+	// And the window's own reach agrees: two cards reach exactly the
+	// neighbours, one card reaches nothing.
+	for (const roll of [2, 7, 12]) {
+		const two = magicTargetRange(roll, 2, 'standard')
+		assert(two.lo < two.hi, `${roll}: two cards offer something`)
+		const one = magicTargetRange(roll, 1, 'standard')
+		equal(one.lo, one.hi, `${roll}: one card offers nothing`)
 	}
 }
 
@@ -1782,6 +1832,10 @@ function main() {
 		['set3: investor by size', testInvestorBySize],
 		['set3: magician', testMagician],
 		['set3: magician target range', testMagicTargetRange],
+		[
+			'set3: magician with nothing on offer',
+			testMagicianEmptyHandedOpensNothing,
+		],
 		['set3: magician by size', testMagicianBySize],
 		['set3: haunt ghosts', testHaunt],
 		['deal: no duplicate offers', testDealNoDuplicates],

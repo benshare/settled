@@ -9,15 +9,20 @@
 // — and what makes the discard a real choice, since it can only be paid out of
 // the hand they rolled with. See `.claude/specs/magician-window-ui.md`.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useState } from 'react'
 import {
 	Pressable,
-	ScrollView,
 	StyleSheet,
 	Text,
 	View,
 	type LayoutChangeEvent,
 } from 'react-native'
+import Animated, {
+	useAnimatedRef,
+	useAnimatedStyle,
+	useScrollOffset,
+	type SharedValue,
+} from 'react-native-reanimated'
 import { MinimizableModal } from '../modules/MinimizableModal'
 import { Button } from '../modules/Button'
 import { ColorScheme, font, radius, spacing } from '../theme'
@@ -30,12 +35,13 @@ import { handSize } from './robber'
 import { emptyHand } from './trade'
 import type { GameSize, ResourceHand } from './types'
 
-// Roll-card geometry. A gentler version of the hand's fan: the cards tilt and
-// dip away from the center the same way, but they never overlap — these are
-// options being compared, so each has to be readable in full. The gap is what
-// buys that: at `tilt` per step it stays wider than the corner a rotated card
-// swings toward its neighbour.
-const CARD = { w: 62, h: 104, gap: 10, tilt: 2, dip: 4 } as const
+// Roll-card geometry. The cards ride a circle of radius `radius` whose top is
+// the middle of the visible strip — a gentler version of the hand's fan, and
+// unlike it they never overlap, since these are options being compared and each
+// has to be readable in full. The gap buys that: at this radius a card's corner
+// swings less than `gap` toward its neighbour (~6px of clearance at the worst
+// scroll position), so widening the arc means widening the gap with it.
+const CARD = { w: 62, h: 104, gap: 10, radius: 1000 } as const
 
 export function MagicianPickOverlay({
 	hand,
@@ -117,6 +123,9 @@ export function MagicianPickOverlay({
 				styles={styles}
 			/>
 
+			{/* A window only opens when the hand can buy something
+			    (`magicianCanCast`), so the first branch is for a phase written
+			    before that gate existed. */}
 			{totals.length === 1 ? (
 				<Text style={styles.hint}>
 					Not enough cards in hand to conjure another number.
@@ -174,10 +183,14 @@ export function MagicianPickOverlay({
 	)
 }
 
-// One card per number in reach, in order, bowed into a shallow arc around the
-// rolled number. Eleven never fit a phone, so it scrolls — and opens scrolled
-// to the rolled card, which is the thing every other number is being compared
-// against.
+// One card per number in reach, in order, riding a shallow arc. Eleven never
+// fit a phone, so it scrolls — and opens scrolled to the rolled card, which is
+// the thing every other number is being compared against.
+//
+// The arc belongs to the window, not to the cards: it is anchored to the middle
+// of the visible strip rather than to the rolled number, so scrolling carries
+// each card around the circle (upright at the center, tilting and dropping away
+// toward both edges) instead of sliding a rigid fan sideways.
 function RollArc({
 	totals,
 	actualTotal,
@@ -195,68 +208,103 @@ function RollArc({
 	onPick: (total: number) => void
 	styles: ReturnType<typeof makeStyles>
 }) {
-	const scrollRef = useRef<ScrollView>(null)
+	const scrollRef = useAnimatedRef<Animated.ScrollView>()
+	// Read straight off the scroll view on the UI thread — the arc has to
+	// follow the finger, not a state update.
+	const scrollX = useScrollOffset(scrollRef)
 	const [viewport, setViewport] = useState(0)
+	// The opening scroll is imperative, so the cards stay hidden for the frame
+	// between layout and landing on the rolled number.
+	const [placed, setPlaced] = useState(false)
 	const center = totals.indexOf(actualTotal)
 	const step = CARD.w + CARD.gap
-	const contentWidth = 2 * spacing.sm + totals.length * step - CARD.gap
-	const centerX = spacing.sm + center * step + CARD.w / 2
+	const cardsWidth = totals.length * step - CARD.gap
+	// A row too short to scroll centers itself; a longer one keeps the sheet's
+	// own gutter. Either way the cards' positions stay arithmetic, which is
+	// what the arc math reads.
+	const lead = Math.max(spacing.sm, (viewport - cardsWidth) / 2)
+	const contentWidth = cardsWidth + 2 * lead
 
 	useEffect(() => {
 		if (viewport <= 0) return
-		scrollRef.current?.scrollTo({
-			x: Math.max(
-				0,
-				Math.min(centerX - viewport / 2, contentWidth - viewport)
-			),
-			animated: false,
-		})
-	}, [viewport, centerX, contentWidth])
+		const x = Math.max(
+			0,
+			Math.min(
+				lead + center * step + CARD.w / 2 - viewport / 2,
+				contentWidth - viewport
+			)
+		)
+		scrollRef.current?.scrollTo({ x, animated: false })
+		setPlaced(true)
+	}, [viewport, lead, center, step, contentWidth, scrollRef])
 
 	return (
-		<ScrollView
+		<Animated.ScrollView
 			ref={scrollRef}
 			horizontal
 			showsHorizontalScrollIndicator={false}
+			scrollEventThrottle={16}
+			style={{ opacity: placed ? 1 : 0 }}
 			onLayout={(e: LayoutChangeEvent) =>
 				setViewport(e.nativeEvent.layout.width)
 			}
-			contentContainerStyle={[
-				styles.row,
-				contentWidth < viewport && styles.rowCentered,
-			]}
+			contentContainerStyle={[styles.row, { paddingHorizontal: lead }]}
 		>
-			{totals.map((t, i) => {
-				const offset = i - center
-				return (
-					<View
-						key={t}
-						style={[
-							styles.slot,
-							{
-								transform: [
-									{
-										translateY: Math.abs(offset) * CARD.dip,
-									},
-									{ rotate: `${offset * CARD.tilt}deg` },
-								],
-							},
-						]}
-					>
-						<RollCard
-							total={t}
-							gain={gainFor(t)}
-							cost={costFor(t)}
-							rolled={t === actualTotal}
-							picked={t === target}
-							onPress={() => onPick(t)}
-							styles={styles}
-						/>
-					</View>
-				)
-			})}
-		</ScrollView>
+			{totals.map((t, i) => (
+				<ArcSlot
+					key={t}
+					cardX={lead + i * step + CARD.w / 2}
+					scrollX={scrollX}
+					viewport={viewport}
+					styles={styles}
+				>
+					<RollCard
+						total={t}
+						gain={gainFor(t)}
+						cost={costFor(t)}
+						rolled={t === actualTotal}
+						picked={t === target}
+						onPress={() => onPick(t)}
+						styles={styles}
+					/>
+				</ArcSlot>
+			))}
+		</Animated.ScrollView>
 	)
+}
+
+// One card's seat on the circle. `cardX` is where its center sits in content
+// coordinates; the angle is its distance from the middle of the visible strip
+// over the radius, and the drop is the circle's own sagitta at that angle, so
+// the card stays tangent to the arc as it travels.
+function ArcSlot({
+	cardX,
+	scrollX,
+	viewport,
+	styles,
+	children,
+}: {
+	cardX: number
+	scrollX: SharedValue<number>
+	viewport: number
+	styles: ReturnType<typeof makeStyles>
+	children: ReactNode
+}) {
+	const arc = useAnimatedStyle(() => {
+		// Before layout there is no strip to be off-center from — sit flat.
+		const theta =
+			viewport > 0
+				? (cardX - scrollX.value - viewport / 2) / CARD.radius
+				: 0
+		return {
+			transform: [
+				{ translateY: CARD.radius * (1 - Math.cos(theta)) },
+				{ rotate: `${theta}rad` },
+			],
+		}
+	})
+
+	return <Animated.View style={[styles.slot, arc]}>{children}</Animated.View>
 }
 
 function RollCard({
@@ -331,10 +379,6 @@ function makeStyles(colors: ColorScheme) {
 			// lifts above the card box.
 			paddingTop: spacing.sm,
 			paddingBottom: spacing.lg,
-		},
-		rowCentered: {
-			flexGrow: 1,
-			justifyContent: 'center',
 		},
 		slot: {
 			width: CARD.w,

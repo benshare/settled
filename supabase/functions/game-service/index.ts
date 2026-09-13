@@ -3408,10 +3408,21 @@ function isValidMagicTarget(actualTotal: number, target: number): boolean {
 // today, so this reduces to "are they the magician"; the check stays so
 // re-adding one is a BONUS_SIZE_VARIANTS edit alone. A player's turns are
 // exactly `players.length` rounds apart.
+// The cheapest phantom is a neighbouring number — one step, so `plus + 1`
+// cards — and every roll from 2 to 12 has a neighbour in range. A hand that
+// can't cover that can't cover anything, so no window opens: the magician is
+// never shown a sheet whose only move is to dismiss it (the same reason a
+// cooldown opens none).
+function canCastAnyMagicTarget(hand: ResourceHand, size: GameSize): boolean {
+	const plus = BONUS_SIZE_VARIANTS.magician?.[size]?.discardPlus ?? 1
+	return handSize(hand) >= plus + 1
+}
+
 function magicianCanCast(state: GameState, playerIdx: number): boolean {
 	const p = state.players[playerIdx]
 	if (p?.bonus !== 'magician') return false
 	const size = gameSizeFor(state.players.length)
+	if (!canCastAnyMagicTarget(p.resources, size)) return false
 	if (!BONUS_SIZE_VARIANTS.magician?.[size]?.cooldown) return true
 	if (p.lastMagicRound === undefined) return true
 	return state.round > p.lastMagicRound + state.players.length

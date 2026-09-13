@@ -20,6 +20,7 @@ import {
 import type { BonusId, CurseId, GamblerMode } from './bonuses'
 import { bonusVariantFor } from './bonuses'
 import type { BuildKind } from './build'
+import { handSize } from './robber'
 import {
 	gameSizeFor,
 	type BankKind,
@@ -916,13 +917,27 @@ export function investorPayout(p: PlayerState): ResourceHand {
 // Baseline cost is the distance plus one card.
 export const MAGIC_DISCARD_PLUS = 1
 
+// Could this hand pay for ANY phantom number? The cheapest one is a
+// neighbour — a single step, so `plus + 1` cards — and every roll from 2 to 12
+// has a neighbour inside the range. So a hand that can't cover that can't
+// cover anything.
+export function canCastAnyMagicTarget(hand: ResourceHand, size: GameSize) {
+	const plus =
+		bonusVariantFor('magician', size)?.discardPlus ?? MAGIC_DISCARD_PLUS
+	return handSize(hand) >= plus + 1
+}
+
 // May this player open a magician window on this roll? No size declares a
-// cooldown today, so this is just "are they the magician" — the check stays
-// so re-adding one is a `sizes.ts` edit alone.
+// cooldown today, so this is "are they the magician, and can they afford
+// anything" — the cooldown check stays so re-adding one is a `sizes.ts` edit
+// alone. A hand too small to buy even a neighbouring number opens no window at
+// all, for the same reason a cooldown doesn't: never show a sheet whose only
+// move is to dismiss it.
 export function magicianCanCast(state: GameState, playerIdx: number): boolean {
 	const p = state.players[playerIdx]
 	if (p?.bonus !== 'magician') return false
 	const size = gameSizeFor(state.players.length)
+	if (!canCastAnyMagicTarget(p.resources, size)) return false
 	if (!bonusVariantFor('magician', size)?.cooldown) return true
 	if (p.lastMagicRound === undefined) return true
 	return state.round > p.lastMagicRound + state.players.length

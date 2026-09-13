@@ -48,8 +48,16 @@ discardPlus` — the two ends truncate independently. `magicTargetRange` in
 `bonus.ts` is that rule; it is a UI convenience rather than a new server check,
 since the server already refuses an unaffordable discard.
 
-With `reach ≤ 0` the arc is the rolled card alone and the only move is keeping
-the roll.
+With `reach ≤ 0` there is nothing to offer, and **the window does not open at
+all** — `magicianCanCast` now takes the hand into account (`canCastAnyMagicTarget`:
+the cheapest phantom is a neighbour, so `discardPlus + 1` cards, and every roll
+from 2 to 12 has a neighbour in range). Same reasoning as the cooldown that
+gate already carried: never raise a sheet whose only move is to dismiss it. The
+roll then resolves normally, production included, since the deferral rides the
+same flag.
+
+The overlay keeps a one-line "not enough cards" state anyway, for a
+`magician_pick` written before the gate existed.
 
 ## Layout
 
@@ -57,16 +65,20 @@ the roll.
 the choice is "what does that number pay me", which is a question about the
 board.
 
-- **The arc.** One small card per number in reach, in numeric order, tilted and
-  dipped away from the rolled number like the hand's `CardFan` — but **never
-  overlapping**, since these are options being compared and each has to be
-  readable in full. The gap between cards is sized to stay clear of the corner
-  a tilted card swings toward its neighbour, so the tilt stays shallow by
-  construction. Each card is the number over the cards that number would pay
-  this player, and under that its price. The rolled number's card is labeled as
-  the roll rather than priced; tapping it clears a selection (the same outcome
-  as **Keep roll**). The arc scrolls horizontally when it outruns the screen
-  and opens scrolled to the roll, since eleven cards never fit a phone.
+- **The arc.** One small card per number in reach, in numeric order, riding a
+  circle whose top is the middle of the visible strip. **The arc belongs to the
+  window, not to the cards**: the angle is read off the live scroll offset, so
+  scrolling carries each card around the circle — upright at the center,
+  tilting and dropping away toward both edges — rather than sliding a rigid fan
+  sideways. Cards **never overlap**, since these are options being compared and
+  each has to be readable in full; the gap is sized against the corner a tilted
+  card swings toward its neighbour (~6px of clearance at the worst scroll
+  position), so widening the arc means widening the gap with it. Each card is
+  the number over the cards that number would pay this player, and under that
+  its price. The rolled number's card is labeled as the roll rather than
+  priced; tapping it clears a selection (the same outcome as **Keep roll**).
+  The strip opens scrolled to the roll, since eleven cards never fit a phone —
+  and stays hidden for that frame, because the opening scroll is imperative.
 - **The hand.** The 7-discard composer verbatim (`DiscardComposer`, factored
   out of `DiscardPanel` for this): the pile above, the hand below, cards move
   between them on tap. It is inert until a number is picked, because until then
@@ -77,7 +89,8 @@ board.
 ## Files
 
 - `lib/catan/types.ts` — `pendingGain` on the phase.
-- `lib/catan/bonus.ts` — `magicTargetRange`.
+- `lib/catan/bonus.ts` — `magicTargetRange`, `canCastAnyMagicTarget`, and the
+  hand check folded into `magicianCanCast`.
 - `lib/catan/MagicianPickOverlay.tsx` — the redesign, plus the roll-card arc.
 - `lib/catan/DiscardPanel.tsx` — `DiscardComposer` extracted and reused.
 - `lib/game/BoardArea.tsx` — per-number gains (`distributeResources` over the
