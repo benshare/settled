@@ -61,6 +61,7 @@ export function BottomArea() {
 		placementStage,
 		canUndoPlacement,
 		canConfirmPlacement,
+		needsNomination,
 		onUndoPlacement,
 		inPlacement,
 		isMyPlacementTurn,
@@ -125,7 +126,8 @@ export function BottomArea() {
 							{confirmLabel(
 								placementStage,
 								placementPairs,
-								placementDraft.length
+								placementDraft.length,
+								needsNomination
 							)}
 						</Button>
 					</View>
@@ -532,7 +534,8 @@ function MainLoopBar({
 function confirmLabel(
 	stage: PlacementStage,
 	pairs: 1 | 2,
-	drafted: number
+	drafted: number,
+	needsNomination: boolean
 ): string {
 	switch (stage) {
 		case 'settlement':
@@ -544,6 +547,9 @@ function confirmLabel(
 				? 'Tap an edge to place your second road'
 				: 'Tap an edge to place road'
 		case 'ready':
+			// The button is disabled until the nomination is made, so it names
+			// what is owed rather than sitting there as an inert 'Confirm'.
+			if (needsNomination) return 'Tap the settlement you placed second'
 			return pairs === 2
 				? 'Confirm both placements'
 				: 'Confirm settlement and road'

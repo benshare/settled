@@ -1,8 +1,14 @@
 import { Fragment } from 'react'
-import { Circle, G } from 'react-native-svg'
+import { Circle, G, Text as SvgText } from 'react-native-svg'
 import { edgeEndpoints, type Edge, type Vertex } from './board'
 import { EdgePiece } from './EdgePiece'
-import { pieceStroke, pieceStrokeSoft, seatColor } from './palette'
+import {
+	pieceStroke,
+	pieceStrokeSoft,
+	seatColor,
+	tokenFace,
+	tokenTextCool,
+} from './palette'
 import {
 	applyPlacementDraft,
 	validRoadEdges,
@@ -30,8 +36,10 @@ export type PlacementSelection =
 // against the draft applied, so the second settlement respects the first's
 // distance footprint and its road attaches to it rather than to the first.
 //
-// With both pairs down, that seat also nominates which settlement counts as its
-// second (the one that pays starting resources) by tapping its ring.
+// With both pairs down, that seat must still nominate which settlement counts as
+// its second (the one that pays starting resources) by tapping its ring. Nothing
+// is pre-chosen and Confirm is disabled until it is, so the choice can't be
+// carried past — see `.claude/specs/inline-last-settlement.md`.
 export function PlacementLayer({
 	state,
 	meIdx,
@@ -53,8 +61,8 @@ export function PlacementLayer({
 	// second — false for everyone but the back-to-back seat, and for an
 	// aristocrat in it (which collects on both, so there is nothing to pick).
 	canNominate: boolean
-	// The settlement currently nominated as the second-placed one. Seeded to
-	// the one drafted second, so it is never null while the rings are up.
+	// The settlement nominated as the second-placed one, or null until the seat
+	// says — deliberately unseeded, so the choice has to be made.
 	nominated: Vertex | null
 	onSelect: (s: PlacementSelection) => void
 }) {
@@ -96,36 +104,31 @@ export function PlacementLayer({
 
 			{stage === 'ready' &&
 				canNominate &&
-				draft.map((entry) => {
-					const p = vertexPositions[entry.vertex]
-					return (
-						<Fragment key={`pick-${entry.vertex}`}>
-							<PulsingRing
-								cx={p.x}
-								cy={p.y}
-								r={layoutS * 0.32}
-								color={
-									nominated === entry.vertex
-										? pieceStroke
-										: pieceStrokeSoft
-								}
-								width={layoutS * 0.07}
-							/>
-							<Circle
-								cx={p.x}
-								cy={p.y}
-								r={layoutS * 0.45}
-								fill="transparent"
-								onPress={() =>
-									onSelect({
-										kind: 'settlement',
-										vertex: entry.vertex,
-									})
-								}
-							/>
-						</Fragment>
-					)
-				})}
+				draft.map((entry, i) => (
+					<NominationTarget
+						key={`pick-${entry.vertex}`}
+						cx={vertexPositions[entry.vertex].x}
+						cy={vertexPositions[entry.vertex].y}
+						layoutS={layoutS}
+						ordinal={i + 1}
+						// Before a choice, both read as equally live; after
+						// one, the other dims but keeps pulsing, since it is
+						// still tappable to switch.
+						state={
+							nominated === null
+								? 'open'
+								: nominated === entry.vertex
+									? 'chosen'
+									: 'other'
+						}
+						onPress={() =>
+							onSelect({
+								kind: 'settlement',
+								vertex: entry.vertex,
+							})
+						}
+					/>
+				))}
 
 			{stage === 'settlement' &&
 				validSettlementVertices(drafted, meIdx).map((v) => {
@@ -179,6 +182,85 @@ export function PlacementLayer({
 					)
 				})}
 		</G>
+	)
+}
+
+// One of the two drafted settlements, offered as the seat's nomination for the
+// settlement it placed second. The ordinal badge is what makes the question
+// answerable — by 'ready' both settlements are down and the draft order is the
+// only thing distinguishing them, which the board otherwise doesn't show.
+function NominationTarget({
+	cx,
+	cy,
+	layoutS,
+	ordinal,
+	state,
+	onPress,
+}: {
+	cx: number
+	cy: number
+	layoutS: number
+	ordinal: number
+	state: 'open' | 'chosen' | 'other'
+	onPress: () => void
+}) {
+	// Deliberately monochrome rather than seat-colored: the chosen one reads as
+	// the darker of the two at any seat color, white included.
+	const stroke = state === 'other' ? pieceStrokeSoft : pieceStroke
+	const badgeR = layoutS * 0.26
+	const badgeX = cx + layoutS * 0.36
+	const badgeY = cy - layoutS * 0.36
+	const chosen = state === 'chosen'
+	return (
+		<>
+			<PulsingRing
+				cx={cx}
+				cy={cy}
+				r={layoutS * 0.32}
+				color={stroke}
+				width={layoutS * (chosen ? 0.1 : 0.07)}
+			/>
+			<Circle
+				cx={badgeX}
+				cy={badgeY}
+				r={badgeR}
+				fill={chosen ? pieceStroke : tokenFace}
+				stroke={stroke}
+				strokeWidth={Math.max(1, layoutS * 0.035)}
+			/>
+			<SvgText
+				x={badgeX}
+				y={badgeY + badgeR * 0.1}
+				fill={
+					chosen
+						? tokenFace
+						: state === 'other'
+							? pieceStrokeSoft
+							: tokenTextCool
+				}
+				fontSize={badgeR * 1.1}
+				fontWeight="800"
+				textAnchor="middle"
+				alignmentBaseline="middle"
+			>
+				{ordinal}
+			</SvgText>
+			{/* Piece and badge are separate targets so neither is a dead spot. */}
+			<Circle
+				cx={cx}
+				cy={cy}
+				r={layoutS * 0.45}
+				fill="transparent"
+				onPress={onPress}
+			/>
+			<Circle
+				cx={badgeX}
+				cy={badgeY}
+				r={badgeR * 1.2}
+				fill="transparent"
+				onPress={onPress}
+			/>
+		</>
 	)
 }
 

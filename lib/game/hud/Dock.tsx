@@ -355,6 +355,7 @@ function PrimaryAction() {
 		isMyActiveTurn,
 		isMySpecialBuild,
 		canConfirmPlacement,
+		needsNomination,
 		canUndoPlacement,
 		onUndoPlacement,
 		onConfirm,
@@ -392,7 +393,8 @@ function PrimaryAction() {
 					{confirmLabel(
 						placementStage,
 						placementPairs,
-						placementDraft.length
+						placementDraft.length,
+						needsNomination
 					)}
 				</Button>
 			</View>
@@ -576,7 +578,8 @@ function RollChoice({
 function confirmLabel(
 	stage: PlacementStage,
 	pairs: 1 | 2,
-	drafted: number
+	drafted: number,
+	needsNomination: boolean
 ): string {
 	switch (stage) {
 		case 'settlement':
@@ -584,6 +587,7 @@ function confirmLabel(
 		case 'road':
 			return drafted === 2 ? 'Second road' : 'Place road'
 		case 'ready':
+			if (needsNomination) return 'Which was second?'
 			return pairs === 2 ? 'Confirm both' : 'Confirm'
 		default:
 			return 'Select'

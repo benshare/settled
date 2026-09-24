@@ -51,7 +51,7 @@ export function TopArea() {
 		isMyPlacementTurn,
 		placementStage,
 		placementPairs,
-		canNominate,
+		needsNomination,
 		buildTool,
 		buildEnabled,
 		buildCurseHints,
@@ -124,7 +124,7 @@ export function TopArea() {
 					isMyTurn={isMyPlacementTurn}
 					stage={placementStage}
 					pairs={placementPairs}
-					canNominate={canNominate}
+					needsNomination={needsNomination}
 					profilesById={profilesById}
 				/>
 			)}
@@ -334,7 +334,7 @@ function PlacementHeader({
 	isMyTurn,
 	stage,
 	pairs,
-	canNominate,
+	needsNomination,
 	profilesById,
 }: {
 	game: Game
@@ -343,7 +343,9 @@ function PlacementHeader({
 	isMyTurn: boolean
 	stage: PlacementStage
 	pairs: 1 | 2
-	canNominate: boolean
+	// Whether the back-to-back seat still owes its nomination of the settlement
+	// it placed second. The header is where that question is asked.
+	needsNomination: boolean
 	profilesById: Record<string, Profile>
 }) {
 	if (gameState.phase.kind !== 'initial_placement') return null
@@ -358,14 +360,14 @@ function PlacementHeader({
 		pairs === 2
 			? 'place both their settlements and roads'
 			: 'place a settlement and road'
-	// With both pairs drafted, the back-to-back seat still has the ring tap in
-	// front of it — the only place the nomination is named, since the confirm
-	// button stays a confirm.
+	// With both pairs drafted, the back-to-back seat owes one more answer before
+	// Confirm unlocks — ask it here, where the numbered badges on the board can
+	// be read as the answer.
 	const message = !isMyTurn
 		? `Waiting for ${currentName} to ${waitingFor}`
 		: stage === 'ready'
-			? canNominate
-				? 'Your turn — tap the settlement you placed second, then confirm'
+			? needsNomination
+				? 'Which settlement did you place second? It pays your starting resources'
 				: 'Your turn — confirm your placements'
 			: `Your turn — place ${prefix(stage ?? '')} ${stage}`
 

@@ -45,7 +45,7 @@ export type BoardInteraction = {
 	draft: readonly PlacementDraftEntry[]
 	pairsExpected: 1 | 2
 	// Whether this seat picks which settlement counts as its second, and which
-	// one it currently has nominated.
+	// one it has nominated — null until it does, which is what blocks Confirm.
 	canNominate: boolean
 	nominated: Vertex | null
 	onSelect: (s: PlacementSelection) => void

@@ -16,14 +16,23 @@ including the nomination — is still take-back-able.
 
 ## Locked decisions (confirmed with user)
 
-1. **The nomination is pre-seeded to the settlement drafted second.** Both
-   drafted settlements get rings; the second-drafted one opens nominated (dark
-   ring) and Confirm is enabled immediately. Tapping the other switches it.
-   This reverses `last-settlement-choice.md` §7's "nothing is pre-selected" —
-   that rule existed because both settlements had already landed in one
-   submitted turn, so the app had no honest default. Inside the draft the
-   player really did place one after the other, so the drafted order _is_ the
-   answer until they say otherwise.
+1. ~~**The nomination is pre-seeded to the settlement drafted second.**~~
+   **Revised 2026-09-24 — nothing is pre-seeded and Confirm is blocked on the
+   choice.** The pre-seeded version shipped and was then never used: with
+   Confirm live from the moment the fourth piece landed, the two rings read as
+   decoration and every real game went settlement → road → settlement → road
+   → "Confirm both placements" → next player. A default the player never has to
+   touch is a choice they never notice.
+
+    So `last-settlement-choice.md` §7's "nothing is pre-selected" is restored,
+    and goes further: the confirm button is **disabled** until one of the two
+    settlements is tapped. Each drafted settlement carries a numbered badge (1 /
+    2, its draft order) — by `ready` both are on the board and nothing else
+    distinguishes them, so the question isn't answerable without it. Tapping
+    either nominates it; the chosen one fills dark, the other dims but keeps
+    pulsing since it stays tappable. This is the one thing in the draft that
+    can't be carried past, which is the whole point of it.
+
 2. **The choice reaches the server as pair order.** The client submits the two
    pairs already ordered so the nominated one is second; the server grants on
    the second pair exactly as it does for every other seat. The `pick_last`
@@ -38,8 +47,8 @@ seat N-1, round 1 turn (one draft, one confirm):
 
   tap vertex A → tap edge a → tap vertex B → tap edge b
                      ↓
-  both pairs drafted: rings on A and B, B nominated (drafted second)
-  tap A to switch the nomination, or just confirm
+  both pairs drafted: A badged 1, B badged 2, neither nominated,
+  Confirm disabled — tap one to nominate it, tap the other to switch
                      ↓
   place_start { placements: [ pair-B, pair-A ] }   ← nominated pair last
                      ↓
@@ -73,18 +82,20 @@ destructures it. Narrowing the union is what makes the compiler list every
 on the draft's own order**:
 
 ```ts
-// The settlement the seat nominated as its second, or null to take the
-// drafted order at its word.
+// The settlement the seat nominated as its second. Null until they say — no
+// default, because a default is what made this invisible the first time.
 const [pickLast, setPickLast] = useState<string | null>(null)
 
-// Self-cleaning: an override for a vertex no longer in the draft (undone and
-// re-placed elsewhere) falls back to the drafted-second settlement. Null for
+// Self-cleaning: resolved against the draft, so a nomination for a vertex that
+// has since been taken back clears itself rather than going stale. Null for
 // every seat that doesn't choose, so nothing downstream has to re-ask.
 const nominatedVertex = canNominate
-	? (placementDraft.find((e) => e.vertex === pickLast)?.vertex ??
-		placementDraft[1]?.vertex ??
-		null)
+	? (placementDraft.find((e) => e.vertex === pickLast)?.vertex ?? null)
 	: null
+
+// What blocks Confirm, and what every surface below reads to ask the question.
+const needsNomination =
+	canNominate && placementStage === 'ready' && nominatedVertex === null
 ```
 
 `canNominate` — whether the rings show at all:
@@ -95,9 +106,9 @@ canNominate =
 ```
 
 `placementStage` loses `'pick_last'` and keeps `settlement | road | ready`.
-`ready` is now where the nomination lives, so `canConfirmPlacement` is just
-`placementStage === 'ready'` — the nomination can never be missing, since it
-defaults.
+`ready` is now where the nomination lives, so `canConfirmPlacement` is
+`placementStage === 'ready' && !needsNomination`. `onConfirm` re-checks the same
+condition, so a stray call can't submit an unnominated draft in tap order.
 
 Reset stays on `placementKey` (which no longer carries a step that changes
 mid-turn, but still changes on round/turn).
@@ -109,12 +120,16 @@ the draft rendering, where it decorates the **ghosts** rather than placed
 pieces:
 
 - At `stage === 'ready'` with `canNominate`, each drafted settlement ghost gets
-  a `PulsingRing` plus a transparent hit target. The nominated one is
-  `pieceStroke`, the other `pieceStrokeSoft` — the same both-pulse, colour-only
-  distinction `last-settlement-choice.md` §7 landed on, for the same reason (a
-  frozen ring reads as disabled).
-- Tapping a ring calls `onSelect({ kind: 'settlement', vertex })`, which at
-  `ready` sets the override instead of appending to the draft.
+  a `NominationTarget`: a `PulsingRing`, a numbered badge (its 1-based draft
+  order) offset up-right of the piece, and hit targets over both.
+- Three visual states, all of them pulsing (a frozen ring reads as disabled,
+  and both stay tappable throughout): `open` before any choice — both
+  `pieceStroke`, equally live; `chosen` — thicker ring, badge filled
+  `pieceStroke` with light text; `other` — `pieceStrokeSoft` throughout.
+  Deliberately monochrome rather than seat-colored, so "chosen" reads as the
+  darker of the two at every seat color, white included.
+- Tapping a target calls `onSelect({ kind: 'settlement', vertex })`, which at
+  `ready` sets the nomination instead of appending to the draft.
 
 `PlacementSelection` is unchanged. `PlacementLayer`'s props swap `pickLast:
 Vertex | null` (the step's answer) for `nominated: Vertex | null` plus
@@ -152,7 +167,11 @@ Not undoable, unchanged — `place_start` was never in `UNDOABLE_ACTIONS`.
   mirror) and `ownSettlementVertices` (its only caller was the `pick_last`
   board branch).
 - `isDoublePlacementSeat` stays — it's what `placementPairsExpected` is built
-  on, and it's still what gates the rings.
+  on, and it's still what gates the badges.
+
+`orderedPlacementPairs` still takes `nominated: Vertex | null` and falls back to
+draft order on null. Nothing in the UI reaches it with null any more (Confirm is
+blocked first), but the timeout sweep does — see `autoActionFor` below.
 
 ### Why reordering the pairs is always legal
 
@@ -175,19 +194,22 @@ reordered.
 
 ## Copy
 
-| Surface                             | Before                                                                             | After                                                                                                  |
-| ----------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `BottomArea` confirm, `ready`, N-1  | `Confirm both placements`                                                          | `Confirm both placements` (unchanged)                                                                  |
-| `BottomArea` confirm, `pick_last`   | `Tap the settlement you placed last`                                               | — (step gone)                                                                                          |
-| `Dock` confirm, `ready`, N-1        | `Confirm both`                                                                     | `Confirm both` (unchanged)                                                                             |
-| `PlacementHeader`, my turn, `ready` | `Your turn — confirm your placements`                                              | N-1 non-aristocrat: `Your turn — tap the settlement you placed second, then confirm`; others unchanged |
-| `PlacementHeader`, watching         | `…to place both their settlements and roads` / `…choose their starting settlement` | `…to place both their settlements and roads` only                                                      |
-| `spectatorStatus` (`TopArea`)       | step-aware, `…is choosing their starting settlement`                               | `…is placing a settlement and road` only                                                               |
-| `hud/status.ts` `placementLine`     | `… choosing a starting settlement`                                                 | line removed; `ready` keeps `…placements are ready to confirm`                                         |
+Every `ready` surface is split on `needsNomination` — the state where the seat
+owes the choice and Confirm is disabled.
 
-The ring itself is the affordance for switching, so the header is the only place
-that names it — the confirm button stays a confirm and never turns into an
-instruction the player can ignore.
+| Surface                                  | Nomination owed                                                          | Nominated / not applicable            |
+| ---------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------- |
+| `BottomArea` confirm, `ready`            | `Tap the settlement you placed second` (disabled)                        | `Confirm both placements`             |
+| `Dock` confirm, `ready`                  | `Which was second?` (disabled)                                           | `Confirm both`                        |
+| `PlacementHeader`, my turn, `ready`      | `Which settlement did you place second? It pays your starting resources` | `Your turn — confirm your placements` |
+| `hud/status.ts` `placementLine`, `ready` | `Which settlement did you place second?`                                 | `…placements are ready to confirm`    |
+| `PlacementHeader`, watching              | `…to place both their settlements and roads` — unchanged either way      |                                       |
+| `spectatorStatus` (`TopArea`)            | `…is placing a settlement and road` — unchanged either way               |                                       |
+
+The disabled confirm button carries the instruction itself rather than sitting
+there as an inert `Confirm`: with the button, the header and the status line all
+naming the same owed answer, the badges on the board are the only thing that can
+supply it.
 
 ## Store — `lib/stores/useGamesStore.ts`
 
@@ -199,10 +221,19 @@ button:
 ```ts
 const pairs = orderedPlacementPairs(placementDraft, nominatedVertex)
 if (pairs.length !== placementPairs) return
+if (needsNomination) return
 await placeStart(game.id, pairs)
 ```
 
 ## Deploy
+
+**The 2026-09-24 revision is client-only.** Nothing below it changed — the
+nomination still reaches the server as pair order, so an old client (which
+pre-seeds and can submit without a tap) and a new one produce the same shape of
+`place_start`. Ship it on its own; no edge deploy, no ordering constraint.
+
+The rest of this section is the original `pick_last` removal, kept as the
+record of that migration.
 
 Checked 2026-09-09 via the REST API — four games in `initial_placement`, all at
 `step: 'settlement'`, **none at `pick_last`**. Re-check immediately before
@@ -245,10 +276,11 @@ this direction is safe:
   each pointing here (the second's "locked decision 1: `pick_last` stays as it
   is" is exactly what this reverses).
 - `npm run check` + `npm run format`; `npx tsx dev/check-catan-placement.ts`.
-- Manual: a 3-player game — the double seat's four-piece draft, switching the
-  nomination and confirming, then checking the log and the granted hand match
-  the ring that was dark. Plus an undo from `ready` and a re-place, to confirm
-  the nomination falls back.
+- Manual: a 3-player game — the double seat's four-piece draft, confirming that
+  Confirm is dead until a badge is tapped, switching the nomination, then
+  checking the log and the granted hand match the badge that was filled. Plus an
+  undo from `ready` and a re-place, to confirm the nomination clears with the
+  piece it named.
 
 ## Out of scope
 

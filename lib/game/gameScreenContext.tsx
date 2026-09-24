@@ -197,8 +197,8 @@ function useGameScreenState(gameId: string) {
 	// The placement turn being drafted locally: a settlement, its road, and a
 	// second pair for the seat that places both back-to-back. Nothing is sent
 	// until the player confirms, which is what makes taking a piece back free.
-	// `pickLast` overrides which of those two settlements counts as the second
-	// — null means "the one I drafted second", which is the default answer.
+	// `pickLast` is that seat's nomination of which settlement counts as its
+	// second — null until they say, and Confirm stays disabled that whole time.
 	const [placementDraft, setPlacementDraft] = useState<PlacementDraftEntry[]>(
 		[]
 	)
@@ -354,16 +354,20 @@ function useGameScreenState(gameId: string) {
 		isMyPlacementTurn &&
 		placementPairs === 2 &&
 		gameState?.players[meIdx]?.bonus !== 'aristocrat'
-	// Seeded to the settlement drafted second — they did place it second, so
-	// that is the honest default, and the rings only exist to change it. An
-	// override for a vertex that has since been undone falls back on its own.
+	// Deliberately not seeded to the settlement drafted second: a default the
+	// player never has to touch is one they never notice, which is exactly how
+	// this choice used to get skipped. Resolved against the draft, so a
+	// nomination for a vertex that has since been taken back clears itself.
 	const nominatedVertex = canNominate
-		? (placementDraft.find((e) => e.vertex === pickLast)?.vertex ??
-			placementDraft[1]?.vertex ??
-			null)
+		? (placementDraft.find((e) => e.vertex === pickLast)?.vertex ?? null)
 		: null
+	// The nomination is the last thing owed at 'ready', and Confirm is blocked
+	// on it — the only arrangement the flow can't carry the player past.
+	const needsNomination =
+		canNominate && placementStage === 'ready' && nominatedVertex === null
 	const canUndoPlacement = isMyPlacementTurn && placementDraft.length > 0
-	const canConfirmPlacement = isMyPlacementTurn && placementStage === 'ready'
+	const canConfirmPlacement =
+		isMyPlacementTurn && placementStage === 'ready' && !needsNomination
 
 	// Clear build tool + trade panel when we can no longer build — the turn
 	// flips away / we leave main, or a special-build slot passes to someone
@@ -1010,9 +1014,10 @@ function useGameScreenState(gameId: string) {
 		// The nominated pair goes last, which is how the server is told: it
 		// stamps the last pair round 2 and pays its starting resources.
 		const pairs = orderedPlacementPairs(placementDraft, nominatedVertex)
-		// The same condition the confirm button is disabled on, so a stray call
-		// can't half-submit a turn.
+		// The same conditions the confirm button is disabled on, so a stray call
+		// can't half-submit a turn or submit an unnominated one in draft order.
 		if (pairs.length !== placementPairs) return
+		if (needsNomination) return
 
 		setSubmitting(true)
 		const res = await placeStart(game.id, pairs)
@@ -1595,6 +1600,7 @@ function useGameScreenState(gameId: string) {
 		submitting,
 		canNominate,
 		nominatedVertex,
+		needsNomination,
 		placementDraft,
 		placementPairs,
 		placementStage,

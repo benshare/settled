@@ -121,7 +121,9 @@ app/game/[id].tsx
   the undo arrow (`canUndo`) — placement isn't an undoable action. Seat `N-1`'s
   draft carries one more choice: `nominatedVertex` (which of its two settlements
   counts as the second), tapped on the board at the `'ready'` stage and sent as
-  pair order.
+  pair order. It is **unseeded on purpose** and `needsNomination` blocks Confirm
+  until it is answered — a pre-seeded default made the choice invisible and it
+  got skipped in real games.
 - **`canUndo` is read off `gameState.undo`, never derived from the event log.**
   The edge function stashes a pre-action snapshot there for undoable actions, and
   that column _is_ the availability signal. The context adds only what the server
