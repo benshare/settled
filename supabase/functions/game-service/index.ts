@@ -102,7 +102,6 @@ type SendMessageBody = {
 	body: string
 }
 type EndSpecialBuildBody = { action: 'end_special_build'; game_id: string }
-type UndoBody = { action: 'undo'; game_id: string }
 // One setter per flag rather than four verbs: submitting and withdrawing share
 // every guard and differ only in which way the array moves, and an idempotent
 // setter can't get out of step with a client that fires twice.
@@ -284,6 +283,13 @@ type SkipMagicBody = {
 	action: 'skip_magic'
 	game_id: string
 }
+// A client's whole local queue. `actions` is unvalidated — every entry goes
+// through `parseLocalAction` before it reaches a reducer.
+type BatchBody = {
+	action: 'batch'
+	game_id: string
+	actions: unknown
+}
 // The one action with no user behind it and no game_id: the cron sweep. See
 // handleRunTimeouts.
 type RunTimeoutsBody = { action: 'run_timeouts' }
@@ -333,8 +339,8 @@ type Body =
 	| InvestBody
 	| CastMagicBody
 	| SkipMagicBody
+	| BatchBody
 	| RunTimeoutsBody
-	| UndoBody
 	| SetForfeitBody
 	| SetEndVoteBody
 	| DeleteAccountBody
@@ -6457,14 +6463,6 @@ async function applyTimeout(
 			timeout_warned: 0,
 		})
 		.eq('id', cur.game.id)
-	// An auto action must not leave an undo snapshot behind for the next player
-	// to take back. Guarded, so the usual case matches no rows.
-	await admin
-		.from('game_states')
-		.update({ undo: null })
-		.eq('game_id', cur.game.id)
-		.not('undo', 'is', null)
-
 	EdgeRuntime.waitUntil(
 		sendNotifications(
 			admin,
@@ -7041,36 +7039,6 @@ async function handleEndSpecialBuild(
 	return json({ ok: true })
 }
 
-async function preflightBuild(
-	admin: SupabaseClient,
-	me: string,
-	gameId: string,
-	// When true, the acting player of a `special_build` phase (not the
-	// turn-holder) is also allowed. Only road/settlement/city/dev/bank permit
-	// this — super-city and liquidate stay main-only (pass false / omit).
-	allowSpecialBuild = false
-): Promise<
-	| { ok: true; game: GameRow; state: GameState; meIdx: number }
-	| { ok: false; response: Response }
-> {
-	const loaded = await loadGame(admin, gameId)
-	if (!loaded.ok) return loaded
-	const { game, state } = loaded
-	if (game.status !== 'active')
-		return { ok: false, response: err(400, 'not active') }
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null)
-		return { ok: false, response: err(403, 'not a participant') }
-	const inMain = state.phase.kind === 'main' && state.currentTurn === meIdx
-	const inSpecial = allowSpecialBuild && isSpecialBuildActor(state, meIdx)
-	if (!inMain && !inSpecial) {
-		if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
-			return { ok: false, response: err(400, 'expected main phase') }
-		return { ok: false, response: err(403, 'not your turn') }
-	}
-	return { ok: true, game, state, meIdx }
-}
-
 function applyCost(
 	players: PlayerState[],
 	meIdx: number,
@@ -7092,46 +7060,340 @@ function applyCost(
 	})
 }
 
-async function handleBuildRoad(
-	admin: SupabaseClient,
-	me: string,
-	body: BuildRoadBody
-): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
+// One queued action, mirrored from `LocalAction` in lib/catan/types.ts. The
+// client builds these, so the typed shape is the contract; `parseLocalAction`
+// below is what actually admits one off the wire.
+type LocalAction =
+	| {
+			action: 'build_road'
+			edge: Edge
+			use_bricklayer?: boolean
+			smith_swap?: number
+	  }
+	| {
+			action: 'build_settlement'
+			vertex: Vertex
+			use_bricklayer?: boolean
+			smith_swap?: number
+	  }
+	| {
+			action: 'build_city'
+			vertex: Vertex
+			use_bricklayer?: boolean
+			swap_wheat_to_ore?: number
+			smith_swap?: number
+	  }
+	| { action: 'build_super_city'; vertex: Vertex; swap_wheat_to_ore?: number }
+	| { action: 'build_fence'; edge: Edge }
+	| { action: 'bank_trade'; give: ResourceHand; receive: ResourceHand }
+	| { action: 'liquidate'; target: LiquidationTargetBody }
+	| { action: 'invest'; resource: Resource }
+	| { action: 'buy_carpenter_vp' }
+	| { action: 'tap_knight'; r1: Resource; r2: Resource }
+	| { action: 'place_explorer_road'; edge: Edge }
+	| { action: 'cast_magic'; target: number; discard: ResourceHand }
+	| { action: 'skip_magic' }
 
-	if (game.status !== 'active') return err(400, 'not active')
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
+type LiquidationTargetBody =
+	| { kind: 'road'; edge: Edge }
+	| { kind: 'settlement'; vertex: Vertex }
+	| { kind: 'city'; vertex: Vertex }
+	| { kind: 'super_city'; vertex: Vertex }
 
+// Admit one action off the wire. Board membership is NOT checked here — the
+// reducers already do it against the variant they are handed, and doing it
+// twice would mean two places to keep in step.
+function parseLocalAction(raw: unknown): LocalAction | null {
+	if (!raw || typeof raw !== 'object') return null
+	const o = raw as Record<string, unknown>
+	const edge = typeof o.edge === 'string' ? (o.edge as Edge) : null
+	const vertex = typeof o.vertex === 'string' ? (o.vertex as Vertex) : null
+	const num = (v: unknown): number | undefined =>
+		typeof v === 'number' && Number.isFinite(v) ? v : undefined
+	switch (o.action) {
+		case 'build_road':
+			return edge
+				? {
+						action: 'build_road',
+						edge,
+						use_bricklayer: !!o.use_bricklayer,
+						smith_swap: num(o.smith_swap),
+					}
+				: null
+		case 'build_settlement':
+			return vertex
+				? {
+						action: 'build_settlement',
+						vertex,
+						use_bricklayer: !!o.use_bricklayer,
+						smith_swap: num(o.smith_swap),
+					}
+				: null
+		case 'build_city':
+			return vertex
+				? {
+						action: 'build_city',
+						vertex,
+						use_bricklayer: !!o.use_bricklayer,
+						swap_wheat_to_ore: num(o.swap_wheat_to_ore),
+						smith_swap: num(o.smith_swap),
+					}
+				: null
+		case 'build_super_city':
+			return vertex
+				? {
+						action: 'build_super_city',
+						vertex,
+						swap_wheat_to_ore: num(o.swap_wheat_to_ore),
+					}
+				: null
+		case 'build_fence':
+			return edge ? { action: 'build_fence', edge } : null
+		case 'bank_trade': {
+			const give = normalizeHand(o.give)
+			const receive = normalizeHand(o.receive)
+			return give && receive
+				? { action: 'bank_trade', give, receive }
+				: null
+		}
+		case 'liquidate': {
+			const t = o.target as Record<string, unknown> | null
+			if (!t || typeof t !== 'object') return null
+			if (t.kind === 'road')
+				return typeof t.edge === 'string'
+					? {
+							action: 'liquidate',
+							target: { kind: 'road', edge: t.edge as Edge },
+						}
+					: null
+			if (
+				t.kind === 'settlement' ||
+				t.kind === 'city' ||
+				t.kind === 'super_city'
+			)
+				return typeof t.vertex === 'string'
+					? {
+							action: 'liquidate',
+							target: {
+								kind: t.kind,
+								vertex: t.vertex as Vertex,
+							},
+						}
+					: null
+			// Dev cards are deliberately not liquidatable.
+			return null
+		}
+		case 'invest': {
+			const resource = parseResource(o.resource)
+			return resource ? { action: 'invest', resource } : null
+		}
+		case 'buy_carpenter_vp':
+			return { action: 'buy_carpenter_vp' }
+		case 'tap_knight': {
+			const r1 = parseResource(o.r1)
+			const r2 = parseResource(o.r2)
+			return r1 && r2 ? { action: 'tap_knight', r1, r2 } : null
+		}
+		case 'place_explorer_road':
+			return edge ? { action: 'place_explorer_road', edge } : null
+		case 'cast_magic': {
+			const discard = normalizeHand(o.discard)
+			const target = num(o.target)
+			return discard && target !== undefined
+				? { action: 'cast_magic', target, discard }
+				: null
+		}
+		case 'skip_magic':
+			return { action: 'skip_magic' }
+		default:
+			return null
+	}
+}
+
+// --- Local action queue: mirrored from lib/catan/apply.ts -------------------
+//
+// One reducer per member of `UNDOABLE_ACTIONS`. `handleBatch` folds a client's
+// whole queue through them and writes once; each single-action handler below
+// folds exactly one. Both paths therefore share one implementation of what a
+// road costs, which is the point — the client folds the SAME reducers to
+// decide what to show, so a drift here means a player builds four things and
+// the flush rejects.
+//
+// `lib/catan/apply.ts` is the source of truth. See
+// `.claude/specs/local-action-queue.md`.
+
+// Events are `unknown[]` rather than a typed union for the same reason the edge
+// function types them that way: this layer writes them, `ActionLog` reads them,
+// and the shape contract between the two lives in `useGamesStore`'s `GameEvent`.
+export type ApplyOk = { state: GameState; events: unknown[] }
+export type ApplyResult = ApplyOk | { error: string }
+
+export function isApplyError(r: ApplyResult): r is { error: string } {
+	return 'error' in r
+}
+
+// `at` is a parameter rather than a `new Date()` inside, so a reducer is a pure
+// function of its inputs and the check script can assert exact output. The
+// client passes anything it likes — it folds for the state and drops the
+// events; only the server's copy is ever persisted.
+export function applyLocalAction(
+	state: GameState,
+	meIdx: number,
+	action: LocalAction,
+	at: string
+): ApplyResult {
+	switch (action.action) {
+		case 'build_road':
+			return applyBuildRoad(state, meIdx, action, at)
+		case 'build_settlement':
+			return applyBuildSettlement(state, meIdx, action, at)
+		case 'build_city':
+			return applyBuildCity(state, meIdx, action, at)
+		case 'build_super_city':
+			return applyBuildSuperCity(state, meIdx, action, at)
+		case 'build_fence':
+			return applyBuildFence(state, meIdx, action, at)
+		case 'bank_trade':
+			return applyBankTrade(state, meIdx, action, at)
+		case 'liquidate':
+			return applyLiquidate(state, meIdx, action, at)
+		case 'invest':
+			return applyInvest(state, meIdx, action, at)
+		case 'buy_carpenter_vp':
+			return applyBuyCarpenterVP(state, meIdx, at)
+		case 'tap_knight':
+			return applyTapKnight(state, meIdx, action, at)
+		case 'place_explorer_road':
+			return applyPlaceExplorerRoad(state, meIdx, action, at)
+		case 'cast_magic':
+			return applyCastMagic(state, meIdx, action, at)
+		case 'skip_magic':
+			return applySkipMagic(state, meIdx, at)
+	}
+}
+
+// Fold a whole queue. Stops at the first action that doesn't apply and reports
+// its index, which is what lets the client truncate a rebased queue exactly
+// where it went bad instead of dropping the lot.
+export function applyLocalActions(
+	state: GameState,
+	meIdx: number,
+	actions: readonly LocalAction[],
+	at: string
+): { state: GameState; events: unknown[] } | { error: string; index: number } {
+	let working = state
+	const events: unknown[] = []
+	for (let i = 0; i < actions.length; i++) {
+		const res = applyLocalAction(working, meIdx, actions[i], at)
+		if (isApplyError(res)) return { error: res.error, index: i }
+		working = res.state
+		events.push(...res.events)
+	}
+	return { state: working, events }
+}
+
+// --- Shared gates -----------------------------------------------------------
+
+// The floor test every build shares: your own main turn, or your special-build
+// slot where the action allows one. Super city, liquidate and the bank are
+// main-only — trading of any kind during a special build caused a lockout, and
+// the two accountant/metropolitan actions were never offered there.
+function buildFloor(
+	state: GameState,
+	meIdx: number,
+	allowSpecialBuild: boolean
+): string | null {
+	const inMain = state.phase.kind === 'main' && state.currentTurn === meIdx
+	const inSpecial = allowSpecialBuild && isSpecialBuildActor(state, meIdx)
+	if (inMain || inSpecial) return null
+	if (state.phase.kind !== 'main' && state.phase.kind !== 'special_build')
+		return 'expected main phase'
+	return 'not your turn'
+}
+
+function mainTurnOnly(state: GameState, meIdx: number): string | null {
+	if (state.phase.kind !== 'main') return 'expected main phase'
+	if (state.currentTurn !== meIdx) return 'not your turn'
+	return null
+}
+
+// The tail every action runs: Longest Road where the road graph could have
+// moved, then the win check. Deliberately per action rather than once per
+// batch — a batch whose second action wins should stop there, exactly as two
+// separate requests would have.
+function finish(
+	state: GameState,
+	events: unknown[],
+	at: string,
+	opts: { recomputeRoads: boolean }
+): ApplyOk {
+	let cur = state
+	if (opts.recomputeRoads) {
+		const holder = recomputeLongestRoad(cur)
+		if (holder !== cur.longestRoad) {
+			cur = { ...cur, longestRoad: holder }
+			events.push({ kind: 'longest_road_changed', player: holder, at })
+		}
+	}
+	const winner = findWinner(cur)
+	if (winner !== null) {
+		const gameOver: Phase = { kind: 'game_over' }
+		cur = { ...cur, phase: gameOver }
+		events.push({
+			kind: 'game_complete',
+			winner,
+			at,
+			vpCards: vpCardCountsByPlayer(cur),
+		})
+	}
+	return { state: cur, events }
+}
+
+function creditHand(
+	players: PlayerState[],
+	meIdx: number,
+	gain: ResourceHand
+): PlayerState[] {
+	return players.map((p, i) => {
+		if (i !== meIdx) return p
+		const next = { ...p.resources }
+		for (const r of RESOURCES) next[r] = next[r] + gain[r]
+		return { ...p, resources: next }
+	})
+}
+
+// --- Builds -----------------------------------------------------------------
+
+function applyBuildRoad(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'build_road' }>,
+	at: string
+): ApplyResult {
 	const phase = state.phase
 	const isRoadBuilding = phase.kind === 'road_building'
-	// A special-build actor may pay for a road out of turn; main/road_building
-	// still require it be your turn.
-	const isSpecial = isSpecialBuildActor(state, meIdx)
-	if (phase.kind !== 'main' && !isRoadBuilding && !isSpecial)
-		return err(400, 'expected main, road_building, or special_build phase')
-	if (!isSpecial && state.currentTurn !== meIdx)
-		return err(403, 'not your turn')
-
+	if (!isRoadBuilding) {
+		const floor = buildFloor(state, meIdx, true)
+		if (floor) return { error: floor }
+	} else if (state.currentTurn !== meIdx) {
+		return { error: 'not your turn' }
+	}
 	if (
 		!(boardFor(state.variant).edges as readonly string[]).includes(
-			body.edge
+			action.edge
 		)
 	)
-		return err(400, 'unknown edge')
-	const edge = body.edge as Edge
-
+		return { error: 'unknown edge' }
+	const edge = action.edge
 	if (!isValidBuildRoadEdge(state, meIdx, edge))
-		return err(400, 'invalid road')
+		return { error: 'invalid road' }
 
-	let nextPlayers: PlayerState[]
+	let nextPlayers = state.players
 	let nextPhase: Phase | null = null
 	if (isRoadBuilding) {
-		nextPlayers = state.players
-		// Speculatively place the new edge so we can check for legal follow-up
-		// placements before committing the phase transition.
+		// Place speculatively so the follow-up check sees the new edge: a
+		// second free road with nowhere legal to go ends the phase early
+		// rather than stranding the player in it.
 		const afterPlace: GameState = {
 			...state,
 			edges: {
@@ -7144,33 +7406,32 @@ async function handleBuildRoad(
 			},
 		}
 		const remainingAfter = phase.remaining - 1
-		if (remainingAfter === 0 || !hasLegalRoadPlacement(afterPlace, meIdx)) {
-			nextPhase = phase.resume
-		} else {
-			nextPhase = {
-				kind: 'road_building',
-				resume: phase.resume,
-				remaining: remainingAfter as 1,
-			}
-		}
+		nextPhase =
+			remainingAfter === 0 || !hasLegalRoadPlacement(afterPlace, meIdx)
+				? phase.resume
+				: {
+						kind: 'road_building',
+						resume: phase.resume,
+						remaining: remainingAfter as 1,
+					}
 	} else {
 		const meP = state.players[meIdx]
 		// Overbuilding your own fence is priced by the edge — 1 brick, no
 		// payload and no cost substitution.
 		let cost: ResourceHand | null
 		if (isOwnFence(state, edge, meIdx)) {
-			cost = FENCE_UPGRADE_COST
-			if (!canAfford(meP.resources, cost))
-				return err(400, 'insufficient resources')
+			cost = canAfford(meP.resources, FENCE_UPGRADE_COST)
+				? FENCE_UPGRADE_COST
+				: null
 		} else {
 			cost = resolvePurchaseCost(
 				meP,
 				BUILD_COSTS.road,
-				!!body.use_bricklayer,
-				body.smith_swap ?? 0
+				!!action.use_bricklayer,
+				action.smith_swap ?? 0
 			)
 		}
-		if (!cost) return err(400, 'insufficient resources')
+		if (!cost) return { error: 'insufficient resources' }
 		if (
 			!canSpendUnderAge(
 				meP,
@@ -7178,7 +7439,7 @@ async function handleBuildRoad(
 				gameSizeFor(state.players.length)
 			)
 		)
-			return err(400, 'age limit reached this turn')
+			return { error: 'age limit reached this turn' }
 		nextPlayers = applyCost(state.players, meIdx, cost)
 	}
 
@@ -7190,51 +7451,771 @@ async function handleBuildRoad(
 			placedTurn: state.round,
 		},
 	}
-
-	// The fence is consumed when a road is built over it — including a free
-	// Road Building placement, which gets no rebate for it.
+	// A road over your own fence consumes it, free placements included — a
+	// Road Building road gets no rebate for the fence it eats.
 	let nextFenceTokens = state.fenceTokens
 	if (state.fenceTokens?.[edge] === meIdx) {
 		nextFenceTokens = { ...state.fenceTokens }
 		delete nextFenceTokens[edge]
 	}
 
-	const update: Record<string, unknown> = {
-		edges: nextEdges,
-		players: nextPlayers,
-	}
-	if (nextFenceTokens !== state.fenceTokens)
-		update.fence_tokens = nextFenceTokens
-	if (nextPhase) update.phase = nextPhase
-
-	const nextState: GameState = {
+	const next: GameState = {
 		...state,
 		players: nextPlayers,
 		edges: nextEdges,
+		fenceTokens: nextFenceTokens,
 		phase: nextPhase ?? state.phase,
 	}
-	const events: unknown[] = [
-		{
-			kind: 'road_built',
-			player: meIdx,
-			edge,
-			at: new Date().toISOString(),
-		},
-	]
-	const winner = applyEndOfActionChecks(nextState, update, events, {
+	return finish(next, [{ kind: 'road_built', player: meIdx, edge, at }], at, {
 		recomputeRoads: true,
 	})
+}
+
+function applyBuildSettlement(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'build_settlement' }>,
+	at: string
+): ApplyResult {
+	const floor = buildFloor(state, meIdx, true)
+	if (floor) return { error: floor }
+	if (
+		!(boardFor(state.variant).vertices as readonly string[]).includes(
+			action.vertex
+		)
+	)
+		return { error: 'unknown vertex' }
+	const vertex = action.vertex
+	if (!isValidBuildSettlementVertex(state, meIdx, vertex))
+		return { error: 'invalid settlement' }
+
+	const meP = state.players[meIdx]
+	const cost = resolvePurchaseCost(
+		meP,
+		BUILD_COSTS.settlement,
+		!!action.use_bricklayer,
+		action.smith_swap ?? 0
+	)
+	if (!cost) return { error: 'insufficient resources' }
+	if (
+		!canSpendUnderAge(
+			meP,
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
+		return { error: 'age limit reached this turn' }
+
+	const events: unknown[] = [
+		{ kind: 'settlement_built', player: meIdx, vertex, at },
+	]
+	let next: GameState = {
+		...state,
+		vertices: {
+			...state.vertices,
+			[vertex]: {
+				occupied: true as const,
+				player: meIdx,
+				building: 'settlement' as const,
+				placedTurn: state.round,
+			},
+		},
+		players: applyCost(state.players, meIdx, cost),
+	}
+	// This settlement (or its neighbors) can make a haunt player's secret spot
+	// unbuildable, which spawns their ghost there.
+	const haunt = resolveHauntGhosts(next)
+	next = haunt.state
+	for (const s of haunt.spawned) {
+		events.push({
+			kind: 'ghost_spawned',
+			player: s.player,
+			vertex: s.vertex,
+			at,
+		})
+	}
+	// An opponent's settlement can split a road chain, so Longest Road is
+	// recomputed here too — not only on road builds.
+	return finish(next, events, at, { recomputeRoads: true })
+}
+
+function applyBuildCity(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'build_city' }>,
+	at: string
+): ApplyResult {
+	const floor = buildFloor(state, meIdx, true)
+	if (floor) return { error: floor }
+	if (
+		!(boardFor(state.variant).vertices as readonly string[]).includes(
+			action.vertex
+		)
+	)
+		return { error: 'unknown vertex' }
+	const vertex = action.vertex
+	if (!isValidBuildCityVertex(state, meIdx, vertex))
+		return { error: 'invalid city target' }
+
+	const meP = state.players[meIdx]
+	const useBricklayer = !!action.use_bricklayer
+	const requested = Number.isFinite(action.swap_wheat_to_ore)
+		? Number(action.swap_wheat_to_ore)
+		: 0
+	const swapDelta = metropolitanWheatSwapDelta(meP.bonus, requested)
+	let cost: ResourceHand | null
+	if (useBricklayer) {
+		cost = resolvePurchaseCost(meP, BUILD_COSTS.city, true)
+	} else if (swapDelta > 0) {
+		const alt = metropolitanCityCost(meP.bonus, swapDelta)
+		cost = canAfford(meP.resources, alt) ? alt : null
+	} else {
+		cost = resolvePurchaseCost(
+			meP,
+			BUILD_COSTS.city,
+			false,
+			action.smith_swap ?? 0
+		)
+	}
+	if (!cost) return { error: 'insufficient resources' }
+	if (
+		!canSpendUnderAge(
+			meP,
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
+		return { error: 'age limit reached this turn' }
+
+	const next: GameState = {
+		...state,
+		vertices: {
+			...state.vertices,
+			[vertex]: {
+				occupied: true as const,
+				player: meIdx,
+				building: 'city' as const,
+				placedTurn: state.round,
+			},
+		},
+		players: applyCost(state.players, meIdx, cost),
+	}
+	// Cities don't touch the road graph.
+	return finish(
+		next,
+		[{ kind: 'city_built', player: meIdx, vertex, at }],
+		at,
+		{
+			recomputeRoads: false,
+		}
+	)
+}
+
+function applyBuildSuperCity(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'build_super_city' }>,
+	at: string
+): ApplyResult {
+	const floor = buildFloor(state, meIdx, false)
+	if (floor) return { error: floor }
+	if (
+		!(boardFor(state.variant).vertices as readonly string[]).includes(
+			action.vertex
+		)
+	)
+		return { error: 'unknown vertex' }
+	const vertex = action.vertex
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'metropolitan') return { error: 'not a metropolitan' }
+	if (!canBuildMoreSuperCities(state, meIdx))
+		return { error: 'super city cap reached' }
+	const vs = vertexStateOf(state, vertex)
+	if (!vs.occupied || vs.player !== meIdx || vs.building !== 'city')
+		return { error: 'must upgrade your own city' }
+	if (!canPlaceUnderPower(state, meIdx, vertex))
+		return { error: 'power curse blocks this upgrade' }
+
+	const requested = Number.isFinite(action.swap_wheat_to_ore)
+		? Number(action.swap_wheat_to_ore)
+		: 0
+	const swapDelta = metropolitanWheatSwapDelta(meP.bonus, requested)
+	const cost = metropolitanCityCost(meP.bonus, swapDelta)
+	if (!canAfford(meP.resources, cost))
+		return { error: 'insufficient resources' }
+	if (
+		!canSpendUnderAge(
+			meP,
+			costSize(cost),
+			gameSizeFor(state.players.length)
+		)
+	)
+		return { error: 'age limit reached this turn' }
+
+	const next: GameState = {
+		...state,
+		vertices: {
+			...state.vertices,
+			[vertex]: {
+				occupied: true as const,
+				player: meIdx,
+				building: 'super_city' as const,
+				placedTurn: state.round,
+			},
+		},
+		players: applyCost(state.players, meIdx, cost),
+	}
+	return finish(
+		next,
+		[{ kind: 'build_super_city', player: meIdx, vertex, cost, at }],
+		at,
+		{ recomputeRoads: false }
+	)
+}
+
+function applyBuildFence(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'build_fence' }>,
+	at: string
+): ApplyResult {
+	const floor = buildFloor(state, meIdx, true)
+	if (floor) return { error: floor }
+	const meP = state.players[meIdx]
+	if (meP?.bonus !== 'fencer') return { error: 'not a fencer' }
+	if (
+		!(boardFor(state.variant).edges as readonly string[]).includes(
+			action.edge
+		)
+	)
+		return { error: 'unknown edge' }
+	const edge = action.edge
+	if (!isValidBuildFenceEdge(state, meIdx, edge))
+		return { error: 'invalid fence' }
+	if (!canAfford(meP.resources, FENCE_COST))
+		return { error: 'insufficient resources' }
+	if (
+		!canSpendUnderAge(
+			meP,
+			costSize(FENCE_COST),
+			gameSizeFor(state.players.length)
+		)
+	)
+		return { error: 'age limit reached this turn' }
+
+	const next: GameState = {
+		...state,
+		players: applyCost(state.players, meIdx, FENCE_COST),
+		fenceTokens: { ...(state.fenceTokens ?? {}), [edge]: meIdx },
+	}
+	// A fence is not an entry in `edges`, so the road graph is untouched.
+	return finish(
+		next,
+		[{ kind: 'fence_built', player: meIdx, edge, at }],
+		at,
+		{
+			recomputeRoads: false,
+		}
+	)
+}
+
+// --- Bank -------------------------------------------------------------------
+
+function applyBankTrade(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'bank_trade' }>,
+	at: string
+): ApplyResult {
+	// Main-turn only: a bank trade inside a special-build slot could drop the
+	// builder under `moreThanSeven` and disable the build they entered for.
+	if (state.phase.kind === 'special_build')
+		return { error: 'no trading during special build' }
+	const floor = mainTurnOnly(state, meIdx)
+	if (floor) return { error: floor }
+
+	const { give, receive } = action
+	// A non-null partition is both the validity answer and the record of what
+	// was charged — there is no ratio to pick.
+	const rates = bankPartitionFor(state, meIdx, give, receive)
+	if (!rates) return { error: 'no valid bank rate for this trade' }
+	if (!canAfford(state.players[meIdx].resources, give))
+		return { error: 'insufficient resources' }
+
+	const next: GameState = {
+		...state,
+		players: applyBankTradeToPlayer(state.players, meIdx, give, receive),
+	}
+	// `ratio` survives only for a uniform partition, which is what keeps the
+	// log's "4:1" row reading the way it always has.
+	const uniform = uniformRatioOf(rates)
+	return finish(
+		next,
+		[
+			{
+				kind: 'bank_trade',
+				player: meIdx,
+				give,
+				receive,
+				...(uniform === null ? {} : { ratio: uniform }),
+				rates,
+				at,
+			},
+		],
+		at,
+		{ recomputeRoads: false }
+	)
+}
+
+// --- Accountant -------------------------------------------------------------
+
+function applyLiquidate(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'liquidate' }>,
+	at: string
+): ApplyResult {
+	const floor = buildFloor(state, meIdx, false)
+	if (floor) return { error: floor }
+	if (state.players[meIdx].bonus !== 'accountant')
+		return { error: 'not an accountant' }
+
+	const board = boardFor(state.variant)
+	const target = action.target
+	const invalid = { error: 'invalid liquidation target' }
+
+	if (target.kind === 'road') {
+		if (!(board.edges as readonly string[]).includes(target.edge))
+			return invalid
+		const es = state.edges[target.edge]
+		if (!es?.occupied || es.player !== meIdx) return invalid
+		// Not the same turn it was bought, and not if removing it would strand
+		// a piece further out.
+		if (es.placedTurn >= state.round) return invalid
+		if (roadLiquidationBlocked(state, meIdx, target.edge)) return invalid
+		const nextEdges = { ...state.edges }
+		delete nextEdges[target.edge]
+		const next: GameState = {
+			...state,
+			edges: nextEdges,
+			players: creditHand(state.players, meIdx, ROAD_REFUND),
+		}
+		return finish(
+			next,
+			[
+				{
+					kind: 'liquidate',
+					player: meIdx,
+					detail: {
+						kind: 'road',
+						edge: target.edge,
+						at,
+						refund: ROAD_REFUND,
+					},
+					at,
+				},
+			],
+			at,
+			// A removed road can split a chain.
+			{ recomputeRoads: true }
+		)
+	}
+
+	if (!(board.vertices as readonly string[]).includes(target.vertex))
+		return invalid
+	const vs = vertexStateOf(state, target.vertex)
+	if (!vs.occupied || vs.player !== meIdx) return invalid
+	if (vs.building !== target.kind) return invalid
+	if (vs.placedTurn >= state.round) return invalid
+
+	const refund =
+		target.kind === 'settlement'
+			? SETTLEMENT_REFUND
+			: target.kind === 'city'
+				? CITY_REFUND
+				: SUPER_CITY_REFUND
+	// A settlement comes off the board; a city and super city step down one.
+	const nextVertices = { ...state.vertices }
+	if (target.kind === 'settlement') {
+		delete nextVertices[target.vertex]
+	} else {
+		nextVertices[target.vertex] = {
+			occupied: true as const,
+			player: meIdx,
+			building: target.kind === 'city' ? 'settlement' : 'city',
+			placedTurn: vs.placedTurn,
+		}
+	}
+	const next: GameState = {
+		...state,
+		vertices: nextVertices,
+		players: creditHand(state.players, meIdx, refund),
+	}
+	return finish(
+		next,
+		[
+			{
+				kind: 'liquidate',
+				player: meIdx,
+				detail: {
+					kind: target.kind,
+					vertex: target.vertex,
+					at,
+					refund,
+				},
+				at,
+			},
+		],
+		at,
+		// A removed settlement can rejoin an opponent's chain.
+		{ recomputeRoads: target.kind === 'settlement' }
+	)
+}
+
+// --- Investor / carpenter / veteran -----------------------------------------
+
+function applyInvest(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'invest' }>,
+	at: string
+): ApplyResult {
+	const floor = mainTurnOnly(state, meIdx)
+	if (floor) return { error: floor }
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'investor') return { error: 'not an investor' }
+	const { resource } = action
+	if (
+		!canInvest(
+			meP,
+			resource,
+			totalVP(state, meIdx),
+			gameSizeFor(state.players.length)
+		)
+	)
+		return { error: 'cannot invest' }
+
+	const investments = { ...(meP.investments ?? {}) }
+	investments[resource] = (investments[resource] ?? 0) + 1
+	const next: GameState = {
+		...state,
+		players: state.players.map((p, i) =>
+			i === meIdx
+				? {
+						...p,
+						resources: {
+							...p.resources,
+							[resource]: p.resources[resource] - INVEST_TRIO,
+						},
+						investments,
+					}
+				: p
+		),
+	}
+	return finish(next, [{ kind: 'invest', player: meIdx, resource, at }], at, {
+		recomputeRoads: false,
+	})
+}
+
+function applyBuyCarpenterVP(
+	state: GameState,
+	meIdx: number,
+	at: string
+): ApplyResult {
+	const floor = mainTurnOnly(state, meIdx)
+	if (floor) return { error: floor }
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'carpenter') return { error: 'not a carpenter' }
+	if (meP.boughtCarpenterVPThisTurn)
+		return { error: 'already bought carpenter VP this turn' }
+	if (meP.resources.wood < CARPENTER_WOOD_COST)
+		return { error: 'insufficient wood' }
+
+	const next: GameState = {
+		...state,
+		players: state.players.map((p, i) =>
+			i === meIdx
+				? {
+						...p,
+						resources: {
+							...p.resources,
+							wood: p.resources.wood - CARPENTER_WOOD_COST,
+						},
+						carpenterVP: (p.carpenterVP ?? 0) + 1,
+						boughtCarpenterVPThisTurn: true,
+					}
+				: p
+		),
+	}
+	// A VP can push the buyer over the threshold; no road-graph change.
+	return finish(next, [{ kind: 'carpenter_vp', player: meIdx, at }], at, {
+		recomputeRoads: false,
+	})
+}
+
+function applyTapKnight(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'tap_knight' }>,
+	at: string
+): ApplyResult {
+	const floor = mainTurnOnly(state, meIdx)
+	if (floor) return { error: floor }
+	const meP = state.players[meIdx]
+	if (meP.bonus !== 'veteran') return { error: 'not a veteran' }
+	const played = meP.devCardsPlayed.knight ?? 0
+	const tapped = meP.tappedKnights ?? 0
+	if (played - tapped < 1) return { error: 'no untapped played knight' }
+
+	const { r1, r2 } = action
+	const next: GameState = {
+		...state,
+		players: state.players.map((p, i) => {
+			if (i !== meIdx) return p
+			const res = { ...p.resources }
+			res[r1] += 1
+			res[r2] += 1
+			return { ...p, resources: res, tappedKnights: tapped + 1 }
+		}),
+	}
+	return finish(
+		next,
+		[{ kind: 'knight_tapped', player: meIdx, resources: [r1, r2], at }],
+		at,
+		{ recomputeRoads: false }
+	)
+}
+
+// --- Explorer (post_placement) ----------------------------------------------
+
+function applyPlaceExplorerRoad(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'place_explorer_road' }>,
+	at: string
+): ApplyResult {
+	// `post_placement` is parallel — no turn test, each seat drains its own
+	// entry and the phase advances when the last of them is gone.
+	if (state.phase.kind !== 'post_placement')
+		return { error: 'expected post_placement phase' }
+	const remaining = state.phase.pending.explorer?.[meIdx] ?? 0
+	if (remaining <= 0) return { error: 'no explorer roads remaining' }
+	if (
+		!(boardFor(state.variant).edges as readonly string[]).includes(
+			action.edge
+		)
+	)
+		return { error: 'unknown edge' }
+	const edge = action.edge
+	if (!isValidBuildRoadEdge(state, meIdx, edge))
+		return { error: 'invalid road placement' }
+
+	const explorer = { ...(state.phase.pending.explorer ?? {}) }
+	if (remaining - 1 <= 0) delete explorer[meIdx]
+	else explorer[meIdx] = remaining - 1
+
+	const next: GameState = {
+		...state,
+		edges: {
+			...state.edges,
+			[edge]: {
+				occupied: true as const,
+				player: meIdx,
+				placedTurn: state.round,
+			},
+		},
+		phase: postPlacementPhaseFrom({ ...state.phase.pending, explorer }),
+	}
+	// Longest Road is recomputed so leaderboards reflect explorer placements;
+	// no win check can fire here, but `finish` handles that by finding none.
+	return finish(
+		next,
+		[{ kind: 'explorer_road', player: meIdx, edge, at }],
+		at,
+		{ recomputeRoads: true }
+	)
+}
+
+// --- Magician window --------------------------------------------------------
+
+function applyCastMagic(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'cast_magic' }>,
+	at: string
+): ApplyResult {
+	const phase = state.phase
+	if (phase.kind !== 'magician_pick')
+		return { error: 'expected magician_pick phase' }
+	if (phase.roller !== meIdx) return { error: 'not your magician window' }
+
+	const actual = phase.roll.a + phase.roll.b
+	const { target, discard } = action
+	if (!isValidMagicTarget(actual, target)) return { error: 'invalid target' }
+	if (
+		handSize(discard) !==
+		magicDiscardCount(actual, target, gameSizeFor(state.players.length))
+	)
+		return { error: 'wrong discard count' }
+	const meP = state.players[meIdx]
+	// The roll's own gain is still withheld on the phase, so this is the hand
+	// they rolled with — the real constraint on what a cast can cost.
+	if (!canAfford(meP.resources, discard))
+		return { error: 'insufficient cards to discard' }
+
+	// Phantom production: the target number pays the magician and nobody else.
+	const gain = distributeResources(state, target)[meIdx] ?? emptyHand()
+	const pending = phase.pendingGain ?? emptyHand()
+	const resources = { ...meP.resources }
+	for (const r of RESOURCES)
+		resources[r] = resources[r] - discard[r] + gain[r] + pending[r]
+
+	const next: GameState = {
+		...state,
+		players: state.players.map((p, i) =>
+			i === meIdx ? { ...p, resources, lastMagicRound: state.round } : p
+		),
+		phase: phase.resume,
+	}
+	return finish(
+		next,
+		[{ kind: 'magic_cast', player: meIdx, target, discard, gain, at }],
+		at,
+		{ recomputeRoads: false }
+	)
+}
+
+function applySkipMagic(
+	state: GameState,
+	meIdx: number,
+	at: string
+): ApplyResult {
+	const phase = state.phase
+	if (phase.kind !== 'magician_pick')
+		return { error: 'expected magician_pick phase' }
+	if (phase.roller !== meIdx) return { error: 'not your magician window' }
+
+	// Keeping the roll still collects it: the withheld production lands here,
+	// the window's other exit.
+	const pending = phase.pendingGain ?? emptyHand()
+	const next: GameState = {
+		...state,
+		players: creditHand(state.players, meIdx, pending),
+		phase: phase.resume,
+	}
+	return finish(next, [{ kind: 'magic_skipped', player: meIdx, at }], at, {
+		recomputeRoads: false,
+	})
+}
+
+// The mutable `game_states` columns that actually differ. The reducers only
+// build a new object for something they changed, so reference inequality is
+// exactly the right test — and writing only what moved keeps a seat acting in
+// the parallel `post_placement` phase from clobbering another seat's columns.
+function changedStateColumns(
+	before: GameState,
+	after: GameState
+): Record<string, unknown> {
+	const update: Record<string, unknown> = {}
+	if (after.vertices !== before.vertices) update.vertices = after.vertices
+	if (after.edges !== before.edges) update.edges = after.edges
+	if (after.players !== before.players) update.players = after.players
+	if (after.phase !== before.phase) update.phase = after.phase
+	if (after.fenceTokens !== before.fenceTokens)
+		update.fence_tokens = after.fenceTokens
+	if (after.longestRoad !== before.longestRoad)
+		update.longest_road = after.longestRoad
+	return update
+}
+
+// The one write path for queued actions, single or batched. Everything the
+// reducers can't see — loading, auth, game status — happens here; everything
+// they can (phase, turn, validity, cost) happens in them.
+async function commitLocalActions(
+	admin: SupabaseClient,
+	me: string,
+	gameId: string,
+	actions: LocalAction[]
+): Promise<Response> {
+	const loaded = await loadGame(admin, gameId)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (game.status !== 'active') return err(400, 'not active')
+	const meIdx = currentPlayerIndex(game, state, me)
+	if (meIdx === null) return err(403, 'not a participant')
+
+	const at = new Date().toISOString()
+	const folded = applyLocalActions(state, meIdx, actions, at)
+	if ('error' in folded) {
+		// Name which one failed: a batch is the player's whole turn, and "invalid
+		// settlement" alone doesn't say which of three builds it means.
+		return err(
+			400,
+			actions.length > 1
+				? `${folded.error} (move ${folded.index + 1} of ${actions.length})`
+				: folded.error
+		)
+	}
+
+	// `finish` already pushed `game_complete` and moved the phase; this is only
+	// recovering the index for the games-row write.
+	const winner =
+		folded.state.phase.kind === 'game_over'
+			? findWinner(folded.state)
+			: null
 	const commitErr = await commitActionWrite(
 		admin,
 		game,
-		update,
-		events,
+		changedStateColumns(state, folded.state),
+		folded.events,
 		winner,
-		nextState
+		folded.state
 	)
 	if (commitErr) return commitErr
-
 	return json({ ok: true })
+}
+
+// A turn's worth of queued actions, applied in order and written once. Atomic
+// by construction — a rejection writes nothing, which is what makes the
+// client's retry safe to send byte-identical.
+async function handleBatch(
+	admin: SupabaseClient,
+	me: string,
+	body: BatchBody
+): Promise<Response> {
+	const raw = Array.isArray(body.actions) ? body.actions : null
+	if (!raw || raw.length === 0) return err(400, 'empty batch')
+	// A turn can't legitimately hold this many; the cap is what stops a
+	// malformed client asking the server to fold forever.
+	if (raw.length > MAX_BATCH_ACTIONS) return err(400, 'too many actions')
+	const actions: LocalAction[] = []
+	for (let i = 0; i < raw.length; i++) {
+		const parsed = parseLocalAction(raw[i])
+		if (!parsed) return err(400, `malformed action at ${i + 1}`)
+		actions.push(parsed)
+	}
+	return commitLocalActions(admin, me, body.game_id, actions)
+}
+
+const MAX_BATCH_ACTIONS = 64
+
+// Single-action entry points. Each is the same reducer `handleBatch` folds,
+// applied one at a time — so the rules can't differ between a client on an
+// older bundle, the timeout sweep, and a queued turn. The phase, turn and
+// validity gates all live in the reducer; nothing is re-checked here.
+async function handleBuildRoad(
+	admin: SupabaseClient,
+	me: string,
+	body: BuildRoadBody
+): Promise<Response> {
+	return commitLocalActions(admin, me, body.game_id, [
+		{
+			action: 'build_road',
+			edge: body.edge as Edge,
+			use_bricklayer: !!body.use_bricklayer,
+			smith_swap: body.smith_swap ?? 0,
+		},
+	])
 }
 
 async function handleBuildSettlement(
@@ -7242,93 +8223,14 @@ async function handleBuildSettlement(
 	me: string,
 	body: BuildSettlementBody
 ): Promise<Response> {
-	const pre = await preflightBuild(admin, me, body.game_id, true)
-	if (!pre.ok) return pre.response
-	const { game, state, meIdx } = pre
-
-	if (
-		!(boardFor(state.variant).vertices as readonly string[]).includes(
-			body.vertex
-		)
-	)
-		return err(400, 'unknown vertex')
-	const vertex = body.vertex as Vertex
-
-	if (!isValidBuildSettlementVertex(state, meIdx, vertex))
-		return err(400, 'invalid settlement')
-	const cost = resolvePurchaseCost(
-		state.players[meIdx],
-		BUILD_COSTS.settlement,
-		!!body.use_bricklayer,
-		body.smith_swap ?? 0
-	)
-	if (!cost) return err(400, 'insufficient resources')
-	if (
-		!canSpendUnderAge(
-			state.players[meIdx],
-			costSize(cost),
-			gameSizeFor(state.players.length)
-		)
-	)
-		return err(400, 'age limit reached this turn')
-
-	const nextVertices = {
-		...state.vertices,
-		[vertex]: {
-			occupied: true as const,
-			player: meIdx,
-			building: 'settlement' as const,
-			placedTurn: state.round,
-		},
-	}
-	const nextPlayers = applyCost(state.players, meIdx, cost)
-
-	const events: unknown[] = [
+	return commitLocalActions(admin, me, body.game_id, [
 		{
-			kind: 'settlement_built',
-			player: meIdx,
-			vertex,
-			at: new Date().toISOString(),
+			action: 'build_settlement',
+			vertex: body.vertex as Vertex,
+			use_bricklayer: !!body.use_bricklayer,
+			smith_swap: body.smith_swap ?? 0,
 		},
-	]
-	// A new settlement (or its neighbors) may make a haunt player's secret
-	// spot unbuildable → spawn a ghost there.
-	let nextState: GameState = {
-		...state,
-		vertices: nextVertices,
-		players: nextPlayers,
-	}
-	const haunt = resolveHauntGhosts(nextState)
-	nextState = haunt.state
-	for (const s of haunt.spawned) {
-		events.push({
-			kind: 'ghost_spawned',
-			player: s.player,
-			vertex: s.vertex,
-			at: new Date().toISOString(),
-		})
-	}
-
-	const update: Record<string, unknown> = {
-		vertices: nextState.vertices,
-		players: nextState.players,
-	}
-	// An opponent's settlement can split a chain, so Longest Road gets
-	// recomputed here too (not just on road builds).
-	const winner = applyEndOfActionChecks(nextState, update, events, {
-		recomputeRoads: true,
-	})
-	const commitErr = await commitActionWrite(
-		admin,
-		game,
-		update,
-		events,
-		winner,
-		nextState
-	)
-	if (commitErr) return commitErr
-
-	return json({ ok: true })
+	])
 }
 
 async function handleBuildCity(
@@ -7336,93 +8238,15 @@ async function handleBuildCity(
 	me: string,
 	body: BuildCityBody
 ): Promise<Response> {
-	const pre = await preflightBuild(admin, me, body.game_id, true)
-	if (!pre.ok) return pre.response
-	const { game, state, meIdx } = pre
-
-	if (
-		!(boardFor(state.variant).vertices as readonly string[]).includes(
-			body.vertex
-		)
-	)
-		return err(400, 'unknown vertex')
-	const vertex = body.vertex as Vertex
-
-	if (!isValidBuildCityVertex(state, meIdx, vertex))
-		return err(400, 'invalid city target')
-	const meP = state.players[meIdx]
-	const useBricklayer = !!body.use_bricklayer
-	const requestedSwap = Number.isFinite(body.swap_wheat_to_ore)
-		? Number(body.swap_wheat_to_ore)
-		: 0
-	const swapDelta = metropolitanWheatSwapDelta(meP.bonus, requestedSwap)
-	let cost: ResourceHand | null
-	if (useBricklayer) {
-		cost = resolvePurchaseCost(meP, BUILD_COSTS.city, true)
-	} else if (swapDelta > 0) {
-		const altCost = metropolitanCityCost(meP.bonus, swapDelta)
-		cost = canAfford(meP.resources, altCost) ? altCost : null
-	} else {
-		cost = resolvePurchaseCost(
-			meP,
-			BUILD_COSTS.city,
-			false,
-			body.smith_swap ?? 0
-		)
-	}
-	if (!cost) return err(400, 'insufficient resources')
-	if (
-		!canSpendUnderAge(
-			meP,
-			costSize(cost),
-			gameSizeFor(state.players.length)
-		)
-	)
-		return err(400, 'age limit reached this turn')
-
-	const nextVertices = {
-		...state.vertices,
-		[vertex]: {
-			occupied: true as const,
-			player: meIdx,
-			building: 'city' as const,
-			placedTurn: state.round,
-		},
-	}
-	const nextPlayers = applyCost(state.players, meIdx, cost)
-
-	const update: Record<string, unknown> = {
-		vertices: nextVertices,
-		players: nextPlayers,
-	}
-	const nextState: GameState = {
-		...state,
-		vertices: nextVertices,
-		players: nextPlayers,
-	}
-	const events: unknown[] = [
+	return commitLocalActions(admin, me, body.game_id, [
 		{
-			kind: 'city_built',
-			player: meIdx,
-			vertex,
-			at: new Date().toISOString(),
+			action: 'build_city',
+			vertex: body.vertex as Vertex,
+			use_bricklayer: !!body.use_bricklayer,
+			swap_wheat_to_ore: body.swap_wheat_to_ore ?? 0,
+			smith_swap: body.smith_swap ?? 0,
 		},
-	]
-	// Cities don't touch the road graph; skip Longest Road recompute.
-	const winner = applyEndOfActionChecks(nextState, update, events, {
-		recomputeRoads: false,
-	})
-	const commitErr = await commitActionWrite(
-		admin,
-		game,
-		update,
-		events,
-		winner,
-		nextState
-	)
-	if (commitErr) return commitErr
-
-	return json({ ok: true })
+	])
 }
 
 async function handleDiscard(
@@ -8219,40 +9043,20 @@ async function handleConfirmTrade(
 	return json({ ok: true })
 }
 
+// The one legacy shim left: a client on a pre-combination bundle still sends
+// the merchant's 1:1 side-conversion as its own payload. Fold it back into
+// give/receive so it goes through the same validation as everything else — the
+// merchant's extras are ordinary 1:1 groups now.
 async function handleBankTrade(
 	admin: SupabaseClient,
 	me: string,
 	body: BankTradeBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-
-	if (game.status !== 'active') return err(400, 'not active')
-
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	// Bank/port trades are a main-turn action only — not available in a
-	// special-build slot.
-	const inMain = state.phase.kind === 'main' && state.currentTurn === meIdx
-	if (!inMain) {
-		if (state.phase.kind === 'special_build')
-			return err(400, 'no trading during special build')
-		if (state.phase.kind !== 'main') return err(400, 'expected main phase')
-		return err(403, 'not your turn')
-	}
-
 	let give = normalizeHand(body.give)
 	let receive = normalizeHand(body.receive)
 	if (!give || !receive) return err(400, 'invalid resource hand')
 
-	const meP = state.players[meIdx]
-
-	// A client on a pre-combination bundle still sends the merchant's 1:1
-	// side-conversion as its own payload. Fold it back into give/receive so it
-	// goes through the same validation as everything else — the merchant's
-	// extras are ordinary 1:1 groups now.
-	if (body.merchant && meP.bonus === 'merchant') {
+	if (body.merchant) {
 		const resource = parseResource(body.merchant.resource)
 		const take = normalizeHand(body.merchant.take)
 		const count = Number(body.merchant.count)
@@ -8265,44 +9069,9 @@ async function handleBankTrade(
 		receive = merged
 	}
 
-	// The one authority on whether the bank takes this: a non-null partition
-	// is both the answer and the record of what was charged.
-	const rates = bankPartitionFor(state, meIdx, give, receive)
-	if (!rates) return err(400, 'no valid bank rate for this trade')
-	if (!canAfford(meP.resources, give))
-		return err(400, 'insufficient resources')
-
-	const nextPlayers = applyBankTradeToPlayer(
-		state.players,
-		meIdx,
-		give,
-		receive
-	)
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ players: nextPlayers })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
-	// `ratio` survives only for a single-rate trade, which is what keeps the
-	// log's "4:1" row reading the way it always has.
-	const uniform = uniformRatioOf(rates)
-	const event = {
-		kind: 'bank_trade',
-		player: meIdx,
-		give,
-		receive,
-		...(uniform === null ? {} : { ratio: uniform }),
-		rates,
-		at: new Date().toISOString(),
-	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
-
-	return json({ ok: true, rates })
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'bank_trade', give, receive },
+	])
 }
 
 async function handleBuyDevCard(
@@ -8550,83 +9319,13 @@ async function handleBuildSuperCity(
 	me: string,
 	body: BuildSuperCityBody
 ): Promise<Response> {
-	const pre = await preflightBuild(admin, me, body.game_id)
-	if (!pre.ok) return pre.response
-	const { game, state, meIdx } = pre
-	if (
-		!(boardFor(state.variant).vertices as readonly string[]).includes(
-			body.vertex
-		)
-	)
-		return err(400, 'unknown vertex')
-	const vertex = body.vertex as Vertex
-	const meP = state.players[meIdx]
-	if (meP.bonus !== 'metropolitan') return err(400, 'not a metropolitan')
-	if (!canBuildMoreSuperCities(state, meIdx))
-		return err(400, 'super city cap reached')
-	const vs = vertexStateOf(state, vertex)
-	if (!vs.occupied || vs.player !== meIdx || vs.building !== 'city')
-		return err(400, 'must upgrade your own city')
-	if (!canPlaceUnderPower(state, meIdx, vertex))
-		return err(400, 'power curse blocks this upgrade')
-
-	const requested = Number.isFinite(body.swap_wheat_to_ore)
-		? Number(body.swap_wheat_to_ore)
-		: 0
-	const swapDelta = metropolitanWheatSwapDelta(meP.bonus, requested)
-	const cost = metropolitanCityCost(meP.bonus, swapDelta)
-	if (!canAfford(meP.resources, cost))
-		return err(400, 'insufficient resources')
-	if (
-		!canSpendUnderAge(
-			meP,
-			costSize(cost),
-			gameSizeFor(state.players.length)
-		)
-	)
-		return err(400, 'age limit reached this turn')
-
-	const nextVertices = {
-		...state.vertices,
-		[vertex]: {
-			occupied: true as const,
-			player: meIdx,
-			building: 'super_city' as const,
-			placedTurn: state.round,
-		},
-	}
-	const nextPlayers = applyCost(state.players, meIdx, cost)
-	const update: Record<string, unknown> = {
-		vertices: nextVertices,
-		players: nextPlayers,
-	}
-	const nextState: GameState = {
-		...state,
-		vertices: nextVertices,
-		players: nextPlayers,
-	}
-	const events: unknown[] = [
+	return commitLocalActions(admin, me, body.game_id, [
 		{
-			kind: 'build_super_city',
-			player: meIdx,
-			vertex,
-			cost,
-			at: new Date().toISOString(),
+			action: 'build_super_city',
+			vertex: body.vertex as Vertex,
+			swap_wheat_to_ore: body.swap_wheat_to_ore ?? 0,
 		},
-	]
-	const winner = applyEndOfActionChecks(nextState, update, events, {
-		recomputeRoads: false,
-	})
-	const commitErr = await commitActionWrite(
-		admin,
-		game,
-		update,
-		events,
-		winner,
-		nextState
-	)
-	if (commitErr) return commitErr
-	return json({ ok: true })
+	])
 }
 
 async function handleLiquidate(
@@ -8634,194 +9333,12 @@ async function handleLiquidate(
 	me: string,
 	body: LiquidateBody
 ): Promise<Response> {
-	const pre = await preflightBuild(admin, me, body.game_id)
-	if (!pre.ok) return pre.response
-	const { game, state, meIdx } = pre
-	if (state.players[meIdx].bonus !== 'accountant')
-		return err(400, 'not an accountant')
-
-	const target = body.target as { kind?: string } & Record<string, unknown>
-	if (!target || typeof target !== 'object') return err(400, 'invalid target')
-	const kind = target.kind
-	const refund = ((): { hand: ResourceHand; eventDetail: unknown } | null => {
-		const at = new Date().toISOString()
-		if (kind === 'road') {
-			const edge = target.edge as Edge
-			if (
-				!(boardFor(state.variant).edges as readonly string[]).includes(
-					edge as string
-				)
-			)
-				return null
-			const es = state.edges[edge]
-			if (!es?.occupied || es.player !== meIdx) return null
-			if (es.placedTurn >= state.round) return null
-			if (roadLiquidationBlocked(state, meIdx, edge)) return null
-			return {
-				hand: ROAD_REFUND,
-				eventDetail: { kind: 'road', edge, at, refund: ROAD_REFUND },
-			}
-		}
-		if (kind === 'settlement') {
-			const vertex = target.vertex as Vertex
-			if (
-				!(
-					boardFor(state.variant).vertices as readonly string[]
-				).includes(vertex as string)
-			)
-				return null
-			const vs = vertexStateOf(state, vertex)
-			if (!vs.occupied || vs.player !== meIdx) return null
-			if (vs.building !== 'settlement') return null
-			if (vs.placedTurn >= state.round) return null
-			return {
-				hand: SETTLEMENT_REFUND,
-				eventDetail: {
-					kind: 'settlement',
-					vertex,
-					at,
-					refund: SETTLEMENT_REFUND,
-				},
-			}
-		}
-		if (kind === 'city') {
-			const vertex = target.vertex as Vertex
-			if (
-				!(
-					boardFor(state.variant).vertices as readonly string[]
-				).includes(vertex as string)
-			)
-				return null
-			const vs = vertexStateOf(state, vertex)
-			if (!vs.occupied || vs.player !== meIdx) return null
-			if (vs.building !== 'city') return null
-			if (vs.placedTurn >= state.round) return null
-			return {
-				hand: CITY_REFUND,
-				eventDetail: { kind: 'city', vertex, at, refund: CITY_REFUND },
-			}
-		}
-		if (kind === 'super_city') {
-			const vertex = target.vertex as Vertex
-			if (
-				!(
-					boardFor(state.variant).vertices as readonly string[]
-				).includes(vertex as string)
-			)
-				return null
-			const vs = vertexStateOf(state, vertex)
-			if (!vs.occupied || vs.player !== meIdx) return null
-			if (vs.building !== 'super_city') return null
-			if (vs.placedTurn >= state.round) return null
-			return {
-				hand: SUPER_CITY_REFUND,
-				eventDetail: {
-					kind: 'super_city',
-					vertex,
-					at,
-					refund: SUPER_CITY_REFUND,
-				},
-			}
-		}
-		// Dev cards are not liquidatable: the accountant cashes in pieces on
-		// the board only. A legacy client sending `dev_card` falls through to
-		// the invalid-target error below.
-		return null
-	})()
-
-	if (!refund) return err(400, 'invalid liquidation target')
-
-	let nextVertices = state.vertices
-	let nextEdges = state.edges
-	let nextPlayers = state.players.map((p) => p)
-
-	if (kind === 'road') {
-		const edge = target.edge as Edge
-		const ne = { ...state.edges }
-		delete ne[edge]
-		nextEdges = ne
-	} else if (kind === 'settlement') {
-		const vertex = target.vertex as Vertex
-		const nv = { ...state.vertices }
-		delete nv[vertex]
-		nextVertices = nv
-	} else if (kind === 'city') {
-		const vertex = target.vertex as Vertex
-		const vs = state.vertices[vertex]!
-		nextVertices = {
-			...state.vertices,
-			[vertex]: {
-				occupied: true,
-				player: meIdx,
-				building: 'settlement',
-				placedTurn: vs.occupied ? vs.placedTurn : 0,
-			},
-		}
-	} else if (kind === 'super_city') {
-		const vertex = target.vertex as Vertex
-		const vs = state.vertices[vertex]!
-		nextVertices = {
-			...state.vertices,
-			[vertex]: {
-				occupied: true,
-				player: meIdx,
-				building: 'city',
-				placedTurn: vs.occupied ? vs.placedTurn : 0,
-			},
-		}
-	}
-
-	// Credit the refund to the player's hand.
-	nextPlayers = nextPlayers.map((p, i) => {
-		if (i !== meIdx) return p
-		const r = p.resources
-		return {
-			...p,
-			resources: {
-				brick: r.brick + refund.hand.brick,
-				wood: r.wood + refund.hand.wood,
-				sheep: r.sheep + refund.hand.sheep,
-				wheat: r.wheat + refund.hand.wheat,
-				ore: r.ore + refund.hand.ore,
-			},
-		}
+	const parsed = parseLocalAction({
+		action: 'liquidate',
+		target: body.target,
 	})
-
-	const update: Record<string, unknown> = {
-		vertices: nextVertices,
-		edges: nextEdges,
-		players: nextPlayers,
-	}
-	const nextState: GameState = {
-		...state,
-		vertices: nextVertices,
-		edges: nextEdges,
-		players: nextPlayers,
-	}
-	const events: unknown[] = [
-		{
-			kind: 'liquidate',
-			player: meIdx,
-			detail: refund.eventDetail,
-			at: new Date().toISOString(),
-		},
-	]
-	// Roads can split a longest-road chain; settlements can join one. Run
-	// the road recompute when either changed.
-	const recomputeRoads = kind === 'road' || kind === 'settlement'
-	const winner = applyEndOfActionChecks(nextState, update, events, {
-		recomputeRoads,
-	})
-	const commitErr = await commitActionWrite(
-		admin,
-		game,
-		update,
-		events,
-		winner,
-		nextState
-	)
-	if (commitErr) return commitErr
-	return json({ ok: true })
+	if (!parsed) return err(400, 'invalid liquidation target')
+	return commitLocalActions(admin, me, body.game_id, [parsed])
 }
 
 type PostPlacementPending = {
@@ -8856,83 +9373,9 @@ async function handlePlaceExplorerRoad(
 	me: string,
 	body: PlaceExplorerRoadBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-	if (state.phase.kind !== 'post_placement')
-		return err(400, 'expected post_placement phase')
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	const remaining = state.phase.pending.explorer?.[meIdx] ?? 0
-	if (remaining <= 0) return err(400, 'no explorer roads remaining')
-	if (
-		!(boardFor(state.variant).edges as readonly string[]).includes(
-			body.edge
-		)
-	)
-		return err(400, 'unknown edge')
-	const edge = body.edge as Edge
-	if (!isValidBuildRoadEdge(state, meIdx, edge))
-		return err(400, 'invalid road placement')
-
-	const nextEdges = {
-		...state.edges,
-		[edge]: {
-			occupied: true as const,
-			player: meIdx,
-			placedTurn: state.round,
-		},
-	}
-	const newRemaining = remaining - 1
-	const newExplorer = { ...(state.phase.pending.explorer ?? {}) }
-	if (newRemaining <= 0) delete newExplorer[meIdx]
-	else newExplorer[meIdx] = newRemaining
-
-	const nextPhase = postPlacementPhaseFrom({
-		...state.phase.pending,
-		explorer: newExplorer,
-	})
-
-	const stateAfter: GameState = {
-		...state,
-		edges: nextEdges,
-		phase: nextPhase,
-	}
-	const events: unknown[] = [
-		{
-			kind: 'explorer_road',
-			player: meIdx,
-			edge,
-			at: new Date().toISOString(),
-		},
-	]
-
-	// Recompute longest road so leaderboards reflect explorer placements.
-	const newHolder = recomputeLongestRoad(stateAfter)
-	const update: Record<string, unknown> = {
-		edges: nextEdges,
-		phase: nextPhase,
-	}
-	if (newHolder !== state.longestRoad) {
-		update.longest_road = newHolder
-		events.push({
-			kind: 'longest_road_changed',
-			player: newHolder,
-			at: new Date().toISOString(),
-		})
-	}
-
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update(update)
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), ...events] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
-	return json({ ok: true })
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'place_explorer_road', edge: body.edge as Edge },
+	])
 }
 
 async function handleRitualRoll(
@@ -9291,59 +9734,12 @@ async function handleTapKnight(
 	me: string,
 	body: TapKnightBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-
-	if (game.status !== 'active') return err(400, 'not active')
-	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
-
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
-
-	const p = state.players[meIdx]
-	if (p.bonus !== 'veteran') return err(400, 'not a veteran')
-
-	const knightsPlayedCount = p.devCardsPlayed.knight ?? 0
-	const alreadyTapped = p.tappedKnights ?? 0
-	if (knightsPlayedCount - alreadyTapped < 1)
-		return err(400, 'no untapped played knight')
-
 	const r1 = parseResource(body.r1)
 	const r2 = parseResource(body.r2)
 	if (!r1 || !r2) return err(400, 'invalid resource selection')
-
-	const nextPlayers = state.players.map((pp, i) => {
-		if (i !== meIdx) return pp
-		const nextRes = { ...pp.resources }
-		nextRes[r1] += 1
-		nextRes[r2] += 1
-		return {
-			...pp,
-			resources: nextRes,
-			tappedKnights: alreadyTapped + 1,
-		}
-	})
-
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ players: nextPlayers })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-
-	const event = {
-		kind: 'knight_tapped',
-		player: meIdx,
-		resources: [r1, r2],
-		at: new Date().toISOString(),
-	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
-	return json({ ok: true })
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'tap_knight', r1, r2 },
+	])
 }
 
 // --- Carpenter (4 wood → 1 VP) --------------------------------------------
@@ -9355,60 +9751,9 @@ async function handleBuyCarpenterVP(
 	me: string,
 	body: BuyCarpenterVPBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-
-	if (game.status !== 'active') return err(400, 'not active')
-	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
-
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
-
-	const me0 = state.players[meIdx]
-	if (me0.bonus !== 'carpenter') return err(400, 'not a carpenter')
-	if (me0.boughtCarpenterVPThisTurn)
-		return err(400, 'already bought carpenter VP this turn')
-	if (me0.resources.wood < CARPENTER_WOOD_COST)
-		return err(400, 'insufficient wood')
-
-	const nextPlayers = state.players.map((p, i) => {
-		if (i !== meIdx) return p
-		return {
-			...p,
-			resources: {
-				...p.resources,
-				wood: p.resources.wood - CARPENTER_WOOD_COST,
-			},
-			carpenterVP: (p.carpenterVP ?? 0) + 1,
-			boughtCarpenterVPThisTurn: true,
-		}
-	})
-
-	const update: Record<string, unknown> = { players: nextPlayers }
-	const nextState: GameState = { ...state, players: nextPlayers }
-	const events: unknown[] = [
-		{
-			kind: 'carpenter_vp',
-			player: meIdx,
-			at: new Date().toISOString(),
-		},
-	]
-	// 1 VP can push the buyer over the threshold; no road-graph change.
-	const winner = applyEndOfActionChecks(nextState, update, events, {
-		recomputeRoads: false,
-	})
-	const commitErr = await commitActionWrite(
-		admin,
-		game,
-		update,
-		events,
-		winner,
-		nextState
-	)
-	if (commitErr) return commitErr
-	return json({ ok: true })
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'buy_carpenter_vp' },
+	])
 }
 
 // --- Specialist declaration (post_placement) ------------------------------
@@ -9479,67 +9824,9 @@ async function handleBuildFence(
 	me: string,
 	body: BuildFenceBody
 ): Promise<Response> {
-	const pre = await preflightBuild(admin, me, body.game_id, true)
-	if (!pre.ok) return pre.response
-	const { game, state, meIdx } = pre
-
-	if (state.players[meIdx]?.bonus !== 'fencer')
-		return err(400, 'not a fencer')
-	if (
-		!(boardFor(state.variant).edges as readonly string[]).includes(
-			body.edge
-		)
-	)
-		return err(400, 'unknown edge')
-	const edge = body.edge as Edge
-
-	if (!isValidBuildFenceEdge(state, meIdx, edge))
-		return err(400, 'invalid fence')
-	const cost = FENCE_COST
-	if (!canAfford(state.players[meIdx].resources, cost))
-		return err(400, 'insufficient resources')
-	if (
-		!canSpendUnderAge(
-			state.players[meIdx],
-			costSize(cost),
-			gameSizeFor(state.players.length)
-		)
-	)
-		return err(400, 'age limit reached this turn')
-
-	const nextFenceTokens = { ...(state.fenceTokens ?? {}), [edge]: meIdx }
-	const nextPlayers = applyCost(state.players, meIdx, cost)
-	const update: Record<string, unknown> = {
-		fence_tokens: nextFenceTokens,
-		players: nextPlayers,
-	}
-	const nextState: GameState = {
-		...state,
-		players: nextPlayers,
-		fenceTokens: nextFenceTokens,
-	}
-	const events: unknown[] = [
-		{
-			kind: 'fence_built',
-			player: meIdx,
-			edge,
-			at: new Date().toISOString(),
-		},
-	]
-	const winner = applyEndOfActionChecks(nextState, update, events, {
-		recomputeRoads: false,
-	})
-	const commitErr = await commitActionWrite(
-		admin,
-		game,
-		update,
-		events,
-		winner,
-		nextState
-	)
-	if (commitErr) return commitErr
-
-	return json({ ok: true })
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'build_fence', edge: body.edge as Edge },
+	])
 }
 
 async function handleSetHauntSpots(
@@ -9608,56 +9895,11 @@ async function handleInvest(
 	me: string,
 	body: InvestBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-	if (game.status !== 'active') return err(400, 'not active')
-	if (state.phase.kind !== 'main') return err(400, 'expected main phase')
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
-	const meP = state.players[meIdx]
-	if (meP.bonus !== 'investor') return err(400, 'not an investor')
 	const resource = parseResource(body.resource)
 	if (!resource) return err(400, 'unknown resource')
-	if (
-		!canInvest(
-			meP,
-			resource,
-			totalVP(state, meIdx),
-			gameSizeFor(state.players.length)
-		)
-	)
-		return err(400, 'cannot invest')
-
-	const nextResources = {
-		...meP.resources,
-		[resource]: meP.resources[resource] - INVEST_TRIO,
-	}
-	const nextInvestments = { ...(meP.investments ?? {}) }
-	nextInvestments[resource] = (nextInvestments[resource] ?? 0) + 1
-	const nextPlayers = state.players.map((p, i) =>
-		i === meIdx
-			? { ...p, resources: nextResources, investments: nextInvestments }
-			: p
-	)
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ players: nextPlayers })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-	const event = {
-		kind: 'invest',
-		player: meIdx,
-		resource,
-		at: new Date().toISOString(),
-	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
-	return json({ ok: true })
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'invest', resource },
+	])
 }
 
 async function handleCastMagic(
@@ -9665,71 +9907,11 @@ async function handleCastMagic(
 	me: string,
 	body: CastMagicBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-	if (state.phase.kind !== 'magician_pick')
-		return err(400, 'expected magician_pick phase')
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	if (state.phase.roller !== meIdx)
-		return err(403, 'not your magician window')
-
-	const actualTotal = state.phase.roll.a + state.phase.roll.b
-	const target = Number(body.target)
-	if (!isValidMagicTarget(actualTotal, target))
-		return err(400, 'invalid target')
 	const discard = normalizeHand(body.discard)
 	if (!discard) return err(400, 'invalid discard hand')
-	if (
-		handSize(discard) !==
-		magicDiscardCount(
-			actualTotal,
-			target,
-			gameSizeFor(state.players.length)
-		)
-	)
-		return err(400, 'wrong discard count')
-	const meP = state.players[meIdx]
-	// The roll's own cards are still on the phase, so this is the hand they
-	// rolled with — the real constraint on what a cast can cost.
-	if (!canAfford(meP.resources, discard))
-		return err(400, 'insufficient cards to discard')
-
-	// Phantom production: gains for the magician only, from the target number.
-	const gain = distributeResources(state, target)[meIdx] ?? emptyHand()
-	const pending = state.phase.pendingGain ?? emptyHand()
-	const nextResources = { ...meP.resources }
-	for (const r of RESOURCES)
-		nextResources[r] = nextResources[r] - discard[r] + gain[r] + pending[r]
-	// Stamp the round so a cooldown could see it. Harmless while none is
-	// declared — `magicianCanCast` only reads it where the variant sets one.
-	const nextPlayers = state.players.map((p, i) =>
-		i === meIdx
-			? { ...p, resources: nextResources, lastMagicRound: state.round }
-			: p
-	)
-	const resume = state.phase.resume
-
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ players: nextPlayers, phase: resume })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-	const event = {
-		kind: 'magic_cast',
-		player: meIdx,
-		target,
-		discard,
-		gain,
-		at: new Date().toISOString(),
-	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
-	return json({ ok: true })
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'cast_magic', target: Number(body.target), discard },
+	])
 }
 
 async function handleSkipMagic(
@@ -9737,43 +9919,9 @@ async function handleSkipMagic(
 	me: string,
 	body: SkipMagicBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-	if (state.phase.kind !== 'magician_pick')
-		return err(400, 'expected magician_pick phase')
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	if (state.phase.roller !== meIdx)
-		return err(403, 'not your magician window')
-
-	// Keeping the roll still collects it: the held production lands here, the
-	// window's other exit.
-	const pending = state.phase.pendingGain ?? emptyHand()
-	const meP = state.players[meIdx]
-	const nextResources = { ...meP.resources }
-	for (const r of RESOURCES) nextResources[r] = nextResources[r] + pending[r]
-	const nextPlayers = state.players.map((p, i) =>
-		i === meIdx ? { ...p, resources: nextResources } : p
-	)
-
-	const resume = state.phase.resume
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ players: nextPlayers, phase: resume })
-		.eq('game_id', game.id)
-	if (stateErr) return err(500, 'could not update state')
-	const event = {
-		kind: 'magic_skipped',
-		player: meIdx,
-		at: new Date().toISOString(),
-	}
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: [...(game.events ?? []), event] })
-		.eq('id', game.id)
-	if (gameErr) return err(500, 'could not log event')
-	return json({ ok: true })
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'skip_magic' },
+	])
 }
 
 async function handlePlayDevCard(
@@ -9982,171 +10130,6 @@ async function handlePlayDevCard(
 	return json({ ok: true })
 }
 
-// --- One-step undo ---------------------------------------------------------
-//
-// Mirror of `UNDOABLE_ACTIONS` in `lib/catan/types.ts`; this copy is the
-// authority. The rule is solo + information-free: rolling, buying or playing a
-// dev card, and anything that involves another player are all excluded, because
-// taking them reveals something and unwinding them would leak it. See
-// `.claude/specs/undo.md`.
-const UNDOABLE_ACTIONS = new Set<string>([
-	'build_road',
-	'build_settlement',
-	'build_city',
-	'build_super_city',
-	'bank_trade',
-	'liquidate',
-	'invest',
-	'buy_carpenter_vp',
-	'tap_knight',
-	'build_fence',
-	'place_explorer_road',
-	// The magician window is the one reaction-chain step that qualifies: the
-	// phantom number is chosen, not drawn, so casting (or skipping) teaches the
-	// magician nothing they didn't already know before they acted.
-	'cast_magic',
-	'skip_magic',
-])
-
-// Chat is the one action that invalidates nothing — it writes neither
-// `game_states` nor `games.events`. `honk` deliberately isn't here: it appends
-// to `games.events`, which undo truncates by length, so a surviving honk would
-// be truncated away.
-const UNDO_NEUTRAL_ACTIONS = new Set<string>(['send_message'])
-
-// The mutable `game_states` columns. `hexes`/`variant` are omitted (nothing
-// mutates them) and so is `current_turn` — no undoable action moves the turn,
-// so restoring it could only ever be a no-op or a bug.
-// If one ever does, the snapshot has to grow to cover it.
-const UNDO_COLUMNS =
-	'vertices, edges, players, phase, robber, ports, fence_tokens, dev_deck, largest_army, longest_road, round'
-
-type UndoSnapshot = {
-	action: string
-	player: number
-	at: string
-	eventsLen: number
-	state: Record<string, unknown>
-}
-
-// Read what an undoable action is about to overwrite. Returns null (rather than
-// failing the request) whenever the snapshot can't be built — undo is a
-// convenience, and no part of it should be able to block a legal move.
-async function readUndoBaseline(
-	admin: SupabaseClient,
-	gameId: string,
-	me: string
-): Promise<Omit<UndoSnapshot, 'action' | 'at'> | null> {
-	const { data: stateRow } = await admin
-		.from('game_states')
-		.select(UNDO_COLUMNS)
-		.eq('game_id', gameId)
-		.maybeSingle()
-	if (!stateRow) return null
-
-	const { data: gameRow } = await admin
-		.from('games')
-		.select('events, player_order')
-		.eq('id', gameId)
-		.maybeSingle()
-	if (!gameRow) return null
-
-	const row = gameRow as { player_order?: string[]; events?: unknown[] }
-	const player = (row.player_order ?? []).indexOf(me)
-	if (player < 0) return null
-
-	return {
-		player,
-		eventsLen: (row.events ?? []).length,
-		state: stateRow as unknown as Record<string, unknown>,
-	}
-}
-
-// Maintains `game_states.undo` around a dispatched action, so no handler has to
-// know undo exists. The clear is guarded on `undo is not null` so the common
-// case matches zero rows — no row version, no realtime event.
-async function trackUndo(
-	admin: SupabaseClient,
-	gameId: string,
-	action: string,
-	baseline: Omit<UndoSnapshot, 'action' | 'at'> | null
-): Promise<void> {
-	if (UNDO_NEUTRAL_ACTIONS.has(action)) return
-
-	if (UNDOABLE_ACTIONS.has(action)) {
-		if (!baseline) return
-		const undo: UndoSnapshot = {
-			...baseline,
-			action,
-			at: new Date().toISOString(),
-		}
-		await admin.from('game_states').update({ undo }).eq('game_id', gameId)
-		return
-	}
-
-	await admin
-		.from('game_states')
-		.update({ undo: null })
-		.eq('game_id', gameId)
-		.not('undo', 'is', null)
-}
-
-// Restores the snapshot wholesale rather than computing an inverse — a single
-// road build can move Longest Road, consume a fence token, and apply a
-// smith/bricklayer cost substitution, and an inverse would have to keep up with
-// every bonus we add.
-async function handleUndo(
-	admin: SupabaseClient,
-	me: string,
-	body: UndoBody
-): Promise<Response> {
-	const { data: gameRow, error: gErr } = await admin
-		.from('games')
-		.select('id, player_order, status, events')
-		.eq('id', body.game_id)
-		.maybeSingle()
-	if (gErr) return err(500, 'load game failed')
-	if (!gameRow) return err(404, 'game not found')
-	const game = gameRow as {
-		player_order: string[]
-		status: string
-		events: unknown[] | null
-	}
-	// A game-winning build isn't undoable: the win is already written to
-	// `games.status` and `game_results`, and the snapshot covers neither.
-	if (game.status !== 'active') return err(400, 'not active')
-
-	const meIdx = game.player_order.indexOf(me)
-	if (meIdx < 0) return err(403, 'not a participant')
-
-	const { data: stateRow, error: sErr } = await admin
-		.from('game_states')
-		.select('undo')
-		.eq('game_id', body.game_id)
-		.maybeSingle()
-	if (sErr) return err(500, 'load state failed')
-
-	const snapshot = (stateRow as { undo?: UndoSnapshot | null } | null)?.undo
-	if (!snapshot) return err(400, 'nothing to undo')
-	if (snapshot.player !== meIdx) return err(403, 'not your action to undo')
-
-	const { error: stateErr } = await admin
-		.from('game_states')
-		.update({ ...snapshot.state, undo: null })
-		.eq('game_id', body.game_id)
-	if (stateErr) return err(500, 'could not restore state')
-
-	// Truncating drops the undone action's log entry entirely — the road never
-	// existed. Nothing is logged in its place.
-	const { error: gameErr } = await admin
-		.from('games')
-		.update({ events: (game.events ?? []).slice(0, snapshot.eventsLen) })
-		.eq('id', body.game_id)
-	if (gameErr) return err(500, 'could not restore log')
-
-	return json({ ok: true })
-}
-
 serve(async (req) => {
 	if (req.method === 'OPTIONS') {
 		return new Response('ok', { headers: CORS_HEADERS })
@@ -10173,21 +10156,12 @@ serve(async (req) => {
 	const me = await callerUserId(req)
 	if (!me) return err(401, 'not authenticated')
 
-	// `game_states.undo` is maintained here rather than inside the handlers, so
-	// an action opts into undo by joining `UNDOABLE_ACTIONS` and nothing else.
-	// The baseline has to be read before the handler overwrites the row.
 	const gameId = 'game_id' in body ? body.game_id : null
-	const baseline =
-		gameId && UNDOABLE_ACTIONS.has(body.action)
-			? await readUndoBaseline(admin, gameId, me)
-			: null
-
 	const res = await dispatch(admin, me, body)
 	if (gameId && res.ok) {
-		await trackUndo(admin, gameId, body.action, baseline)
-		// `games.deadline_at` is maintained here for the same reason as undo:
-		// one place rather than fifty handlers. Backgrounded — nothing is
-		// waiting on it. See refreshDeadline.
+		// `games.deadline_at` is maintained here rather than inside fifty
+		// handlers. Backgrounded — nothing is waiting on it. See
+		// refreshDeadline.
 		if (!TIMEOUT_NEUTRAL_ACTIONS.has(body.action)) {
 			EdgeRuntime.waitUntil(refreshDeadline(admin, gameId, me))
 		}
@@ -10300,8 +10274,8 @@ function dispatch(
 			return handleCastMagic(admin, me, body)
 		case 'skip_magic':
 			return handleSkipMagic(admin, me, body)
-		case 'undo':
-			return handleUndo(admin, me, body)
+		case 'batch':
+			return handleBatch(admin, me, body)
 		case 'set_forfeit':
 			return handleSetForfeit(admin, me, body)
 		case 'set_end_vote':

@@ -22,6 +22,7 @@ import {
 	isFenceReservedAgainst,
 	isGhost,
 	isOwnFence,
+	isValidSmithSwap,
 	metropolitanCityCost,
 	smithCostOf,
 } from './bonus'
@@ -164,6 +165,57 @@ export function purchaseCostWithSmith(
 	smithSwap: number
 ): ResourceHand {
 	return smithCostOf(p.bonus, standardCostOf(kind), smithSwap)
+}
+
+// The concrete cost a purchase is actually charged at, given the player's
+// declared payment route. Unlike `effectiveCostFor` this does NOT fall back —
+// `useBricklayer` and `smithSwap` are what the action asked for, and asking for
+// a route the hand can't cover is a rejection, not a silent downgrade. Null
+// means unaffordable by the requested route.
+//
+// This is the charging rule for every build; `applyLocalAction` and the edge
+// handlers both go through it, so a cost substitution can't drift between them.
+export function resolvePurchaseCost(
+	p: PlayerState,
+	standardCost: ResourceHand,
+	useBricklayer: boolean,
+	smithSwap: number = 0
+): ResourceHand | null {
+	if (useBricklayer) {
+		if (p.bonus !== 'bricklayer') return null
+		if (p.resources.brick < BRICKLAYER_COST.brick) return null
+		return BRICKLAYER_COST
+	}
+	if (p.bonus === 'smith') {
+		if (!isValidSmithSwap(standardCost, smithSwap)) return null
+		const cost = smithCostOf(p.bonus, standardCost, smithSwap)
+		if (!canAfford(p.resources, cost)) return null
+		return cost
+	}
+	if (!canAfford(p.resources, standardCost)) return null
+	return standardCost
+}
+
+// Charge a cost to one seat. The age curse's per-turn spend counter rides along
+// here rather than at the call sites, so no build path can forget it — the
+// field stays absent for everyone else.
+export function applyCost(
+	players: PlayerState[],
+	meIdx: number,
+	cost: ResourceHand
+): PlayerState[] {
+	const size = costSize(cost)
+	return players.map((p, i) => {
+		if (i !== meIdx) return p
+		const next: PlayerState = {
+			...p,
+			resources: deductHand(p.resources, cost),
+		}
+		if (p.curse === 'age') {
+			next.cardsSpentThisTurn = (p.cardsSpentThisTurn ?? 0) + size
+		}
+		return next
+	})
 }
 
 // Should the client request the bricklayer alt cost when submitting a

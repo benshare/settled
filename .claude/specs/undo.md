@@ -1,3 +1,15 @@
+> **Superseded by `.claude/specs/local-action-queue.md` (2026-09-24).** The
+> snapshot mechanism described here — `game_states.undo`, `handleUndo`, the
+> baseline read and invalidate in `serve` — has been deleted. Undoable actions
+> are now held in a local queue on the client and flushed as one `batch`, so
+> undo is `queue.slice(0, -1)` and reaches back as far as the turn goes rather
+> than one step. What survives from this document: the membership rule for
+> `UNDOABLE_ACTIONS` (solo and information-free) and the reasoning behind it,
+> including the magician-window exception in §1 — those are unchanged, and
+> §1 is still the best account of why the list is what it is.
+>
+> Kept as the record of the one-step design.
+
 # Undo (one step)
 
 A small back arrow in the game screen's bottom area that reverses the player's

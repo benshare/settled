@@ -173,3 +173,16 @@ export function findWinner(state: GameState): number | null {
 	}
 	return null
 }
+
+// Hidden VP cards per seat, sparse (a seat with none is absent). Written onto
+// the `game_complete` event so the scoreboard can reveal what was held without
+// re-reading everyone's hand.
+export function vpCardCountsByPlayer(state: GameState): Record<number, number> {
+	const out: Record<number, number> = {}
+	state.players.forEach((p, i) => {
+		let n = 0
+		for (const e of p.devCards) if (e.id === 'victory_point') n++
+		if (n > 0) out[i] = n
+	})
+	return out
+}

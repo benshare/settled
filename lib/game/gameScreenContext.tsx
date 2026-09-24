@@ -6,6 +6,9 @@
 //
 // Must be mounted inside <GameProvider> — it builds on useGame().
 
+import { applyLocalAction, isApplyError, projectQueue } from '@/lib/catan/apply'
+import { totalVP } from '@/lib/catan/dev'
+import type { LocalAction } from '@/lib/catan/types'
 import { useAuth } from '@/lib/auth'
 import { RESOURCES, type Hex, type Resource } from '@/lib/catan/board'
 import type { BonusId, CurseId } from '@/lib/catan/bonuses'
@@ -15,7 +18,6 @@ import {
 	canInvest,
 	forgerTokenHex,
 	isOwnFence,
-	LIQUIDATION_REFUND,
 	liquidatableTargets,
 	mustMoveForgerToken,
 	type LiquidationTarget,
@@ -90,6 +92,21 @@ type EventCursor = { gameId: string; count: number } | null
 // stays 'settlement' for the whole turn. `null` outside initial placement.
 export type PlacementStage = 'settlement' | 'road' | 'ready' | null
 
+// Where a flush of the local queue stands. A transport failure retries the
+// same batch on a backoff; a 4xx is the server refusing the moves themselves,
+// which retrying can never fix — it stops and names what was refused so the
+// player can undo back to something legal. Neither ever drops the queue.
+// Growing pauses before resending an identical batch. After the last one the
+// flush parks in `retrying` and waits for the player, rather than hammering a
+// server that clearly isn't there.
+const FLUSH_RETRY_DELAYS_MS = [1000, 3000, 8000]
+
+export type FlushState =
+	| { kind: 'idle' }
+	| { kind: 'sending' }
+	| { kind: 'retrying'; attempt: number; message: string }
+	| { kind: 'rejected'; message: string }
+
 // The one start-of-game bonus affordance this seat owes, or `waiting` when the
 // only thing left is somebody else's. `null` outside post_placement, or once
 // this seat is done and nobody is left to wait on.
@@ -142,10 +159,8 @@ function useGameScreenState(gameId: string) {
 	const { user } = useAuth()
 	const {
 		game,
-		gameState,
+		gameState: serverState,
 		ready,
-		publicVP,
-		selfVP,
 		seatColors,
 		isSpectator,
 	} = useGame()
@@ -159,9 +174,6 @@ function useGameScreenState(gameId: string) {
 	const endTurn = useGamesStore((s) => s.endTurn)
 	const honk = useGamesStore((s) => s.honk)
 	const endSpecialBuild = useGamesStore((s) => s.endSpecialBuild)
-	const buildRoad = useGamesStore((s) => s.buildRoad)
-	const buildSettlement = useGamesStore((s) => s.buildSettlement)
-	const buildCity = useGamesStore((s) => s.buildCity)
 	const discard = useGamesStore((s) => s.discard)
 	const moveRobber = useGamesStore((s) => s.moveRobber)
 	const steal = useGamesStore((s) => s.steal)
@@ -170,27 +182,17 @@ function useGameScreenState(gameId: string) {
 	const cancelTrade = useGamesStore((s) => s.cancelTrade)
 	const rejectTrade = useGamesStore((s) => s.rejectTrade)
 	const confirmTrade = useGamesStore((s) => s.confirmTrade)
-	const bankTrade = useGamesStore((s) => s.bankTrade)
 	const buyDevCard = useGamesStore((s) => s.buyDevCard)
 	const playDevCard = useGamesStore((s) => s.playDevCard)
 	const setSpecialistResource = useGamesStore((s) => s.setSpecialistResource)
-	const buyCarpenterVP = useGamesStore((s) => s.buyCarpenterVP)
-	const tapKnight = useGamesStore((s) => s.tapKnight)
-	const buildSuperCity = useGamesStore((s) => s.buildSuperCity)
-	const liquidate = useGamesStore((s) => s.liquidate)
-	const placeExplorerRoad = useGamesStore((s) => s.placeExplorerRoad)
 	const ritualRoll = useGamesStore((s) => s.ritualRoll)
 	const shepherdSwap = useGamesStore((s) => s.shepherdSwap)
 	const claimCurio = useGamesStore((s) => s.claimCurio)
 	const moveForgerToken = useGamesStore((s) => s.moveForgerToken)
 	const pickForgerTarget = useGamesStore((s) => s.pickForgerTarget)
 	const confirmScoutCard = useGamesStore((s) => s.confirmScoutCard)
-	const buildFence = useGamesStore((s) => s.buildFence)
 	const setHauntSpots = useGamesStore((s) => s.setHauntSpots)
-	const invest = useGamesStore((s) => s.invest)
-	const castMagic = useGamesStore((s) => s.castMagic)
-	const skipMagic = useGamesStore((s) => s.skipMagic)
-	const undo = useGamesStore((s) => s.undo)
+	const batch = useGamesStore((s) => s.batch)
 	const setForfeit = useGamesStore((s) => s.setForfeit)
 	const setEndVote = useGamesStore((s) => s.setEndVote)
 
@@ -217,15 +219,13 @@ function useGameScreenState(gameId: string) {
 		| { kind: 'super_city'; vertex: string }
 		| null
 	>(null)
+	// The three confirms that survive the local queue: move robber, steal, and
+	// the forger's token move. All three are actions the player cannot take
+	// back — everything undoable now answers "are you sure?" with the arrow
+	// instead. See `.claude/specs/local-action-queue.md`.
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		run: () => void | Promise<void>
-		// A build spot awaiting confirmation, previewed on the board so the
-		// choice is visible while the confirm bar is up.
-		preview?: BuildSelection
-		// The same for a liquidation: the tapped piece, darkened on the board
-		// while the bar is up.
-		liquidating?: LiquidationTarget
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
 	// Haunt: the vertices the local haunt player has tapped (needs 2) during
@@ -245,12 +245,8 @@ function useGameScreenState(gameId: string) {
 	// root, so it floats over every zone) are in different parts of the tree.
 	const [toast, setToast] = useState<string | null>(null)
 
-	function confirmAction(
-		title: string,
-		run: () => void | Promise<void>,
-		preview?: BuildSelection
-	) {
-		setPendingConfirm({ title, run, preview })
+	function confirmAction(title: string, run: () => void | Promise<void>) {
+		setPendingConfirm({ title, run })
 	}
 
 	async function runPendingConfirm() {
@@ -274,6 +270,65 @@ function useGameScreenState(gameId: string) {
 		if (!game || !user) return -1
 		return game.player_order.indexOf(user.id)
 	}, [game, user])
+
+	// --- The local action queue ---------------------------------------------
+	//
+	// Undoable actions are not sent when they are taken. They append here and
+	// are folded onto the server row to produce `gameState` — which is what
+	// every surface below (and every consumer of this context) reads, so the
+	// board, the hand and every affordance agree about a build that only exists
+	// on this device. The queue flushes as one `batch` at the next action that
+	// isn't undoable. See `.claude/specs/local-action-queue.md`.
+	//
+	// Never persisted: leaving the screen or killing the app drops it, the same
+	// way the placement draft already behaves.
+	const [queue, setQueue] = useState<LocalAction[]>([])
+	const [flushState, setFlushState] = useState<FlushState>({ kind: 'idle' })
+
+	const projection = useMemo(
+		() =>
+			serverState
+				? projectQueue(serverState, meIdx, queue)
+				: { state: undefined, valid: 0 },
+		[serverState, meIdx, queue]
+	)
+	// **The projection is the game state.** Shadowing the name is deliberate:
+	// every reader in this file and every consumer of the context picks it up
+	// without knowing the queue exists, which is the only way to guarantee no
+	// surface is left reading a hand that can still afford a road the board
+	// says is spent. `serverState` stays reachable for the two jobs that need
+	// the truth — building the flush payload and rebasing.
+	const gameState = projection.state
+
+	// The server row moves under a pending queue (an opponent acting in the
+	// parallel `post_placement` phase, a resync after backgrounding). Anything
+	// that no longer applies is cut, newest-first, rather than the whole queue
+	// being thrown away.
+	useEffect(() => {
+		if (projection.valid < queue.length) {
+			setQueue((q) => q.slice(0, projection.valid))
+			notify(
+				'Some moves were undone',
+				'The board changed before they were sent.'
+			)
+		}
+	}, [projection.valid, queue.length])
+
+	// VP is recomputed from the projection rather than taken from `useGame()`,
+	// whose arrays are derived from the server row — a queued city has to move
+	// the score, or the win cue below could never fire.
+	const { publicVP, selfVP } = useMemo(() => {
+		if (!gameState)
+			return { publicVP: [] as number[], selfVP: [] as number[] }
+		return {
+			publicVP: gameState.players.map((_, i) =>
+				totalVP(gameState, i, false)
+			),
+			selfVP: gameState.players.map((_, i) =>
+				totalVP(gameState, i, true)
+			),
+		}
+	}, [gameState])
 
 	// The zones' sliding areas get one pane per switchable game, so a switch's
 	// direction falls out of the tab delta rather than being derived separately.
@@ -731,22 +786,19 @@ function useGameScreenState(gameId: string) {
 	// exactly as a completed one does.
 	const inGameOver = isFinished(game?.status ?? '')
 
-	// Undo availability is read straight off the snapshot the edge function
-	// stashed before the last undoable action — deriving it from the event log
-	// would drift from the server's own rule. The phase test adds the one thing
-	// the server can't see: whether this seat is the one currently holding the
-	// floor, which is `current_turn` in `main` but the queue head in
-	// `special_build`.
-	const canUndo =
-		!!gameState?.undo &&
-		gameState.undo.player === meIdx &&
-		!isSpectator &&
-		!inGameOver &&
-		(phaseKind === 'main'
-			? isMyActiveTurn
-			: phaseKind === 'special_build'
-				? isMySpecialBuild
-				: inPostPlacement)
+	// The projection reached `game_over` on a move that hasn't been sent: this
+	// client knows the game is won and the table doesn't. Deliberately not
+	// auto-sent — the cue names what ending the turn would do, and undo still
+	// reaches back past the winning move.
+	const pendingWin =
+		queue.length > 0 && gameState?.phase.kind === 'game_over' && !inGameOver
+
+	// Undo pops the local queue, so availability is just "is there anything in
+	// it". No phase test: the queue is this client's own, and a client only
+	// appends to it in a phase it was allowed to act in — unlike the old server
+	// snapshot, which was a property of the game and so had to ask whether this
+	// seat still held the floor. See `.claude/specs/local-action-queue.md`.
+	const canUndo = queue.length > 0 && !isSpectator && !inGameOver
 
 	// Forfeiting / ending. Both are plain user-id arrays on the games row with
 	// no mechanical effect — see `.claude/specs/forfeit-and-end-game.md`. The
@@ -795,6 +847,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onPickBonus(bonus: BonusId, curse: CurseId) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await pickBonus(game.id, bonus, curse)
 		setSubmitting(false)
@@ -803,30 +856,24 @@ function useGameScreenState(gameId: string) {
 
 	async function onSetSpecialistResource(resource: Resource) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await setSpecialistResource(game.id, resource)
 		setSubmitting(false)
 		if (res.error) notify('Declare failed', res.error)
 	}
 
-	async function onBuyCarpenterVP() {
-		if (!game) return
-		setSubmitting(true)
-		const res = await buyCarpenterVP(game.id)
-		setSubmitting(false)
-		if (res.error) notify('Purchase failed', res.error)
+	function onBuyCarpenterVP() {
+		enqueue({ action: 'buy_carpenter_vp' })
 	}
 
-	async function onTapKnight(r1: Resource, r2: Resource) {
-		if (!game) return
-		setSubmitting(true)
-		const res = await tapKnight(game.id, r1, r2)
-		setSubmitting(false)
-		if (res.error) notify('Tap failed', res.error)
+	function onTapKnight(r1: Resource, r2: Resource) {
+		enqueue({ action: 'tap_knight', r1, r2 })
 	}
 
 	async function onRitualRoll(discard: ResourceHandType, total: number) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await ritualRoll(game.id, discard, total)
 		setSubmitting(false)
@@ -836,6 +883,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onShepherdSwap(take: [Resource, Resource]) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await shepherdSwap(game.id, take)
 		setSubmitting(false)
@@ -845,6 +893,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onClaimCurio(take: [Resource, Resource, Resource]) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await claimCurio(game.id, take)
 		setSubmitting(false)
@@ -854,6 +903,7 @@ function useGameScreenState(gameId: string) {
 	function onMoveForgerTokenRequest(hex: Hex) {
 		if (!game) return
 		confirmAction('Move forger token here?', async () => {
+			if (!(await flushBeforeBarrier())) return
 			setSubmitting(true)
 			const res = await moveForgerToken(game.id, hex)
 			setSubmitting(false)
@@ -863,6 +913,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onPickForgerTarget(target: number) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await pickForgerTarget(game.id, target)
 		setSubmitting(false)
@@ -871,40 +922,27 @@ function useGameScreenState(gameId: string) {
 
 	async function onConfirmScoutCard(index: number) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await confirmScoutCard(game.id, index)
 		setSubmitting(false)
 		if (res.error) notify('Pick failed', res.error)
 	}
 
-	// A tapped piece goes through the same confirm bar as a build — the board
-	// is full of pulsing rings, and cashing in the wrong one is not undoable
-	// by taking it back.
+	// No confirm bar any more: cashing in the wrong piece is now a tap of the
+	// undo arrow. The refund the bar used to name is visible instead in the
+	// hand, which jumps the moment the piece leaves the board.
 	function onLiquidateSelect(target: LiquidationTarget) {
-		if (!game) return
-		setPendingConfirm({
-			title: confirmLiquidateTitle(target.kind),
-			liquidating: target,
-			run: async () => {
-				setSubmitting(true)
-				const res = await liquidate(game.id, target)
-				setSubmitting(false)
-				if (res.error) notify('Liquidate failed', res.error)
-				else selectBoardTool(null)
-			},
-		})
+		if (enqueue({ action: 'liquidate', target })) selectBoardTool(null)
 	}
 
-	async function onPlaceExplorerRoad(edge: string) {
-		if (!game) return
-		setSubmitting(true)
-		const res = await placeExplorerRoad(game.id, edge)
-		setSubmitting(false)
-		if (res.error) notify('Placement failed', res.error)
+	function onPlaceExplorerRoad(edge: string) {
+		enqueue({ action: 'place_explorer_road', edge })
 	}
 
 	async function onSetHauntSpots(spots: [string, string]) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await setHauntSpots(game.id, spots)
 		setSubmitting(false)
@@ -912,51 +950,27 @@ function useGameScreenState(gameId: string) {
 		else setHauntPicks([])
 	}
 
-	async function onInvest(resource: Resource) {
-		if (!game) return
-		setSubmitting(true)
-		const res = await invest(game.id, resource)
-		setSubmitting(false)
-		if (res.error) notify('Invest failed', res.error)
-		else setInvestOpen(false)
+	function onInvest(resource: Resource) {
+		if (enqueue({ action: 'invest', resource })) setInvestOpen(false)
 	}
 
-	async function onCastMagic(target: number, discard: ResourceHandType) {
-		if (!game) return
-		setSubmitting(true)
-		const res = await castMagic(game.id, target, discard)
-		setSubmitting(false)
-		if (res.error) notify('Magic failed', res.error)
+	function onCastMagic(target: number, discard: ResourceHandType) {
+		enqueue({ action: 'cast_magic', target, discard })
 	}
 
-	async function onSkipMagic() {
-		if (!game) return
-		setSubmitting(true)
-		const res = await skipMagic(game.id)
-		setSubmitting(false)
-		if (res.error) notify('Skip failed', res.error)
+	function onSkipMagic() {
+		enqueue({ action: 'skip_magic' })
 	}
 
-	async function onUndo() {
-		if (!game) return
-		setSubmitting(true)
-		const res = await undo(game.id)
-		setSubmitting(false)
-		if (res.error) notify('Undo failed', res.error)
-		// The board state the tool was selected against is gone. Nothing to
-		// clear for placement — it holds no undoable action.
-		else selectBoardTool(null)
-	}
-
-	async function onBuildSuperCity(vertex: string, swapDelta: number) {
-		if (!game) return
-		setSubmitting(true)
-		const res = await buildSuperCity(game.id, vertex, swapDelta)
-		setSubmitting(false)
-		if (res.error) {
-			notify('Upgrade failed', res.error)
+	function onBuildSuperCity(vertex: string, swapDelta: number) {
+		if (
+			!enqueue({
+				action: 'build_super_city',
+				vertex,
+				swap_wheat_to_ore: swapDelta,
+			})
+		)
 			return
-		}
 		selectBoardTool(null)
 	}
 
@@ -969,14 +983,89 @@ function useGameScreenState(gameId: string) {
 			await onBuildSuperCity(metroPending.vertex, swapDelta)
 			return
 		}
-		if (!game) return
-		setSubmitting(true)
-		const res = await buildCity(game.id, metroPending.vertex, { swapDelta })
-		setSubmitting(false)
-		if (res.error) {
-			notify('Build failed', res.error)
+		if (
+			!enqueue({
+				action: 'build_city',
+				vertex: metroPending.vertex,
+				swap_wheat_to_ore: swapDelta,
+			})
+		)
 			return
+		selectBoardTool(null)
+	}
+
+	// --- Queueing, flushing, undoing ----------------------------------------
+
+	// Append one action to the local queue, after checking it against the
+	// projection. Validating here means an illegal action never enters the
+	// queue at all, so `projectQueue`'s truncation only ever fires on a rebase
+	// — never on something this client chose.
+	function enqueue(action: LocalAction): boolean {
+		if (!gameState || meIdx < 0) return false
+		const res = applyLocalAction(gameState, meIdx, action, '')
+		if (isApplyError(res)) {
+			notify("Can't do that", res.error)
+			return false
 		}
+		setQueue((q) => [...q, action])
+		return true
+	}
+
+	// Send the queue as one batch. Resolves only once it has landed or given
+	// up; the queue is never dropped either way.
+	async function flushQueue(): Promise<{ error: string | null }> {
+		if (!game) return { error: null }
+		const actions = queue
+		if (actions.length === 0) return { error: null }
+		setFlushState({ kind: 'sending' })
+		for (let attempt = 0; ; attempt++) {
+			const res = await batch(game.id, actions)
+			if (!res.error) {
+				// Slice by length rather than clearing: anything queued while
+				// this was in flight is still owed.
+				setQueue((q) => q.slice(actions.length))
+				setFlushState({ kind: 'idle' })
+				return { error: null }
+			}
+			const message = res.error
+			if (!res.retriable) {
+				// The server considered these moves and refused them. Sending
+				// the same bytes again can only be refused again.
+				setFlushState({ kind: 'rejected', message })
+				return { error: message }
+			}
+			const delay = FLUSH_RETRY_DELAYS_MS[attempt]
+			setFlushState({ kind: 'retrying', attempt: attempt + 1, message })
+			if (delay === undefined) return { error: message }
+			await new Promise((r) => setTimeout(r, delay))
+		}
+	}
+
+	// Every action that isn't queued locally is a barrier: the queue goes up
+	// first, and the action is abandoned if it can't — so nothing is ever
+	// applied on top of a board the server never saw. Each barrier handler
+	// below opens with this; `honk` and `send_message` deliberately don't,
+	// being the same two the server treats as move-neutral.
+	async function flushBeforeBarrier(): Promise<boolean> {
+		const flushed = await flushQueue()
+		if (!flushed.error) return true
+		notify("Couldn't send your moves", flushed.error)
+		return false
+	}
+
+	// A manual retry for a flush that ran out of attempts or was refused. The
+	// rejected case is worth re-offering because the player may have undone
+	// their way back to something legal in the meantime.
+	async function onRetryFlush() {
+		await flushQueue()
+	}
+
+	// Undo is `slice(0, -1)` and nothing else: the projection re-folds and the
+	// board re-renders. Nothing was sent, so there is no failure mode and no
+	// spinner — and no limit on how far back it goes within a turn.
+	function onUndo() {
+		setQueue((q) => q.slice(0, -1))
+		// The board state a tool was armed against is gone.
 		selectBoardTool(null)
 	}
 
@@ -1019,6 +1108,7 @@ function useGameScreenState(gameId: string) {
 		if (pairs.length !== placementPairs) return
 		if (needsNomination) return
 
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await placeStart(game.id, pairs)
 		setSubmitting(false)
@@ -1032,6 +1122,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onRoll() {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await roll(
 			game.id,
@@ -1043,6 +1134,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onConfirmRoll(which?: 0 | 1) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await confirmRoll(game.id, which)
 		setSubmitting(false)
@@ -1051,6 +1143,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onRerollDice() {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await rerollDice(game.id)
 		setSubmitting(false)
@@ -1059,6 +1152,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onEndTurn() {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await endTurn(game.id)
 		setSubmitting(false)
@@ -1075,6 +1169,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onEndSpecialBuild() {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await endSpecialBuild(game.id)
 		setSubmitting(false)
@@ -1083,6 +1178,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onSetForfeit(on: boolean) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await setForfeit(game.id, on)
 		setSubmitting(false)
@@ -1091,6 +1187,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onSetEndVote(on: boolean) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await setEndVote(game.id, on)
 		setSubmitting(false)
@@ -1123,6 +1220,7 @@ function useGameScreenState(gameId: string) {
 				: false
 		const smithSwap =
 			smith && myPlayer ? smithSwapFor(myPlayer, 'dev_card') : 0
+		if (!(await flushBeforeBarrier())) return
 		const res = await buyDevCard(
 			game.id,
 			use,
@@ -1139,15 +1237,18 @@ function useGameScreenState(gameId: string) {
 		setSubmitting(true)
 		let res
 		if (payload.id === 'year_of_plenty') {
+			if (!(await flushBeforeBarrier())) return
 			res = await playDevCard(game.id, payload.id, {
 				r1: payload.r1,
 				r2: payload.r2,
 			})
 		} else if (payload.id === 'monopoly') {
+			if (!(await flushBeforeBarrier())) return
 			res = await playDevCard(game.id, payload.id, {
 				resource: payload.resource,
 			})
 		} else {
+			if (!(await flushBeforeBarrier())) return
 			res = await playDevCard(game.id, payload.id)
 		}
 		setSubmitting(false)
@@ -1159,8 +1260,6 @@ function useGameScreenState(gameId: string) {
 	}
 
 	function onBuildSpotSelect(sel: BuildSelection) {
-		// Explorer free-road placement bypasses the confirm bar (the post-
-		// placement layer is informational; just commit).
 		if (sel.kind === 'explorer_road') {
 			onPlaceExplorerRoad(sel.edge)
 			return
@@ -1186,25 +1285,15 @@ function useGameScreenState(gameId: string) {
 			setMetroPending({ kind: sel.kind, vertex: sel.vertex })
 			return
 		}
-		// At this point sel is one of road/fence/settlement/city (the non-
-		// metropolitan branch). Narrow for confirmAction + commitBuild.
+		// At this point sel is one of road/fence/settlement/city (the
+		// non-metropolitan branch). Straight into the queue: there is no
+		// confirm any more, because the undo arrow is the answer to "are you
+		// sure" and it reaches back further than one step.
 		if (sel.kind === 'super_city') return
-		const standardSel = sel
-		// Road Building's placements are free, so they overbuild a fence
-		// without paying the upgrade — the title must not quote a price.
-		const upgradingFence =
-			standardSel.kind === 'road' &&
-			!!gameState &&
-			gameState.phase.kind !== 'road_building' &&
-			isOwnFence(gameState, standardSel.edge, meIdx)
-		confirmAction(
-			confirmBuildTitle(standardSel.kind, upgradingFence),
-			() => commitBuild(standardSel),
-			standardSel
-		)
+		queueBuild(sel)
 	}
 
-	async function commitBuild(
+	function queueBuild(
 		sel: Exclude<
 			BuildSelection,
 			| { kind: 'explorer_road' }
@@ -1212,48 +1301,51 @@ function useGameScreenState(gameId: string) {
 			| { kind: 'haunt_spot' }
 		>
 	) {
-		if (!game || !gameState) return
-		setSubmitting(true)
+		if (!gameState) return
 		// Smith pays with a brick↔ore swap; everyone else may fall back to the
 		// bricklayer alt cost. One bonus per player, so these never combine.
+		// Resolved against the projection, so a second build this turn is
+		// priced against what the first one already spent.
 		const buildOpts = (
 			kind: PurchaseKind
-		): { useBricklayer?: boolean; smithSwap?: number } =>
+		): { use_bricklayer?: boolean; smith_swap?: number } =>
 			myPlayer?.bonus === 'smith'
-				? { smithSwap: smithSwapFor(myPlayer, kind) }
+				? { smith_swap: smithSwapFor(myPlayer, kind) }
 				: {
-						useBricklayer: myPlayer
+						use_bricklayer: myPlayer
 							? shouldUseBricklayer(myPlayer, kind)
 							: false,
 					}
-		let res
-		if (sel.kind === 'fence') {
-			res = await buildFence(game.id, sel.edge)
-		} else if (sel.kind === 'road') {
-			// A road onto the fencer's own fence is priced by the edge (1
-			// brick), so no cost-substitution payload applies.
-			res = isOwnFence(gameState, sel.edge, meIdx)
-				? await buildRoad(game.id, sel.edge)
-				: await buildRoad(game.id, sel.edge, buildOpts('road'))
-		} else if (sel.kind === 'settlement') {
-			res = await buildSettlement(
-				game.id,
-				sel.vertex,
-				buildOpts('settlement')
-			)
-		} else {
-			res = await buildCity(game.id, sel.vertex, buildOpts('city'))
-		}
-		setSubmitting(false)
-		if (res.error) {
-			notify('Build failed', res.error)
-			return
-		}
-		selectBoardTool(null)
+		const action: LocalAction =
+			sel.kind === 'fence'
+				? { action: 'build_fence', edge: sel.edge }
+				: sel.kind === 'road'
+					? // A road onto the fencer's own fence is priced by the
+						// edge (1 brick), so no substitution payload applies.
+						isOwnFence(gameState, sel.edge, meIdx)
+						? { action: 'build_road', edge: sel.edge }
+						: {
+								action: 'build_road',
+								edge: sel.edge,
+								...buildOpts('road'),
+							}
+					: sel.kind === 'settlement'
+						? {
+								action: 'build_settlement',
+								vertex: sel.vertex,
+								...buildOpts('settlement'),
+							}
+						: {
+								action: 'build_city',
+								vertex: sel.vertex,
+								...buildOpts('city'),
+							}
+		if (enqueue(action)) selectBoardTool(null)
 	}
 
 	async function onDiscard(selection: ResourceHandType) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await discard(game.id, selection)
 		setSubmitting(false)
@@ -1263,6 +1355,7 @@ function useGameScreenState(gameId: string) {
 	function onMoveRobberRequest(hex: Hex) {
 		if (!game) return
 		confirmAction('Move robber here?', async () => {
+			if (!(await flushBeforeBarrier())) return
 			setSubmitting(true)
 			const res = await moveRobber(game.id, hex)
 			setSubmitting(false)
@@ -1275,6 +1368,7 @@ function useGameScreenState(gameId: string) {
 		const victimId = game.player_order[victim]
 		const name = profilesById[victimId]?.username ?? 'player'
 		confirmAction(`Steal from ${name}?`, async () => {
+			if (!(await flushBeforeBarrier())) return
 			setSubmitting(true)
 			const res = await steal(game.id, victim)
 			setSubmitting(false)
@@ -1288,6 +1382,7 @@ function useGameScreenState(gameId: string) {
 		// it outright. Otherwise we toggle the compose panel.
 		if (liveOffer && liveOffer.from === meIdx) {
 			;(async () => {
+				if (!(await flushBeforeBarrier())) return
 				setSubmitting(true)
 				const res = await cancelTrade(game.id, liveOffer.id)
 				setSubmitting(false)
@@ -1311,6 +1406,7 @@ function useGameScreenState(gameId: string) {
 		to: number[]
 	) {
 		if (!game) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await proposeTrade(game.id, give, receive, to)
 		setSubmitting(false)
@@ -1319,6 +1415,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onAcceptTrade() {
 		if (!game || !liveOffer) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await acceptTrade(game.id, liveOffer.id)
 		setSubmitting(false)
@@ -1327,6 +1424,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onCancelTrade() {
 		if (!game || !liveOffer) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await cancelTrade(game.id, liveOffer.id)
 		setSubmitting(false)
@@ -1335,6 +1433,7 @@ function useGameScreenState(gameId: string) {
 
 	async function onRejectTrade() {
 		if (!game || !liveOffer) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await rejectTrade(game.id, liveOffer.id)
 		setSubmitting(false)
@@ -1343,22 +1442,16 @@ function useGameScreenState(gameId: string) {
 
 	async function onConfirmTrade(accepterIdx: number) {
 		if (!game || !liveOffer) return
+		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await confirmTrade(game.id, liveOffer.id, accepterIdx)
 		setSubmitting(false)
 		if (res.error) notify('Confirm failed', res.error)
 	}
 
-	async function onBankTrade(
-		give: ResourceHandType,
-		receive: ResourceHandType
-	) {
-		if (!game) return
-		setSubmitting(true)
-		const res = await bankTrade(game.id, give, receive)
-		setSubmitting(false)
-		if (res.error) notify('Bank trade failed', res.error)
-		else setTradePanelOpen(false)
+	function onBankTrade(give: ResourceHandType, receive: ResourceHandType) {
+		if (enqueue({ action: 'bank_trade', give, receive }))
+			setTradePanelOpen(false)
 	}
 
 	const canBuildThisTurn =
@@ -1596,6 +1689,14 @@ function useGameScreenState(gameId: string) {
 		accountantEnabled,
 		investorEnabled,
 
+		// --- The local action queue ------------------------------------
+		// `gameState` above is already the projection, so these are only for
+		// the surfaces that talk about the queue itself.
+		queuedCount: queue.length,
+		flushState,
+		onRetryFlush,
+		pendingWin,
+
 		// --- Local UI state --------------------------------------------
 		submitting,
 		canNominate,
@@ -1717,44 +1818,6 @@ function diffStolenResource(
 		stolen = r
 	}
 	return stolen
-}
-
-function confirmBuildTitle(
-	kind: BuildKind | 'fence',
-	upgradingFence: boolean
-): string {
-	switch (kind) {
-		case 'road':
-			// Name the price: overbuilding your own fence costs 1 brick, not
-			// the standard pair, and the bar is the only place that says so.
-			return upgradingFence
-				? 'Upgrade fence to road (1 Brick)'
-				: 'Confirm road placement'
-		case 'fence':
-			return 'Confirm fence placement'
-		case 'settlement':
-			return 'Confirm settlement placement'
-		case 'city':
-			return 'Confirm city placement'
-	}
-}
-
-// The accountant's confirm line. It names the refund because that price is
-// the whole decision, and the board pulse says nothing about it.
-function confirmLiquidateTitle(kind: LiquidationTarget['kind']): string {
-	const refund = LIQUIDATION_REFUND[kind]
-	const gain = RESOURCES.filter((r) => refund[r] > 0)
-		.map((r) => `+${refund[r]} ${r[0].toUpperCase()}${r.slice(1)}`)
-		.join(', ')
-	const what =
-		kind === 'road'
-			? 'Liquidate road'
-			: kind === 'settlement'
-				? 'Liquidate settlement'
-				: kind === 'city'
-					? 'City → settlement'
-					: 'Super city → city'
-	return `${what} (${gain})`
 }
 
 // Best-effort error notice. Alert.alert is a no-op on react-native-web;

@@ -10,6 +10,7 @@ import type {
 	DiceRoll,
 	GameConfig,
 	GameState,
+	LocalAction,
 	ResourceHand,
 } from '../catan/types'
 import type { Database } from '../database-types'
@@ -345,6 +346,10 @@ export type GameEvent =
 	  }
 
 type ActionResult = { error: string | null }
+// A flush carries `retriable` through so the screen can tell a network failure
+// (resend the same batch) from a rule rejection (stop, and say what was
+// refused). See `.claude/specs/local-action-queue.md`.
+type BatchResult = ActionResult & { retriable: boolean }
 type RespondResult = { error: string | null; gameId?: string }
 type RollResult = ActionResult & { dice?: DiceRoll; total?: number }
 
@@ -390,12 +395,6 @@ type GamesStore = {
 		gameId: string,
 		resource: Resource
 	) => Promise<ActionResult>
-	buyCarpenterVP: (gameId: string) => Promise<ActionResult>
-	tapKnight: (
-		gameId: string,
-		r1: Resource,
-		r2: Resource
-	) => Promise<ActionResult>
 
 	// A whole placement turn at once: one settlement+road pair, or two for the
 	// seat that places both of its settlements back-to-back — in the order it
@@ -423,7 +422,13 @@ type GamesStore = {
 	// (`UNDOABLE_ACTIONS`). The edge function restores the pre-action snapshot
 	// it stashed on `game_states.undo`; availability is read off that column,
 	// never derived here. See `.claude/specs/undo.md`.
-	undo: (gameId: string) => Promise<ActionResult>
+	// Flush the local action queue: the whole list applied server-side in one
+	// atomic write, or nothing. The single-action senders below stay for the
+	// timeout sweep and any client still on an older bundle.
+	batch: (
+		gameId: string,
+		actions: readonly LocalAction[]
+	) => Promise<BatchResult>
 
 	// Submit (`on`) or withdraw (`!on`) a standing forfeit / end-game vote.
 	// Both are idempotent, and neither has any mechanical effect on the game —
@@ -432,31 +437,6 @@ type GamesStore = {
 	// See `.claude/specs/forfeit-and-end-game.md`.
 	setForfeit: (gameId: string, on: boolean) => Promise<ActionResult>
 	setEndVote: (gameId: string, on: boolean) => Promise<ActionResult>
-
-	// `useBricklayer`: pay 4 Brick instead of the standard cost. Ignored by
-	// the edge if the caller doesn't have the bricklayer bonus.
-	// `smithSwap`: units of the cost's brick/ore component to pay in the other
-	// resource (smith bonus). A road onto the fencer's own fence needs no
-	// payload — the edge itself sets the price at 1 brick.
-	buildRoad: (
-		gameId: string,
-		edge: string,
-		opts?: { useBricklayer?: boolean; smithSwap?: number }
-	) => Promise<ActionResult>
-	buildSettlement: (
-		gameId: string,
-		vertex: string,
-		opts?: { useBricklayer?: boolean; smithSwap?: number }
-	) => Promise<ActionResult>
-	buildCity: (
-		gameId: string,
-		vertex: string,
-		opts?: {
-			useBricklayer?: boolean
-			swapDelta?: number
-			smithSwap?: number
-		}
-	) => Promise<ActionResult>
 
 	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
 	moveRobber: (gameId: string, hex: string) => Promise<ActionResult>
@@ -478,14 +458,6 @@ type GamesStore = {
 		offerId: string,
 		withIdx: number
 	) => Promise<ActionResult>
-	// The edge infers the rates: any combination of the caller's ports, the
-	// bank, and their specialist / merchant bonuses that pays for the given
-	// give/receive pair. `rates` comes back as the partition it charged.
-	bankTrade: (
-		gameId: string,
-		give: ResourceHand,
-		receive: ResourceHand
-	) => Promise<ActionResult & { rates?: BankRate[] }>
 
 	buyDevCard: (
 		gameId: string,
@@ -500,29 +472,6 @@ type GamesStore = {
 	) => Promise<ActionResult>
 
 	// --- Set-2 bonus actions -------------------------------------------------
-
-	// Metropolitan: build a city or super_city. `swapDelta` is the number of
-	// wheat (0..2) to replace with extra ore in the cost; ignored for non-
-	// metropolitan players. `useBricklayer` is mutually exclusive with the
-	// swap (bricklayer doesn't apply to a metropolitan-discounted cost).
-	buildSuperCity: (
-		gameId: string,
-		vertex: string,
-		swapDelta?: number
-	) => Promise<ActionResult>
-
-	// Accountant: trade a piece on the board back into resources.
-	liquidate: (
-		gameId: string,
-		target:
-			| { kind: 'road'; edge: string }
-			| { kind: 'settlement'; vertex: string }
-			| { kind: 'city'; vertex: string }
-			| { kind: 'super_city'; vertex: string }
-	) => Promise<ActionResult>
-
-	// Explorer: place one of the 3 free post-placement roads.
-	placeExplorerRoad: (gameId: string, edge: string) => Promise<ActionResult>
 
 	// Ritualist: choose a dice total (2..6, 8..12) by discarding cards.
 	ritualRoll: (
@@ -555,26 +504,11 @@ type GamesStore = {
 
 	// --- Set-3 bonus actions -------------------------------------------------
 
-	// Fencer: build a fence (1 wood) on a connected edge.
-	buildFence: (gameId: string, edge: string) => Promise<ActionResult>
-
 	// Haunt: secretly commit the two ghost-spawn locations at post-placement.
 	setHauntSpots: (
 		gameId: string,
 		spots: [string, string]
 	) => Promise<ActionResult>
-
-	// Investor: set aside 3 of a resource for an investment token.
-	invest: (gameId: string, resource: Resource) => Promise<ActionResult>
-
-	// Magician: after your own roll, discard N+1 cards to also produce as if
-	// `target` had rolled; or skip the window.
-	castMagic: (
-		gameId: string,
-		target: number,
-		discard: ResourceHand
-	) => Promise<ActionResult>
-	skipMagic: (gameId: string) => Promise<ActionResult>
 }
 
 function decodeInvited(raw: unknown): InvitedEntry[] {
@@ -813,20 +747,6 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async buyCarpenterVP(gameId) {
-		return callGameService(
-			{ action: 'buy_carpenter_vp', game_id: gameId },
-			"Couldn't buy VP"
-		)
-	},
-
-	async tapKnight(gameId, r1, r2) {
-		return callGameService(
-			{ action: 'tap_knight', game_id: gameId, r1, r2 },
-			"Couldn't tap knight"
-		)
-	},
-
 	async respond(meId, requestId, accept) {
 		const { error, data } = await callGameService(
 			{ action: 'respond', request_id: requestId, accept },
@@ -921,11 +841,12 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async undo(gameId) {
-		return callGameService(
-			{ action: 'undo', game_id: gameId },
-			"Couldn't undo"
+	async batch(gameId, actions) {
+		const res = await callGameService(
+			{ action: 'batch', game_id: gameId, actions },
+			"Couldn't send your moves"
 		)
+		return { error: res.error, retriable: res.retriable }
 	},
 
 	async setForfeit(gameId, on) {
@@ -939,46 +860,6 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'set_end_vote', game_id: gameId, on },
 			on ? "Couldn't vote to end the game" : "Couldn't withdraw your vote"
-		)
-	},
-
-	async buildRoad(gameId, edge, opts) {
-		return callGameService(
-			{
-				action: 'build_road',
-				game_id: gameId,
-				edge,
-				use_bricklayer: !!opts?.useBricklayer,
-				smith_swap: opts?.smithSwap ?? 0,
-			},
-			"Couldn't build road"
-		)
-	},
-
-	async buildSettlement(gameId, vertex, opts) {
-		return callGameService(
-			{
-				action: 'build_settlement',
-				game_id: gameId,
-				vertex,
-				use_bricklayer: !!opts?.useBricklayer,
-				smith_swap: opts?.smithSwap ?? 0,
-			},
-			"Couldn't build settlement"
-		)
-	},
-
-	async buildCity(gameId, vertex, opts) {
-		return callGameService(
-			{
-				action: 'build_city',
-				game_id: gameId,
-				vertex,
-				use_bricklayer: !!opts?.useBricklayer,
-				swap_wheat_to_ore: opts?.swapDelta ?? 0,
-				smith_swap: opts?.smithSwap ?? 0,
-			},
-			"Couldn't build city"
 		)
 	},
 
@@ -1051,20 +932,6 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async bankTrade(gameId, give, receive) {
-		const { error, data } = await callGameService(
-			{
-				action: 'bank_trade',
-				game_id: gameId,
-				give,
-				receive,
-			},
-			"Couldn't trade with bank"
-		)
-		if (error) return { error }
-		return { error: null, rates: data.rates as BankRate[] | undefined }
-	},
-
 	async buyDevCard(gameId, useBricklayer, scoutSwap, smithSwap) {
 		return callGameService(
 			{
@@ -1087,32 +954,6 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 				payload: payload ?? null,
 			},
 			"Couldn't play dev card"
-		)
-	},
-
-	async buildSuperCity(gameId, vertex, swapDelta) {
-		return callGameService(
-			{
-				action: 'build_super_city',
-				game_id: gameId,
-				vertex,
-				swap_wheat_to_ore: swapDelta ?? 0,
-			},
-			"Couldn't upgrade to super city"
-		)
-	},
-
-	async liquidate(gameId, target) {
-		return callGameService(
-			{ action: 'liquidate', game_id: gameId, target },
-			"Couldn't liquidate"
-		)
-	},
-
-	async placeExplorerRoad(gameId, edge) {
-		return callGameService(
-			{ action: 'place_explorer_road', game_id: gameId, edge },
-			"Couldn't place explorer road"
 		)
 	},
 
@@ -1158,38 +999,10 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async buildFence(gameId, edge) {
-		return callGameService(
-			{ action: 'build_fence', game_id: gameId, edge },
-			"Couldn't build fence"
-		)
-	},
-
 	async setHauntSpots(gameId, spots) {
 		return callGameService(
 			{ action: 'set_haunt_spots', game_id: gameId, spots },
 			"Couldn't set haunt spots"
-		)
-	},
-
-	async invest(gameId, resource) {
-		return callGameService(
-			{ action: 'invest', game_id: gameId, resource },
-			"Couldn't invest"
-		)
-	},
-
-	async castMagic(gameId, target, discard) {
-		return callGameService(
-			{ action: 'cast_magic', game_id: gameId, target, discard },
-			"Couldn't cast magic"
-		)
-	},
-
-	async skipMagic(gameId) {
-		return callGameService(
-			{ action: 'skip_magic', game_id: gameId },
-			"Couldn't skip magic"
 		)
 	},
 }))

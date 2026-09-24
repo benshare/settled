@@ -38,7 +38,7 @@ app/game/[id].tsx
   and the phase bars that replace it. Owns `spectatorStatus()` and
   `PlacementHeader`.
 - `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus the
-  inline `ConfirmBar`. Shared by both layouts, so it is also where every
+  inline `ConfirmBar` (now only the three non-undoable confirms). Shared by both layouts, so it is also where every
   affordance that has to exist in both lives — including the `post_placement`
   ones (`SpecialistDeclareOverlay` and the explorer/haunt banners).
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and the
@@ -62,7 +62,9 @@ app/game/[id].tsx
 - **A board tool owns everything it raised.** Arming, switching, or putting one
   away goes through `selectBoardTool()`, which drops the confirm bar and the
   metropolitan cost picker with it — both name a spot on a layer that is about
-  to disappear, and both would otherwise still commit. Opening the trade
+  to disappear, and both would otherwise still commit. (The metropolitan picker
+  is the one build-time modal left: it isn't a confirm, it's a genuine choice
+  about how to pay, and the answer rides on the queued action.) Opening the trade
   composer (which hides those layers) and a phase/turn flip under us do the
   same. Never call `setBuildTool` directly.
 - **What slides is content, never a frame.** A zone renders only the travelling
@@ -124,9 +126,24 @@ app/game/[id].tsx
   pair order. It is **unseeded on purpose** and `needsNomination` blocks Confirm
   until it is answered — a pre-seeded default made the choice invisible and it
   got skipped in real games.
-- **`canUndo` is read off `gameState.undo`, never derived from the event log.**
-  The edge function stashes a pre-action snapshot there for undoable actions, and
-  that column _is_ the availability signal. The context adds only what the server
-  can't see (viewer seat, spectator status, and whether this seat holds the
-  floor) — which during `special_build` is `phase.queue[0]`, not `current_turn`,
-  so the gate reads `isMySpecialBuild` there. See `.claude/specs/undo.md`.
+- **`gameState` on the context is the projection, not the server row.** The raw
+  row is `serverState`; `gameState` is it with the local action queue folded on
+  top, and the name is shadowed deliberately so every zone and every consumer
+  picks up the projection without knowing the queue exists. A single surface left
+  reading the row would show a hand that can still afford a road the board says
+  is spent. `serverState` is reachable only where the truth is needed — building
+  the flush payload and rebasing. VP is recomputed here for the same reason:
+  `useGame()`'s arrays come off the row.
+- **`canUndo` is just `queue.length > 0`.** Undo pops the queue and the
+  projection re-folds; nothing is sent, so there is no spinner and no failure
+  mode, and it reaches back as far as the turn goes. The old phase test is gone
+  — it existed because the server snapshot was a property of the _game_, so it
+  had to ask whether this seat still held the floor; a queue is a property of
+  this client. The placement arrow (`canUndoPlacement`) is still separate.
+- **An undoable action never leaves the device when it is taken.** Tapping a
+  build spot appends to the queue; every action that _isn't_ undoable is a
+  barrier that flushes it first (`flushBeforeBarrier`, opening each such
+  handler). `honk` and `send_message` are deliberately not barriers — the same
+  two the server treats as move-neutral. Only three confirm bars survive (move
+  robber, steal, move forger token), because those three can't be taken back.
+  See `.claude/specs/local-action-queue.md`.

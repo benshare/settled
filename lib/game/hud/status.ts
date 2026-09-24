@@ -17,7 +17,7 @@ import { describeEvent, type LogContext } from '@/lib/catan/ActionLog'
 import { mustMoveForgerToken } from '@/lib/catan/bonus'
 import { pendingSeats } from '@/lib/catan/timeout'
 import type { DiceRoll, GameState, TradeOffer } from '@/lib/catan/types'
-import type { PlacementStage } from '@/lib/game/gameScreenContext'
+import type { FlushState, PlacementStage } from '@/lib/game/gameScreenContext'
 import type { Game, GameEvent } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
 
@@ -32,6 +32,12 @@ type Ctx = {
 	// Whether the viewer is the back-to-back seat and still owes its nomination
 	// of which settlement it placed second.
 	needsNomination: boolean
+	// The local queue holds a move that wins the game, and hasn't been sent.
+	// This viewer knows; the table doesn't yet.
+	pendingWin: boolean
+	// Where a flush of the local queue stands. Only the two stuck states say
+	// anything — a send in flight is too brief to narrate.
+	flushState: FlushState
 }
 
 // Roll-family events never populate the banner: an ordinary roll is what the
@@ -117,6 +123,15 @@ export function islandStatus(ctx: Ctx): {
 }
 
 export function bannerStatus(ctx: Ctx): string | null {
+	// A queue that can't be sent outranks everything: nothing the player does
+	// next will land until it clears.
+	if (ctx.flushState.kind === 'retrying')
+		return `Can't reach the server — still trying to send your moves`
+	if (ctx.flushState.kind === 'rejected')
+		return `Couldn't send your moves: ${ctx.flushState.message}`
+	// Then: the viewer is sitting on a winning move that only exists on this
+	// device, which outranks whatever the phase is doing.
+	if (ctx.pendingWin) return 'This wins the game — end your turn to finish it'
 	const phase = ctx.gameState.phase
 	if (WAIT_KINDS.has(phase.kind)) return waitLine(ctx)
 	if (phase.kind === 'roll') return rollLine(ctx)
