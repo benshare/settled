@@ -95,6 +95,20 @@ export function acrossSeat(idx: number, n: number): number {
 	return (idx + Math.floor(n / 2)) % n
 }
 
+// Whether this seat is the one acting in a `special_build` slot. The acting
+// builder is the head of the queue, NOT `currentTurn` — which has already
+// advanced to the next roller by the time the slot opens. Every special-build
+// gate goes through this so none of them can reach for the wrong seat.
+export function isSpecialBuildActor(
+	state: GameState,
+	playerIdx: number
+): boolean {
+	return (
+		state.phase.kind === 'special_build' &&
+		state.phase.queue[0] === playerIdx
+	)
+}
+
 // The special-build order after the player at `enderIdx` finishes their turn,
 // front (acts first) to back. Empty when the SBP doesn't apply (2-4 players or
 // disabled). See lib/catan/CLAUDE.md and GameConfig.extraBuild. Auto-skip of

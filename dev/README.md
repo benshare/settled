@@ -75,6 +75,14 @@ Unit-style checks for `lib/catan/placement.ts` — distance rule, target-settlem
 npx tsx dev/check-catan-placement.ts
 ```
 
+### `check-catan-apply.ts`
+
+Unit-style checks for `lib/catan/apply.ts` — the reducers behind the local action queue. Covers charging and placement, the rejections (unaffordable, wrong turn, nothing mutated on failure), a second build priced against the first, the win that moves the phase to `game_over`, and the fold: order, the failing index, rebase truncation, and the property undo rests on — **folding a queue then truncating equals folding the truncated queue**. Run after editing any reducer, and remember the edge function mirrors this file.
+
+```sh
+npx tsx dev/check-catan-apply.ts
+```
+
 ### `check-stats.ts`
 
 Unit-style checks for `lib/stats.ts` — the Stats tab's aggregations (averages over empty input, per-game rounds, opponent counting and the top-5 cap, bonus pick/win rates and their tie-breaks), plus the arithmetic over the global `card_stats` rows the catalog shows. Run after editing the stats derivations.

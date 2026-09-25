@@ -7,6 +7,9 @@ import type {
 	Vertex,
 	VertexBuilding,
 } from './board'
+// Type-only, so the cycle with `bonus.ts` (which imports this file) is erased
+// at compile time and never exists at runtime.
+import type { LiquidationTarget } from './bonus'
 import type { BonusId, CurseId } from './bonuses'
 import type { ColorId } from './colors'
 import type { DevCardId } from './devCards'
@@ -730,17 +733,21 @@ export type GameState = {
 	// Monotonic turn counter. Increments on each `end_turn`. Used to enforce
 	// "can't play dev card on turn bought" (stamped on DevCardEntry.purchasedTurn).
 	round: number
-	// The one-step undo snapshot, or null when the last action wasn't undoable.
-	// Read-only to the client — it exists so the back arrow's availability comes
-	// off the same row everything else does. See `UndoSnapshot`.
-	undo?: UndoSnapshot | null
 }
 
-// Actions a player may take back. The rule: solo and information-free. Rolling,
-// buying or playing a dev card, and anything involving another player are all
-// excluded — taking them reveals something, so unwinding them would leak it.
-// Mirrored in the edge function, which is the authority. See
-// `.claude/specs/undo.md`.
+// Actions the client holds in its **local queue** instead of sending when they
+// are taken: they are folded onto the server row to produce the projected state
+// every surface reads, and flushed as one `batch` at the next action that isn't
+// one of them. Undo pops the last entry, so membership here is exactly "can be
+// taken back".
+//
+// The rule for membership is unchanged and still the reason the list is short:
+// solo and information-free. Rolling, buying or playing a dev card, and anything
+// involving another player are excluded — taking them reveals something, so
+// unwinding them would leak it.
+//
+// Mirrored in the edge function, where it is what `handleBatch` will accept.
+// See `.claude/specs/local-action-queue.md`.
 export const UNDOABLE_ACTIONS = [
 	'build_road',
 	'build_settlement',
@@ -762,26 +769,54 @@ export const UNDOABLE_ACTIONS = [
 
 export type UndoableAction = (typeof UNDOABLE_ACTIONS)[number]
 
-// A snapshot of the `game_states` row as it was immediately before an undoable
-// action, written by the game-service dispatcher. Undo restores the row rather
-// than computing an inverse: a single road build can move Longest Road, consume
-// a fence token, and apply a smith/bricklayer cost substitution, and an inverse
-// would have to keep up with every bonus we add.
-export type UndoSnapshot = {
-	action: UndoableAction
-	// Seat that acted. Only they may undo — `post_placement` is a parallel
-	// phase, so the one snapshot slot can belong to any seat.
-	player: number
-	at: string
-	// `games.events` length BEFORE the action. Undo truncates back to it, which
-	// is what makes the undone action vanish from the log.
-	eventsLen: number
-	// The mutable `game_states` columns, under their column names. `hexes` and
-	// `variant` are omitted (nothing mutates them); `current_turn` is omitted
-	// because no undoable action moves the turn, and including it would only
-	// create a way for it and its `games` mirror to disagree after an undo.
-	state: Record<string, unknown>
-}
+// One queued action, as the `batch` flush will send it: the wire body minus
+// `game_id`, so nothing is re-derived at flush time and a retry resends bytes
+// that already passed the client's own validation.
+//
+// Deliberately typed tighter than the edge function's `*Body` types (which take
+// `unknown` for anything off the wire) — these are built by our own UI, and the
+// server re-validates everything regardless.
+export type LocalAction =
+	| {
+			action: 'build_road'
+			edge: Edge
+			use_bricklayer?: boolean
+			smith_swap?: number
+	  }
+	| {
+			action: 'build_settlement'
+			vertex: Vertex
+			use_bricklayer?: boolean
+			smith_swap?: number
+	  }
+	| {
+			action: 'build_city'
+			vertex: Vertex
+			use_bricklayer?: boolean
+			swap_wheat_to_ore?: number
+			smith_swap?: number
+	  }
+	| { action: 'build_super_city'; vertex: Vertex; swap_wheat_to_ore?: number }
+	| { action: 'build_fence'; edge: Edge }
+	| { action: 'bank_trade'; give: ResourceHand; receive: ResourceHand }
+	| { action: 'liquidate'; target: LiquidationTarget }
+	| { action: 'invest'; resource: Resource }
+	| { action: 'buy_carpenter_vp' }
+	| { action: 'tap_knight'; r1: Resource; r2: Resource }
+	| { action: 'place_explorer_road'; edge: Edge }
+	| { action: 'cast_magic'; target: number; discard: ResourceHand }
+	| { action: 'skip_magic' }
+
+// Compile-time proof that the queue covers exactly `UNDOABLE_ACTIONS` — adding
+// one without a `LocalAction` arm (or the reverse) fails here rather than at
+// runtime, where it would mean an action that silently never sends.
+type _QueueCoversUndoable = UndoableAction extends LocalAction['action']
+	? LocalAction['action'] extends UndoableAction
+		? true
+		: never
+	: never
+const _queueCoversUndoable: _QueueCoversUndoable = true
+void _queueCoversUndoable
 
 export const EMPTY_VERTEX: VertexState = { occupied: false }
 export const EMPTY_EDGE: EdgeState = { occupied: false }

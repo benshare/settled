@@ -291,14 +291,12 @@ export function BoardArea({
 									meIdx,
 									tool: buildTool,
 									onSelect: onBuildSpotSelect,
-									pending: pendingConfirm?.preview,
 								}
 							: inRoadBuilding && isCurrentPlayer
 								? {
 										meIdx,
 										tool: 'road',
 										onSelect: onBuildSpotSelect,
-										pending: pendingConfirm?.preview,
 									}
 								: postPlacementTool
 									? {
@@ -318,9 +316,11 @@ export function BoardArea({
 						isMyActiveTurn &&
 						!tradePanelOpen
 							? {
+									// No confirm bar to preview against any
+									// more — a tap liquidates, and the arrow
+									// takes it back.
 									meIdx,
-									pending:
-										pendingConfirm?.liquidating ?? null,
+									pending: null,
 									onSelect: onLiquidateSelect,
 								}
 							: undefined
