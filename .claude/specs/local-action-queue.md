@@ -359,6 +359,10 @@ still gets the old behavior.
   main-phase fall-through; `bannerStatus` is already the surface that narrates
   what the table is waiting on, and this is the one case where the viewer knows
   something the table doesn't.
+- **End turn survives the projected `game_over`.** The projected phase has no
+  control of its own, so both layouts render End turn off `pendingWin` instead
+  of the phase. Pressing it is the flush alone — the batch's fold ends the game
+  on the server, and a following `end_turn` would be refused.
 - **`submitting` no longer covers local actions.** They are synchronous state
   updates. It stays for barriers, which now include a flush.
 

@@ -1152,6 +1152,15 @@ function useGameScreenState(gameId: string) {
 
 	async function onEndTurn() {
 		if (!game) return
+		// The batch itself ends the game (the server's fold reaches `game_over`
+		// just as the projection did), so there is no turn left to end — an
+		// `end_turn` after it would only be refused.
+		if (pendingWin) {
+			setSubmitting(true)
+			await flushBeforeBarrier()
+			setSubmitting(false)
+			return
+		}
 		if (!(await flushBeforeBarrier())) return
 		setSubmitting(true)
 		const res = await endTurn(game.id)

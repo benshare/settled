@@ -92,6 +92,7 @@ export function BottomArea() {
 		onShepherdSwap,
 		onDiscard,
 		onUndo,
+		pendingWin,
 	} = useGameScreen()
 
 	if (!game) return null
@@ -129,6 +130,29 @@ export function BottomArea() {
 								placementDraft.length,
 								needsNomination
 							)}
+						</Button>
+					</View>
+				</View>
+			)}
+
+			{/* A queued winning move projects to `game_over`, which the main
+			    loop bar doesn't render — but it isn't sent yet, so the undo
+			    and End turn still belong here. */}
+			{pendingWin && !isSpectator && (
+				<View style={sharedStyles.actionBar}>
+					<View style={styles.actionRow}>
+						{canUndo && (
+							<UndoButton
+								submitting={submitting}
+								onPress={onUndo}
+							/>
+						)}
+						<Button
+							style={styles.actionFill}
+							onPress={onEndTurn}
+							loading={submitting}
+						>
+							End turn
 						</Button>
 					</View>
 				</View>
@@ -649,6 +673,14 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 	},
 	placementConfirm: {
+		flex: 1,
+	},
+	actionRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+	},
+	actionFill: {
 		flex: 1,
 	},
 	investRow: {

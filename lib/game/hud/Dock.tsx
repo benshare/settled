@@ -370,9 +370,27 @@ function PrimaryAction() {
 		forgerMustMove,
 		setRitualOpen,
 		setShepherdOpen,
+		pendingWin,
 	} = ctx
 	if (!game || !gameState) return null
 	const phase = gameState.phase
+
+	// A queued winning move projects to `game_over`, which has no control of
+	// its own — but the win isn't sent yet, so End turn is still how it lands.
+	if (pendingWin) {
+		return (
+			<View style={[styles.actionCol, styles.actionSlot]}>
+				<Button
+					size="small"
+					style={styles.phaseButton}
+					onPress={onEndTurn}
+					loading={submitting}
+				>
+					End turn
+				</Button>
+			</View>
+		)
+	}
 
 	// Placement — the confirm + a local undo of the last drafted piece.
 	if (inPlacement && isMyPlacementTurn) {
