@@ -480,7 +480,7 @@ type GamesStore = {
 		total: number
 	) => Promise<ActionResult>
 
-	// Shepherd: trade 2 sheep for 2 chosen resources at start of turn.
+	// Shepherd: trade 1 sheep for 2 chosen resources at start of turn.
 	shepherdSwap: (
 		gameId: string,
 		take: [Resource, Resource]

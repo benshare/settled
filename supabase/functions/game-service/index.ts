@@ -9451,7 +9451,7 @@ async function handleShepherdSwap(
 	const meP = state.players[meIdx]
 	if (meP.bonus !== 'shepherd') return err(400, 'not a shepherd')
 	if (meP.shepherdUsedThisTurn) return err(400, 'shepherd already used')
-	if (meP.resources.sheep < 4) return err(400, 'need 4 sheep')
+	if (meP.resources.sheep < 1) return err(400, 'need a sheep')
 
 	const take = body.take
 	if (!Array.isArray(take) || take.length !== 2)
@@ -9460,13 +9460,13 @@ async function handleShepherdSwap(
 	const r2 = parseResource(take[1])
 	if (!r1 || !r2) return err(400, 'invalid resource')
 
-	// A declaration, not a swap: the sheep go now, the pair is owed until the
+	// A declaration, not a swap: the sheep goes now, the pair is owed until the
 	// roll resolves (applyShepherdPayout), which is what puts it out of reach
 	// of a 7.
 	const nextPlayers = state.players.map((p, i) => {
 		if (i !== meIdx) return p
 		const r = p.resources
-		const next: ResourceHand = { ...r, sheep: r.sheep - 2 }
+		const next: ResourceHand = { ...r, sheep: r.sheep - 1 }
 		return {
 			...p,
 			resources: next,

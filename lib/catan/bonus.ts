@@ -272,9 +272,9 @@ export function populistBonusVPFor(
 // --- Shepherd ---------------------------------------------------------------
 //
 // Sheep don't count toward the 7-roll discard hand-size threshold. The
-// `shepherd_swap` action is a once-per-turn opt-in to swap 2 sheep for 2
+// `shepherd_swap` action is a once-per-turn opt-in to swap 1 sheep for 2
 // resources of choice, but the two halves are separated by the roll: the
-// sheep leave the hand at declaration and the cards land only once the turn
+// sheep leaves the hand at declaration and the cards land only once the turn
 // reaches `main`, so a 7 can take neither. Nothing here has to exclude the
 // declared pair from the discard maths — it simply isn't in the hand yet.
 export function shepherdEffectiveHandSize(p: PlayerState): number {
@@ -289,7 +289,7 @@ export function shepherdEffectiveHandSize(p: PlayerState): number {
 export function canShepherdSwap(p: PlayerState): boolean {
 	if (p.bonus !== 'shepherd') return false
 	if (p.shepherdUsedThisTurn) return false
-	return p.resources.sheep >= 4
+	return p.resources.sheep >= 1
 }
 
 // Hand over the declared pair and clear it. Applied at every point a roll
