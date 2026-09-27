@@ -1,4 +1,4 @@
-// Modal for the shepherd's once-per-turn 4-sheep → +2 resources of choice
+// Modal for the shepherd's once-per-turn 1 sheep → 2 resources of choice
 // swap. Picker UX mirrors Year of Plenty. The pick is a declaration only —
 // the cards land after the roll (see `applyShepherdPayout`).
 
@@ -55,7 +55,7 @@ export function ShepherdSwapPicker({
 
 	return (
 		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
-			<Text style={styles.title}>Shepherd: 2 sheep → 2 resources</Text>
+			<Text style={styles.title}>Shepherd: 1 sheep → 2 resources</Text>
 			<Text style={styles.subtitle}>
 				Pick 2 resources to take. Duplicates are fine — tap twice to
 				take 2 of the same. You'll receive them after you roll, so a 7

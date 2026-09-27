@@ -83,8 +83,8 @@ export const BONUS_POOL: readonly Bonus[] = [
 	{
 		id: 'fencer',
 		title: 'Fencer',
-		description: `You may build fences, which require 1 wood and are placed like roads. Other players cannot build
-			on fences. Fences can be upgraded into roads for 1 brick.`,
+		description:
+			'You may build fences, which require 1 wood and are placed like roads. Other players cannot build on fences. Fences can be upgraded into roads for 1 brick.',
 		icon: 'lock-closed-outline',
 		set: '3',
 	},
@@ -123,7 +123,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'shepherd',
 		title: 'Shepherd',
 		description:
-			'If you begin your turn with four Sheep in hand, you may discard two to specify two resources of your choice. You receive them after rolling. Sheep do not count towards your 7 card hand limit.',
+			'At the start of your turn, you may discard one Sheep to specify two resources of your choice. You receive them after rolling. Sheep do not count towards your 7 card hand limit.',
 		icon: 'paw-outline',
 		set: '2',
 	},

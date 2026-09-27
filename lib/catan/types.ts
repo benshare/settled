@@ -432,7 +432,7 @@ export type PlayerState = {
 	// `ritual_roll` choose-your-roll action. Reset on end_turn.
 	ritualWasUsedThisTurn?: boolean
 	// `shepherd`: set to true once the player has used their per-turn
-	// shepherd swap (4-sheep start-of-turn). Reset on end_turn.
+	// shepherd swap (1 sheep, start of turn). Reset on end_turn.
 	shepherdUsedThisTurn?: boolean
 	// `shepherd`: the pair declared by that swap, owed until the roll fully
 	// resolves. The sheep leave the hand at declaration but the cards land
