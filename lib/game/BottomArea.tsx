@@ -68,6 +68,7 @@ export function BottomArea() {
 		isMyActiveTurn,
 		inMainLoop,
 		inPostPlacement,
+		postPlacementData,
 		inGameOver,
 		inBonusSelection,
 		canUndo,
@@ -228,12 +229,16 @@ export function BottomArea() {
 			)}
 
 			{/* post_placement has no MainLoopBar to hang the arrow off, so the
-			    fencer's tokens and the explorer's roads get their own row. */}
-			{canUndo && inPostPlacement && (
-				<View style={styles.undoRow}>
-					<UndoButton submitting={submitting} onPress={onUndo} />
-				</View>
-			)}
+			    fencer's tokens and the explorer's roads get their own row. The
+			    explorer's last road may already project past post_placement,
+			    so the pending Confirm keeps the row too. */}
+			{canUndo &&
+				(inPostPlacement ||
+					postPlacementData?.kind === 'explorer_confirm') && (
+					<View style={styles.undoRow}>
+						<UndoButton submitting={submitting} onPress={onUndo} />
+					</View>
+				)}
 
 			{!inPlacement &&
 				!inGameOver &&

@@ -113,6 +113,8 @@ export type FlushState =
 export type PostPlacementData =
 	| { kind: 'specialist'; waitingOn: string[] }
 	| { kind: 'explorer'; remaining: number; waitingOn: string[] }
+	// Every explorer road is placed but still only queued on this device.
+	| { kind: 'explorer_confirm'; waitingOn: string[] }
 	| { kind: 'haunt'; waitingOn: string[] }
 	| { kind: 'waiting'; waitingOn: string[] }
 	| null
@@ -940,6 +942,15 @@ function useGameScreenState(gameId: string) {
 		enqueue({ action: 'place_explorer_road', edge })
 	}
 
+	// The roads are queued like any build, but post_placement has no barrier
+	// action of its own to carry them up — so the explorer sends them outright
+	// once the last one is down.
+	async function onConfirmExplorerRoads() {
+		setSubmitting(true)
+		await flushBeforeBarrier()
+		setSubmitting(false)
+	}
+
 	async function onSetHauntSpots(spots: [string, string]) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
@@ -1573,6 +1584,22 @@ function useGameScreenState(gameId: string) {
 			)
 		)
 
+	const seatName = (i: number) =>
+		profilesById[game?.player_order[i] ?? '']?.username ?? 'Player'
+	// The other seats still owing an explorer road or a haunt pick.
+	function postPlacementWaitingOn(pending: {
+		explorer?: Partial<Record<number, number>>
+		haunt?: number[]
+	}): string[] {
+		const idxs = new Set([
+			...Object.entries(pending.explorer ?? {})
+				.filter(([, n]) => (n ?? 0) > 0)
+				.map(([i]) => Number(i)),
+			...(pending.haunt ?? []),
+		])
+		return [...idxs].filter((i) => i !== meIdx).map(seatName)
+	}
+
 	// Which post_placement affordance this seat owes, already resolved to the
 	// one thing to render. Derived here rather than in the view because both
 	// layouts render it from `BoardArea` and the ordering rule is subtle:
@@ -1580,34 +1607,44 @@ function useGameScreenState(gameId: string) {
 	// falls through to an explorer/haunt banner until every specialist is in —
 	// the same gate `postPlacementTool` applies to the board itself.
 	const postPlacementData = ((): PostPlacementData => {
-		if (!inPostPlacement || !game) return null
+		if (!game) return null
+		// Read off the server row, not the projection: once the last road is
+		// queued the projection has drained this seat's entry — and, if it was
+		// the last entry anywhere, already moved on to `roll` — while the table
+		// is still waiting on the roads.
+		if (
+			serverState?.phase.kind === 'post_placement' &&
+			(serverState.phase.pending.explorer?.[meIdx] ?? 0) > 0 &&
+			queue.length > 0 &&
+			!(
+				gameState?.phase.kind === 'post_placement' &&
+				(gameState.phase.pending.explorer?.[meIdx] ?? 0) > 0
+			)
+		) {
+			const waitingOn =
+				gameState?.phase.kind === 'post_placement'
+					? postPlacementWaitingOn(gameState.phase.pending)
+					: []
+			return { kind: 'explorer_confirm', waitingOn }
+		}
+		if (!inPostPlacement) return null
 		if (gameState?.phase.kind !== 'post_placement') return null
 		const {
 			specialist,
 			explorer = {},
 			haunt = [],
 		} = gameState.phase.pending
-		const nameOf = (i: number) =>
-			profilesById[game.player_order[i]]?.username ?? 'Player'
-		const others = (idxs: number[]) => idxs.filter((i) => i !== meIdx)
 
 		if (specialist.includes(meIdx))
 			return {
 				kind: 'specialist',
-				waitingOn: others(specialist).map(nameOf),
+				waitingOn: specialist.filter((i) => i !== meIdx).map(seatName),
 			}
 		// Somebody else is still declaring: nothing to render here, since both
 		// layouts' status surfaces already narrate the wait from the phase.
 		if (specialist.length > 0) return null
 
-		const waitingOn = others([
-			...new Set([
-				...Object.entries(explorer)
-					.filter(([, n]) => (n ?? 0) > 0)
-					.map(([i]) => Number(i)),
-				...haunt,
-			]),
-		]).map(nameOf)
+		const waitingOn = postPlacementWaitingOn(gameState.phase.pending)
 		const remaining = explorer[meIdx] ?? 0
 		if (remaining > 0) return { kind: 'explorer', remaining, waitingOn }
 		if (haunt.includes(meIdx)) return { kind: 'haunt', waitingOn }
@@ -1775,6 +1812,7 @@ function useGameScreenState(gameId: string) {
 		onConfirmScoutCard,
 		onLiquidateSelect,
 		onSetHauntSpots,
+		onConfirmExplorerRoads,
 		onInvest,
 		onCastMagic,
 		onSkipMagic,

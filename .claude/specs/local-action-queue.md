@@ -279,6 +279,9 @@ never had to model:
   `place_explorer_road` that drains this seat's pending entry must not be folded
   onto a server row where someone else's entry drained too — it is, and that's
   fine, because the reducer only touches this seat's entry.
+  The phase has no barrier action of its own, so the explorer banner carries a
+  Confirm that flushes once the last road is queued. It keys off the server
+  row, since the projection may already have drained to `roll`.
 
 **Rebase rule:** whenever the server row changes under a non-empty queue, re-fold
 from the new row. If any action in the queue now fails to apply, truncate the

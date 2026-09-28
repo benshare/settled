@@ -83,17 +83,48 @@ export function SpecialistDeclareOverlay({
 // Explorer's "place 3 free roads" affordance during post_placement. Renders
 // as a small inline banner with a counter; the actual road picks happen on
 // the board (BuildLayer with tool='explorer_road'). Counter goes 3 → 0,
-// mirroring `phase.pending.explorer[meIdx]`.
+// mirroring `phase.pending.explorer[meIdx]`. The roads are queued locally, so
+// at 0 the banner carries the Confirm that sends them (`onConfirm`); without
+// it, 0 is the plain "waiting on others" line.
 export function ExplorerStatusBanner({
 	remaining,
 	waitingOn,
+	submitting = false,
+	onConfirm,
 }: {
 	remaining: number
 	waitingOn: string[]
+	submitting?: boolean
+	onConfirm?: () => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
-	if (remaining <= 0 && waitingOn.length === 0) return null
+	if (remaining <= 0 && waitingOn.length === 0 && !onConfirm) return null
+	if (remaining <= 0 && onConfirm)
+		return (
+			<View style={styles.banner}>
+				<View style={styles.bannerRow}>
+					<Text style={styles.bannerText}>
+						Explorer: all roads placed.
+					</Text>
+					<Pressable
+						onPress={onConfirm}
+						disabled={submitting}
+						style={({ pressed }) => [
+							styles.confirmBtn,
+							pressed && styles.pressed,
+						]}
+					>
+						<Text style={styles.confirmText}>Confirm</Text>
+					</Pressable>
+				</View>
+				{waitingOn.length > 0 && (
+					<Text style={styles.bannerSub}>
+						Waiting on {waitingOn.join(', ')}.
+					</Text>
+				)}
+			</View>
+		)
 	return (
 		<View style={styles.banner}>
 			{remaining > 0 ? (
