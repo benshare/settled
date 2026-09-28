@@ -1,4 +1,4 @@
-// Modal for the shepherd's once-per-turn 1 sheep → 2 resources of choice
+// Modal for the shepherd's once-per-turn 4-sheep, discard 1 → 2 resources of choice
 // swap. Picker UX mirrors Year of Plenty. The pick is a declaration only —
 // the cards land after the roll (see `applyShepherdPayout`).
 

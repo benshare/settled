@@ -27,7 +27,7 @@ PlayerStrip bonus badge, GameOverOverlay scoreboard line per bonus VP).
   pips total < 5 is worth +1 VP.
 - `fortune_teller` — after every doubles or 7 roll, take a second roll;
   only the fortune_teller gains resources from it. No chaining.
-- `shepherd` — at the start of the turn, may discard 1 sheep to take
+- `shepherd` — if turn starts with ≥4 sheep, may discard 1 sheep to take
   2 resources of choice. Sheep are excluded from the 7-discard hand-size
   total.
 - `metropolitan` — new "super_city" building kind, upgrades from a city
@@ -252,7 +252,7 @@ cards: DevCardId[] }`. Only the owner can act; others see a "waiting
   computed against the sheep-excluded total.
 - New action `shepherd_swap { game_id, take: [Resource, Resource] }`:
     - phase = roll (start of turn, before rolling); current turn = me;
-      bonus = shepherd; `!shepherdUsedThisTurn`; sheep ≥ 1.
+      bonus = shepherd; `!shepherdUsedThisTurn`; sheep ≥ 4.
     - `take` is two resources (duplicates allowed, sheep allowed).
     - Effect: deduct 1 sheep, add `take[0]` and `take[1]`, set
       `shepherdUsedThisTurn = true`. Reset on end_turn.
@@ -398,7 +398,7 @@ cards: DevCardId[] }`. Only the owner can act; others see a "waiting
   resource-discard picker totalling the cost (2 or 3). Submitting
   fires `ritual_roll`.
 - `RollBar` again: add a `Shepherd swap` button for shepherd players
-  in roll phase when holding a sheep.
+  in roll phase when ≥ 4 sheep.
 - `RollBar` for forger players: small "Move forger token" affordance
   when token defined.
 - New `ScoutPickOverlay`: full-screen during `scout_pick` for the

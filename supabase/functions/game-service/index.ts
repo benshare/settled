@@ -9451,7 +9451,7 @@ async function handleShepherdSwap(
 	const meP = state.players[meIdx]
 	if (meP.bonus !== 'shepherd') return err(400, 'not a shepherd')
 	if (meP.shepherdUsedThisTurn) return err(400, 'shepherd already used')
-	if (meP.resources.sheep < 1) return err(400, 'need a sheep')
+	if (meP.resources.sheep < 4) return err(400, 'need 4 sheep')
 
 	const take = body.take
 	if (!Array.isArray(take) || take.length !== 2)
