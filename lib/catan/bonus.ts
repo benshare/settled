@@ -289,7 +289,7 @@ export function shepherdEffectiveHandSize(p: PlayerState): number {
 export function canShepherdSwap(p: PlayerState): boolean {
 	if (p.bonus !== 'shepherd') return false
 	if (p.shepherdUsedThisTurn) return false
-	return p.resources.sheep >= 1
+	return p.resources.sheep >= 4
 }
 
 // Hand over the declared pair and clear it. Applied at every point a roll

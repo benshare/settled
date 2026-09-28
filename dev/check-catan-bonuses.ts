@@ -636,16 +636,11 @@ function testShepherdHandSize() {
 	assert(canShepherdSwap(p), 'shepherd with 5 sheep can swap')
 	const used: PlayerState = { ...p, shepherdUsedThisTurn: true }
 	assert(!canShepherdSwap(used), 'shepherd already used cannot swap')
-	const oneSheep: PlayerState = {
+	const lowSheep: PlayerState = {
 		...p,
-		resources: { ...p.resources, sheep: 1 },
+		resources: { ...p.resources, sheep: 3 },
 	}
-	assert(canShepherdSwap(oneSheep), 'shepherd with 1 sheep can swap')
-	const noSheep: PlayerState = {
-		...p,
-		resources: { ...p.resources, sheep: 0 },
-	}
-	assert(!canShepherdSwap(noSheep), 'shepherd with no sheep cannot swap')
+	assert(!canShepherdSwap(lowSheep), 'shepherd with 3 sheep cannot swap')
 	// Discard logic via requiredDiscards.
 	const big: PlayerState = {
 		...p,

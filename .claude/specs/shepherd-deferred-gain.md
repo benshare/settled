@@ -9,8 +9,8 @@ before the roll. The card text now reads
 > specify two resources of your choice. You receive them after rolling. Sheep
 > do not count towards your 7 card hand limit.
 
-(Since buffed: the cost is now one sheep with no four-sheep threshold —
-"At the start of your turn, you may discard one Sheep…". The split below is
+(Since buffed: the four-sheep threshold stays but the cost is now one sheep —
+"…you may discard one to specify two resources…". The split below is
 unchanged.)
 
 The action splits in two: a **declaration** before the roll (sheep leave the
@@ -61,7 +61,7 @@ Legacy hands with no `shepherdPending` read as nothing owed.
 - `shepherdEffectiveHandSize`, `requiredDiscards` — **unchanged**. The declared
   cards aren't in the hand, so nothing needs to exclude them; that is the whole
   mechanism.
-- `canShepherdSwap(p)` — shepherd, not used this turn, ≥ 1 sheep.
+- `canShepherdSwap(p)` — shepherd, not used this turn, ≥ 4 sheep.
 - New `applyShepherdPayout(state, idx): { players, events }` — mirrors
   `applyInvestorPayout`'s shape. No-op when the seat has no `shepherdPending`.
   Grants the two cards, clears the field, and emits one
