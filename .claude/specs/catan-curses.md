@@ -35,7 +35,7 @@ Depends on: `catan-longest-road-and-victory.md` (Longest Road, Largest Army, `fi
 6. **Provinciality** — only ports + bank. Player trades unaffected.
 7. **Avarice** — trigger hand > 7 on a rolled 7; cursed player discards everything.
 8. **Curses gate initial placement** too. In practice only youth bites (power can't violate with 2 settlements on non-adjacent vertices).
-9. **Nomadism road count** = all of the player's roads on the board (includes the 2 initial-placement roads).
+9. **Nomadism road count** = all of the player's roads on the board (includes the 2 initial-placement roads). Exception: the explorer's 3 free roads don't count, implemented as a threshold of 14 for an explorer (they always place all 3). The selection pane notes this when both are picked (`comboNoteFor`).
 10. **UI**: disabled button + curse icon badge in the top-right corner of the button (reusing the `cancelBadge` position from `BuildTradeBar`). Press on mobile / hover on web shows a tooltip with the curse name + reason. New `Tooltip` primitive in `lib/modules/Tooltip.tsx` (cross-platform: `Pressable` + `onHoverIn`/`onHoverOut` on web, long-press on mobile, dismisses on release).
 11. **Events**: log a curse-triggered event when a curse changed an outcome (avarice discard amount, asceticism Longest Road / Largest Army grant or miss). Skip the log when a build was simply blocked (the disabled button is the signal).
 12. Ship all 11.

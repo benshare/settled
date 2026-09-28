@@ -21,6 +21,7 @@ import type { Profile } from '../stores/useProfileStore'
 import {
 	bonusById,
 	bonusDescriptionFor,
+	comboNoteFor,
 	curseById,
 	curseDescriptionFor,
 	type BonusId,
@@ -80,6 +81,25 @@ export function BonusSelection({
 	const curseFixed = curses.length === 1
 	const bonusIdx = bonusFixed ? 0 : pick
 	const curseIdx = curseFixed ? 0 : cursePick
+
+	const pickedBonus = hand
+		? committed
+			? hand.chosen
+			: bonusIdx !== null
+				? hand.offered[bonusIdx]
+				: null
+		: null
+	const pickedCurse = hand
+		? committed
+			? handChosenCurse(hand)
+			: curseIdx !== null
+				? curses[curseIdx]
+				: null
+		: null
+	const comboNote =
+		pickedBonus && pickedCurse
+			? comboNoteFor(pickedBonus, pickedCurse)
+			: null
 
 	async function onConfirm() {
 		if (!hand || bonusIdx === null || curseIdx === null) return
@@ -152,6 +172,10 @@ export function BonusSelection({
 							styles={styles}
 							colors={colors}
 						/>
+
+						{comboNote && (
+							<Text style={styles.comboNote}>{comboNote}</Text>
+						)}
 
 						{committed ? (
 							<View style={styles.waitingRow}>
@@ -372,6 +396,11 @@ function makeStyles(colors: ColorScheme) {
 		subheading: {
 			fontSize: font.sm,
 			color: colors.textMuted,
+		},
+		comboNote: {
+			fontSize: font.xs,
+			color: colors.textMuted,
+			fontStyle: 'italic',
 		},
 		cardRow: {
 			flexDirection: 'row',

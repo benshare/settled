@@ -22,3 +22,18 @@ export const BANNED_BONUSES_BY_CURSE: Record<CurseId, readonly BonusId[]> = {
 export function isBannedCombo(curse: CurseId, bonus: BonusId): boolean {
 	return BANNED_BONUSES_BY_CURSE[curse]?.includes(bonus) ?? false
 }
+
+// Pairings that are allowed but interact in a way neither card's text says.
+// Shown as a small note in the selection pane once both are picked, rather
+// than written into either card's copy.
+const COMBO_NOTES: Partial<Record<CurseId, Partial<Record<BonusId, string>>>> =
+	{
+		nomadism: {
+			explorer:
+				"The Explorer's three free roads don't count toward the Curse of Nomadism.",
+		},
+	}
+
+export function comboNoteFor(bonus: BonusId, curse: CurseId): string | null {
+	return COMBO_NOTES[curse]?.[bonus] ?? null
+}
