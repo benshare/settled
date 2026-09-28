@@ -82,6 +82,7 @@ export function BoardArea({
 		inBonusSelection,
 		postPlacementTool,
 		postPlacementData,
+		onConfirmExplorerRoads,
 		hauntPicks,
 		buildTool,
 		tradePanelOpen,
@@ -247,6 +248,14 @@ export function BoardArea({
 				<ExplorerStatusBanner
 					remaining={postPlacementData.remaining}
 					waitingOn={postPlacementData.waitingOn}
+				/>
+			)}
+			{postPlacementData?.kind === 'explorer_confirm' && (
+				<ExplorerStatusBanner
+					remaining={0}
+					waitingOn={postPlacementData.waitingOn}
+					submitting={submitting}
+					onConfirm={onConfirmExplorerRoads}
 				/>
 			)}
 			{postPlacementData?.kind === 'haunt' && (
