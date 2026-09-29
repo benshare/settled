@@ -9470,6 +9470,8 @@ async function handleShepherdSwap(
 	const r1 = parseResource(take[0])
 	const r2 = parseResource(take[1])
 	if (!r1 || !r2) return err(400, 'invalid resource')
+	if (r1 === 'sheep' || r2 === 'sheep')
+		return err(400, 'shepherd cannot take sheep')
 
 	// A declaration, not a swap: the sheep goes now, the pair is owed until the
 	// roll resolves (applyShepherdPayout), which is what puts it out of reach

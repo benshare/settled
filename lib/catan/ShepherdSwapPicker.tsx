@@ -57,12 +57,12 @@ export function ShepherdSwapPicker({
 		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
 			<Text style={styles.title}>Shepherd: 1 sheep → 2 resources</Text>
 			<Text style={styles.subtitle}>
-				Pick 2 resources to take. Duplicates are fine — tap twice to
-				take 2 of the same. You'll receive them after you roll, so a 7
-				can't take them.
+				Pick 2 non-sheep resources to take. Duplicates are fine — tap
+				twice to take 2 of the same. You'll receive them after you roll,
+				so a 7 can't take them.
 			</Text>
 			<View style={styles.grid}>
-				{RESOURCES.map((r) => {
+				{RESOURCES.filter((r) => r !== 'sheep').map((r) => {
 					const count = picks.filter((p) => p === r).length
 					return (
 						<Pressable

@@ -569,7 +569,7 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'shepherd_payout':
 			return {
-				text: `${who(e.player)} collected their declared cards (shepherd)`,
+				text: `${who(e.player)} collected ${who(e.player) === 'You' ? 'your' : 'their'} declared cards (shepherd)`,
 				player: e.player,
 				detail: [{ label: 'Gained', text: handText(e.gain) }],
 			}
