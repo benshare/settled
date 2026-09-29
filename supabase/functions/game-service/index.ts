@@ -2383,7 +2383,11 @@ function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
 	)
 		return true
 	if (
-		canAffordAnyCost(p, BUILD_COSTS.city) &&
+		(canAffordAnyCost(p, BUILD_COSTS.city) ||
+			(p.bonus === 'metropolitan' &&
+				[1, 2].some((d) =>
+					canAfford(p.resources, metropolitanCityCost(p.bonus, d))
+				))) &&
 		boardFor(state.variant).vertices.some((v) =>
 			isValidBuildCityVertex(state, idx, v)
 		)
