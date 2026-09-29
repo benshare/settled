@@ -75,7 +75,7 @@ export type Curse = {
 
 export { BONUS_POOL, bonusById } from './bonuses'
 export { CURSE_POOL, curseById } from './curses'
-export { BANNED_BONUSES_BY_CURSE, isBannedCombo } from './combos'
+export { BANNED_BONUSES_BY_CURSE, comboNoteFor, isBannedCombo } from './combos'
 export {
 	BONUS_SIZE_VARIANTS,
 	CURSE_SIZE_VARIANTS,

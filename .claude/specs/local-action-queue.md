@@ -350,6 +350,8 @@ still gets the old behavior.
 - **Every confirm bar for a local action is deleted**: builds (road, fence,
   settlement, city) and `liquidate`. `confirmAction` survives only for the three
   non-undoable confirms — move robber, steal, move forger token.
+  A dev card buy is also non-undoable but confirms only on the player's own
+  opt-in (`profiles.play_prefs.confirmDevCardBuy`, default off), as a modal.
 - **`liquidate` loses the refund text it showed in the bar.** The projected hand
   jumping is now the feedback; the tapped piece disappearing is the confirmation.
 - **The metropolitan cost picker stays a modal.** It isn't a confirm — it's a

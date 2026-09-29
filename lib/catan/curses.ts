@@ -15,7 +15,7 @@ import {
 	type Resource,
 	type Vertex,
 } from './board'
-import type { CurseId, IoniconName } from './bonuses'
+import type { BonusId, CurseId, IoniconName } from './bonuses'
 import { curseById, curseVariantFor } from './bonuses'
 import type { BuildKind } from './build'
 import type { GameSize, GameState, PlayerState } from './types'
@@ -63,8 +63,15 @@ export function maxSettlementsFor(
 // VP threshold lives in `bonus.ts` — both ambition and thrill_seeker feed
 // into the same helper.
 
-export function winRoadsRequiredFor(curse: CurseId | undefined): number {
-	return curse === 'nomadism' ? 11 : 0
+export function winRoadsRequiredFor(
+	curse: CurseId | undefined,
+	bonus: BonusId | undefined
+): number {
+	if (curse !== 'nomadism') return 0
+	// The explorer's three free roads don't count toward nomadism. They always
+	// all get placed (the timeout sweep places any left owed), so raising the
+	// bar by three is the same as leaving them out of the count.
+	return bonus === 'explorer' ? 14 : 11
 }
 
 // --- Piece counts (live) ----------------------------------------------------

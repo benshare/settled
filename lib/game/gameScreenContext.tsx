@@ -63,6 +63,7 @@ import {
 	useGamesStore,
 	type GameEvent,
 } from '@/lib/stores/useGamesStore'
+import { parsePlayPrefs, useProfileStore } from '@/lib/stores/useProfileStore'
 import {
 	createContext,
 	useCallback,
@@ -225,6 +226,12 @@ function useGameScreenState(gameId: string) {
 	// the forger's token move. All three are actions the player cannot take
 	// back — everything undoable now answers "are you sure?" with the arrow
 	// instead. See `.claude/specs/local-action-queue.md`.
+	// The player's own opt-in confirm before a dev card buy (`play_prefs`). A
+	// modal rather than the confirm bar above, since it names no board spot.
+	const confirmDevCardBuy = parsePlayPrefs(
+		useProfileStore((s) => s.profile?.play_prefs)
+	).confirmDevCardBuy
+	const [devBuyConfirmOpen, setDevBuyConfirmOpen] = useState(false)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		run: () => void | Promise<void>
@@ -1216,6 +1223,20 @@ function useGameScreenState(gameId: string) {
 
 	async function onBuyDevCard() {
 		if (!game || !myPlayer) return
+		if (confirmDevCardBuy) {
+			setDevBuyConfirmOpen(true)
+			return
+		}
+		return startBuyDevCard()
+	}
+
+	async function onConfirmDevCardBuy() {
+		setDevBuyConfirmOpen(false)
+		return startBuyDevCard()
+	}
+
+	async function startBuyDevCard() {
+		if (!game || !myPlayer) return
 		// A scout may pay with a swapped resource. If more than one payment
 		// route is affordable, let them choose which cards to spend; a lone
 		// route is submitted automatically.
@@ -1757,6 +1778,9 @@ function useGameScreenState(gameId: string) {
 		tradePanelOpen,
 		setTradePanelOpen,
 		pendingConfirm,
+		devBuyConfirmOpen,
+		setDevBuyConfirmOpen,
+		onConfirmDevCardBuy,
 		setPendingConfirm,
 		runPendingConfirm,
 		hauntPicks,

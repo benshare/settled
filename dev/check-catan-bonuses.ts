@@ -884,6 +884,20 @@ function testMetropolitan() {
 	const c2 = metropolitanCityCost('metropolitan', 2)
 	equal(c2.wheat, 0, 'swap 2: 0 wheat')
 	equal(c2.ore, 5, 'swap 2: 5 ore')
+	// The build gate sees the swap: 1 wheat + 4 ore buys a city only for a
+	// metropolitan.
+	const swapHand: PlayerState = {
+		...s.players[0],
+		resources: { brick: 0, wood: 0, sheep: 0, wheat: 1, ore: 4 },
+	}
+	assert(
+		canAffordPurchase(swapHand, 'city'),
+		'metropolitan affords a city by swapping wheat for ore'
+	)
+	assert(
+		!canAffordPurchase({ ...swapHand, bonus: undefined }, 'city'),
+		'without metropolitan, 1 wheat + 4 ore is not a city'
+	)
 }
 
 function testForger() {

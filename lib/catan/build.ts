@@ -153,6 +153,13 @@ export function smithSwapFor(p: PlayerState, kind: PurchaseKind): number {
 // Can the player afford the purchase by any legal payment route?
 export function canAffordPurchase(p: PlayerState, kind: PurchaseKind): boolean {
 	if (effectiveCostFor(p, kind) !== null) return true
+	// A metropolitan city may swap wheat for ore; the cost picker chooses how.
+	if (
+		kind === 'city' &&
+		p.bonus === 'metropolitan' &&
+		(canAffordMetropolitanCost(p, 1) || canAffordMetropolitanCost(p, 2))
+	)
+		return true
 	return canAffordWithSmith(p, kind)
 }
 

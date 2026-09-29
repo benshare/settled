@@ -167,7 +167,7 @@ export function findWinner(state: GameState): number | null {
 		const bonus = bonusOf(state, i)
 		const curse = curseOf(state, i)
 		if (totalVP(state, i) < winVPThresholdFor(bonus, curse)) continue
-		const roadsNeeded = winRoadsRequiredFor(curse)
+		const roadsNeeded = winRoadsRequiredFor(curse, bonus)
 		if (roadsNeeded > 0 && roadCountFor(state, i) < roadsNeeded) continue
 		return i
 	}

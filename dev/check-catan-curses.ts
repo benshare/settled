@@ -361,8 +361,21 @@ function testAsceticismEffectiveCounts() {
 // --- nomadism ---------------------------------------------------------------
 
 function testNomadismRoadRequirement() {
-	equal(winRoadsRequiredFor('nomadism'), 11, 'nomadism needs 11 roads')
-	equal(winRoadsRequiredFor(undefined), 0, 'baseline no requirement')
+	equal(
+		winRoadsRequiredFor('nomadism', undefined),
+		11,
+		'nomadism needs 11 roads'
+	)
+	equal(
+		winRoadsRequiredFor('nomadism', 'explorer'),
+		14,
+		"nomadism doesn't count the explorer's 3 free roads"
+	)
+	equal(
+		winRoadsRequiredFor(undefined, 'explorer'),
+		0,
+		'baseline no requirement'
+	)
 	const s = setCurse(baseState(), 0, 'nomadism')
 	// 10 VP (via VP cards) but 0 roads → not enough.
 	const players = s.players.map((p, i) =>

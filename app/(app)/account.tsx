@@ -15,7 +15,7 @@ import {
 	type PushPermissionStatus,
 } from '@/lib/notifications'
 import { clearAllUserStores } from '@/lib/stores'
-import { useProfileStore } from '@/lib/stores/useProfileStore'
+import { parsePlayPrefs, useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { ThemeMode, useTheme } from '@/lib/ThemeContext'
@@ -331,6 +331,11 @@ export default function AccountScreen() {
 					</Pressable>
 				</View>
 
+				<View style={styles.section}>
+					<Text style={styles.sectionLabel}>Gameplay</Text>
+					<GameplaySettings />
+				</View>
+
 				{Platform.OS !== 'web' && (
 					<View style={styles.section}>
 						<Text style={styles.sectionLabel}>Notifications</Text>
@@ -432,6 +437,42 @@ function UpdatesSettings() {
 			</View>
 			{status && <Text style={styles.hintText}>{status}</Text>}
 			{error && <Text style={styles.errorText}>{error}</Text>}
+		</View>
+	)
+}
+
+function GameplaySettings() {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	const profile = useProfileStore((s) => s.profile)
+	const updatePlayPrefs = useProfileStore((s) => s.updatePlayPrefs)
+	const prefs = parsePlayPrefs(profile?.play_prefs)
+	const [saving, setSaving] = useState(false)
+	const [error, setError] = useState<string | null>(null)
+
+	async function toggleConfirmDevCardBuy() {
+		if (saving) return
+		setSaving(true)
+		setError(null)
+		const res = await updatePlayPrefs({
+			...prefs,
+			confirmDevCardBuy: !prefs.confirmDevCardBuy,
+		})
+		setSaving(false)
+		if (res.error) setError(res.error)
+	}
+
+	return (
+		<View style={styles.notifBlock}>
+			{error && <Text style={styles.errorText}>{error}</Text>}
+			<NotifToggleRow
+				label="Confirm when buying dev cards"
+				value={prefs.confirmDevCardBuy}
+				onToggle={toggleConfirmDevCardBuy}
+				disabled={!profile || saving}
+				dimmed={false}
+				styles={styles}
+			/>
 		</View>
 	)
 }

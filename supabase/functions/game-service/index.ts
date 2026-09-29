@@ -1915,8 +1915,15 @@ function winVPThresholdFor(
 	return 10
 }
 
-function winRoadsRequiredFor(curse: CurseId | undefined): number {
-	return curse === 'nomadism' ? 11 : 0
+function winRoadsRequiredFor(
+	curse: CurseId | undefined,
+	bonus: BonusId | undefined
+): number {
+	if (curse !== 'nomadism') return 0
+	// The explorer's three free roads don't count toward nomadism. They always
+	// all get placed (the timeout sweep places any left owed), so raising the
+	// bar by three is the same as leaving them out of the count.
+	return bonus === 'explorer' ? 14 : 11
 }
 
 function roadCountFor(state: GameState, playerIdx: number): number {
@@ -2376,7 +2383,11 @@ function canTakeSpecialBuildActionSrv(state: GameState, idx: number): boolean {
 	)
 		return true
 	if (
-		canAffordAnyCost(p, BUILD_COSTS.city) &&
+		(canAffordAnyCost(p, BUILD_COSTS.city) ||
+			(p.bonus === 'metropolitan' &&
+				[1, 2].some((d) =>
+					canAfford(p.resources, metropolitanCityCost(p.bonus, d))
+				))) &&
 		boardFor(state.variant).vertices.some((v) =>
 			isValidBuildCityVertex(state, idx, v)
 		)
@@ -3488,7 +3499,7 @@ function findWinner(state: GameState): number | null {
 		const bonus = bonusOf(state, i)
 		const curse = curseOf(state, i)
 		if (totalVP(state, i) < winVPThresholdFor(bonus, curse)) continue
-		const roadsNeeded = winRoadsRequiredFor(curse)
+		const roadsNeeded = winRoadsRequiredFor(curse, bonus)
 		if (roadsNeeded > 0 && roadCountFor(state, i) < roadsNeeded) continue
 		return i
 	}
