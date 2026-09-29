@@ -30,6 +30,7 @@ import { TradeBanner } from '@/lib/catan/TradeBanner'
 import { emptyHand } from '@/lib/catan/trade'
 import { gameSizeFor, type ResourceHand } from '@/lib/catan/types'
 import { StopWatchingButton, WatcherButton } from '@/lib/catan/Watchers'
+import { ConfirmModal } from '@/lib/modules/ConfirmModal'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, font, radius, shadow, spacing, z } from '@/lib/theme'
 import { useMemo } from 'react'
@@ -88,6 +89,9 @@ export function BoardArea({
 		tradePanelOpen,
 		liveOffer,
 		pendingConfirm,
+		devBuyConfirmOpen,
+		setDevBuyConfirmOpen,
+		onConfirmDevCardBuy,
 		setPendingConfirm,
 		runPendingConfirm,
 		bonusSelectionData,
@@ -385,6 +389,14 @@ export function BoardArea({
 			{gameState && (!inBonusSelection || isSpectator) && (
 				<StopWatchingButton anchorBottom={floatingButtonsBottom} />
 			)}
+			<ConfirmModal
+				visible={devBuyConfirmOpen}
+				title="Buy a development card?"
+				confirmLabel="Buy"
+				submitting={submitting}
+				onConfirm={onConfirmDevCardBuy}
+				onCancel={() => setDevBuyConfirmOpen(false)}
+			/>
 			{pendingConfirm && (
 				<ConfirmBar
 					title={pendingConfirm.title}

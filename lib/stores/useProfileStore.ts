@@ -45,6 +45,7 @@ export function deletedProfile(id: string): Profile {
 		dev: false,
 		game_defaults: null,
 		notification_prefs: null,
+		play_prefs: {},
 		spectating: [],
 		color_prefs: null,
 		deleted: true,
@@ -182,8 +183,32 @@ export function parseGameDefaults(raw: unknown): GameDefaults {
 	}
 }
 
+// How the app behaves for this player in any game — not a game setting, so it
+// never reaches another seat.
+export type PlayPrefs = {
+	// Ask before a dev card buy goes to the server. The buy is a barrier (it
+	// can't be undone), so this is the one confirm a player can opt back into.
+	confirmDevCardBuy: boolean
+}
+
+export const DEFAULT_PLAY_PREFS: PlayPrefs = {
+	confirmDevCardBuy: false,
+}
+
+// Narrow the JSONB blob, falling back per field on shape drift.
+export function parsePlayPrefs(raw: unknown): PlayPrefs {
+	const src =
+		raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+	return {
+		confirmDevCardBuy:
+			typeof src.confirmDevCardBuy === 'boolean'
+				? src.confirmDevCardBuy
+				: DEFAULT_PLAY_PREFS.confirmDevCardBuy,
+	}
+}
+
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, spectating, color_prefs'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, play_prefs, spectating, color_prefs'
 
 type UpdateResult = { error: string | null }
 
@@ -196,6 +221,7 @@ type ProfileStore = {
 	updateAvatarPath: (path: string | null) => Promise<UpdateResult>
 	updateGameDefaults: (defaults: GameDefaults) => Promise<UpdateResult>
 	updateNotificationPrefs: (prefs: NotificationPrefs) => Promise<UpdateResult>
+	updatePlayPrefs: (prefs: PlayPrefs) => Promise<UpdateResult>
 	// The player's color ranking, best first. `[]` means no preference, which
 	// the resolver answers with a random color — it is not shorthand for the
 	// default order. Optimistic, like `setSpectating`: the screen is direct
@@ -311,6 +337,25 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 		const { data, error } = await supabase
 			.from('profiles')
 			.update({ notification_prefs: prefs })
+			.eq('id', current.id)
+			.select(PROFILE_COLS)
+			.single()
+
+		if (error) {
+			return { error: error.message || 'Something went wrong' }
+		}
+
+		set({ profile: data as Profile })
+		return { error: null }
+	},
+
+	async updatePlayPrefs(prefs) {
+		const current = get().profile
+		if (!current) return { error: 'No profile loaded' }
+
+		const { data, error } = await supabase
+			.from('profiles')
+			.update({ play_prefs: prefs })
 			.eq('id', current.id)
 			.select(PROFILE_COLS)
 			.single()
