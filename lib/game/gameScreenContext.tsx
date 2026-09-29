@@ -857,7 +857,6 @@ function useGameScreenState(gameId: string) {
 	async function onPickBonus(bonus: BonusId, curse: CurseId) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await pickBonus(game.id, bonus, curse)
 		setSubmitting(false)
 		if (res.error) notify('Pick failed', res.error)
@@ -866,7 +865,6 @@ function useGameScreenState(gameId: string) {
 	async function onSetSpecialistResource(resource: Resource) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await setSpecialistResource(game.id, resource)
 		setSubmitting(false)
 		if (res.error) notify('Declare failed', res.error)
@@ -883,7 +881,6 @@ function useGameScreenState(gameId: string) {
 	async function onRitualRoll(discard: ResourceHandType, total: number) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await ritualRoll(game.id, discard, total)
 		setSubmitting(false)
 		if (res.error) notify('Ritual failed', res.error)
@@ -893,7 +890,6 @@ function useGameScreenState(gameId: string) {
 	async function onShepherdSwap(take: [Resource, Resource]) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await shepherdSwap(game.id, take)
 		setSubmitting(false)
 		if (res.error) notify('Swap failed', res.error)
@@ -903,7 +899,6 @@ function useGameScreenState(gameId: string) {
 	async function onClaimCurio(take: [Resource, Resource, Resource]) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await claimCurio(game.id, take)
 		setSubmitting(false)
 		if (res.error) notify('Claim failed', res.error)
@@ -913,7 +908,6 @@ function useGameScreenState(gameId: string) {
 		if (!game) return
 		confirmAction('Move forger token here?', async () => {
 			if (!(await flushBeforeBarrier())) return
-			setSubmitting(true)
 			const res = await moveForgerToken(game.id, hex)
 			setSubmitting(false)
 			if (res.error) notify('Move failed', res.error)
@@ -923,7 +917,6 @@ function useGameScreenState(gameId: string) {
 	async function onPickForgerTarget(target: number) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await pickForgerTarget(game.id, target)
 		setSubmitting(false)
 		if (res.error) notify('Pick failed', res.error)
@@ -932,7 +925,6 @@ function useGameScreenState(gameId: string) {
 	async function onConfirmScoutCard(index: number) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await confirmScoutCard(game.id, index)
 		setSubmitting(false)
 		if (res.error) notify('Pick failed', res.error)
@@ -953,7 +945,6 @@ function useGameScreenState(gameId: string) {
 	// action of its own to carry them up — so the explorer sends them outright
 	// once the last one is down.
 	async function onConfirmExplorerRoads() {
-		setSubmitting(true)
 		await flushBeforeBarrier()
 		setSubmitting(false)
 	}
@@ -961,7 +952,6 @@ function useGameScreenState(gameId: string) {
 	async function onSetHauntSpots(spots: [string, string]) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await setHauntSpots(game.id, spots)
 		setSubmitting(false)
 		if (res.error) notify('Haunt failed', res.error)
@@ -1063,10 +1053,15 @@ function useGameScreenState(gameId: string) {
 	// first, and the action is abandoned if it can't — so nothing is ever
 	// applied on top of a board the server never saw. Each barrier handler
 	// below opens with this; `honk` and `send_message` deliberately don't,
-	// being the same two the server treats as move-neutral.
+	// being the same two the server treats as move-neutral. It raises
+	// `submitting` up front, so the button spins while the queue sends, and
+	// lowers it only on failure — on success the caller lowers it once its own
+	// action lands.
 	async function flushBeforeBarrier(): Promise<boolean> {
+		setSubmitting(true)
 		const flushed = await flushQueue()
 		if (!flushed.error) return true
+		setSubmitting(false)
 		notify("Couldn't send your moves", flushed.error)
 		return false
 	}
@@ -1127,7 +1122,6 @@ function useGameScreenState(gameId: string) {
 		if (needsNomination) return
 
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await placeStart(game.id, pairs)
 		setSubmitting(false)
 		if (res.error) {
@@ -1141,7 +1135,6 @@ function useGameScreenState(gameId: string) {
 	async function onRoll() {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await roll(
 			game.id,
 			isDev ? (devRollTotal ?? undefined) : undefined
@@ -1153,7 +1146,6 @@ function useGameScreenState(gameId: string) {
 	async function onConfirmRoll(which?: 0 | 1) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await confirmRoll(game.id, which)
 		setSubmitting(false)
 		if (res.error) notify('Confirm failed', res.error)
@@ -1162,7 +1154,6 @@ function useGameScreenState(gameId: string) {
 	async function onRerollDice() {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await rerollDice(game.id)
 		setSubmitting(false)
 		if (res.error) notify('Reroll failed', res.error)
@@ -1174,13 +1165,11 @@ function useGameScreenState(gameId: string) {
 		// just as the projection did), so there is no turn left to end — an
 		// `end_turn` after it would only be refused.
 		if (pendingWin) {
-			setSubmitting(true)
 			await flushBeforeBarrier()
 			setSubmitting(false)
 			return
 		}
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await endTurn(game.id)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
@@ -1197,7 +1186,6 @@ function useGameScreenState(gameId: string) {
 	async function onEndSpecialBuild() {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await endSpecialBuild(game.id)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
@@ -1206,7 +1194,6 @@ function useGameScreenState(gameId: string) {
 	async function onSetForfeit(on: boolean) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await setForfeit(game.id, on)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
@@ -1215,7 +1202,6 @@ function useGameScreenState(gameId: string) {
 	async function onSetEndVote(on: boolean) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await setEndVote(game.id, on)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
@@ -1253,7 +1239,6 @@ function useGameScreenState(gameId: string) {
 
 	async function submitBuyDevCard(scoutSwap: ScoutSwap | null) {
 		if (!game) return
-		setSubmitting(true)
 		const smith = myPlayer?.bonus === 'smith'
 		const use =
 			!smith && !scoutSwap && myPlayer
@@ -1275,7 +1260,6 @@ function useGameScreenState(gameId: string) {
 
 	async function onPlayDevCard(payload: DevPlayPayload) {
 		if (!game) return
-		setSubmitting(true)
 		let res
 		if (payload.id === 'year_of_plenty') {
 			if (!(await flushBeforeBarrier())) return
@@ -1387,7 +1371,6 @@ function useGameScreenState(gameId: string) {
 	async function onDiscard(selection: ResourceHandType) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await discard(game.id, selection)
 		setSubmitting(false)
 		if (res.error) notify('Discard failed', res.error)
@@ -1397,7 +1380,6 @@ function useGameScreenState(gameId: string) {
 		if (!game) return
 		confirmAction('Move robber here?', async () => {
 			if (!(await flushBeforeBarrier())) return
-			setSubmitting(true)
 			const res = await moveRobber(game.id, hex)
 			setSubmitting(false)
 			if (res.error) notify('Move failed', res.error)
@@ -1410,7 +1392,6 @@ function useGameScreenState(gameId: string) {
 		const name = profilesById[victimId]?.username ?? 'player'
 		confirmAction(`Steal from ${name}?`, async () => {
 			if (!(await flushBeforeBarrier())) return
-			setSubmitting(true)
 			const res = await steal(game.id, victim)
 			setSubmitting(false)
 			if (res.error) notify('Steal failed', res.error)
@@ -1424,7 +1405,6 @@ function useGameScreenState(gameId: string) {
 		if (liveOffer && liveOffer.from === meIdx) {
 			;(async () => {
 				if (!(await flushBeforeBarrier())) return
-				setSubmitting(true)
 				const res = await cancelTrade(game.id, liveOffer.id)
 				setSubmitting(false)
 				if (res.error) notify(res.error)
@@ -1448,7 +1428,6 @@ function useGameScreenState(gameId: string) {
 	) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await proposeTrade(game.id, give, receive, to)
 		setSubmitting(false)
 		if (res.error) notify('Trade failed', res.error)
@@ -1457,7 +1436,6 @@ function useGameScreenState(gameId: string) {
 	async function onAcceptTrade() {
 		if (!game || !liveOffer) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await acceptTrade(game.id, liveOffer.id)
 		setSubmitting(false)
 		if (res.error) notify('Accept failed', res.error)
@@ -1466,7 +1444,6 @@ function useGameScreenState(gameId: string) {
 	async function onCancelTrade() {
 		if (!game || !liveOffer) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await cancelTrade(game.id, liveOffer.id)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
@@ -1475,7 +1452,6 @@ function useGameScreenState(gameId: string) {
 	async function onRejectTrade() {
 		if (!game || !liveOffer) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await rejectTrade(game.id, liveOffer.id)
 		setSubmitting(false)
 		if (res.error) notify('Reject failed', res.error)
@@ -1484,7 +1460,6 @@ function useGameScreenState(gameId: string) {
 	async function onConfirmTrade(accepterIdx: number) {
 		if (!game || !liveOffer) return
 		if (!(await flushBeforeBarrier())) return
-		setSubmitting(true)
 		const res = await confirmTrade(game.id, liveOffer.id, accepterIdx)
 		setSubmitting(false)
 		if (res.error) notify('Confirm failed', res.error)

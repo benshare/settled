@@ -143,7 +143,8 @@ app/game/[id].tsx
 - **An undoable action never leaves the device when it is taken.** Tapping a
   build spot appends to the queue; every action that _isn't_ undoable is a
   barrier that flushes it first (`flushBeforeBarrier`, opening each such
-  handler). `honk` and `send_message` are deliberately not barriers — the same
+  handler). It also raises `submitting`, so the barrier's button spins while
+  the queue sends — callers don't raise it themselves. `honk` and `send_message` are deliberately not barriers — the same
   two the server treats as move-neutral. Only three confirm bars survive (move
   robber, steal, move forger token), because those three can't be taken back.
   See `.claude/specs/local-action-queue.md`.
