@@ -11,6 +11,7 @@ import {
 } from './board'
 import { isGhost } from './bonus'
 import { canPlaceUnderPower, settlementKeepsYouthOK } from './curses'
+import type { GameEvent } from '../stores/useGamesStore'
 import {
 	edgeStateOf,
 	vertexStateOf,
@@ -211,6 +212,20 @@ export function orderedPlacementPairs(
 	)
 	if (pairs.length !== 2 || nominated === null) return pairs
 	return pairs[0].vertex === nominated ? [pairs[1], pairs[0]] : pairs
+}
+
+// Which of its owner's setup settlements each vertex is (1st / 2nd), for the
+// board's I/II labels. Read from the event log rather than the pieces: both
+// settlements are stamped `placedTurn` 0, and the back-to-back seat's second
+// is whichever pair it nominated, not the one drafted second.
+export function setupSettlementOrdinals(
+	events: readonly GameEvent[]
+): Partial<Record<Vertex, 1 | 2>> {
+	const out: Partial<Record<Vertex, 1 | 2>> = {}
+	for (const e of events) {
+		if (e.kind === 'settlement_placed') out[e.vertex as Vertex] = e.round
+	}
+	return out
 }
 
 // --- Starting resources -----------------------------------------------------

@@ -1,5 +1,5 @@
-import { Polygon } from 'react-native-svg'
-import { pieceStroke } from './palette'
+import { Circle, G, Polygon, Text as SvgText } from 'react-native-svg'
+import { pieceStroke, tokenFace, tokenTextCool } from './palette'
 import type { VertexBuilding } from './board'
 
 export function VertexPiece({
@@ -44,6 +44,48 @@ export function VertexPiece({
 		)
 	}
 	return <City cx={cx} cy={cy} size={size} color={color} stroke={stroke} />
+}
+
+// Small I / II tag on a setup settlement saying whether it was its owner's
+// first or second, shown only while initial placement is under way. Sits where
+// the nomination badge does (see `PlacementLayer`), at a smaller size.
+export function SetupOrdinalBadge({
+	cx,
+	cy,
+	size,
+	ordinal,
+}: {
+	cx: number
+	cy: number
+	size: number
+	ordinal: 1 | 2
+}) {
+	const r = size * 0.135
+	const x = cx + size * 0.25
+	const y = cy - size * 0.25
+	return (
+		<G pointerEvents="none">
+			<Circle
+				cx={x}
+				cy={y}
+				r={r}
+				fill={tokenFace}
+				stroke={pieceStroke}
+				strokeWidth={Math.max(1, size * 0.02)}
+			/>
+			<SvgText
+				x={x}
+				y={y + r * 0.1}
+				fill={tokenTextCool}
+				fontSize={r * 1.05}
+				fontWeight="800"
+				textAnchor="middle"
+				alignmentBaseline="middle"
+			>
+				{ordinal === 1 ? 'I' : 'II'}
+			</SvgText>
+		</G>
+	)
 }
 
 // A haunt player's own secret spot, before anything has spawned there. Only

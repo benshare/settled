@@ -17,7 +17,7 @@ import {
 } from './placement'
 import { PulsingDot, PulsingRing } from './PulsingDot'
 import type { GameState } from './types'
-import { VertexPiece } from './VertexPiece'
+import { SetupOrdinalBadge, VertexPiece } from './VertexPiece'
 
 // One board tap: a settlement spot, a road edge, or — once a two-pair draft is
 // complete — one of the tapper's own two drafted settlements, nominating it as
@@ -78,9 +78,14 @@ export function PlacementLayer({
 				? 'settlement'
 				: 'ready'
 
+	// Once the back-to-back seat has both pairs down, the nomination badges
+	// stand in for the ordinals — which one is II is exactly what it's choosing.
+	const showOrdinals = !(stage === 'ready' && canNominate)
+	const phaseRound = state.phase.round
+
 	return (
 		<G>
-			{draft.map((entry) => (
+			{draft.map((entry, i) => (
 				<Fragment key={entry.vertex}>
 					<G opacity={0.5}>
 						<VertexPiece
@@ -91,6 +96,18 @@ export function PlacementLayer({
 							color={color}
 						/>
 					</G>
+					{showOrdinals && (
+						<SetupOrdinalBadge
+							cx={vertexPositions[entry.vertex].x}
+							cy={vertexPositions[entry.vertex].y}
+							size={layoutS}
+							ordinal={
+								pairsExpected === 2
+									? ((i + 1) as 1 | 2)
+									: phaseRound
+							}
+						/>
+					)}
 					{entry.edge !== undefined && (
 						<RoadGhost
 							edge={entry.edge}

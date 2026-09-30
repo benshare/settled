@@ -34,7 +34,7 @@ import { PortBadge } from './PortBadge'
 import { RobberLayer } from './RobberLayer'
 import { RobberPiece } from './RobberPiece'
 import { edgeStateOf, vertexStateOf, type GameState } from './types'
-import { HauntSpotMarker, VertexPiece } from './VertexPiece'
+import { HauntSpotMarker, SetupOrdinalBadge, VertexPiece } from './VertexPiece'
 
 // Interaction bundles everything the placement overlay needs. Omit to render
 // a purely visual board (as during other phases or for spectators).
@@ -95,6 +95,7 @@ export function BoardView({
 	liquidate,
 	robber,
 	forgerMove,
+	setupOrdinals,
 }: {
 	state: GameState
 	// The seat watching the board (-1 for a spectator). Purely for information
@@ -105,6 +106,8 @@ export function BoardView({
 	liquidate?: LiquidateInteraction
 	robber?: RobberInteraction
 	forgerMove?: ForgerMoveInteraction
+	// I / II labels for setup settlements; pass only during initial placement.
+	setupOrdinals?: Partial<Record<Vertex, 1 | 2>>
 }) {
 	const [box, setBox] = useState<{ w: number; h: number } | null>(null)
 
@@ -186,6 +189,7 @@ export function BoardView({
 								liquidate={liquidate}
 								robber={robber}
 								forgerMove={forgerMove}
+								setupOrdinals={setupOrdinals}
 							/>
 						</Animated.View>
 					</GestureDetector>
@@ -205,6 +209,7 @@ function BoardSvg({
 	liquidate,
 	robber,
 	forgerMove,
+	setupOrdinals,
 }: {
 	state: GameState
 	viewerIdx?: number
@@ -215,6 +220,7 @@ function BoardSvg({
 	liquidate?: LiquidateInteraction
 	robber?: RobberInteraction
 	forgerMove?: ForgerMoveInteraction
+	setupOrdinals?: Partial<Record<Vertex, 1 | 2>>
 }) {
 	// Ports sit ~1s outside the hex grid on each edge, so the true bounding
 	// box is (naturalW + 2)s × (naturalH + 2)s rather than the bare grid.
@@ -305,6 +311,22 @@ function BoardSvg({
 						/>
 					)
 				})}
+				{setupOrdinals &&
+					Object.entries(setupOrdinals).map(([vid, ordinal]) => {
+						if (!ordinal) return null
+						const vs = vertexStateOf(state, vid as Vertex)
+						if (!vs.occupied) return null
+						const pos = vertexPositions[vid as Vertex]
+						return (
+							<SetupOrdinalBadge
+								key={`ordinal-${vid}`}
+								cx={pos.x}
+								cy={pos.y}
+								size={layout.s}
+								ordinal={ordinal}
+							/>
+						)
+					})}
 				{viewerIdx !== undefined &&
 					viewerIdx >= 0 &&
 					(state.players[viewerIdx]?.hauntSpots ?? []).map((v) => {

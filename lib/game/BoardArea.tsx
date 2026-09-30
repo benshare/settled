@@ -24,6 +24,7 @@ import {
 	HauntStatusBanner,
 	SpecialistDeclareOverlay,
 } from '@/lib/catan/PostPlacementOverlay'
+import { setupSettlementOrdinals } from '@/lib/catan/placement'
 import { distributeResources } from '@/lib/catan/roll'
 import { ScoutPickOverlay } from '@/lib/catan/ScoutPickOverlay'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
@@ -139,6 +140,14 @@ export function BoardArea({
 		}
 		return out
 	}, [gameState, meIdx])
+
+	const setupOrdinals = useMemo(
+		() =>
+			inPlacement
+				? setupSettlementOrdinals((game?.events ?? []) as GameEvent[])
+				: undefined,
+		[inPlacement, game?.events]
+	)
 
 	if (!game) return null
 
@@ -283,6 +292,7 @@ export function BoardArea({
 				<BoardView
 					state={gameState}
 					viewerIdx={meIdx}
+					setupOrdinals={setupOrdinals}
 					interaction={
 						inPlacement && isMyPlacementTurn
 							? {
