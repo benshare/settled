@@ -463,8 +463,12 @@ export type PlayerState = {
 	// `haunt`: two vertices the player secretly picked at post_placement.
 	// Soft-hidden — stored in shared state but never rendered for other
 	// players (same model as opponents' hidden VP dev cards). Entries are
-	// consumed as they resolve (a ghost spawns, or the spot is built on).
+	// consumed as they resolve into `ghosts`.
 	hauntSpots?: Vertex[]
+	// `haunt`: spawned ghosts. Kept off `vertices` so a ghost can share its
+	// corner with a real building and never occupies anything — production,
+	// steal, ports and pips read them via `producersAt`.
+	ghosts?: Vertex[]
 }
 
 // Per-player card hand during the select_bonus phase. `offered` and `curses`
@@ -823,6 +827,34 @@ export const EMPTY_EDGE: EdgeState = { occupied: false }
 
 export function vertexStateOf(state: GameState, vertex: Vertex): VertexState {
 	return state.vertices[vertex] ?? EMPTY_VERTEX
+}
+
+// Every producing piece on a corner: the real building (base 1/2/3) first, then
+// one base-1 entry per haunt ghost there. Anything that asks "whose building
+// touches this hex/port" must go through this, or ghosts silently drop out.
+export function producersAt(
+	state: Pick<GameState, 'vertices' | 'players'>,
+	vertex: Vertex
+): { player: number; base: number }[] {
+	const out: { player: number; base: number }[] = []
+	const vs = state.vertices[vertex]
+	if (vs?.occupied) {
+		out.push({
+			player: vs.player,
+			base:
+				vs.building === 'super_city'
+					? 3
+					: vs.building === 'city'
+						? 2
+						: 1,
+		})
+	}
+	state.players.forEach((p, i) => {
+		for (const g of p.ghosts ?? []) {
+			if (g === vertex) out.push({ player: i, base: 1 })
+		}
+	})
+	return out
 }
 
 export function edgeStateOf(state: GameState, edge: Edge): EdgeState {

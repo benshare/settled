@@ -5,6 +5,7 @@
 import { boardFor, type Hex } from './board'
 import { plutocratGain, underdogMultiplierFor } from './bonus'
 import {
+	producersAt,
 	vertexStateOf,
 	type DiceRoll,
 	type DieFace,
@@ -45,23 +46,17 @@ export function distributeResources(
 		const hd = state.hexes[hex]
 		if (hd.resource === null) continue
 		if (hd.number !== total) continue
-		for (const v of board.adjacentVertices[hex]) {
-			const vs = vertexStateOf(state, v)
-			if (!vs.occupied) continue
-			const base =
-				vs.building === 'super_city'
-					? 3
-					: vs.building === 'city'
-						? 2
-						: 1
+		for (const { player, base } of board.adjacentVertices[hex].flatMap(
+			(v) => producersAt(state, v)
+		)) {
 			const mult = underdogMultiplierFor(
-				state.players[vs.player]?.bonus,
+				state.players[player]?.bonus,
 				hd.number
 			)
 			const gain = base * mult
 			const hand =
-				result[vs.player] ??
-				(result[vs.player] = {
+				result[player] ??
+				(result[player] = {
 					brick: 0,
 					wood: 0,
 					sheep: 0,
@@ -142,18 +137,16 @@ export function gainsFromHex(
 	const hd = state.hexes[hex]
 	if (!hd || hd.resource === null) return perPlayer
 	if (hd.number !== total) return perPlayer
-	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-		const vs = vertexStateOf(state, v)
-		if (!vs.occupied) continue
-		const base =
-			vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
+	for (const { player, base } of boardFor(state.variant).adjacentVertices[
+		hex
+	].flatMap((v) => producersAt(state, v))) {
 		const mult = underdogMultiplierFor(
-			state.players[vs.player]?.bonus,
+			state.players[player]?.bonus,
 			hd.number
 		)
 		const hand =
-			perPlayer[vs.player] ??
-			(perPlayer[vs.player] = {
+			perPlayer[player] ??
+			(perPlayer[player] = {
 				brick: 0,
 				wood: 0,
 				sheep: 0,

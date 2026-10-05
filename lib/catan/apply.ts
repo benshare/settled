@@ -397,8 +397,8 @@ function applyBuildSettlement(
 		},
 		players: applyCost(state.players, meIdx, cost),
 	}
-	// This settlement (or its neighbors) can make a haunt player's secret spot
-	// unbuildable, which spawns their ghost there.
+	// A settlement on or next to a haunt player's secret spot spawns their
+	// ghost there.
 	const haunt = resolveHauntGhosts(next)
 	next = haunt.state
 	for (const s of haunt.spawned) {

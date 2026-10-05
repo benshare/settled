@@ -42,7 +42,9 @@ pattern, `placedTurn` fields).
 
 1. **Magician scope** — only the magician's own-turn roll triggers the
    window. No reacting to opponents' rolls.
-2. **Haunt ghosts** — fully non-interfering: produce + are steal targets, but
+2. **Haunt ghosts** — _Superseded by `haunt-shared-ghosts.md`: a direct build
+   now spawns a ghost too, sharing the corner; ghosts live in
+   `PlayerState.ghosts`, not `vertices`._ Original: fully non-interfering: produce + are steal targets, but
    do NOT enforce distance for others and do NOT block opponent road
    networks. Ghost spawns only when a spot is blocked by a _neighbor_ build
    (spot still empty); a direct build on the spot yields no ghost.
@@ -298,6 +300,8 @@ DiceRoll }`.
   magician is the active player).
 
 ### haunt
+
+> Storage and trigger rules below are superseded by `haunt-shared-ghosts.md`.
 
 - `PlayerState.hauntSpots?: Vertex[]` (soft-hidden; see Architecture).
 - Post-placement: seed `pending.haunt = [idx…]` for haunt players.

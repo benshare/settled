@@ -20,7 +20,6 @@ import {
 	fenceCountFor,
 	fenceOwner,
 	isFenceReservedAgainst,
-	isGhost,
 	isOwnFence,
 	isValidSmithSwap,
 	metropolitanCityCost,
@@ -255,9 +254,7 @@ function connectsVia(
 	fencesChain: boolean
 ): boolean {
 	const vs = vertexStateOf(state, vertex)
-	// A ghost (haunt bonus) is non-interfering: it never blocks road chaining,
-	// so it's transparent here (fall through to the adjacent-own-piece check).
-	if (vs.occupied && !isGhost(vs)) return vs.player === playerIdx
+	if (vs.occupied) return vs.player === playerIdx
 	for (const e of boardFor(state.variant).adjacentEdges[vertex]) {
 		if (e === edge) continue
 		const es = edgeStateOf(state, e)
@@ -290,9 +287,8 @@ function candidateEdges(
 			return fencesChain && isOwnFence(state, e, playerIdx)
 		})
 		if (!ownsVertex && !hasAdjOwnPiece) continue
-		// An opponent's building blocks chaining through it — except a ghost,
-		// which is transparent to road networks.
-		if (vs.occupied && vs.player !== playerIdx && !isGhost(vs)) continue
+		// An opponent's building blocks chaining through it.
+		if (vs.occupied && vs.player !== playerIdx) continue
 		for (const e of board.adjacentEdges[v]) {
 			if (seen.has(e)) continue
 			seen.add(e)
@@ -433,9 +429,7 @@ export function isValidBuildSettlementVertex(
 	if (vertexStateOf(state, vertex).occupied) return false
 	const board = boardFor(state.variant)
 	for (const n of board.neighborVertices[vertex]) {
-		const nvs = vertexStateOf(state, n)
-		// Ghosts don't enforce the distance rule for others.
-		if (nvs.occupied && !isGhost(nvs)) return false
+		if (vertexStateOf(state, n).occupied) return false
 	}
 	if (!canPlaceUnderPower(state, playerIdx, vertex)) return false
 	if (!settlementKeepsYouthOK(state, playerIdx, vertex)) return false

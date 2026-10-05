@@ -97,12 +97,14 @@ import {
 	gameSizeFor,
 	handChosenCurse,
 	handCurses,
+	producersAt,
 	type GameSize,
 	type GameState,
 	type PlayerState,
 	type ResourceHand,
 	type SelectBonusHand,
 } from '../lib/catan/types'
+import { isValidSettlementVertex } from '../lib/catan/placement'
 
 function assert(cond: unknown, msg: string): asserts cond {
 	if (!cond) throw new Error(`assert: ${msg}`)
@@ -1062,13 +1064,13 @@ function testAccountantLiquidation() {
 }
 
 // What the board's liquidate layer pulses. The gates it applies beyond
-// `roadLiquidationBlocked`: ownership, the this-round bar, and the two
-// building kinds that are nobody's purchase (a haunt's ghost).
+// `roadLiquidationBlocked`: ownership and the this-round bar. A haunt's ghost
+// isn't a vertex building, so it can't show up here at all.
 function testLiquidatableTargets() {
 	const s = { ...baseState(), round: 3 }
 	const vertex = (
 		player: number,
-		building: 'settlement' | 'city' | 'ghost',
+		building: 'settlement' | 'city',
 		placedTurn = 0
 	) => ({ occupied: true as const, player, building, placedTurn })
 
@@ -1078,7 +1080,6 @@ function testLiquidatableTargets() {
 			...s.vertices,
 			'1A': vertex(0, 'settlement'),
 			'2A': vertex(0, 'city'),
-			'3A': vertex(0, 'ghost'),
 			'4A': vertex(0, 'settlement', 3),
 			'5A': vertex(1, 'settlement'),
 		},
@@ -1099,7 +1100,6 @@ function testLiquidatableTargets() {
 	assert(has('settlement', '1A'), 'own settlement is liquidatable')
 	assert(has('city', '2A'), 'own city is liquidatable')
 	assert(has('road', '1A - 1B'), 'own dead-ending road is liquidatable')
-	assert(!has('ghost', '3A'), 'a ghost is not liquidatable')
 	assert(
 		!has('settlement', '4A'),
 		'a piece placed this round is not liquidatable'
@@ -1704,8 +1704,12 @@ function testHaunt() {
 		(v) => board.neighborVertices[v].length > 0
 	)!
 	const neighbor = board.neighborVertices[spot][0]
+	// Clear of `neighbor` and its neighbors, so building there leaves it be.
 	const other = board.vertices.find(
-		(v) => v !== spot && !board.neighborVertices[spot].includes(v)
+		(v) =>
+			v !== neighbor &&
+			!board.neighborVertices[neighbor].includes(v) &&
+			!board.neighborVertices[spot].includes(v)
 	)!
 	const s1: GameState = {
 		...s0,
@@ -1723,8 +1727,11 @@ function testHaunt() {
 		},
 	}
 	const res = resolveHauntGhosts(s1)
-	const spotVs = res.state.vertices[spot]
-	assert(spotVs?.occupied && spotVs.building === 'ghost', 'ghost spawned')
+	assert(
+		res.state.players[0].ghosts?.includes(spot),
+		'ghost spawned on neighbor build'
+	)
+	assert(!res.state.vertices[spot], 'a ghost never occupies its vertex')
 	assert(
 		res.spawned.some((g) => g.vertex === spot && g.player === 0),
 		'spawn event recorded'
@@ -1733,29 +1740,54 @@ function testHaunt() {
 		!res.state.players[0].hauntSpots?.includes(spot),
 		'blocked spot consumed'
 	)
+	assert(
+		res.state.players[0].hauntSpots?.includes(other),
+		'untouched spot kept'
+	)
 
-	// Direct build on a spot → no ghost, spot dropped.
-	const s2: GameState = {
+	// Direct build on a spot (by anyone, incl. the haunt player) → ghost
+	// shares the corner with the building, and both produce.
+	for (const builder of [1, 0]) {
+		const s2: GameState = {
+			...s0,
+			players: s0.players.map((p, i) =>
+				i === 0 ? { ...p, hauntSpots: [spot] as Vertex[] } : p
+			),
+			vertices: {
+				[spot]: {
+					occupied: true,
+					player: builder,
+					building: 'settlement',
+					placedTurn: 0,
+				},
+			},
+		}
+		const res2 = resolveHauntGhosts(s2)
+		equal(res2.spawned.length, 1, `ghost on direct build by ${builder}`)
+		equal(res2.state.players[0].hauntSpots?.length, 0, 'spot consumed')
+		const prod = producersAt(res2.state, spot)
+		equal(prod.length, 2, 'building + ghost both produce')
+		assert(
+			prod.some((pr) => pr.player === 0 && pr.base === 1) &&
+				prod.some((pr) => pr.player === builder),
+			'producers are the builder and the haunt player'
+		)
+	}
+
+	// A ghost never blocks building, even on its own corner.
+	const withGhost: GameState = {
 		...s0,
 		players: s0.players.map((p, i) =>
-			i === 0 ? { ...p, hauntSpots: [spot] as Vertex[] } : p
+			i === 0 ? { ...p, ghosts: [spot] as Vertex[] } : p
 		),
-		vertices: {
-			[spot]: {
-				occupied: true,
-				player: 1,
-				building: 'settlement',
-				placedTurn: 0,
-			},
-		},
 	}
-	const res2 = resolveHauntGhosts(s2)
-	equal(res2.spawned.length, 0, 'no ghost on direct build')
-	equal(res2.state.players[0].hauntSpots?.length, 0, 'spot dropped')
-	const stillTheirs = res2.state.vertices[spot]
 	assert(
-		stillTheirs?.occupied && stillTheirs.player === 1,
-		'builder keeps the vertex'
+		isValidSettlementVertex(withGhost, spot),
+		'ghost corner stays buildable'
+	)
+	assert(
+		isValidSettlementVertex(withGhost, neighbor),
+		'ghost neighbor stays buildable'
 	)
 }
 

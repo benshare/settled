@@ -6,7 +6,8 @@ import { seatColor, tokenFace, tokenRing } from './palette'
 import { PulsingDot } from './PulsingDot'
 import { validRobberHexes } from './robber'
 import type { GameState } from './types'
-import { vertexStateOf } from './types'
+import { producersAt, vertexStateOf } from './types'
+import { sharedCornerXs } from './VertexPiece'
 
 // Overlay rendered inside BoardSvg's transformed group. Active during the
 // robber chain (move_robber → steal). Renders nothing when it isn't the
@@ -83,28 +84,41 @@ export function RobberLayer({
 		const adjacentVertices = boardFor(state.variant).adjacentVertices
 		return (
 			<G>
-				{adjacentVertices[phase.hex].map((v) => {
+				{adjacentVertices[phase.hex].flatMap((v) => {
 					const vs = vertexStateOf(state, v)
-					if (!vs.occupied) return null
-					if (!candidateSet.has(vs.player)) return null
-					const p = vertexPositions[v]
-					return (
-						<Fragment key={v}>
-							<PulsingDot
-								cx={p.x}
-								cy={p.y}
-								r={layoutS * 0.24}
-								color={color}
-							/>
-							<Circle
-								cx={p.x}
-								cy={p.y}
-								r={layoutS * 0.45}
-								fill="transparent"
-								onPress={() => onSteal(vs.player)}
-							/>
-						</Fragment>
-					)
+					const pos = vertexPositions[v]
+					const producers = producersAt(state, v)
+					// A ghost sharing a corner with a building sits beside it,
+					// so each piece gets its own, smaller target.
+					const shared = vs.occupied && producers.length > 1
+					const xs = shared
+						? sharedCornerXs(pos.x, layoutS, vs.building)
+						: null
+					return producers.map((pr, i) => {
+						if (!candidateSet.has(pr.player)) return null
+						const x = !xs
+							? pos.x
+							: i === 0
+								? xs.buildingX
+								: xs.ghostX
+						return (
+							<Fragment key={`${v}-${i}`}>
+								<PulsingDot
+									cx={x}
+									cy={pos.y}
+									r={layoutS * 0.24}
+									color={color}
+								/>
+								<Circle
+									cx={x}
+									cy={pos.y}
+									r={layoutS * (shared ? 0.3 : 0.45)}
+									fill="transparent"
+									onPress={() => onSteal(pr.player)}
+								/>
+							</Fragment>
+						)
+					})
 				})}
 			</G>
 		)

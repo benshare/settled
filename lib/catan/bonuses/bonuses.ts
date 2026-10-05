@@ -209,7 +209,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'haunt',
 		title: 'Haunt',
 		description:
-			'Start of game: secretly pick two buildable locations. Whenever those locations become unbuildable, you receive a "ghost" settlement on that spot. It collects resources as normal but is worth no points. Ghost settlements do not prevent other players from building within one hex.',
+			'Start of game: secretly pick two buildable locations. Whenever those locations become unbuildable, you receive a "ghost" settlement on that spot. It collects resources as normal but is worth no points. Ghost settlements do not prevent anyone from building within one hex, or on the same spot.',
 		icon: 'moon-outline',
 		set: '3',
 	},

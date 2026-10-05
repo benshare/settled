@@ -9,7 +9,6 @@ import {
 	type Edge,
 	type Vertex,
 } from './board'
-import { isGhost } from './bonus'
 import { canPlaceUnderPower, settlementKeepsYouthOK } from './curses'
 import type { GameEvent } from '../stores/useGamesStore'
 import {
@@ -92,9 +91,7 @@ export function isValidSettlementVertex(
 ): boolean {
 	if (vertexStateOf(state, vertex).occupied) return false
 	for (const n of boardFor(state.variant).neighborVertices[vertex]) {
-		const nvs = vertexStateOf(state, n)
-		// Ghosts (haunt bonus) don't enforce the distance rule for others.
-		if (nvs.occupied && !isGhost(nvs)) return false
+		if (vertexStateOf(state, n).occupied) return false
 	}
 	if (playerIdx !== undefined) {
 		if (!canPlaceUnderPower(state, playerIdx, vertex)) return false

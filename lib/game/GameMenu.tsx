@@ -1,5 +1,5 @@
 // The game screen's overflow menu: the two ways a game can end without anyone
-// reaching the VP threshold, plus a bug-reporting affordance.
+// reaching the VP threshold, plus copy-game-id and the game's settings.
 //
 //   Forfeit    — a standing, withdrawable declaration. When every seat but one
 //                holds one, the game ends and the survivor wins.
@@ -10,11 +10,12 @@
 // their seat, their turn and their resources. See
 // `.claude/specs/forfeit-and-end-game.md`.
 //
-//   Copy debugging info — the game id + the viewer's own player id as JSON, so
-//                a report of "the board did something weird" arrives with the
-//                two ids needed to find the row. Offered to everyone with the
-//                menu open, spectators and finished games included: those are
-//                exactly the states worth reporting from.
+//   Copy game ID — so a report of "the board did something weird" arrives
+//                with the id needed to find the row. Offered to everyone with
+//                the menu open, spectators and finished games included: those
+//                are exactly the states worth reporting from.
+//
+//   Game settings — read-only `GameSettingsModal` of the game's config.
 //
 // It lives in `Nav` (opposite the back chevron) rather than in a zone because,
 // like the title, it is about *which game you're on* rather than about what the
@@ -30,6 +31,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Clipboard from 'expo-clipboard'
 import { useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { GameSettingsModal } from './GameSettingsModal'
 import { useGameScreen } from './gameScreenContext'
 import { isWeb } from './gameScreenShared'
 
@@ -41,7 +43,7 @@ type Pending = 'forfeit' | 'end' | null
 export function GameMenu() {
 	const {
 		game,
-		meId,
+		playerCount,
 		canEndGame,
 		forfeitedIds,
 		endVoteIds,
@@ -56,6 +58,7 @@ export function GameMenu() {
 
 	const [open, setOpen] = useState(false)
 	const [pending, setPending] = useState<Pending>(null)
+	const [settingsOpen, setSettingsOpen] = useState(false)
 
 	// Nothing to copy and nothing to declare before the game lands. Falls back
 	// to the spacer that keeps the title centred.
@@ -88,11 +91,9 @@ export function GameMenu() {
 
 	// An arrow rather than a declaration: a hoisted `function` doesn't see the
 	// `!game` guard above, so `game` would read as possibly undefined.
-	const copyDebugInfo = async () => {
+	const copyGameId = async () => {
 		setOpen(false)
-		await Clipboard.setStringAsync(
-			JSON.stringify({ gameId: game.id, playerId: meId ?? null }, null, 2)
-		)
+		await Clipboard.setStringAsync(game.id)
 		showToast('Copied')
 	}
 
@@ -156,18 +157,39 @@ export function GameMenu() {
 				)}
 
 				<Pressable
-					onPress={copyDebugInfo}
+					onPress={copyGameId}
 					style={({ pressed }) => [
 						styles.row,
 						pressed && styles.pressed,
 					]}
 				>
 					<Ionicons
-						name="bug-outline"
+						name="copy-outline"
 						size={18}
 						color={colors.textSecondary}
 					/>
-					<Text style={styles.rowText}>Copy debugging info</Text>
+					<Text style={styles.rowText}>Copy game ID</Text>
+				</Pressable>
+
+				<View style={styles.divider} />
+
+				<Pressable
+					// Swap sheets rather than stack them — see `ask`.
+					onPress={() => {
+						setOpen(false)
+						setSettingsOpen(true)
+					}}
+					style={({ pressed }) => [
+						styles.row,
+						pressed && styles.pressed,
+					]}
+				>
+					<Ionicons
+						name="settings-outline"
+						size={18}
+						color={colors.textSecondary}
+					/>
+					<Text style={styles.rowText}>Game settings</Text>
 				</Pressable>
 
 				<View style={styles.divider} />
@@ -208,6 +230,13 @@ export function GameMenu() {
 				submitting={submitting}
 				onConfirm={confirm}
 				onCancel={cancel}
+			/>
+
+			<GameSettingsModal
+				visible={settingsOpen}
+				config={game.config}
+				playerCount={playerCount}
+				onDismiss={() => setSettingsOpen(false)}
 			/>
 		</>
 	)

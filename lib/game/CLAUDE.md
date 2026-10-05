@@ -29,8 +29,9 @@ app/game/[id].tsx
   the full height of the screen — the HUD's top bar does the same.
   Outside every sliding area **and outside `<Game>`**
   because it's the one thing on screen that's about _which_ game you're on. The
-  `⋯` menu holds forfeit / end-game (each submittable and withdrawable) and Copy
-  debugging info; it carries an accent dot whenever a declaration is standing.
+  `⋯` menu holds forfeit / end-game (each submittable and withdrawable), Copy
+  game ID, and Game settings (read-only `GameSettingsModal`, shared with the
+  HUD menu); it carries an accent dot whenever a declaration is standing.
 - `gameScreenContext.tsx` — `GameScreenProvider` / `useGameScreen()`: all local
   UI state, every phase-derived flag, and one handler per store action. New
   screen state or actions go here.

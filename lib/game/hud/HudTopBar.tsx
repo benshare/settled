@@ -3,11 +3,12 @@
 // which one you're on, hidden for a single game), and the overflow menu (right).
 //
 // The `⋯` menu is one-tap (propose/withdraw end game, resign/withdraw, copy
-// debug) — no confirms or blurbs — deliberately separate from the classic
-// `GameMenu`. It reads the route-level providers (the current game) that wrap
-// HudScreen.
+// game id, game settings) — no confirms or blurbs — deliberately separate from
+// the classic `GameMenu`. It reads the route-level providers (the current game)
+// that wrap HudScreen.
 
 import { useGameLayout } from '@/lib/GameLayoutContext'
+import { GameSettingsModal } from '@/lib/game/GameSettingsModal'
 import { useGameScreen } from '@/lib/game/gameScreenContext'
 import { Modal } from '@/lib/modules/Modal'
 import { colors, font, radius, spacing } from '@/lib/theme'
@@ -76,7 +77,7 @@ function Pager({ count, index }: { count: number; index: number }) {
 function HudMenu({ dropTop }: { dropTop: number }) {
 	const {
 		game,
-		meId,
+		playerCount,
 		canEndGame,
 		forfeitedIds,
 		endVoteIds,
@@ -88,18 +89,14 @@ function HudMenu({ dropTop }: { dropTop: number }) {
 	} = useGameScreen()
 	const { setLayout } = useGameLayout()
 	const [open, setOpen] = useState(false)
+	const [settingsOpen, setSettingsOpen] = useState(false)
 
 	const anyPending = forfeitedIds.length > 0 || endVoteIds.length > 0
 
-	const copyDebug = async () => {
+	const copyGameId = async () => {
 		setOpen(false)
-		await Clipboard.setStringAsync(
-			JSON.stringify(
-				{ gameId: game?.id ?? null, playerId: meId ?? null },
-				null,
-				2
-			)
-		)
+		if (!game) return
+		await Clipboard.setStringAsync(game.id)
 		showToast('Copied')
 	}
 
@@ -154,10 +151,22 @@ function HudMenu({ dropTop }: { dropTop: number }) {
 					/>
 				)}
 				<MenuRow
-					icon="bug-outline"
-					label="Copy debug info"
-					onPress={copyDebug}
+					icon="copy-outline"
+					label="Copy game ID"
+					onPress={copyGameId}
 				/>
+				{game && (
+					<MenuRow
+						icon="settings-outline"
+						label="Game settings"
+						onPress={() => {
+							// Close the menu first: iOS can drop a second RN
+							// Modal presented while one is already up.
+							setOpen(false)
+							setSettingsOpen(true)
+						}}
+					/>
+				)}
 				<MenuRow
 					icon="swap-horizontal"
 					label="Switch to classic UI"
@@ -167,6 +176,15 @@ function HudMenu({ dropTop }: { dropTop: number }) {
 					}}
 				/>
 			</Modal>
+
+			{game && (
+				<GameSettingsModal
+					visible={settingsOpen}
+					config={game.config}
+					playerCount={playerCount}
+					onDismiss={() => setSettingsOpen(false)}
+				/>
+			)}
 		</>
 	)
 }

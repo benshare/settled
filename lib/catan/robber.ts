@@ -4,6 +4,7 @@
 
 import { boardFor, RESOURCES, type Hex } from './board'
 import {
+	producersAt,
 	vertexStateOf,
 	type GameState,
 	type PlayerState,
@@ -81,11 +82,11 @@ export function stealCandidates(
 ): number[] {
 	const set = new Set<number>()
 	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-		const vs = vertexStateOf(state, v)
-		if (!vs.occupied) continue
-		if (vs.player === meIdx) continue
-		if (handSize(state.players[vs.player].resources) <= 0) continue
-		set.add(vs.player)
+		for (const { player } of producersAt(state, v)) {
+			if (player === meIdx) continue
+			if (handSize(state.players[player].resources) <= 0) continue
+			set.add(player)
+		}
 	}
 	return Array.from(set)
 }

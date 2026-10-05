@@ -29,7 +29,6 @@ import {
 	type PlayerState,
 	type ResourceHand,
 	type Variant,
-	type VertexState,
 } from './types'
 
 export function bonusOf(
@@ -687,9 +686,6 @@ export function liquidatableTargets(
 	for (const [vid, vs] of Object.entries(state.vertices)) {
 		if (!vs?.occupied || vs.player !== playerIdx) continue
 		if (vs.placedTurn >= state.round) continue
-		// A haunt's ghost is not a piece the player bought, so it has no
-		// refund and never appears here.
-		if (vs.building === 'ghost') continue
 		out.push({ kind: vs.building, vertex: vid as Vertex })
 	}
 	return out
@@ -968,71 +964,37 @@ export function magicTargetRange(
 
 // --- Haunt ------------------------------------------------------------------
 //
-// Secretly pick two buildable vertices at post_placement. When a spot becomes
-// unbuildable because a NEIGHBOR is built (the spot itself still empty), a
-// 0-VP, non-interfering ghost settlement spawns there. A direct build on the
-// spot yields no ghost.
+// Secretly pick two buildable vertices at post_placement. When a spot or any
+// neighbor gets a building (anyone's, including the haunt player's own), a
+// 0-VP ghost spawns there in `PlayerState.ghosts`, sharing the corner with
+// whatever is built on it. Ghosts never occupy a vertex, so they can't block
+// anything — and so can't trigger another spot.
 export const HAUNT_SPOT_COUNT = 2
 
-export function isGhost(vs: VertexState): boolean {
-	return vs.occupied && vs.building === 'ghost'
-}
-
-// Spawn ghosts for every haunt player whose secret spots have become blocked,
-// to a fixed point (a spawned ghost can block another spot). Pure: returns the
-// updated state plus the list of spawns for event logging. Callers run this
-// after any settlement build.
+// Pure: returns the updated state plus the spawns for event logging. Callers
+// run this after any settlement build.
 export function resolveHauntGhosts(state: GameState): {
 	state: GameState
 	spawned: { player: number; vertex: Vertex }[]
 } {
 	const board = boardFor(state.variant)
-	let vertices = state.vertices
-	let players = state.players
 	const spawned: { player: number; vertex: Vertex }[] = []
-
-	let changed = true
-	while (changed) {
-		changed = false
-		for (let idx = 0; idx < players.length; idx++) {
-			const p = players[idx]
-			if (p.bonus !== 'haunt') continue
-			const spots = p.hauntSpots
-			if (!spots || spots.length === 0) continue
-			const remaining: Vertex[] = []
-			for (const spot of spots) {
-				const vs = vertices[spot]
-				if (vs?.occupied) continue // built on directly → drop, no ghost
-				const blocked = board.neighborVertices[spot].some(
-					(n) => !!vertices[n]?.occupied
-				)
-				if (!blocked) {
-					remaining.push(spot)
-					continue
-				}
-				vertices = {
-					...vertices,
-					[spot]: {
-						occupied: true,
-						player: idx,
-						building: 'ghost',
-						placedTurn: state.round,
-					},
-				}
+	const occupied = (v: Vertex) => !!state.vertices[v]?.occupied
+	const players = state.players.map((p, idx) => {
+		if (p.bonus !== 'haunt' || !p.hauntSpots?.length) return p
+		const remaining: Vertex[] = []
+		const ghosts = [...(p.ghosts ?? [])]
+		for (const spot of p.hauntSpots) {
+			if (occupied(spot) || board.neighborVertices[spot].some(occupied)) {
+				ghosts.push(spot)
 				spawned.push({ player: idx, vertex: spot })
-				changed = true
-			}
-			if (remaining.length !== spots.length) {
-				players = players.map((pp, i) =>
-					i === idx ? { ...pp, hauntSpots: remaining } : pp
-				)
-				changed = true
+			} else {
+				remaining.push(spot)
 			}
 		}
-	}
-
-	if (vertices === state.vertices && players === state.players) {
-		return { state, spawned }
-	}
-	return { state: { ...state, vertices, players }, spawned }
+		if (remaining.length === p.hauntSpots.length) return p
+		return { ...p, hauntSpots: remaining, ghosts }
+	})
+	if (spawned.length === 0) return { state, spawned }
+	return { state: { ...state, players }, spawned }
 }
