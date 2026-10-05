@@ -21,6 +21,7 @@ import {
 import {
 	AGE_CARD_LIMIT,
 	ageCardLimitFor,
+	avariceDiscardBlocked,
 	BUILD_COST_SIZES,
 	POWER_HEX_LIMIT,
 	POWER_MAX_HEXES,
@@ -38,6 +39,7 @@ import {
 	touchedResources,
 	winRoadsRequiredFor,
 } from '../lib/catan/curses'
+import { applyLocalAction, isApplyError } from '../lib/catan/apply'
 import { winVPThresholdFor } from '../lib/catan/bonus'
 import { findWinner, recomputeLargestArmy } from '../lib/catan/dev'
 import { initialGameState } from '../lib/catan/generate'
@@ -667,6 +669,106 @@ function testCurseSizeDescriptions() {
 	}
 }
 
+function testAvariceVoluntaryDiscard() {
+	const hand: ResourceHand = { brick: 3, wood: 2, sheep: 0, wheat: 1, ore: 0 }
+	const withHand = (st: GameState, idx: number): GameState => ({
+		...st,
+		players: st.players.map((p, i) =>
+			i === idx ? { ...p, resources: hand } : p
+		),
+	})
+	// Seat 1 cursed while seat 0 holds the turn: there is no turn gate.
+	const main: GameState = {
+		...withHand(setCurse(baseState(), 1, 'avarice'), 1),
+		phase: {
+			kind: 'main',
+			roll: { d1: 3, d2: 4 } as never,
+			trade: null,
+		},
+		currentTurn: 0,
+	}
+	const two = { ...emptyHand(), brick: 2 }
+	const res = applyLocalAction(
+		main,
+		1,
+		{ action: 'avarice_discard', discard: two },
+		't'
+	)
+	assert(!isApplyError(res), 'off-turn avarice discard applies')
+	equal(res.state.players[1].resources.brick, 1, 'brick deducted')
+	equal(res.state.phase, main.phase, 'phase untouched')
+	equal(res.state.currentTurn, 0, 'turn untouched')
+	equal(
+		(res.events[0] as { kind: string; count: number }).count,
+		2,
+		'event carries count'
+	)
+
+	const one = { ...emptyHand(), brick: 1 }
+	assert(
+		isApplyError(
+			applyLocalAction(
+				main,
+				1,
+				{ action: 'avarice_discard', discard: one },
+				't'
+			)
+		),
+		'one card is under the minimum'
+	)
+	assert(
+		isApplyError(
+			applyLocalAction(
+				main,
+				1,
+				{
+					action: 'avarice_discard',
+					discard: { ...emptyHand(), sheep: 2 },
+				},
+				't'
+			)
+		),
+		"can't discard cards you don't hold"
+	)
+	assert(
+		isApplyError(
+			applyLocalAction(
+				withHand(main, 0),
+				0,
+				{ action: 'avarice_discard', discard: two },
+				't'
+			)
+		),
+		'uncursed seat may not'
+	)
+	assert(
+		!isApplyError(
+			applyLocalAction(
+				main,
+				1,
+				{ action: 'avarice_discard', discard: hand },
+				't'
+			)
+		),
+		'whole hand is allowed'
+	)
+
+	for (const kind of ['discard', 'steal'] as const) {
+		const blockedPhase = {
+			...main,
+			phase: { kind, resume: { kind: 'roll' } } as never,
+		}
+		assert(
+			avariceDiscardBlocked(blockedPhase, 1) !== null,
+			`blocked during ${kind}`
+		)
+	}
+	assert(
+		avariceDiscardBlocked({ ...main, phase: { kind: 'roll' } }, 1) === null,
+		'allowed during roll'
+	)
+}
+
 // --- runner -----------------------------------------------------------------
 
 const tests: [string, () => void][] = [
@@ -679,6 +781,7 @@ const tests: [string, () => void][] = [
 	['asceticism effective counts', testAsceticismEffectiveCounts],
 	['nomadism road requirement', testNomadismRoadRequirement],
 	['avarice full hand discard', testAvariceFullHandDiscard],
+	['avarice voluntary discard', testAvariceVoluntaryDiscard],
 	['power pip caps', testPowerCaps],
 	['youth touched set', testYouthTouchedSet],
 	['provinciality 5:1', testProvincialityBankOption],

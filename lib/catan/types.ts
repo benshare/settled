@@ -769,6 +769,10 @@ export const UNDOABLE_ACTIONS = [
 	// magician nothing they didn't already know before they acted.
 	'cast_magic',
 	'skip_magic',
+	// The only member with no turn gate: off-turn it is sent straight away
+	// rather than queued (see gameScreenContext), but on the player's own turn
+	// it is as solo and information-free as a bank trade.
+	'avarice_discard',
 ] as const
 
 export type UndoableAction = (typeof UNDOABLE_ACTIONS)[number]
@@ -810,6 +814,7 @@ export type LocalAction =
 	| { action: 'place_explorer_road'; edge: Edge }
 	| { action: 'cast_magic'; target: number; discard: ResourceHand }
 	| { action: 'skip_magic' }
+	| { action: 'avarice_discard'; discard: ResourceHand }
 
 // Compile-time proof that the queue covers exactly `UNDOABLE_ACTIONS` — adding
 // one without a `LocalAction` arm (or the reverse) fails here rather than at

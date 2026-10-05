@@ -11,7 +11,7 @@
 
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
-import { DiscardPanel } from '@/lib/catan/DiscardPanel'
+import { DiscardPanel, VoluntaryDiscardPanel } from '@/lib/catan/DiscardPanel'
 import { canShepherdSwap, ritualCardCost } from '@/lib/catan/bonus'
 import type { Resource } from '@/lib/catan/board'
 import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
@@ -92,6 +92,12 @@ export function BottomArea() {
 		onRitualRoll,
 		onShepherdSwap,
 		onDiscard,
+		avariceDiscardOpen,
+		setAvariceDiscardOpen,
+		showAvariceDiscard,
+		canAvariceDiscard,
+		onAvariceDiscard,
+		onAvariceDiscardPress,
 		onUndo,
 		pendingWin,
 	} = useGameScreen()
@@ -105,6 +111,9 @@ export function BottomArea() {
 		gameState?.phase.kind === 'discard' && meIdx >= 0
 			? (gameState.phase.pending[meIdx] ?? null)
 			: null
+	// Either discard composer takes the hand's place, and with it the rows
+	// that hang off the hand.
+	const composingDiscard = owedDiscard !== null || avariceDiscardOpen
 
 	return (
 		<>
@@ -263,6 +272,13 @@ export function BottomArea() {
 								}
 								onSubmit={onDiscard}
 							/>
+						) : avariceDiscardOpen ? (
+							<VoluntaryDiscardPanel
+								hand={gameState.players[meIdx].resources}
+								submitting={submitting}
+								onSubmit={onAvariceDiscard}
+								onCancel={() => setAvariceDiscardOpen(false)}
+							/>
 						) : (
 							/* `displayHand`, not the live hand: a card a reveal
 							   animation is still working up to stays hidden
@@ -274,7 +290,7 @@ export function BottomArea() {
 								}
 							/>
 						)}
-						{owedDiscard === null && gameState.config.devCards && (
+						{!composingDiscard && gameState.config.devCards && (
 							<DevCardHand
 								entries={gameState.players[meIdx].devCards}
 								round={gameState.round}
@@ -291,7 +307,7 @@ export function BottomArea() {
 								onPlay={onPlayDevCard}
 							/>
 						)}
-						{owedDiscard === null &&
+						{!composingDiscard &&
 							myPlayer?.bonus === 'investor' && (
 								<View style={styles.investRow}>
 									<InvestmentTokens
@@ -299,20 +315,31 @@ export function BottomArea() {
 									/>
 								</View>
 							)}
-						{owedDiscard === null &&
-							myPlayer?.bonus === 'veteran' && (
-								<KnightTapBar
-									untappedKnights={
-										(myPlayer.devCardsPlayed.knight ?? 0) -
-										(myPlayer.tappedKnights ?? 0)
-									}
-									enabled={
-										isMyActiveTurn &&
-										gameState.phase.kind === 'main'
-									}
-									onTap={onTapKnight}
-								/>
-							)}
+						{!composingDiscard && showAvariceDiscard && (
+							<View style={styles.avariceRow}>
+								<Button
+									size="small"
+									variant="secondary"
+									onPress={onAvariceDiscardPress}
+									disabled={!canAvariceDiscard || submitting}
+								>
+									Discard
+								</Button>
+							</View>
+						)}
+						{!composingDiscard && myPlayer?.bonus === 'veteran' && (
+							<KnightTapBar
+								untappedKnights={
+									(myPlayer.devCardsPlayed.knight ?? 0) -
+									(myPlayer.tappedKnights ?? 0)
+								}
+								enabled={
+									isMyActiveTurn &&
+									gameState.phase.kind === 'main'
+								}
+								onTap={onTapKnight}
+							/>
+						)}
 					</Animated.View>
 				)}
 
@@ -689,6 +716,12 @@ const styles = StyleSheet.create({
 		flex: 1,
 	},
 	investRow: {
+		paddingHorizontal: spacing.md,
+		paddingBottom: spacing.xs,
+	},
+	avariceRow: {
+		flexDirection: 'row',
+		justifyContent: 'flex-end',
 		paddingHorizontal: spacing.md,
 		paddingBottom: spacing.xs,
 	},

@@ -49,7 +49,12 @@ import {
 	SETTLEMENT_REFUND,
 	SUPER_CITY_REFUND,
 } from './bonus'
-import { canPlaceUnderPower, canSpendUnderAge } from './curses'
+import {
+	AVARICE_MIN_DISCARD,
+	avariceDiscardBlocked,
+	canPlaceUnderPower,
+	canSpendUnderAge,
+} from './curses'
 import { findWinner, hasLegalRoadPlacement, vpCardCountsByPlayer } from './dev'
 import { recomputeLongestRoad } from './longestRoad'
 import {
@@ -118,6 +123,8 @@ export function applyLocalAction(
 			return applyCastMagic(state, meIdx, action, at)
 		case 'skip_magic':
 			return applySkipMagic(state, meIdx, at)
+		case 'avarice_discard':
+			return applyAvariceDiscard(state, meIdx, action, at)
 	}
 }
 
@@ -999,4 +1006,35 @@ function applySkipMagic(
 	return finish(next, [{ kind: 'magic_skipped', player: meIdx, at }], at, {
 		recomputeRoads: false,
 	})
+}
+
+// --- Avarice ----------------------------------------------------------------
+
+// No turn gate: the cursed player may thin their hand on anyone's turn, and
+// it never moves phase or turn. `finish` still runs so every reducer ends the
+// same way, though a discard can't change roads or VP.
+function applyAvariceDiscard(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'avarice_discard' }>,
+	at: string
+): ApplyResult {
+	const blocked = avariceDiscardBlocked(state, meIdx)
+	if (blocked) return { error: blocked }
+	const { discard } = action
+	const count = handSize(discard)
+	if (count < AVARICE_MIN_DISCARD)
+		return { error: `discard at least ${AVARICE_MIN_DISCARD} cards` }
+	if (!canAfford(state.players[meIdx].resources, discard))
+		return { error: 'insufficient cards to discard' }
+
+	const players = state.players.map((p, i) =>
+		i === meIdx ? { ...p, resources: deductHand(p.resources, discard) } : p
+	)
+	return finish(
+		{ ...state, players },
+		[{ kind: 'avarice_discarded', player: meIdx, count, at }],
+		at,
+		{ recomputeRoads: false }
+	)
 }

@@ -50,7 +50,7 @@ export const CURSE_POOL: readonly Curse[] = [
 		id: 'avarice',
 		title: 'Curse of Avarice',
 		description:
-			'You lose all your cards when a 7 is rolled and you have more than seven cards in your hand (instead of losing half).',
+			'You lose all your cards when a 7 is rolled and you have more than seven cards in your hand (instead of losing half). You may discard two or more cards at any time.',
 		icon: 'wallet-outline',
 		set: 'base',
 	},

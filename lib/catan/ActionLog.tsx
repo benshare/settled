@@ -65,7 +65,13 @@ const CATEGORIES = {
 		'shepherd_swap',
 		'shepherd_payout',
 	],
-	robber: ['discarded', 'robber_moved', 'stolen', 'hoarder_kept'],
+	robber: [
+		'discarded',
+		'avarice_discarded',
+		'robber_moved',
+		'stolen',
+		'hoarder_kept',
+	],
 	bonuses: [
 		'bonus_chosen',
 		'specialist_set',
@@ -93,6 +99,7 @@ const CATEGORIES = {
 		'magic_cast',
 		'haunt_spots_set',
 		'ghost_spawned',
+		'avarice_discarded',
 	],
 } satisfies Record<string, GameEvent['kind'][]>
 
@@ -386,6 +393,11 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				text: `${who(e.player)} discarded ${e.count} ${
 					e.count === 1 ? 'card' : 'cards'
 				}`,
+				player: e.player,
+			}
+		case 'avarice_discarded':
+			return {
+				text: `${who(e.player)} chose to discard ${e.count} cards`,
 				player: e.player,
 			}
 		case 'robber_moved':

@@ -51,6 +51,7 @@ import {
 	SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sendNotifications, type NotifyTarget } from '../_notify/index.ts'
+import { withGameLock } from '../_shared/gameLock.ts'
 import { pendingSeats } from '../_shared/phase.ts'
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void }
@@ -283,6 +284,11 @@ type SkipMagicBody = {
 	action: 'skip_magic'
 	game_id: string
 }
+type AvariceDiscardBody = {
+	action: 'avarice_discard'
+	game_id: string
+	discard: unknown
+}
 // A client's whole local queue. `actions` is unvalidated — every entry goes
 // through `parseLocalAction` before it reaches a reducer.
 type BatchBody = {
@@ -339,6 +345,7 @@ type Body =
 	| InvestBody
 	| CastMagicBody
 	| SkipMagicBody
+	| AvariceDiscardBody
 	| BatchBody
 	| RunTimeoutsBody
 	| SetForfeitBody
@@ -2009,6 +2016,45 @@ function effectiveKnightsPlayed(
 
 function ageCardLimitFor(size: GameSize): number {
 	return CURSE_SIZE_VARIANTS.age?.[size]?.cardLimit ?? AGE_CARD_LIMIT
+}
+
+// Avarice's escape valve: the cursed player may thin their hand at any time,
+// on anyone's turn, so a 7 doesn't take everything.
+const AVARICE_MIN_DISCARD = 2
+
+// Exhaustive so a new phase is a deliberate decision. `discard` would stale
+// the owed count; `steal` would let the victim dump the card being taken.
+const AVARICE_DISCARD_PHASES: Record<Phase['kind'], boolean> = {
+	select_bonus: false,
+	initial_placement: false,
+	post_placement: true,
+	roll: true,
+	main: true,
+	discard: false,
+	move_robber: true,
+	steal: false,
+	road_building: true,
+	scout_pick: true,
+	curio_pick: true,
+	forger_pick: true,
+	magician_pick: true,
+	special_build: true,
+	game_over: false,
+}
+
+// Why the player can't open a voluntary discard right now, or null. Turn is
+// deliberately not consulted.
+function avariceDiscardBlocked(
+	state: GameState,
+	playerIdx: number
+): string | null {
+	const p = state.players[playerIdx]
+	if (p?.curse !== 'avarice') return 'only the avarice curse may discard'
+	if (!AVARICE_DISCARD_PHASES[state.phase.kind])
+		return 'cannot discard right now'
+	if (handSize(p.resources) < AVARICE_MIN_DISCARD)
+		return `need at least ${AVARICE_MIN_DISCARD} cards`
+	return null
 }
 
 function canSpendUnderAge(
@@ -6118,6 +6164,8 @@ const HOUR_WARNING_MIN_TIMEOUT_MS = 12 * T_HOUR
 const MAX_TIMEOUT_STEPS = 12
 // Games handled per sweep tick, most overdue first.
 const SWEEP_BATCH = 100
+// A skip can chain several auto actions, each a full handler.
+const SWEEP_LOCK_TTL_MS = 30_000
 
 // A missing or unrecognized key is no clock, never the default — a stored row
 // records the clock its game is actually being played under, so raising the
@@ -6279,10 +6327,18 @@ async function handleRunTimeouts(admin: SupabaseClient): Promise<Response> {
 	let warned = 0
 	let expired = 0
 	for (const row of rows) {
+		// A game someone is acting on right now is skipped, not waited on —
+		// their action may well clear the deadline, and the next tick retries.
 		try {
-			const outcome = await sweepGame(admin, row.id)
-			if (outcome === 'warned') warned++
-			else if (outcome === 'expired') expired++
+			const swept = await withGameLock(
+				admin,
+				row.id,
+				{ waitMs: 0, ttlMs: SWEEP_LOCK_TTL_MS },
+				() => sweepGame(admin, row.id)
+			)
+			if (!swept.locked) continue
+			if (swept.result === 'warned') warned++
+			else if (swept.result === 'expired') expired++
 		} catch (e) {
 			console.error('[timeouts] sweep failed', row.id, e)
 		}
@@ -7085,6 +7141,7 @@ type LocalAction =
 	| { action: 'place_explorer_road'; edge: Edge }
 	| { action: 'cast_magic'; target: number; discard: ResourceHand }
 	| { action: 'skip_magic' }
+	| { action: 'avarice_discard'; discard: ResourceHand }
 
 type LiquidationTargetBody =
 	| { kind: 'road'; edge: Edge }
@@ -7197,6 +7254,10 @@ function parseLocalAction(raw: unknown): LocalAction | null {
 		}
 		case 'skip_magic':
 			return { action: 'skip_magic' }
+		case 'avarice_discard': {
+			const discard = normalizeHand(o.discard)
+			return discard ? { action: 'avarice_discard', discard } : null
+		}
 		default:
 			return null
 	}
@@ -7261,6 +7322,8 @@ export function applyLocalAction(
 			return applyCastMagic(state, meIdx, action, at)
 		case 'skip_magic':
 			return applySkipMagic(state, meIdx, at)
+		case 'avarice_discard':
+			return applyAvariceDiscard(state, meIdx, action, at)
 	}
 }
 
@@ -8098,6 +8161,37 @@ function applySkipMagic(
 	return finish(next, [{ kind: 'magic_skipped', player: meIdx, at }], at, {
 		recomputeRoads: false,
 	})
+}
+
+// --- Avarice ----------------------------------------------------------------
+
+// No turn gate: the cursed player may thin their hand on anyone's turn, and
+// it never moves phase or turn. `finish` still runs so every reducer ends the
+// same way, though a discard can't change roads or VP.
+function applyAvariceDiscard(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'avarice_discard' }>,
+	at: string
+): ApplyResult {
+	const blocked = avariceDiscardBlocked(state, meIdx)
+	if (blocked) return { error: blocked }
+	const { discard } = action
+	const count = handSize(discard)
+	if (count < AVARICE_MIN_DISCARD)
+		return { error: `discard at least ${AVARICE_MIN_DISCARD} cards` }
+	if (!canAfford(state.players[meIdx].resources, discard))
+		return { error: 'insufficient cards to discard' }
+
+	const players = state.players.map((p, i) =>
+		i === meIdx ? { ...p, resources: deductHand(p.resources, discard) } : p
+	)
+	return finish(
+		{ ...state, players },
+		[{ kind: 'avarice_discarded', player: meIdx, count, at }],
+		at,
+		{ recomputeRoads: false }
+	)
 }
 
 // The mutable `game_states` columns that actually differ. The reducers only
@@ -9918,6 +10012,18 @@ async function handleSkipMagic(
 	])
 }
 
+async function handleAvariceDiscard(
+	admin: SupabaseClient,
+	me: string,
+	body: AvariceDiscardBody
+): Promise<Response> {
+	const discard = normalizeHand(body.discard)
+	if (!discard) return err(400, 'invalid discard hand')
+	return commitLocalActions(admin, me, body.game_id, [
+		{ action: 'avarice_discard', discard },
+	])
+}
+
 async function handlePlayDevCard(
 	admin: SupabaseClient,
 	me: string,
@@ -10151,22 +10257,40 @@ serve(async (req) => {
 	if (!me) return err(401, 'not authenticated')
 
 	const gameId = 'game_id' in body ? body.game_id : null
-	const res = await dispatch(admin, me, body)
-	if (gameId && res.ok) {
-		// `games.deadline_at` is maintained here rather than inside fifty
-		// handlers. Backgrounded — nothing is waiting on it. See
-		// refreshDeadline.
-		if (!TIMEOUT_NEUTRAL_ACTIONS.has(body.action)) {
-			EdgeRuntime.waitUntil(refreshDeadline(admin, gameId, me))
-		}
-	}
-	return res
+	if (!gameId) return dispatch(admin, me, body)
+
+	// `games.deadline_at` is maintained here rather than inside fifty
+	// handlers. Backgrounded — nothing is waiting on it — but still under the
+	// lease, since it read-modify-writes `timed_out`. See refreshDeadline.
+	const refreshes = !TIMEOUT_NEUTRAL_ACTIONS.has(body.action)
+	const locked = await withGameLock(
+		admin,
+		gameId,
+		{ waitMs: GAME_LOCK_WAIT_MS },
+		() => dispatch(admin, me, body),
+		refreshes
+			? async (res) => {
+					if (res.ok) await refreshDeadline(admin, gameId, me)
+				}
+			: undefined
+	)
+	// A 5xx, so the client's flush retries it like any transport failure.
+	if (!locked.locked) return err(503, 'game busy, try again')
+	return locked.result
 })
+
+// How long an action waits on another one in flight on the same game.
+const GAME_LOCK_WAIT_MS = 5_000
 
 // A honk is a complaint about the stall, not an escape from it, so it must not
 // push the deadline out — the same reason `lastActivityAt` ignores honks. Chat
-// isn't a move either.
-const TIMEOUT_NEUTRAL_ACTIONS = new Set<string>(['honk', 'send_message'])
+// isn't a move either, and nor is an avarice discard — it can land on anyone's
+// turn, and must not clear the discarder's own timed-out flag.
+const TIMEOUT_NEUTRAL_ACTIONS = new Set<string>([
+	'honk',
+	'send_message',
+	'avarice_discard',
+])
 
 function isServiceRoleCaller(req: Request): boolean {
 	const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -10268,6 +10392,8 @@ function dispatch(
 			return handleCastMagic(admin, me, body)
 		case 'skip_magic':
 			return handleSkipMagic(admin, me, body)
+		case 'avarice_discard':
+			return handleAvariceDiscard(admin, me, body)
 		case 'batch':
 			return handleBatch(admin, me, body)
 		case 'set_forfeit':
