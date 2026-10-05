@@ -7,6 +7,7 @@ import {
 	BANNED_BONUSES_BY_CURSE,
 	BONUS_POOL,
 	BONUS_SIZE_VARIANTS,
+	bonusClarificationsFor,
 	bonusDescriptionFor,
 	bonusById,
 	isBannedCombo,
@@ -1330,6 +1331,13 @@ function testSizeDescriptions() {
 				bonusDescriptionFor(b.id, size),
 				declared ?? b.description,
 				`${b.id}/${size} description`
+			)
+			// Same reference either way, so `equal`'s identity check suffices.
+			equal(
+				bonusClarificationsFor(b.id, size),
+				BONUS_SIZE_VARIANTS[b.id]?.[size]?.clarifications ??
+					b.clarifications,
+				`${b.id}/${size} clarifications`
 			)
 		}
 	}

@@ -53,11 +53,15 @@ type CurseSizeParams = {
 	provinciality: { bankAccess: BankAccess }
 }
 
-// Every variant may override the description and withhold the card from the
-// deal; params are flat alongside those, so a card's number and the sentence
-// describing it sit on the same object and can't drift.
+// Every variant may override the description and clarifications and withhold
+// the card from the deal; params are flat alongside those, so a card's number
+// and the sentence describing it sit on the same object and can't drift.
+// Description and clarifications fall back independently — override
+// `clarifications` (to `[]` if need be) when a baseline bullet stops being
+// true at that size.
 type SizeVariant<P> = {
 	description?: string
+	clarifications?: readonly string[]
 	available?: boolean
 } & Partial<P>
 
@@ -77,7 +81,7 @@ export const BONUS_SIZE_VARIANTS: {
 	gambler: {
 		expanded: {
 			description:
-				'Any time you roll, roll twice and choose which of the two results counts.',
+				'Any time you roll, roll twice and choose which result counts.',
 			mode: 'choose_two',
 		},
 	},
@@ -86,7 +90,7 @@ export const BONUS_SIZE_VARIANTS: {
 	fortune_teller: {
 		expanded: {
 			description:
-				'Every time you roll doubles or 7, make an extra roll. Only you get resources from it, and you receive double from it.',
+				'When you roll doubles or a 7, roll again. Only you collect from the extra roll, and you collect double.',
 			gainMultiplier: 2,
 		},
 	},
@@ -97,7 +101,8 @@ export const BONUS_SIZE_VARIANTS: {
 		small: { available: false },
 		expanded: {
 			description:
-				'At any time during your turn you may set aside three of the same resource card to receive an "investment token" for that resource. After you roll, receive one resource card from each investment token you have.',
+				'During your turn, set aside three of one resource for an investment token. Each token pays one of that resource after you roll.',
+			clarifications: [],
 			activateVP: 0,
 		},
 	},
@@ -106,12 +111,14 @@ export const BONUS_SIZE_VARIANTS: {
 	ritualist: {
 		small: {
 			description:
-				'Start of turn: you may choose to discard three resource cards of your choice to choose your die roll. No other players receive resources from your roll if you do.',
+				'Start of turn: discard three cards to choose your roll. No one else collects from it.',
+			clarifications: [],
 			cardCost: 3,
 		},
 		expanded: {
 			description:
-				'Start of turn: you may choose to discard two resource cards of your choice to choose your die roll. No other players receive resources from your roll if you do.',
+				'Start of turn: discard two cards to choose your roll. No one else collects from it.',
+			clarifications: [],
 			cardCost: 2,
 		},
 	},
@@ -125,13 +132,11 @@ export const CURSE_SIZE_VARIANTS: {
 	// 5-6 player table (where you act least).
 	age: {
 		small: {
-			description:
-				"You can spend a maximum of five cards per turn. This doesn't include cards used for ports or trading.",
+			description: 'You can spend a maximum of five cards per turn.',
 			cardLimit: 5,
 		},
 		expanded: {
-			description:
-				"You can spend a maximum of seven cards per turn. This doesn't include cards used for ports or trading.",
+			description: 'You can spend a maximum of seven cards per turn.',
 			cardLimit: 7,
 		},
 	},
@@ -146,7 +151,7 @@ export const CURSE_SIZE_VARIANTS: {
 		},
 		expanded: {
 			description:
-				'You may not use the ports on the board, and you may not trade with the bank at any rate. You can still trade with other players.',
+				"You can't use ports or trade with the bank. Player trades still work.",
 			bankAccess: 'none',
 		},
 	},
@@ -182,6 +187,28 @@ export function curseDescriptionFor(id: CurseId, size: GameSize): string {
 		curseVariantFor(id, size)?.description ??
 		curseById(id)?.description ??
 		''
+	)
+}
+
+export function bonusClarificationsFor(
+	id: BonusId,
+	size: GameSize
+): readonly string[] {
+	return (
+		bonusVariantFor(id, size)?.clarifications ??
+		bonusById(id)?.clarifications ??
+		[]
+	)
+}
+
+export function curseClarificationsFor(
+	id: CurseId,
+	size: GameSize
+): readonly string[] {
+	return (
+		curseVariantFor(id, size)?.clarifications ??
+		curseById(id)?.clarifications ??
+		[]
 	)
 }
 

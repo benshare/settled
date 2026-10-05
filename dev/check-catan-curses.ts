@@ -7,6 +7,7 @@ import {
 	CURSE_POOL,
 	CURSE_SIZE_VARIANTS,
 	curseById,
+	curseClarificationsFor,
 	curseDescriptionFor,
 	isCurseAvailableAt,
 	type CurseId,
@@ -659,6 +660,13 @@ function testCurseSizeDescriptions() {
 				curseDescriptionFor(c.id, size),
 				declared ?? c.description,
 				`${c.id}/${size} description`
+			)
+			// Same reference either way, so `equal`'s identity check suffices.
+			equal(
+				curseClarificationsFor(c.id, size),
+				CURSE_SIZE_VARIANTS[c.id]?.[size]?.clarifications ??
+					c.clarifications,
+				`${c.id}/${size} clarifications`
 			)
 			equal(
 				isCurseAvailableAt(c.id, size),

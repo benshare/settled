@@ -20,13 +20,16 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import {
 	bonusById,
+	bonusClarificationsFor,
 	bonusDescriptionFor,
 	comboNoteFor,
 	curseById,
+	curseClarificationsFor,
 	curseDescriptionFor,
 	type BonusId,
 	type CurseId,
 } from './bonuses'
+import { CardDescription } from './CardDescription'
 import {
 	gameSizeFor,
 	handChosenCurse,
@@ -138,6 +141,10 @@ export function BonusSelection({
 								title: bonusById(id)!.title,
 								icon: bonusById(id)!.icon,
 								description: bonusDescriptionFor(id, size),
+								clarifications: bonusClarificationsFor(
+									id,
+									size
+								),
 							}))}
 							pickedIdx={
 								committed
@@ -159,6 +166,10 @@ export function BonusSelection({
 								title: curseById(id)!.title,
 								icon: curseById(id)!.icon,
 								description: curseDescriptionFor(id, size),
+								clarifications: curseClarificationsFor(
+									id,
+									size
+								),
 							}))}
 							pickedIdx={
 								committed
@@ -230,6 +241,7 @@ type PickerCard = {
 	title: string
 	icon: React.ComponentProps<typeof Ionicons>['name']
 	description: string
+	clarifications: readonly string[]
 }
 
 // One kind's dealt cards. Two or fewer share the width; three would leave the
@@ -288,7 +300,11 @@ function CardRow({
 					/>
 				</View>
 				<Text style={styles.cardTitle}>{card.title}</Text>
-				<Text style={styles.cardDescription}>{card.description}</Text>
+				<CardDescription
+					description={card.description}
+					clarifications={card.clarifications}
+					textStyle={styles.cardDescription}
+				/>
 			</Pressable>
 		)
 	})

@@ -13,10 +13,13 @@ import { colors, font, radius, spacing } from '../theme'
 import { METROPOLITAN_SUPER_CITY_CAP, superCityCount } from './bonus'
 import {
 	bonusById,
+	bonusClarificationsFor,
 	bonusDescriptionFor,
 	curseById,
+	curseClarificationsFor,
 	curseDescriptionFor,
 } from './bonuses'
+import { CardDescription } from './CardDescription'
 import {
 	cityCountFor,
 	curseOf,
@@ -191,6 +194,10 @@ function Body({
 							iconColor={colors.brand}
 							title={bonus.title}
 							description={bonusDescriptionFor(bonus.id, size)}
+							clarifications={bonusClarificationsFor(
+								bonus.id,
+								size
+							)}
 							tag="Bonus"
 							tagColor={colors.brand}
 							borderColor={colors.brand}
@@ -217,6 +224,10 @@ function Body({
 							iconColor={colors.error}
 							title={curse.title}
 							description={curseDescriptionFor(curse.id, size)}
+							clarifications={curseClarificationsFor(
+								curse.id,
+								size
+							)}
 							tag="Curse"
 							tagColor={colors.error}
 							borderColor={colors.error}
@@ -411,6 +422,7 @@ function CardBlock({
 	iconColor,
 	title,
 	description,
+	clarifications,
 	tag,
 	tagColor,
 	borderColor,
@@ -420,6 +432,7 @@ function CardBlock({
 	iconColor: string
 	title: string
 	description: string
+	clarifications: readonly string[]
 	tag: string
 	tagColor: string
 	borderColor: string
@@ -441,7 +454,11 @@ function CardBlock({
 					<Text style={styles.cardTitle}>{title}</Text>
 				</View>
 			</View>
-			<Text style={styles.cardDescription}>{description}</Text>
+			<CardDescription
+				description={description}
+				clarifications={clarifications}
+				textStyle={styles.cardDescription}
+			/>
 			{footer}
 		</View>
 	)

@@ -2,15 +2,18 @@ import { useAuth } from '@/lib/auth'
 import {
 	BONUS_POOL,
 	bonusById,
+	bonusClarificationsFor,
 	bonusDescriptionFor,
 	CURSE_POOL,
 	curseById,
+	curseClarificationsFor,
 	curseDescriptionFor,
 	isBonusAvailableAt,
 	isCurseAvailableAt,
 	type Bonus,
 	type Curse,
 } from '@/lib/catan/bonuses'
+import { CardDescription } from '@/lib/catan/CardDescription'
 import { GAME_SIZES, type GameSize } from '@/lib/catan/types'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Modal } from '@/lib/modules/Modal'
@@ -316,6 +319,10 @@ function CatalogTab() {
 												b.id,
 												BASELINE_SIZE
 											)}
+											clarifications={bonusClarificationsFor(
+												b.id,
+												BASELINE_SIZE
+											)}
 											unavailable={sizes.every(
 												(s) =>
 													!isBonusAvailableAt(b.id, s)
@@ -340,6 +347,10 @@ function CatalogTab() {
 									key={c.id}
 									card={c}
 									description={curseDescriptionFor(
+										c.id,
+										BASELINE_SIZE
+									)}
+									clarifications={curseClarificationsFor(
 										c.id,
 										BASELINE_SIZE
 									)}
@@ -452,6 +463,7 @@ function CatalogFilter({
 function CardCell({
 	card,
 	description,
+	clarifications,
 	unavailable,
 	unavailableNote,
 	tint,
@@ -461,6 +473,7 @@ function CardCell({
 }: {
 	card: Bonus | Curse
 	description: string
+	clarifications: readonly string[]
 	unavailable: boolean
 	unavailableNote: string
 	tint: string
@@ -483,7 +496,12 @@ function CardCell({
 				<Ionicons name={card.icon} size={22} color={tint} />
 			</View>
 			<Text style={styles.cardTitle}>{card.title}</Text>
-			<Text style={styles.cardDescription}>{description}</Text>
+			<CardDescription
+				description={description}
+				clarifications={clarifications}
+				textStyle={styles.cardDescription}
+				centered
+			/>
 			{unavailable ? (
 				<Text style={styles.cardUnavailable}>{unavailableNote}</Text>
 			) : (

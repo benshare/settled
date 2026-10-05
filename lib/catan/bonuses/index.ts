@@ -3,12 +3,19 @@
 // then picks one bonus to keep.
 //
 // Card identity is the `id` string. UI reads `title` / `description` /
-// `icon`; rule code will key off `id` when effects get wired in.
+// `clarifications` / `icon`; rule code keys off `id`.
+//
+// `description` is the one- or two-sentence summary every surface shows.
+// `clarifications` hold edge-case rulings and niche interactions — rendered
+// as bullets behind an expand toggle, so a card with none isn't expandable.
+// Keep anything a player needs to decide whether to pick the card in the
+// description.
 //
 // A card's `description` here is its 3-4 player ('standard') text. Cards that
 // read, behave, or deal differently at other table sizes declare that in
-// `sizes.ts` — read descriptions through `bonusDescriptionFor(id, size)`
-// rather than off the pool entry wherever a player count is known.
+// `sizes.ts` — read both through `bonusDescriptionFor(id, size)` /
+// `bonusClarificationsFor(id, size)` rather than off the pool entry wherever
+// a player count is known.
 
 import type { Ionicons } from '@expo/vector-icons'
 import type React from 'react'
@@ -61,6 +68,7 @@ export type Bonus = {
 	id: BonusId
 	title: string
 	description: string
+	clarifications: readonly string[]
 	icon: IoniconName
 	set: '1' | '2' | '3'
 }
@@ -69,6 +77,7 @@ export type Curse = {
 	id: CurseId
 	title: string
 	description: string
+	clarifications: readonly string[]
 	icon: IoniconName
 	set: 'base'
 }
@@ -83,6 +92,8 @@ export {
 	curseVariantFor,
 	bonusDescriptionFor,
 	curseDescriptionFor,
+	bonusClarificationsFor,
+	curseClarificationsFor,
 	isBonusAvailableAt,
 	isCurseAvailableAt,
 	type BankAccess,
