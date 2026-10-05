@@ -18,7 +18,8 @@ import {
 import type { BonusId, CurseId, IoniconName } from './bonuses'
 import { curseById, curseVariantFor } from './bonuses'
 import type { BuildKind } from './build'
-import type { GameSize, GameState, PlayerState } from './types'
+import { handSize } from './robber'
+import type { GameSize, GameState, Phase, PlayerState } from './types'
 import { gameSizeFor, producersAt, vertexStateOf } from './types'
 
 export function curseOf(
@@ -149,6 +150,49 @@ export function canSpendUnderAge(
 	if (p.curse !== 'age') return true
 	const spent = p.cardsSpentThisTurn ?? 0
 	return spent + costSize <= ageCardLimitFor(size)
+}
+
+// Avarice's escape valve: the cursed player may thin their hand at any time,
+// on anyone's turn, so a 7 doesn't take everything.
+export const AVARICE_MIN_DISCARD = 2
+
+// Exhaustive so a new phase is a deliberate decision. `discard` would stale
+// the owed count; `steal` would let the victim dump the card being taken.
+const AVARICE_DISCARD_PHASES: Record<Phase['kind'], boolean> = {
+	select_bonus: false,
+	initial_placement: false,
+	post_placement: true,
+	roll: true,
+	main: true,
+	discard: false,
+	move_robber: true,
+	steal: false,
+	road_building: true,
+	scout_pick: true,
+	curio_pick: true,
+	forger_pick: true,
+	magician_pick: true,
+	special_build: true,
+	game_over: false,
+}
+
+export function isAvariceDiscardPhase(kind: Phase['kind']): boolean {
+	return AVARICE_DISCARD_PHASES[kind]
+}
+
+// Why the player can't open a voluntary discard right now, or null. Turn is
+// deliberately not consulted.
+export function avariceDiscardBlocked(
+	state: GameState,
+	playerIdx: number
+): string | null {
+	const p = state.players[playerIdx]
+	if (p?.curse !== 'avarice') return 'only the avarice curse may discard'
+	if (!isAvariceDiscardPhase(state.phase.kind))
+		return 'cannot discard right now'
+	if (handSize(p.resources) < AVARICE_MIN_DISCARD)
+		return `need at least ${AVARICE_MIN_DISCARD} cards`
+	return null
 }
 
 // Cost size for each build kind, used by age enforcement in handlers and

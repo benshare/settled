@@ -361,7 +361,7 @@ function testEdgeMirrorIsInSync() {
 	const names = [...lib.matchAll(/\nfunction (apply[A-Za-z]+)\(/g)].map(
 		(m) => m[1]
 	)
-	equal(names.length, 13, 'one reducer per undoable action')
+	equal(names.length, 14, 'one reducer per undoable action')
 	for (const name of names) {
 		// The carpenter's cost is the one deliberate divergence: the edge names
 		// it as a scalar (`CARPENTER_WOOD_COST`) where lib has a ResourceHand.

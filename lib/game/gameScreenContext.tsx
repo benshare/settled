@@ -40,7 +40,11 @@ import {
 } from '@/lib/catan/build'
 import type { BoardTool, BuildSelection } from '@/lib/catan/BuildLayer'
 import type { BuildCurseHints } from '@/lib/catan/BuildTradeBar'
-import { curseBuildReason } from '@/lib/catan/curses'
+import {
+	avariceDiscardBlocked,
+	curseBuildReason,
+	isAvariceDiscardPhase,
+} from '@/lib/catan/curses'
 import { canBuyDevCard } from '@/lib/catan/dev'
 import type { DevPlayPayload } from '@/lib/catan/DevCardHand'
 import { useGame } from '@/lib/catan/gameContext'
@@ -178,6 +182,7 @@ function useGameScreenState(gameId: string) {
 	const honk = useGamesStore((s) => s.honk)
 	const endSpecialBuild = useGamesStore((s) => s.endSpecialBuild)
 	const discard = useGamesStore((s) => s.discard)
+	const avariceDiscard = useGamesStore((s) => s.avariceDiscard)
 	const moveRobber = useGamesStore((s) => s.moveRobber)
 	const steal = useGamesStore((s) => s.steal)
 	const proposeTrade = useGamesStore((s) => s.proposeTrade)
@@ -211,6 +216,9 @@ function useGameScreenState(gameId: string) {
 	const [submitting, setSubmitting] = useState(false)
 	const [buildTool, setBuildTool] = useState<BoardToolChoice>(null)
 	const [tradePanelOpen, setTradePanelOpen] = useState(false)
+	// Avarice's voluntary discard composer, which replaces the hand like the
+	// trade composer does.
+	const [avariceDiscardOpen, setAvariceDiscardOpen] = useState(false)
 	const [ritualOpen, setRitualOpen] = useState(false)
 	const [shepherdOpen, setShepherdOpen] = useState(false)
 	const [scoutCostOpen, setScoutCostOpen] = useState(false)
@@ -839,6 +847,21 @@ function useGameScreenState(gameId: string) {
 	// Hand-set on the player row for testing; unlocks the force-roll picker.
 	const isDev = myPlayer?.dev === true
 
+	// Avarice: offered on anyone's turn, so it reads the reducer's own gate
+	// (curse, phase, hand ≥ 2) rather than any turn flag. The button shows
+	// whenever the phase allows and disables itself on a hand under 2.
+	const showAvariceDiscard =
+		!!gameState &&
+		!isSpectator &&
+		game?.status === 'active' &&
+		myPlayer?.curse === 'avarice' &&
+		isAvariceDiscardPhase(gameState.phase.kind)
+	const canAvariceDiscard =
+		showAvariceDiscard && avariceDiscardBlocked(gameState, meIdx) === null
+	useEffect(() => {
+		if (!canAvariceDiscard) setAvariceDiscardOpen(false)
+	}, [canAvariceDiscard])
+
 	// Forger: the token move is compulsory and gates the roll, so the board
 	// pulses the valid hexes on its own — there is no affordance to open. The
 	// server enforces the same gate in `handleRoll`.
@@ -1368,6 +1391,34 @@ function useGameScreenState(gameId: string) {
 		if (enqueue(action)) selectBoardTool(null)
 	}
 
+	// Own turn: queued and undoable like a bank trade, flushed by the turn's
+	// next barrier (the roll, if it's taken before rolling). Anyone else's
+	// turn: there is no barrier coming, so it goes up straight away.
+	// post_placement is parallel and has no barrier of its own either.
+	async function onAvariceDiscard(selection: ResourceHandType) {
+		if (!game || !gameState) return
+		const holdsFloor =
+			gameState.phase.kind === 'special_build'
+				? isMySpecialBuild
+				: isMyActiveTurn && gameState.phase.kind !== 'post_placement'
+		if (holdsFloor) {
+			if (enqueue({ action: 'avarice_discard', discard: selection }))
+				setAvariceDiscardOpen(false)
+			return
+		}
+		if (!(await flushBeforeBarrier())) return
+		const res = await avariceDiscard(game.id, selection)
+		setSubmitting(false)
+		if (res.error) notify('Discard failed', res.error)
+		else setAvariceDiscardOpen(false)
+	}
+
+	function onAvariceDiscardPress() {
+		const opening = !avariceDiscardOpen
+		setAvariceDiscardOpen(opening)
+		if (opening) setTradePanelOpen(false)
+	}
+
 	async function onDiscard(selection: ResourceHandType) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
@@ -1418,6 +1469,7 @@ function useGameScreenState(gameId: string) {
 		if (opening) {
 			setPendingConfirm(null)
 			setMetroPending(null)
+			setAvariceDiscardOpen(false)
 		}
 	}
 
@@ -1752,6 +1804,10 @@ function useGameScreenState(gameId: string) {
 		buildTool,
 		tradePanelOpen,
 		setTradePanelOpen,
+		avariceDiscardOpen,
+		setAvariceDiscardOpen,
+		showAvariceDiscard,
+		canAvariceDiscard,
 		pendingConfirm,
 		devBuyConfirmOpen,
 		setDevBuyConfirmOpen,
@@ -1834,6 +1890,8 @@ function useGameScreenState(gameId: string) {
 		onBuildToolSelect,
 		onBuildSpotSelect,
 		onDiscard,
+		onAvariceDiscard,
+		onAvariceDiscardPress,
 		onMoveRobberRequest,
 		onStealRequest,
 		onTradePress,

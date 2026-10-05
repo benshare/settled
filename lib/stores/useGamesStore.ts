@@ -81,6 +81,8 @@ export type GameEvent =
 	| { kind: 'settlement_built'; player: number; vertex: string; at: string }
 	| { kind: 'city_built'; player: number; vertex: string; at: string }
 	| { kind: 'discarded'; player: number; count: number; at: string }
+	// Avarice's voluntary discard, any turn. Count only, like the 7's.
+	| { kind: 'avarice_discarded'; player: number; count: number; at: string }
 	| { kind: 'robber_moved'; player: number; hex: string; at: string }
 	// `resource` is optional: steals logged before it was recorded read as
 	// un-expandable rather than claiming nothing was taken. ActionLog shows it
@@ -439,6 +441,12 @@ type GamesStore = {
 	setEndVote: (gameId: string, on: boolean) => Promise<ActionResult>
 
 	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
+	// Avarice's voluntary discard, sent straight away on someone else's turn
+	// (on your own it rides the local queue). Move-neutral server-side.
+	avariceDiscard: (
+		gameId: string,
+		discard: ResourceHand
+	) => Promise<ActionResult>
 	moveRobber: (gameId: string, hex: string) => Promise<ActionResult>
 	steal: (gameId: string, victim: number) => Promise<ActionResult>
 
@@ -866,6 +874,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 	async discard(gameId, discard) {
 		return callGameService(
 			{ action: 'discard', game_id: gameId, discard },
+			"Couldn't discard"
+		)
+	},
+
+	async avariceDiscard(gameId, discard) {
+		return callGameService(
+			{ action: 'avarice_discard', game_id: gameId, discard },
 			"Couldn't discard"
 		)
 	},

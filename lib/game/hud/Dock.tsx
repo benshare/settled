@@ -16,7 +16,7 @@ import {
 } from '@/lib/catan/bonus'
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
-import { DiscardPanel } from '@/lib/catan/DiscardPanel'
+import { DiscardPanel, VoluntaryDiscardPanel } from '@/lib/catan/DiscardPanel'
 import { BuildTradeBar, TradeButton } from '@/lib/catan/BuildTradeBar'
 import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
@@ -84,6 +84,12 @@ export function Dock({
 		onPlayDevCard,
 		onTapKnight,
 		onDiscard,
+		avariceDiscardOpen,
+		setAvariceDiscardOpen,
+		showAvariceDiscard,
+		canAvariceDiscard,
+		onAvariceDiscard,
+		onAvariceDiscardPress,
 		ritualOpen,
 		setRitualOpen,
 		shepherdOpen,
@@ -145,6 +151,13 @@ export function Dock({
 					isShepherd={gameState.players[meIdx].bonus === 'shepherd'}
 					onSubmit={onDiscard}
 				/>
+			) : avariceDiscardOpen ? (
+				<VoluntaryDiscardPanel
+					hand={gameState.players[meIdx].resources}
+					submitting={submitting}
+					onSubmit={onAvariceDiscard}
+					onCancel={() => setAvariceDiscardOpen(false)}
+				/>
 			) : (
 				<View style={styles.row}>
 					<View style={styles.handSide}>
@@ -179,6 +192,16 @@ export function Dock({
 							<InvestmentTokens
 								investments={myPlayer.investments}
 							/>
+						)}
+						{showAvariceDiscard && (
+							<Button
+								size="small"
+								variant="secondary"
+								onPress={onAvariceDiscardPress}
+								disabled={!canAvariceDiscard || submitting}
+							>
+								Discard
+							</Button>
 						)}
 						{!inPlacement && myPlayer?.bonus === 'veteran' && (
 							<KnightTapBar
