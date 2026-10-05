@@ -85,7 +85,8 @@ export function SpecialistDeclareOverlay({
 // the board (BuildLayer with tool='explorer_road'). Counter goes 3 → 0,
 // mirroring `phase.pending.explorer[meIdx]`. The roads are queued locally, so
 // at 0 the banner carries the Confirm that sends them (`onConfirm`); without
-// it, 0 is the plain "waiting on others" line.
+// it, 0 is the plain "waiting on others" line — also used for haunt waits
+// (the `waiting` kind), so it stays bonus-neutral.
 export function ExplorerStatusBanner({
 	remaining,
 	waitingOn,
@@ -134,7 +135,8 @@ export function ExplorerStatusBanner({
 				</Text>
 			) : (
 				<Text style={styles.bannerText}>
-					Waiting on {waitingOn.join(', ')} to place explorer roads.
+					Waiting on {waitingOn.join(', ')} to finish setting up
+					bonuses.
 				</Text>
 			)}
 		</View>
