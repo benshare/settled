@@ -19,7 +19,7 @@ import type { BonusId, CurseId, IoniconName } from './bonuses'
 import { curseById, curseVariantFor } from './bonuses'
 import type { BuildKind } from './build'
 import type { GameSize, GameState, PlayerState } from './types'
-import { gameSizeFor, vertexStateOf } from './types'
+import { gameSizeFor, producersAt, vertexStateOf } from './types'
 
 export function curseOf(
 	state: GameState,
@@ -175,10 +175,9 @@ export function hexPowerForPlayer(
 ): number {
 	let power = 0
 	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-		const vs = vertexStateOf(state, v)
-		if (!vs.occupied || vs.player !== playerIdx) continue
-		power +=
-			vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
+		for (const pr of producersAt(state, v)) {
+			if (pr.player === playerIdx) power += pr.base
+		}
 	}
 	return power
 }
@@ -228,9 +227,12 @@ export function touchedResources(
 ): Set<Resource> {
 	const out = new Set<Resource>()
 	const board = boardFor(state.variant)
-	for (const [vid, vs] of Object.entries(state.vertices)) {
-		if (!vs?.occupied || vs.player !== playerIdx) continue
-		for (const h of board.adjacentHexes[vid as Vertex]) {
+	const corners = Object.entries(state.vertices)
+		.filter(([, vs]) => vs?.occupied && vs.player === playerIdx)
+		.map(([vid]) => vid as Vertex)
+		.concat(state.players[playerIdx]?.ghosts ?? [])
+	for (const vid of corners) {
+		for (const h of board.adjacentHexes[vid]) {
 			const hd = state.hexes[h]
 			if (hd.resource !== null) out.add(hd.resource)
 		}

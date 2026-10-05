@@ -11,7 +11,7 @@ import type {
 	Port,
 	ResourceHand,
 } from './types'
-import { gameSizeFor, vertexStateOf } from './types'
+import { gameSizeFor, producersAt, vertexStateOf } from './types'
 
 // Which port kinds does this player currently have access to via a settlement
 // or city sitting on one of the port's two endpoint vertices?
@@ -24,8 +24,7 @@ export function playerPortKinds(
 	for (const p of ports) {
 		const [a, b] = edgeEndpoints(p.edge)
 		for (const v of [a, b] as const) {
-			const vs = vertexStateOf(state, v)
-			if (vs.occupied && vs.player === playerIdx) {
+			if (producersAt(state, v).some((pr) => pr.player === playerIdx)) {
 				out.add(p.kind)
 				break
 			}

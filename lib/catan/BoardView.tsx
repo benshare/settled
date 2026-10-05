@@ -34,7 +34,12 @@ import { PortBadge } from './PortBadge'
 import { RobberLayer } from './RobberLayer'
 import { RobberPiece } from './RobberPiece'
 import { edgeStateOf, vertexStateOf, type GameState } from './types'
-import { HauntSpotMarker, SetupOrdinalBadge, VertexPiece } from './VertexPiece'
+import {
+	HauntSpotMarker,
+	SetupOrdinalBadge,
+	sharedCornerXs,
+	VertexPiece,
+} from './VertexPiece'
 
 // Interaction bundles everything the placement overlay needs. Omit to render
 // a purely visual board (as during other phases or for spectators).
@@ -241,6 +246,7 @@ function BoardSvg({
 		board.naturalHeightUnits * s
 	)
 	const vertexPositions = computeVertexPositions(layout)
+	const ghostCorners = new Set(state.players.flatMap((p) => p.ghosts ?? []))
 	const portVisuals = computePortLayout(layout, state.ports ?? [])
 	const offsetX = (boxW - layout.width) / 2
 	const offsetY = (boxH - layout.height) / 2
@@ -300,10 +306,19 @@ function BoardSvg({
 				{Object.entries(state.vertices).map(([vid, vs]) => {
 					if (!vs || !vs.occupied) return null
 					const pos = vertexPositions[vid as Vertex]
+					const shared = ghostCorners.has(vid as Vertex)
 					return (
 						<VertexPiece
 							key={vid}
-							cx={pos.x}
+							cx={
+								shared
+									? sharedCornerXs(
+											pos.x,
+											layout.s,
+											vs.building
+										).buildingX
+									: pos.x
+							}
 							cy={pos.y}
 							size={layout.s}
 							building={vs.building}
@@ -311,6 +326,31 @@ function BoardSvg({
 						/>
 					)
 				})}
+				{state.players.flatMap((p, i) =>
+					(p.ghosts ?? []).map((v) => {
+						const pos = vertexPositions[v]
+						if (!pos) return null
+						const vs = vertexStateOf(state, v)
+						return (
+							<VertexPiece
+								key={`ghost-${i}-${v}`}
+								cx={
+									vs.occupied
+										? sharedCornerXs(
+												pos.x,
+												layout.s,
+												vs.building
+											).ghostX
+										: pos.x
+								}
+								cy={pos.y}
+								size={layout.s}
+								building="ghost"
+								color={seatColor(state, i)}
+							/>
+						)
+					})
+				)}
 				{setupOrdinals &&
 					Object.entries(setupOrdinals).map(([vid, ordinal]) => {
 						if (!ordinal) return null

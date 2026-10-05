@@ -2,6 +2,30 @@ import { Circle, G, Polygon, Text as SvgText } from 'react-native-svg'
 import { pieceStroke, tokenFace, tokenTextCool } from './palette'
 import type { VertexBuilding } from './board'
 
+// A haunt ghost isn't a vertex building, but it draws like one.
+export type PieceKind = VertexBuilding | 'ghost'
+
+// Footprint width as a fraction of `size`, for laying pieces side by side.
+const PIECE_WIDTH: Record<PieceKind, number> = {
+	settlement: 0.36,
+	ghost: 0.36,
+	city: 0.62,
+	super_city: 0.72,
+}
+
+// Horizontal centers for a building and a ghost sharing one corner: the pair
+// is centered on the corner with a small gap between them.
+export function sharedCornerXs(
+	cx: number,
+	size: number,
+	building: VertexBuilding
+): { buildingX: number; ghostX: number } {
+	const gap = size * 0.04
+	const bw = PIECE_WIDTH[building] * size
+	const gw = PIECE_WIDTH.ghost * size
+	return { buildingX: cx - (gw + gap) / 2, ghostX: cx + (bw + gap) / 2 }
+}
+
 export function VertexPiece({
 	cx,
 	cy,
@@ -12,7 +36,7 @@ export function VertexPiece({
 	cx: number
 	cy: number
 	size: number
-	building: VertexBuilding
+	building: PieceKind
 	color: string
 }) {
 	const stroke = Math.max(1, size * 0.04)

@@ -660,7 +660,7 @@ function deriveAdjacentEdges(
 
 // --- Game state shapes (duplicated from lib/catan/types) -------------------
 
-type VertexBuilding = 'settlement' | 'city' | 'super_city' | 'ghost'
+type VertexBuilding = 'settlement' | 'city' | 'super_city'
 
 type VertexState =
 	| { occupied: false }
@@ -710,6 +710,9 @@ type PlayerState = {
 	lastMagicRound?: number
 	investments?: Partial<Record<Resource, number>>
 	hauntSpots?: Vertex[]
+	// Spawned haunt ghosts — off `vertices` so they can share a corner and
+	// never block anything. Read through producersAt.
+	ghosts?: Vertex[]
 	// Admin testing flag, set by hand in the row. Lets this seat name its own
 	// dice total on `roll` (see handleRoll).
 	dev?: boolean
@@ -1769,6 +1772,33 @@ function vertexStateOf(state: GameState, v: Vertex): VertexState {
 	return state.vertices[v] ?? { occupied: false }
 }
 
+// Mirrors lib/catan/types.producersAt: the real building plus any haunt
+// ghosts on a corner.
+function producersAt(
+	state: Pick<GameState, 'vertices' | 'players'>,
+	vertex: Vertex
+): { player: number; base: number }[] {
+	const out: { player: number; base: number }[] = []
+	const vs = state.vertices[vertex]
+	if (vs?.occupied) {
+		out.push({
+			player: vs.player,
+			base:
+				vs.building === 'super_city'
+					? 3
+					: vs.building === 'city'
+						? 2
+						: 1,
+		})
+	}
+	state.players.forEach((p, i) => {
+		for (const g of p.ghosts ?? []) {
+			if (g === vertex) out.push({ player: i, base: 1 })
+		}
+	})
+	return out
+}
+
 function edgeStateOf(state: GameState, e: Edge): EdgeState {
 	return state.edges[e] ?? { occupied: false }
 }
@@ -1817,9 +1847,9 @@ function nomadProductionAt(
 ): number {
 	let n = 0
 	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-		const vs = vertexStateOf(state, v)
-		if (!vs.occupied || vs.player !== playerIdx) continue
-		n += vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
+		for (const pr of producersAt(state, v)) {
+			if (pr.player === playerIdx) n += pr.base
+		}
 	}
 	return n
 }
@@ -2004,10 +2034,9 @@ function hexPowerForPlayer(
 ): number {
 	let power = 0
 	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-		const vs = vertexStateOf(state, v)
-		if (!vs.occupied || vs.player !== playerIdx) continue
-		power +=
-			vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
+		for (const pr of producersAt(state, v)) {
+			if (pr.player === playerIdx) power += pr.base
+		}
 	}
 	return power
 }
@@ -2041,9 +2070,12 @@ function canPlaceUnderPower(
 
 function touchedResources(state: GameState, playerIdx: number): Set<Resource> {
 	const out = new Set<Resource>()
-	for (const [vid, vs] of Object.entries(state.vertices)) {
-		if (!vs?.occupied || vs.player !== playerIdx) continue
-		for (const h of boardFor(state.variant).adjacentHexes[vid as Vertex]) {
+	const corners = Object.entries(state.vertices)
+		.filter(([, vs]) => vs?.occupied && vs.player === playerIdx)
+		.map(([vid]) => vid as Vertex)
+		.concat(state.players[playerIdx]?.ghosts ?? [])
+	for (const vid of corners) {
+		for (const h of boardFor(state.variant).adjacentHexes[vid]) {
 			const hd = state.hexes[h]
 			if (hd.resource !== null) out.add(hd.resource)
 		}
@@ -2096,8 +2128,7 @@ function isValidSettlementVertex(
 ): boolean {
 	if (vertexStateOf(state, v).occupied) return false
 	for (const n of boardFor(state.variant).neighborVertices[v]) {
-		const nvs = vertexStateOf(state, n)
-		if (nvs.occupied && !isGhost(nvs)) return false
+		if (vertexStateOf(state, n).occupied) return false
 	}
 	if (playerIdx !== undefined) {
 		if (!canPlaceUnderPower(state, playerIdx, v)) return false
@@ -2227,23 +2258,17 @@ function distributeResources(
 		const hd = state.hexes[hex]
 		if (hd.resource === null) continue
 		if (hd.number !== total) continue
-		for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-			const vs = vertexStateOf(state, v)
-			if (!vs.occupied) continue
-			const base =
-				vs.building === 'super_city'
-					? 3
-					: vs.building === 'city'
-						? 2
-						: 1
+		for (const { player, base } of boardFor(state.variant).adjacentVertices[
+			hex
+		].flatMap((v) => producersAt(state, v))) {
 			const mult = underdogMultiplierFor(
-				state.players[vs.player]?.bonus,
+				state.players[player]?.bonus,
 				hd.number
 			)
 			const gain = base * mult
 			const hand =
-				result[vs.player] ??
-				(result[vs.player] = {
+				result[player] ??
+				(result[player] = {
 					brick: 0,
 					wood: 0,
 					sheep: 0,
@@ -2277,18 +2302,16 @@ function gainsFromHex(
 	const hd = state.hexes[hex]
 	if (!hd || hd.resource === null) return perPlayer
 	if (hd.number !== total) return perPlayer
-	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-		const vs = vertexStateOf(state, v)
-		if (!vs.occupied) continue
-		const base =
-			vs.building === 'super_city' ? 3 : vs.building === 'city' ? 2 : 1
+	for (const { player, base } of boardFor(state.variant).adjacentVertices[
+		hex
+	].flatMap((v) => producersAt(state, v))) {
 		const mult = underdogMultiplierFor(
-			state.players[vs.player]?.bonus,
+			state.players[player]?.bonus,
 			hd.number
 		)
 		const hand =
-			perPlayer[vs.player] ??
-			(perPlayer[vs.player] = {
+			perPlayer[player] ??
+			(perPlayer[player] = {
 				brick: 0,
 				wood: 0,
 				sheep: 0,
@@ -2460,8 +2483,7 @@ function connectsVia(
 	fencesChain: boolean
 ): boolean {
 	const vs = vertexStateOf(state, vertex)
-	// A ghost (haunt bonus) is transparent — never blocks road chaining.
-	if (vs.occupied && !isGhost(vs)) return vs.player === playerIdx
+	if (vs.occupied) return vs.player === playerIdx
 	for (const e of boardFor(state.variant).adjacentEdges[vertex]) {
 		if (e === edge) continue
 		const es = edgeStateOf(state, e)
@@ -2520,8 +2542,7 @@ function isValidBuildSettlementVertex(
 	if (!canBuildMoreSettlements(state, playerIdx)) return false
 	if (vertexStateOf(state, vertex).occupied) return false
 	for (const n of boardFor(state.variant).neighborVertices[vertex]) {
-		const nvs = vertexStateOf(state, n)
-		if (nvs.occupied && !isGhost(nvs)) return false
+		if (vertexStateOf(state, n).occupied) return false
 	}
 	if (!canPlaceUnderPower(state, playerIdx, vertex)) return false
 	if (!settlementKeepsYouthOK(state, playerIdx, vertex)) return false
@@ -2642,11 +2663,11 @@ function isValidDiscardSelection(
 function stealCandidates(state: GameState, hex: Hex, meIdx: number): number[] {
 	const set = new Set<number>()
 	for (const v of boardFor(state.variant).adjacentVertices[hex]) {
-		const vs = vertexStateOf(state, v)
-		if (!vs.occupied) continue
-		if (vs.player === meIdx) continue
-		if (handSize(state.players[vs.player].resources) <= 0) continue
-		set.add(vs.player)
+		for (const { player } of producersAt(state, v)) {
+			if (player === meIdx) continue
+			if (handSize(state.players[player].resources) <= 0) continue
+			set.add(player)
+		}
 	}
 	return Array.from(set)
 }
@@ -2726,7 +2747,7 @@ function candidateEdges(
 			}
 		)
 		if (!ownsVertex && !hasAdjOwnPiece) continue
-		if (vs.occupied && vs.player !== meIdx && !isGhost(vs)) continue
+		if (vs.occupied && vs.player !== meIdx) continue
 		for (const e of boardFor(state.variant).adjacentEdges[v]) {
 			if (seen.has(e)) continue
 			seen.add(e)
@@ -2809,8 +2830,7 @@ function longestRoadWalk(
 	used: Set<Edge>
 ): number {
 	const vs = vertexStateOf(state, head)
-	// A ghost (haunt bonus) is transparent — never blocks pass-through.
-	if (vs.occupied && vs.player !== playerIdx && !isGhost(vs)) return used.size
+	if (vs.occupied && vs.player !== playerIdx) return used.size
 	let best = used.size
 	for (const e of boardFor(state.variant).adjacentEdges[head]) {
 		if (used.has(e)) continue
@@ -2866,13 +2886,7 @@ function totalVP(state: GameState, playerIdx: number): number {
 	for (const v of Object.values(state.vertices)) {
 		if (v?.occupied && v.player === playerIdx) {
 			vp +=
-				v.building === 'ghost'
-					? 0
-					: v.building === 'super_city'
-						? 3
-						: v.building === 'city'
-							? 2
-							: 1
+				v.building === 'super_city' ? 3 : v.building === 'city' ? 2 : 1
 		}
 	}
 	if (state.largestArmy === playerIdx) vp += 2
@@ -3417,66 +3431,34 @@ function magicDiscardCount(
 	return Math.abs(target - actualTotal) + plus
 }
 
-// Haunt.
+// Haunt. Mirrors lib/catan/bonus.resolveHauntGhosts: a spot spawns its ghost
+// once the spot itself or any neighbor holds a building (anyone's).
 const HAUNT_SPOT_COUNT = 2
-
-function isGhost(vs: VertexState): boolean {
-	return vs.occupied && vs.building === 'ghost'
-}
 
 function resolveHauntGhosts(state: GameState): {
 	state: GameState
 	spawned: { player: number; vertex: Vertex }[]
 } {
 	const board = boardFor(state.variant)
-	let vertices = state.vertices
-	let players = state.players
 	const spawned: { player: number; vertex: Vertex }[] = []
-
-	let changed = true
-	while (changed) {
-		changed = false
-		for (let idx = 0; idx < players.length; idx++) {
-			const p = players[idx]
-			if (p.bonus !== 'haunt') continue
-			const spots = p.hauntSpots
-			if (!spots || spots.length === 0) continue
-			const remaining: Vertex[] = []
-			for (const spot of spots) {
-				const vs = vertices[spot]
-				if (vs?.occupied) continue
-				const blocked = board.neighborVertices[spot].some(
-					(n) => !!vertices[n]?.occupied
-				)
-				if (!blocked) {
-					remaining.push(spot)
-					continue
-				}
-				vertices = {
-					...vertices,
-					[spot]: {
-						occupied: true,
-						player: idx,
-						building: 'ghost',
-						placedTurn: state.round,
-					},
-				}
+	const occupied = (v: Vertex) => !!state.vertices[v]?.occupied
+	const players = state.players.map((p, idx) => {
+		if (p.bonus !== 'haunt' || !p.hauntSpots?.length) return p
+		const remaining: Vertex[] = []
+		const ghosts = [...(p.ghosts ?? [])]
+		for (const spot of p.hauntSpots) {
+			if (occupied(spot) || board.neighborVertices[spot].some(occupied)) {
+				ghosts.push(spot)
 				spawned.push({ player: idx, vertex: spot })
-				changed = true
-			}
-			if (remaining.length !== spots.length) {
-				players = players.map((pp, i) =>
-					i === idx ? { ...pp, hauntSpots: remaining } : pp
-				)
-				changed = true
+			} else {
+				remaining.push(spot)
 			}
 		}
-	}
-
-	if (vertices === state.vertices && players === state.players) {
-		return { state, spawned }
-	}
-	return { state: { ...state, vertices, players }, spawned }
+		if (remaining.length === p.hauntSpots.length) return p
+		return { ...p, hauntSpots: remaining, ghosts }
+	})
+	if (spawned.length === 0) return { state, spawned }
+	return { state: { ...state, players }, spawned }
 }
 
 function vpCardCountsByPlayer(state: GameState): Record<number, number> {
@@ -3794,8 +3776,7 @@ function playerPortKinds(state: GameState, playerIdx: number): Set<PortKind> {
 	for (const p of ports) {
 		const [a, b] = edgeEndpoints(p.edge)
 		for (const v of [a, b]) {
-			const vs = vertexStateOf(state, v)
-			if (vs.occupied && vs.player === playerIdx) {
+			if (producersAt(state, v).some((pr) => pr.player === playerIdx)) {
 				out.add(p.kind)
 				break
 			}
@@ -7533,8 +7514,8 @@ function applyBuildSettlement(
 		},
 		players: applyCost(state.players, meIdx, cost),
 	}
-	// This settlement (or its neighbors) can make a haunt player's secret spot
-	// unbuildable, which spawns their ghost there.
+	// A settlement on or next to a haunt player's secret spot spawns their
+	// ghost there.
 	const haunt = resolveHauntGhosts(next)
 	next = haunt.state
 	for (const s of haunt.spawned) {
