@@ -382,6 +382,7 @@ export type Database = {
       games: {
         Row: {
           colors: string[]
+          completed_at: string | null
           config: Json
           created_at: string
           deadline_at: string | null
@@ -398,6 +399,7 @@ export type Database = {
         }
         Insert: {
           colors?: string[]
+          completed_at?: string | null
           config: Json
           created_at?: string
           deadline_at?: string | null
@@ -414,6 +416,7 @@ export type Database = {
         }
         Update: {
           colors?: string[]
+          completed_at?: string | null
           config?: Json
           created_at?: string
           deadline_at?: string | null

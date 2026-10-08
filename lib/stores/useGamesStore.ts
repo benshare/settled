@@ -576,7 +576,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			.select('*')
 			.in('status', ['complete', 'canceled'])
 			.contains('participants', [userId])
-			.order('created_at', { ascending: false })
+			.order('completed_at', { ascending: false, nullsFirst: false })
 
 		const [requestsRes, activeRes, completeRes] = await Promise.all([
 			requestsPromise,

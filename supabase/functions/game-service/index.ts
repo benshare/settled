@@ -3616,9 +3616,11 @@ async function commitActionWrite(
 	}
 	if (opts?.canceled) {
 		gameUpdate.status = 'canceled'
+		gameUpdate.completed_at = new Date().toISOString()
 	} else if (winner !== null) {
 		gameUpdate.status = 'complete'
 		gameUpdate.winner = winner
+		gameUpdate.completed_at = new Date().toISOString()
 	}
 	const { error: gameErr } = await admin
 		.from('games')
