@@ -50,6 +50,7 @@ const MANIFEST_ONLY_CONFIG_KEYS = ['extra']
 // 1. The latest finished production iOS build = what TestFlight/App Store users
 //    are actually running, and the binary an OTA update would land on.
 let build
+console.log('Finding the latest production iOS build…')
 try {
 	const builds = parseArray(
 		eas(
@@ -66,7 +67,10 @@ try {
 		)
 	)
 	build = builds.find(
-		(b) => b.status === 'FINISHED' && b.channel === 'production'
+		// eas-cli 24 moved `channel` to `updateChannel.name`; read either.
+		(b) =>
+			b.status === 'FINISHED' &&
+			(b.updateChannel?.name ?? b.channel) === 'production'
 	)
 } catch (err) {
 	die(`Could not list builds to guard the publish: ${err.message}`)
@@ -87,6 +91,9 @@ if (!build) {
 	//    `production` environment the publish itself uses (env vars feed the
 	//    resolved config, and thus the fingerprint).
 	let cmp
+	console.log(
+		`Comparing native fingerprint against build ${build.appVersion} (${build.id.slice(0, 8)}) — this takes a minute or so…`
+	)
 	try {
 		cmp = parseJson(
 			eas(
