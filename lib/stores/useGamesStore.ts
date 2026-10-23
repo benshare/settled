@@ -429,7 +429,10 @@ type GamesStore = {
 	// timeout sweep and any client still on an older bundle.
 	batch: (
 		gameId: string,
-		actions: readonly LocalAction[]
+		actions: readonly LocalAction[],
+		// Lets the server drop a resend of a batch that already landed, and
+		// comes back on the seat so the client can see that it has.
+		batchId: string
 	) => Promise<BatchResult>
 
 	// Submit (`on`) or withdraw (`!on`) a standing forfeit / end-game vote.
@@ -849,9 +852,9 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async batch(gameId, actions) {
+	async batch(gameId, actions, batchId) {
 		const res = await callGameService(
-			{ action: 'batch', game_id: gameId, actions },
+			{ action: 'batch', game_id: gameId, actions, batch_id: batchId },
 			"Couldn't send your moves"
 		)
 		return { error: res.error, retriable: res.retriable }

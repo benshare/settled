@@ -23,6 +23,10 @@ It holds the `game_states` row for every game the viewer is seated at, so that (
 - **A resync reads `updated_at` before it reads rows.** Board rows are large and most foregrounds find nothing new, so a stamp query decides what to pull. A game that was never loaded skips the stamp pass — it would only add a round trip in front of a fetch we already need. **This depends on a DB trigger, not on any writer:** nothing in `game-service` names the column, so `game_states_set_updated_at` (20260825120000) is the only thing that moves it. Drop that trigger and the stamp pass silently stops finding anything — every game reads as unchanged forever, and a client that already holds a board can only correct it through realtime, which does not replay what it missed while backgrounded. It shipped that way once.
 - **Games not in `activeGames` come in through `watch`/`unwatch`** (refcounted, called by `GameProvider`) — a spectated or finished game, plus the freshness check when opening any game.
 
+### `useLocalDraftStore` is device state, not server state
+
+The local action queue and the placement draft, per game, written through to `authStorage` (SecureStore / localStorage) under a user-scoped key. It is registered for auto-load only to learn the user id and to clear on sign out — `loadForUser` loads nothing, and each game is read back lazily when its screen attaches (`hydrate`), which waits for the user id — a cold-start deep link mounts the game screen before the registry runs. An action taken before the read returns wins over the disk. Empty drafts delete their key. See `.claude/specs/queue-flush-and-persist.md`.
+
 ### Adding an auto-loaded store
 
 1. Create `useMyStore.ts` with a zustand store, a `loadForUser(userId)` action and a `clear()` action.

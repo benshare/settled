@@ -7,6 +7,7 @@ export type AutoLoadedStore = {
 import { friendsStoreRegistration } from './useFriendsStore'
 import { gameStatesStoreRegistration } from './useGameStatesStore'
 import { gamesStoreRegistration } from './useGamesStore'
+import { localDraftStoreRegistration } from './useLocalDraftStore'
 import { profileStoreRegistration } from './useProfileStore'
 import { statsStoreRegistration } from './useStatsStore'
 
@@ -21,6 +22,7 @@ export const autoLoadedStores: AutoLoadedStore[] = [
 	// the games store's load lands.
 	gameStatesStoreRegistration,
 	statsStoreRegistration,
+	localDraftStoreRegistration,
 ]
 
 export async function loadAllUserStores(userId: string): Promise<void> {
