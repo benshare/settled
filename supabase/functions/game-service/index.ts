@@ -295,6 +295,9 @@ type BatchBody = {
 	action: 'batch'
 	game_id: string
 	actions: unknown
+	// Optional so a client predating it keeps working; without one a resent
+	// batch is applied again.
+	batch_id?: unknown
 }
 // The one action with no user behind it and no game_id: the cron sweep. See
 // handleRunTimeouts.
@@ -699,6 +702,8 @@ type PlayerState = {
 	// card buy). Used by the `age` curse. Reset on end_turn for the outgoing
 	// active player. Sparse — only written for cursed players.
 	cardsSpentThisTurn?: number
+	// The last queued batch this seat committed (see lib/catan/types.ts).
+	lastBatchId?: string
 	// Bonus-specific sparse fields (see lib/catan/types.ts).
 	specialistResource?: Resource
 	rerolledThisTurn?: boolean
@@ -8223,17 +8228,27 @@ async function commitLocalActions(
 	admin: SupabaseClient,
 	me: string,
 	gameId: string,
-	actions: LocalAction[]
+	actions: LocalAction[],
+	batchId?: string
 ): Promise<Response> {
 	const loaded = await loadGame(admin, gameId)
 	if (!loaded.ok) return loaded.response
 	const { game, state } = loaded
-	if (game.status !== 'active') return err(400, 'not active')
 	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
+	// A resend of a batch that already landed — its response was lost, so the
+	// client retried. Ahead of the status check because a winning batch has
+	// already ended the game.
+	if (batchId && state.players[meIdx]?.lastBatchId === batchId)
+		return json({ ok: true })
+	if (game.status !== 'active') return err(400, 'not active')
 
 	const at = new Date().toISOString()
-	const folded = applyLocalActions(state, meIdx, actions, at)
+	const applied = applyLocalActions(state, meIdx, actions, at)
+	const folded =
+		batchId && !('error' in applied)
+			? { ...applied, state: stampBatchId(applied.state, meIdx, batchId) }
+			: applied
 	if ('error' in folded) {
 		// Name which one failed: a batch is the player's whole turn, and "invalid
 		// settlement" alone doesn't say which of three builds it means.
@@ -8263,9 +8278,22 @@ async function commitLocalActions(
 	return json({ ok: true })
 }
 
+function stampBatchId(
+	state: GameState,
+	meIdx: number,
+	batchId: string
+): GameState {
+	return {
+		...state,
+		players: state.players.map((p, i) =>
+			i === meIdx ? { ...p, lastBatchId: batchId } : p
+		),
+	}
+}
+
 // A turn's worth of queued actions, applied in order and written once. Atomic
-// by construction — a rejection writes nothing, which is what makes the
-// client's retry safe to send byte-identical.
+// by construction — a rejection writes nothing — and idempotent on `batch_id`,
+// which together make the client's retry safe to send byte-identical.
 async function handleBatch(
 	admin: SupabaseClient,
 	me: string,
@@ -8282,7 +8310,11 @@ async function handleBatch(
 		if (!parsed) return err(400, `malformed action at ${i + 1}`)
 		actions.push(parsed)
 	}
-	return commitLocalActions(admin, me, body.game_id, actions)
+	const batchId =
+		typeof body.batch_id === 'string' && body.batch_id
+			? body.batch_id
+			: undefined
+	return commitLocalActions(admin, me, body.game_id, actions, batchId)
 }
 
 const MAX_BATCH_ACTIONS = 64

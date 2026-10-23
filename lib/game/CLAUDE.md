@@ -137,6 +137,12 @@ app/game/[id].tsx
   is spent. `serverState` is reachable only where the truth is needed — building
   the flush payload and rebasing. VP is recomputed here for the same reason:
   `useGame()`'s arrays come off the row.
+- **The queue and the placement draft come from `useLocalDraftStore`, not
+  provider state** — per game, persisted on the device. They attach only while
+  `game.id` and the `gameId` prop agree: across a tab switch one lags the other
+  by a render, and `serverState` is then one game's board joined to the other's
+  row. The placement draft is read through its anchor (`placementKey`), so a
+  draft from another turn simply reads as empty — no reset effect.
 - **`canUndo` is just `queue.length > 0`.** Undo pops the queue and the
   projection re-folds; nothing is sent, so there is no spinner and no failure
   mode, and it reaches back as far as the turn goes. The old phase test is gone
@@ -146,7 +152,8 @@ app/game/[id].tsx
 - **An undoable action never leaves the device when it is taken.** Tapping a
   build spot appends to the queue; every action that _isn't_ undoable is a
   barrier that flushes it first (`flushBeforeBarrier`, opening each such
-  handler). It also raises `submitting`, so the barrier's button spins while
+  handler). A flushed batch moves to `inFlight` — no longer undoable, since it
+  may have landed — until the row carries its id. It also raises `submitting`, so the barrier's button spins while
   the queue sends — callers don't raise it themselves. `honk` and `send_message` are deliberately not barriers — the same
   two the server treats as move-neutral. Only three confirm bars survive (move
   robber, steal, move forger token), because those three can't be taken back.

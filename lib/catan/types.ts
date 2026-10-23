@@ -405,6 +405,11 @@ export type PlayerState = {
 	// to 0 on end_turn for the outgoing active player. Sparse — only written
 	// for players actually affected.
 	cardsSpentThisTurn?: number
+	// Id of the last queued batch this seat committed. Transport metadata, not a
+	// rule: it rides the same write as the batch so the client can tell its own
+	// moves have reached the row, and makes a resent batch a no-op. See
+	// `.claude/specs/queue-flush-and-persist.md`.
+	lastBatchId?: string
 	// --- Bonus-specific fields (sparse; only set when the owning bonus is
 	// present on this player).
 	//

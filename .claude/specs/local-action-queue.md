@@ -33,7 +33,9 @@ the question. Every confirm this removes is one the undo arrow already answered.
 3. **Opponents see nothing until the flush.** A queued build is invisible to the
    table; the log shows the whole turn's worth at once when the batch lands.
    Accepted as what batching means.
-4. **An unflushed queue is disposable.** It lives in React state and nowhere
+4. **An unflushed queue is disposable.** _Superseded by
+   `queue-flush-and-persist.md`: the queue and placement draft are now
+   persisted on the device._ It lives in React state and nowhere
    else. Leaving the game screen, killing the app, or being skipped by the
    move-timeout sweep throws it away, exactly as the placement draft already
    behaves. No persistence, no auto-flush on a timer.

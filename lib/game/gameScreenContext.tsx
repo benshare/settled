@@ -59,6 +59,7 @@ import { visibleOfferFor } from '@/lib/catan/TradeBanner'
 import { isOfferRejectedByAll } from '@/lib/catan/trade'
 import {
 	gameSizeFor,
+	type GameState,
 	type PlayerState,
 	type ResourceHand as ResourceHandType,
 } from '@/lib/catan/types'
@@ -67,6 +68,11 @@ import {
 	useGamesStore,
 	type GameEvent,
 } from '@/lib/stores/useGamesStore'
+import {
+	EMPTY_DRAFT,
+	useLocalDraftStore,
+	type GameDraft,
+} from '@/lib/stores/useLocalDraftStore'
 import { parsePlayPrefs, useProfileStore } from '@/lib/stores/useProfileStore'
 import {
 	createContext,
@@ -204,15 +210,6 @@ function useGameScreenState(gameId: string) {
 	const setForfeit = useGamesStore((s) => s.setForfeit)
 	const setEndVote = useGamesStore((s) => s.setEndVote)
 
-	// The placement turn being drafted locally: a settlement, its road, and a
-	// second pair for the seat that places both back-to-back. Nothing is sent
-	// until the player confirms, which is what makes taking a piece back free.
-	// `pickLast` is that seat's nomination of which settlement counts as its
-	// second — null until they say, and Confirm stays disabled that whole time.
-	const [placementDraft, setPlacementDraft] = useState<PlacementDraftEntry[]>(
-		[]
-	)
-	const [pickLast, setPickLast] = useState<string | null>(null)
 	const [submitting, setSubmitting] = useState(false)
 	const [buildTool, setBuildTool] = useState<BoardToolChoice>(null)
 	const [tradePanelOpen, setTradePanelOpen] = useState(false)
@@ -297,17 +294,73 @@ function useGameScreenState(gameId: string) {
 	// on this device. The queue flushes as one `batch` at the next action that
 	// isn't undoable. See `.claude/specs/local-action-queue.md`.
 	//
-	// Never persisted: leaving the screen or killing the app drops it, the same
-	// way the placement draft already behaves.
-	const [queue, setQueue] = useState<LocalAction[]>([])
+	// The queue and the placement draft live in `useLocalDraftStore`, per game
+	// and persisted on the device, so they survive a tab switch, leaving the
+	// screen and the app being killed. See
+	// `.claude/specs/queue-flush-and-persist.md`.
+	//
+	// Attached only while `game.id` and the `gameId` prop agree: on a tab
+	// switch one lags the other by a render, and `serverState` is then one
+	// game's board joined to the other's row. Folding — or worse, persisting
+	// an anchor — across that pair would cut a queue that is still good.
+	const draftGameId = game && game.id === gameId ? gameId : null
+	const storedDraft = useLocalDraftStore((s) =>
+		draftGameId ? s.byGame[draftGameId] : undefined
+	)
+	const draft = storedDraft ?? EMPTY_DRAFT
+	const updateStoredDraft = useLocalDraftStore((s) => s.update)
+	const hydrateDraft = useLocalDraftStore((s) => s.hydrate)
+	const draftUserId = useLocalDraftStore((s) => s.userId)
+	const updateDraft = useCallback(
+		(fn: (d: GameDraft) => GameDraft) => {
+			if (draftGameId) updateStoredDraft(draftGameId, fn)
+		},
+		[draftGameId, updateStoredDraft]
+	)
+	useEffect(() => {
+		if (draftGameId) void hydrateDraft(draftGameId)
+	}, [draftGameId, draftUserId, hydrateDraft])
+
+	const queue = draft.queue
 	const [flushState, setFlushState] = useState<FlushState>({ kind: 'idle' })
 
+	// Sent batches the row doesn't show yet. The seat's `lastBatchId` names the
+	// newest one the server has written, and batches land in order, so it
+	// covers everything up to it. Until then they are folded ahead of the
+	// queue — whichever of the response and the realtime row arrives first,
+	// the board neither drops the moves nor applies them twice.
+	const lastBatchId =
+		meIdx >= 0 ? serverState?.players[meIdx]?.lastBatchId : undefined
+	const reflectedUpTo = draft.inFlight.findIndex((b) => b.id === lastBatchId)
+	const unreflected = draft.inFlight.slice(reflectedUpTo + 1)
+	const sending = useMemo(
+		() => unreflected.flatMap((b) => b.actions),
+		// The batch ids are the identity; a fresh array every render would
+		// re-fold the projection on every render.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[unreflected.map((b) => b.id).join()]
+	)
+	useEffect(() => {
+		if (reflectedUpTo < 0) return
+		updateDraft((d) => ({
+			...d,
+			inFlight: d.inFlight.slice(
+				d.inFlight.findIndex((b) => b.id === lastBatchId) + 1
+			),
+		}))
+		// A flush that gave up on the network can still have landed.
+		if (unreflected.every((b) => b.acked))
+			setFlushState((f) => (f.kind === 'retrying' ? { kind: 'idle' } : f))
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [reflectedUpTo, lastBatchId])
+
+	const folded = useMemo(() => [...sending, ...queue], [sending, queue])
 	const projection = useMemo(
 		() =>
 			serverState
-				? projectQueue(serverState, meIdx, queue)
+				? projectQueue(serverState, meIdx, folded)
 				: { state: undefined, valid: 0 },
-		[serverState, meIdx, queue]
+		[serverState, meIdx, folded]
 	)
 	// **The projection is the game state.** Shadowing the name is deliberate:
 	// every reader in this file and every consumer of the context picks it up
@@ -320,16 +373,61 @@ function useGameScreenState(gameId: string) {
 	// The server row moves under a pending queue (an opponent acting in the
 	// parallel `post_placement` phase, a resync after backgrounding). Anything
 	// that no longer applies is cut, newest-first, rather than the whole queue
-	// being thrown away.
+	// being thrown away. Never while a sent batch is unreflected: the server
+	// has the final word on that one, and it would answer for the queue too.
 	useEffect(() => {
+		if (sending.length > 0) return
 		if (projection.valid < queue.length) {
-			setQueue((q) => q.slice(0, projection.valid))
+			updateDraft((d) => ({
+				...d,
+				queue: d.queue.slice(0, projection.valid),
+			}))
 			notify(
 				'Some moves were undone',
 				'The board changed before they were sent.'
 			)
 		}
-	}, [projection.valid, queue.length])
+	}, [projection.valid, queue.length, sending.length, updateDraft])
+
+	// A draft reopened against a row that has moved on — the turn passed (a
+	// timeout skip) while the app was closed or another game's tab was open —
+	// is dropped rather than folded: a bank trade from a turn that is over
+	// would still apply cleanly to the next one. Checked once per attach; while
+	// attached, the anchor follows the row and the rebase above takes over.
+	const queueAnchor = serverState ? queueAnchorOf(serverState) : null
+	const attachedRef = useRef<string | null>(null)
+	useEffect(() => {
+		if (!draftGameId || !storedDraft || !queueAnchor) return
+		if (attachedRef.current !== draftGameId) {
+			attachedRef.current = draftGameId
+			const pending =
+				storedDraft.queue.length > 0 || unreflected.length > 0
+			// A reflected batch may itself have moved the phase, so the
+			// anchor can't be judged — the fold decides instead.
+			const stale =
+				pending &&
+				reflectedUpTo < 0 &&
+				storedDraft.queueAnchor !== queueAnchor
+			if (stale) {
+				updateDraft((d) => ({
+					...d,
+					queue: [],
+					inFlight: [],
+					queueAnchor,
+				}))
+				notify(
+					'Unsent moves discarded',
+					'The game moved on before they were sent.'
+				)
+				return
+			}
+		}
+		const pending =
+			storedDraft.queue.length > 0 || storedDraft.inFlight.length > 0
+		if (pending && storedDraft.queueAnchor !== queueAnchor)
+			updateDraft((d) => ({ ...d, queueAnchor }))
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [draftGameId, storedDraft === undefined, queueAnchor])
 
 	// VP is recomputed from the projection rather than taken from `useGame()`,
 	// whose arrays are derived from the server row — a queued city has to move
@@ -388,15 +486,40 @@ function useGameScreenState(gameId: string) {
 	const isMySpecialBuild =
 		sbActor !== null && sbActor === meIdx && game?.status === 'active'
 
-	// Reset the draft when the turn or round changes under us.
+	// The placement turn being drafted locally: a settlement, its road, and a
+	// second pair for the seat that places both back-to-back. Nothing is sent
+	// until the player confirms, which is what makes taking a piece back free.
+	// `pickLast` is that seat's nomination of which settlement counts as its
+	// second — null until they say, and Confirm stays disabled that whole time.
+	// A draft made under another turn or round reads as empty, so a stale one
+	// (restored from the device, or left by a turn that moved on) is ignored
+	// and overwritten by the next tap.
 	const placementKey =
 		gameState?.phase.kind === 'initial_placement'
 			? `${gameState?.currentTurn}-${gameState.phase.round}-${gameState.phase.step}`
 			: null
-	useEffect(() => {
-		setPickLast(null)
-		setPlacementDraft([])
-	}, [placementKey])
+	const placementCurrent =
+		placementKey !== null && draft.placementAnchor === placementKey
+	const placementDraft: PlacementDraftEntry[] = placementCurrent
+		? draft.placement
+		: []
+	const pickLast = placementCurrent ? draft.pickLast : null
+	function setPlacementDraft(
+		fn: (entries: PlacementDraftEntry[]) => PlacementDraftEntry[]
+	) {
+		updateDraft((d) => {
+			const current = d.placementAnchor === placementKey
+			return {
+				...d,
+				placement: fn(current ? d.placement : []),
+				pickLast: current ? d.pickLast : null,
+				placementAnchor: placementKey,
+			}
+		})
+	}
+	function setPickLast(vertex: string | null) {
+		updateDraft((d) => ({ ...d, pickLast: vertex }))
+	}
 
 	// How many settlement+road pairs this turn submits — two for the seat the
 	// snake order hands both of its turns to back-to-back.
@@ -1038,30 +1161,70 @@ function useGameScreenState(gameId: string) {
 			notify("Can't do that", res.error)
 			return false
 		}
-		setQueue((q) => [...q, action])
+		// The anchor is taken here, not left to the effect above, so a queue
+		// is never persisted carrying the anchor of an earlier turn.
+		updateDraft((d) => ({ ...d, queue: [...d.queue, action], queueAnchor }))
 		return true
 	}
 
-	// Send the queue as one batch. Resolves only once it has landed or given
-	// up; the queue is never dropped either way.
+	// Send everything owed: first any batch the server never answered (under
+	// its own id, so a resend of one that did land is a no-op), then the queue
+	// as a new batch. Resolves only once both have landed or one has given up;
+	// the moves are never dropped either way. Reads the store rather than this
+	// render's `draft`, since it outlives the render that started it.
 	async function flushQueue(): Promise<{ error: string | null }> {
 		if (!game) return { error: null }
-		const actions = queue
-		if (actions.length === 0) return { error: null }
+		const gameId = game.id
+		const current = () =>
+			useLocalDraftStore.getState().byGame[gameId] ?? EMPTY_DRAFT
 		setFlushState({ kind: 'sending' })
-		for (let attempt = 0; ; attempt++) {
-			const res = await batch(game.id, actions)
-			if (!res.error) {
+		for (;;) {
+			let next = current().inFlight.find((b) => !b.acked)
+			if (!next) {
+				const actions = current().queue
+				if (actions.length === 0) break
+				const fresh = { id: newBatchId(), actions, acked: false }
 				// Slice by length rather than clearing: anything queued while
-				// this was in flight is still owed.
-				setQueue((q) => q.slice(actions.length))
-				setFlushState({ kind: 'idle' })
+				// this is in flight is still owed.
+				updateStoredDraft(gameId, (d) => ({
+					...d,
+					queue: d.queue.slice(actions.length),
+					inFlight: [...d.inFlight, fresh],
+				}))
+				next = fresh
+			}
+			const res = await sendBatch(gameId, next)
+			if (res.error) return res
+		}
+		setFlushState({ kind: 'idle' })
+		return { error: null }
+	}
+
+	async function sendBatch(
+		gameId: string,
+		sent: { id: string; actions: LocalAction[] }
+	): Promise<{ error: string | null }> {
+		for (let attempt = 0; ; attempt++) {
+			const res = await batch(gameId, sent.actions, sent.id)
+			if (!res.error) {
+				updateStoredDraft(gameId, (d) => ({
+					...d,
+					inFlight: d.inFlight.map((b) =>
+						b.id === sent.id ? { ...b, acked: true } : b
+					),
+				}))
 				return { error: null }
 			}
 			const message = res.error
 			if (!res.retriable) {
-				// The server considered these moves and refused them. Sending
-				// the same bytes again can only be refused again.
+				// The server considered these moves and refused them, so they
+				// certainly didn't land: they go back to the front of the
+				// queue, where undo can reach them.
+				updateStoredDraft(gameId, (d) => ({
+					...d,
+					inFlight: d.inFlight.filter((b) => b.id !== sent.id),
+					queue: [...sent.actions, ...d.queue],
+				}))
 				setFlushState({ kind: 'rejected', message })
 				return { error: message }
 			}
@@ -1100,7 +1263,7 @@ function useGameScreenState(gameId: string) {
 	// board re-renders. Nothing was sent, so there is no failure mode and no
 	// spinner — and no limit on how far back it goes within a turn.
 	function onUndo() {
-		setQueue((q) => q.slice(0, -1))
+		updateDraft((d) => ({ ...d, queue: d.queue.slice(0, -1) }))
 		// The board state a tool was armed against is gone.
 		selectBoardTool(null)
 	}
@@ -1151,8 +1314,12 @@ function useGameScreenState(gameId: string) {
 			notify('Placement failed', res.error)
 			return
 		}
-		setPickLast(null)
-		setPlacementDraft([])
+		updateDraft((d) => ({
+			...d,
+			placement: [],
+			pickLast: null,
+			placementAnchor: null,
+		}))
 	}
 
 	async function onRoll() {
@@ -1927,6 +2094,16 @@ function diffStolenResource(
 // Best-effort error notice. Alert.alert is a no-op on react-native-web;
 // fall back to window.alert there. Confirms live inline in the game view
 // (see BoardArea's ConfirmBar) rather than as a modal.
+// The server row's turn position, as far as a queue is concerned: a queue is
+// built within one seat's turn and phase, and outlives neither.
+function queueAnchorOf(state: GameState): string {
+	return `${state.round}:${state.currentTurn}:${state.phase.kind}`
+}
+
+function newBatchId(): string {
+	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 function notify(title: string, message?: string) {
 	if (Platform.OS === 'web') {
 		if (typeof window !== 'undefined') {
