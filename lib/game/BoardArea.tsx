@@ -33,6 +33,7 @@ import { gameSizeFor, type ResourceHand } from '@/lib/catan/types'
 import { StopWatchingButton, WatcherButton } from '@/lib/catan/Watchers'
 import { ConfirmModal } from '@/lib/modules/ConfirmModal'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
+import { BUBBLE_SIZE } from '@/lib/modules/MinimizableSheet'
 import { colors, font, radius, shadow, spacing, z } from '@/lib/theme'
 import { useMemo } from 'react'
 import {
@@ -96,8 +97,8 @@ export function BoardArea({
 		setPendingConfirm,
 		runPendingConfirm,
 		bonusSelectionData,
-		bonusPaneCollapsed,
-		setBonusPaneCollapsed,
+		promptMinimized,
+		togglePromptMinimized,
 		metroPending,
 		setMetroPending,
 		forgerMustMove,
@@ -149,15 +150,35 @@ export function BoardArea({
 		[inPlacement, game?.events]
 	)
 
+	const phase = gameState?.phase
+	const showScoutPick = phase?.kind === 'scout_pick' && phase.owner === meIdx
+	const showForgerPick =
+		phase?.kind === 'forger_pick' &&
+		phase.queue.length > 0 &&
+		phase.queue[0].idx === meIdx
+	const showMagicianPick =
+		phase?.kind === 'magician_pick' && phase.roller === meIdx && !!myPlayer
+	const showSpecialist = postPlacementData?.kind === 'specialist'
+	// A minimized picker's bubble takes the top slot of the classic top-right
+	// stack, pushing the utility buttons down one. The HUD's stack sits at the
+	// bottom and never meets it; the bonus pane hides the stack outright.
+	const stackOffset =
+		promptMinimized &&
+		floatingButtonsBottom == null &&
+		(showScoutPick || showForgerPick || showMagicianPick || showSpecialist)
+			? STACK_SLOT
+			: 0
+
 	if (!game) return null
 
 	return (
 		<>
 			{active &&
-				gameState &&
-				gameState.phase.kind === 'scout_pick' &&
-				gameState.phase.owner === meIdx && (
+				gameState?.phase.kind === 'scout_pick' &&
+				showScoutPick && (
 					<ScoutPickOverlay
+						minimized={promptMinimized}
+						onToggleMinimized={togglePromptMinimized}
 						cards={gameState.phase.cards}
 						submitting={submitting}
 						onConfirm={onConfirmScoutCard}
@@ -175,11 +196,11 @@ export function BoardArea({
 				)}
 
 			{active &&
-				gameState &&
-				gameState.phase.kind === 'forger_pick' &&
-				gameState.phase.queue.length > 0 &&
-				gameState.phase.queue[0].idx === meIdx && (
+				gameState?.phase.kind === 'forger_pick' &&
+				showForgerPick && (
 					<ForgerPickOverlay
+						minimized={promptMinimized}
+						onToggleMinimized={togglePromptMinimized}
 						hex={gameState.phase.queue[0].hex}
 						gainsByCandidate={
 							gameState.phase.queue[0].gainsByCandidate
@@ -200,11 +221,12 @@ export function BoardArea({
 				)}
 
 			{active &&
-				gameState &&
-				gameState.phase.kind === 'magician_pick' &&
-				gameState.phase.roller === meIdx &&
+				gameState?.phase.kind === 'magician_pick' &&
+				showMagicianPick &&
 				myPlayer && (
 					<MagicianPickOverlay
+						minimized={promptMinimized}
+						onToggleMinimized={togglePromptMinimized}
 						hand={myPlayer.resources}
 						actualTotal={
 							gameState.phase.roll.a + gameState.phase.roll.b
@@ -218,8 +240,10 @@ export function BoardArea({
 					/>
 				)}
 
-			{active && postPlacementData?.kind === 'specialist' && (
+			{active && showSpecialist && (
 				<SpecialistDeclareOverlay
+					minimized={promptMinimized}
+					onToggleMinimized={togglePromptMinimized}
 					waitingOn={postPlacementData.waitingOn}
 					submitting={submitting}
 					onConfirm={onSetSpecialistResource}
@@ -378,6 +402,7 @@ export function BoardArea({
 				<BoardLegend
 					devCardsEnabled={!!gameState.config.devCards}
 					anchorBottom={floatingButtonsBottom}
+					topOffset={stackOffset}
 				/>
 			)}
 			{gameState && (!inBonusSelection || isSpectator) && (
@@ -388,16 +413,26 @@ export function BoardArea({
 					meIdx={meIdx}
 					seatColors={seatColors}
 					anchorBottom={floatingButtonsBottom}
+					topOffset={stackOffset}
 				/>
 			)}
 			{gameState && (!inBonusSelection || isSpectator) && (
-				<ChatButton anchorBottom={floatingButtonsBottom} />
+				<ChatButton
+					anchorBottom={floatingButtonsBottom}
+					topOffset={stackOffset}
+				/>
 			)}
 			{gameState && (!inBonusSelection || isSpectator) && (
-				<WatcherButton anchorBottom={floatingButtonsBottom} />
+				<WatcherButton
+					anchorBottom={floatingButtonsBottom}
+					topOffset={stackOffset}
+				/>
 			)}
 			{gameState && (!inBonusSelection || isSpectator) && (
-				<StopWatchingButton anchorBottom={floatingButtonsBottom} />
+				<StopWatchingButton
+					anchorBottom={floatingButtonsBottom}
+					topOffset={stackOffset}
+				/>
 			)}
 			<ConfirmModal
 				visible={devBuyConfirmOpen}
@@ -416,16 +451,14 @@ export function BoardArea({
 				/>
 			)}
 			{bonusSelectionData && !isSpectator && (
-				<View style={styles.bonusPaneFloat}>
+				<View style={styles.bonusPaneFloat} pointerEvents="box-none">
 					<BonusSelection
 						hand={bonusSelectionData.myHand}
 						seatColors={seatColors}
 						waitingOn={bonusSelectionData.waitingOn}
 						submitting={submitting}
-						collapsed={bonusPaneCollapsed}
-						onToggleCollapsed={() =>
-							setBonusPaneCollapsed((prev) => !prev)
-						}
+						minimized={promptMinimized}
+						onToggleMinimized={togglePromptMinimized}
 						onPick={onPickBonus}
 						playerOrder={game.player_order}
 						meIdx={meIdx}
@@ -481,6 +514,9 @@ function ConfirmBar({
 		</View>
 	)
 }
+
+// The utility stack's pitch: a 32px button plus its gap, same as the bubble.
+const STACK_SLOT = BUBBLE_SIZE + spacing.xs
 
 const styles = StyleSheet.create({
 	loadingFill: {

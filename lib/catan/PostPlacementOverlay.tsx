@@ -25,10 +25,14 @@ export function SpecialistDeclareOverlay({
 	waitingOn,
 	submitting,
 	onConfirm,
+	minimized,
+	onToggleMinimized,
 }: {
 	waitingOn: string[]
 	submitting: boolean
 	onConfirm: (resource: Resource) => void
+	minimized: boolean
+	onToggleMinimized: () => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
@@ -38,7 +42,9 @@ export function SpecialistDeclareOverlay({
 		<MinimizableModal
 			title="Declare your specialty"
 			dismissOnBackdropPress={false}
-			contentStyle={styles.sheet}
+			maxWidth={420}
+			minimized={minimized}
+			onToggleMinimized={onToggleMinimized}
 		>
 			<Text style={styles.subtitle}>
 				Pick the resource you'll specialize in. Any port trade that
@@ -195,9 +201,6 @@ export function HauntStatusBanner({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		sheet: {
-			maxWidth: 420,
-		},
 		subtitle: {
 			fontSize: font.sm,
 			color: colors.textSecondary,

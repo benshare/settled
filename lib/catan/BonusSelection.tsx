@@ -1,7 +1,7 @@
 // Bonus-selection pane. Rendered as a floating overlay on top of the board
 // while gameState.phase.kind === 'select_bonus', so the board seed stays
-// visible while the player chooses. Collapsible via `CollapsibleSheet`, the
-// same top-anchored behavior the board-dependent pickers get from
+// visible while the player chooses. Minimizes into a bubble via
+// `MinimizableSheet`, the same behavior the board-dependent pickers get from
 // `MinimizableModal` — in-tree rather than in a `Modal` so the pane stays
 // inside the board area.
 //
@@ -11,7 +11,7 @@
 // view without any client-side cleanup needed.
 
 import { Button } from '@/lib/modules/Button'
-import { CollapsibleSheet } from '@/lib/modules/CollapsibleSheet'
+import { MinimizableSheet } from '@/lib/modules/MinimizableSheet'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
@@ -41,8 +41,8 @@ export type BonusSelectionProps = {
 	hand: SelectBonusHand | undefined
 	waitingOn: string[] // usernames of players still picking
 	submitting: boolean
-	collapsed: boolean
-	onToggleCollapsed: () => void
+	minimized: boolean
+	onToggleMinimized: () => void
 	onPick: (bonus: BonusId, curse: CurseId) => void
 	playerOrder: string[]
 	meIdx: number
@@ -57,8 +57,8 @@ export function BonusSelection({
 	hand,
 	waitingOn,
 	submitting,
-	collapsed,
-	onToggleCollapsed,
+	minimized,
+	onToggleMinimized,
 	onPick,
 	playerOrder,
 	meIdx,
@@ -118,11 +118,11 @@ export function BonusSelection({
 		: 'Bonus selection'
 
 	return (
-		<CollapsibleSheet
+		<MinimizableSheet
 			fill
 			title={headerLabel}
-			collapsed={collapsed}
-			onToggleCollapsed={onToggleCollapsed}
+			minimized={minimized}
+			onToggleMinimized={onToggleMinimized}
 		>
 			<ScrollView
 				style={styles.scroll}
@@ -232,7 +232,7 @@ export function BonusSelection({
 					colors={colors}
 				/>
 			</ScrollView>
-		</CollapsibleSheet>
+		</MinimizableSheet>
 	)
 }
 

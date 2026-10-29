@@ -32,17 +32,22 @@ const COST_ENTRIES = [
 export function BoardLegend({
 	devCardsEnabled,
 	anchorBottom,
+	topOffset = 0,
 }: {
 	devCardsEnabled: boolean
 	// When set, the button/panel anchor this many px from the bottom of their
 	// parent (bottom-right column) instead of the default top-right. The HUD
 	// uses it; the classic screen leaves it undefined.
 	anchorBottom?: number
+	// Extra room above the top-anchored stack (a minimized prompt's bubble).
+	topOffset?: number
 }) {
 	const [open, setOpen] = useState(false)
 	const [tab, setTab] = useState<Tab>('key')
 	const vpos =
-		anchorBottom != null ? { bottom: anchorBottom } : { top: spacing.sm }
+		anchorBottom != null
+			? { bottom: anchorBottom }
+			: { top: spacing.sm + topOffset }
 
 	if (!open) {
 		return (

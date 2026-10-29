@@ -144,6 +144,7 @@ export function ActionLog({
 	meIdx,
 	seatColors,
 	anchorBottom,
+	topOffset = 0,
 }: {
 	events: GameEvent[]
 	playerOrder: string[]
@@ -156,6 +157,8 @@ export function ActionLog({
 	// default top-right. The button sits in the second slot; the panel opens
 	// from there.
 	anchorBottom?: number
+	// Extra room above the top-anchored stack (a minimized prompt's bubble).
+	topOffset?: number
 }) {
 	const [open, setOpen] = useState(false)
 	const [filter, setFilter] = useState<Filter>('all')
@@ -163,11 +166,11 @@ export function ActionLog({
 	const collapsedVpos =
 		anchorBottom != null
 			? { bottom: anchorBottom + SLOT }
-			: { top: spacing.sm + SLOT }
+			: { top: spacing.sm + topOffset + SLOT }
 	const panelVpos =
 		anchorBottom != null
 			? { bottom: anchorBottom + SLOT }
-			: { top: spacing.sm }
+			: { top: spacing.sm + topOffset }
 	// Keyed the same way as the rendered rows, so an expansion survives new
 	// events landing above it. Everything starts collapsed.
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())

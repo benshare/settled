@@ -66,14 +66,20 @@ const WAVE_HALF_MS = 300
 const WAVE_STAGGER_MS = 130
 const WAVE_RISE = 3
 
-export function ChatButton({ anchorBottom }: { anchorBottom?: number }) {
+export function ChatButton({
+	anchorBottom,
+	topOffset = 0,
+}: {
+	anchorBottom?: number
+	topOffset?: number
+}) {
 	const { open, setOpen, unreadCount } = useChat()
 	const SLOT = 32 + spacing.xs
 	// Third floating slot. Anchor from the bottom (HUD) or the top (classic).
 	const vpos =
 		anchorBottom != null
 			? { bottom: anchorBottom + 2 * SLOT }
-			: { top: BUTTON_INSET + 2 * SLOT }
+			: { top: BUTTON_INSET + topOffset + 2 * SLOT }
 
 	return (
 		<Pressable
