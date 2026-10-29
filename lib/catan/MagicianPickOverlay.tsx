@@ -52,6 +52,8 @@ export function MagicianPickOverlay({
 	submitting,
 	onSkip,
 	onCast,
+	minimized,
+	onToggleMinimized,
 }: {
 	hand: ResourceHand
 	actualTotal: number
@@ -61,6 +63,8 @@ export function MagicianPickOverlay({
 	submitting: boolean
 	onSkip: () => void
 	onCast: (target: number, discard: ResourceHand) => void
+	minimized: boolean
+	onToggleMinimized: () => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
@@ -99,7 +103,9 @@ export function MagicianPickOverlay({
 		<MinimizableModal
 			title="Activate magician?"
 			onDismiss={onSkip}
-			contentStyle={styles.sheet}
+			maxWidth={460}
+			minimized={minimized}
+			onToggleMinimized={onToggleMinimized}
 		>
 			<Text style={styles.subtitle}>
 				Discard N + 1 cards to receive cards from a roll N away.
@@ -314,9 +320,6 @@ function RollCard({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		sheet: {
-			maxWidth: 460,
-		},
 		subtitle: {
 			fontSize: font.sm,
 			color: colors.textSecondary,

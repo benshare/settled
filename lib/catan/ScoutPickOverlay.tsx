@@ -17,10 +17,14 @@ export function ScoutPickOverlay({
 	cards,
 	submitting,
 	onConfirm,
+	minimized,
+	onToggleMinimized,
 }: {
 	cards: DevCardId[]
 	submitting: boolean
 	onConfirm: (index: number) => void
+	minimized: boolean
+	onToggleMinimized: () => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
@@ -30,7 +34,9 @@ export function ScoutPickOverlay({
 		<MinimizableModal
 			title="Scout selection"
 			dismissOnBackdropPress={false}
-			contentStyle={styles.sheet}
+			maxWidth={460}
+			minimized={minimized}
+			onToggleMinimized={onToggleMinimized}
 		>
 			<Text style={styles.subtitle}>Which dev card do you want?</Text>
 			<View style={styles.row}>
@@ -85,9 +91,6 @@ function ScoutCard({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		sheet: {
-			maxWidth: 460,
-		},
 		subtitle: {
 			fontSize: font.sm,
 			color: colors.textSecondary,

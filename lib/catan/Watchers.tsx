@@ -21,7 +21,13 @@ import { useGame } from './gameContext'
 const BUTTON_INSET = spacing.sm
 const SLOT = 32 + spacing.xs
 
-export function WatcherButton({ anchorBottom }: { anchorBottom?: number }) {
+export function WatcherButton({
+	anchorBottom,
+	topOffset = 0,
+}: {
+	anchorBottom?: number
+	topOffset?: number
+}) {
 	const { watcherIds } = useGame()
 	const [open, setOpen] = useState(false)
 	const profilesById = useGamesStore((s) => s.profilesById)
@@ -30,7 +36,7 @@ export function WatcherButton({ anchorBottom }: { anchorBottom?: number }) {
 	const vpos =
 		anchorBottom != null
 			? { bottom: anchorBottom + 3 * SLOT }
-			: { top: BUTTON_INSET + 3 * SLOT }
+			: { top: BUTTON_INSET + topOffset + 3 * SLOT }
 
 	// A watcher can be a friend-of-a-player the viewer has never met, so their
 	// profile was never in any participant list this client fetched.
@@ -96,8 +102,10 @@ export function WatcherButton({ anchorBottom }: { anchorBottom?: number }) {
 // exists. Spectator-only — a seated player has no such affordance.
 export function StopWatchingButton({
 	anchorBottom,
+	topOffset = 0,
 }: {
 	anchorBottom?: number
+	topOffset?: number
 }) {
 	const { game, isSpectator } = useGame()
 	const router = useRouter()
@@ -106,7 +114,7 @@ export function StopWatchingButton({
 	const vpos =
 		anchorBottom != null
 			? { bottom: anchorBottom + 4 * SLOT }
-			: { top: BUTTON_INSET + 4 * SLOT }
+			: { top: BUTTON_INSET + topOffset + 4 * SLOT }
 
 	if (!isSpectator || !game) return null
 

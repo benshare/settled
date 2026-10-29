@@ -247,7 +247,10 @@ function useGameScreenState(gameId: string) {
 	// modal is open.
 	const [hauntPicks, setHauntPicks] = useState<string[]>([])
 	const [investOpen, setInvestOpen] = useState(false)
-	const [bonusPaneCollapsed, setBonusPaneCollapsed] = useState(false)
+	// The phase/turn scope a minimizable prompt (bonus pane or board-dependent
+	// picker) was minimized in. Keyed rather than a bare flag so the next
+	// prompt opens expanded without a reset effect lagging a render behind.
+	const [minimizedScope, setMinimizedScope] = useState<string | null>(null)
 	// Admin testing: the total a `dev`-flagged seat has pinned for its next
 	// roll, or null to roll normally. Sticky across turns on purpose.
 	const [devRollTotal, setDevRollTotal] = useState<number | null>(null)
@@ -621,6 +624,9 @@ function useGameScreenState(gameId: string) {
 		setPendingConfirm(null)
 		setMetroPending(null)
 	}, [confirmScopeKey])
+	const promptMinimized = minimizedScope === confirmScopeKey
+	const togglePromptMinimized = () =>
+		setMinimizedScope(promptMinimized ? null : confirmScopeKey)
 
 	// --- Held hand ---------------------------------------------------------
 	// The three reveal animations below all fire *after* the resource has
@@ -1984,8 +1990,8 @@ function useGameScreenState(gameId: string) {
 		hauntPicks,
 		openPlayerIdx,
 		setOpenPlayerIdx,
-		bonusPaneCollapsed,
-		setBonusPaneCollapsed,
+		promptMinimized,
+		togglePromptMinimized,
 		gameOverOpen,
 		setGameOverOpen,
 		toast,

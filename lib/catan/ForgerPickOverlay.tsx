@@ -19,6 +19,8 @@ export function ForgerPickOverlay({
 	seatColors,
 	submitting,
 	onConfirm,
+	minimized,
+	onToggleMinimized,
 }: {
 	hex: Hex
 	gainsByCandidate: Record<number, ResourceHand>
@@ -27,6 +29,8 @@ export function ForgerPickOverlay({
 	seatColors: readonly string[]
 	submitting: boolean
 	onConfirm: (target: number) => void
+	minimized: boolean
+	onToggleMinimized: () => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
@@ -37,7 +41,9 @@ export function ForgerPickOverlay({
 		<MinimizableModal
 			title="Forger: copy from a player"
 			dismissOnBackdropPress={false}
-			contentStyle={styles.sheet}
+			maxWidth={460}
+			minimized={minimized}
+			onToggleMinimized={onToggleMinimized}
 		>
 			<Text style={styles.subtitle}>
 				Hex {hex}, where your token sits, was rolled. Pick one player to
@@ -113,9 +119,6 @@ function CandidateRow({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		sheet: {
-			maxWidth: 460,
-		},
 		subtitle: {
 			fontSize: font.sm,
 			color: colors.textSecondary,

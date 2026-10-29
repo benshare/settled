@@ -6,14 +6,7 @@
 // styling this owns is a default corner radius + soft shadow, both overridable.
 
 import { ComponentProps, ReactNode } from 'react'
-import {
-	Modal as RNModal,
-	Pressable,
-	StyleProp,
-	StyleSheet,
-	View,
-	ViewStyle,
-} from 'react-native'
+import { Modal as RNModal, Pressable, StyleSheet } from 'react-native'
 import Animated from 'react-native-reanimated'
 import { radius, shadow, spacing } from '../theme'
 
@@ -24,24 +17,32 @@ export function Modal({
 	children,
 	contentStyle,
 	backdropStyle,
-	layout,
+	animationType = 'fade',
+	onShow,
+	fullScreenContent = false,
 }: {
 	visible: boolean
 	onDismiss?: () => void
 	dismissOnBackdropPress?: boolean
 	children: ReactNode
-	contentStyle?: StyleProp<ViewStyle>
-	backdropStyle?: StyleProp<ViewStyle>
-	layout?: ComponentProps<typeof Animated.View>['layout']
+	contentStyle?: AnimatedStyle
+	// May be animated — the backdrop is an `Animated.View`.
+	backdropStyle?: AnimatedStyle
+	animationType?: ComponentProps<typeof RNModal>['animationType']
+	onShow?: () => void
+	// The content wrapper fills the backdrop and passes touches through its
+	// empty area, for a child that positions itself (`MinimizableModal`).
+	fullScreenContent?: boolean
 }) {
 	return (
 		<RNModal
 			visible={visible}
 			transparent
-			animationType="fade"
+			animationType={animationType}
 			onRequestClose={onDismiss}
+			onShow={onShow}
 		>
-			<View style={[styles.backdrop, backdropStyle]}>
+			<Animated.View style={[styles.backdrop, backdropStyle]}>
 				{/* The dismiss target sits *behind* the content rather than
 				    wrapping it. A Pressable ancestor claims the touch responder
 				    on press-in, which starves any ScrollView inside the sheet of
@@ -54,15 +55,22 @@ export function Modal({
 					/>
 				)}
 				<Animated.View
-					style={[styles.content, contentStyle]}
-					layout={layout}
+					style={[
+						fullScreenContent
+							? StyleSheet.absoluteFill
+							: styles.content,
+						contentStyle,
+					]}
+					pointerEvents={fullScreenContent ? 'box-none' : 'auto'}
 				>
 					{children}
 				</Animated.View>
-			</View>
+			</Animated.View>
 		</RNModal>
 	)
 }
+
+type AnimatedStyle = ComponentProps<typeof Animated.View>['style']
 
 const styles = StyleSheet.create({
 	backdrop: {
