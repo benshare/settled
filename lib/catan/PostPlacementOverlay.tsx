@@ -1,27 +1,16 @@
-// Full-screen modal shown during the `post_placement` phase for players
-// who still have a start-of-game bonus action pending. Today that's only
-// `specialist` (declare a resource). New bonuses (explorer, haunt) plug into
-// the same phase by adding entries to phase.pending and extending this
-// overlay.
+// Banners shown during the `post_placement` phase for players who still have
+// a start-of-game bonus action pending (specialist, explorer, haunt). They
+// float above the board rather than blocking it.
 
-import { Button } from '@/lib/modules/Button'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { MinimizableModal } from '@/lib/modules/MinimizableModal'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor } from './palette'
 
-const RESOURCE_LABELS: Record<Resource, string> = {
-	wood: 'Wood',
-	wheat: 'Wheat',
-	sheep: 'Sheep',
-	brick: 'Brick',
-	ore: 'Ore',
-}
-
-export function SpecialistDeclareOverlay({
+// Specialist's "declare a resource" pick: five resource circles and a Confirm.
+export function SpecialistDeclareBanner({
 	waitingOn,
 	submitting,
 	onConfirm,
@@ -33,50 +22,49 @@ export function SpecialistDeclareOverlay({
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const [pick, setPick] = useState<Resource | null>(null)
+	const canSubmit = pick !== null && !submitting
 
 	return (
-		<MinimizableModal
-			title="Declare your specialty"
-			dismissOnBackdropPress={false}
-			contentStyle={styles.sheet}
-		>
-			<Text style={styles.subtitle}>
-				Pick the resource you'll specialize in. Any port trade that
-				takes this resource as input costs 1 fewer for you.
-			</Text>
-			<View style={styles.grid}>
-				{RESOURCES.map((r) => (
-					<Pressable
-						key={r}
-						onPress={() => setPick(r)}
-						style={({ pressed }) => [
-							styles.card,
-							{
-								backgroundColor: resourceColor[r],
-							},
-							pick === r && styles.cardPicked,
-							pressed && styles.pressed,
-						]}
-					>
-						<Text style={styles.cardLabel}>
-							{RESOURCE_LABELS[r]}
-						</Text>
-					</Pressable>
-				))}
+		<View style={styles.banner}>
+			<View style={styles.bannerRow}>
+				<View style={styles.specialistBody}>
+					<Text style={styles.bannerText}>
+						Specialist: pick your resource.
+					</Text>
+					<View style={styles.circleRow}>
+						{RESOURCES.map((r) => (
+							<Pressable
+								key={r}
+								onPress={() => setPick(r)}
+								hitSlop={4}
+								style={({ pressed }) => [
+									styles.circle,
+									{ backgroundColor: resourceColor[r] },
+									pick === r && styles.circlePicked,
+									pressed && styles.pressed,
+								]}
+							/>
+						))}
+					</View>
+				</View>
+				<Pressable
+					onPress={() => pick && onConfirm(pick)}
+					disabled={!canSubmit}
+					style={({ pressed }) => [
+						styles.confirmBtn,
+						!canSubmit && styles.confirmDisabled,
+						pressed && styles.pressed,
+					]}
+				>
+					<Text style={styles.confirmText}>Confirm</Text>
+				</Pressable>
 			</View>
 			{waitingOn.length > 0 && (
-				<Text style={styles.waiting}>
-					Waiting on {waitingOn.join(', ')}…
+				<Text style={styles.bannerSub}>
+					Waiting on {waitingOn.join(', ')}.
 				</Text>
 			)}
-			<Button
-				onPress={() => pick && onConfirm(pick)}
-				disabled={pick === null}
-				loading={submitting}
-			>
-				Confirm
-			</Button>
-		</MinimizableModal>
+		</View>
 	)
 }
 
@@ -195,44 +183,6 @@ export function HauntStatusBanner({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		sheet: {
-			maxWidth: 420,
-		},
-		subtitle: {
-			fontSize: font.sm,
-			color: colors.textSecondary,
-			lineHeight: 20,
-		},
-		grid: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: spacing.sm,
-			justifyContent: 'center',
-		},
-		card: {
-			width: 84,
-			height: 96,
-			borderRadius: radius.sm,
-			borderWidth: 1,
-			borderColor: '#2B2B2B',
-			alignItems: 'center',
-			justifyContent: 'flex-end',
-			padding: spacing.sm,
-		},
-		cardPicked: {
-			borderWidth: 3,
-			borderColor: colors.brand,
-		},
-		cardLabel: {
-			fontSize: font.sm,
-			fontWeight: '700',
-			color: '#1A1A1A',
-		},
-		waiting: {
-			fontSize: font.sm,
-			color: colors.textSecondary,
-			fontStyle: 'italic',
-		},
 		banner: {
 			marginHorizontal: spacing.md,
 			marginBottom: spacing.xs,
@@ -269,6 +219,28 @@ function makeStyles(colors: ColorScheme) {
 			fontSize: font.sm,
 			fontWeight: '700',
 			color: colors.white,
+		},
+		specialistBody: {
+			flex: 1,
+			gap: spacing.xs,
+		},
+		circleRow: {
+			flexDirection: 'row',
+			gap: spacing.sm,
+		},
+		circle: {
+			width: 28,
+			height: 28,
+			borderRadius: radius.full,
+			borderWidth: 1,
+			borderColor: '#2B2B2B',
+		},
+		circlePicked: {
+			borderWidth: 3,
+			borderColor: colors.brand,
+		},
+		confirmDisabled: {
+			opacity: 0.5,
 		},
 		pressed: {
 			opacity: 0.8,

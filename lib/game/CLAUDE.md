@@ -41,7 +41,7 @@ app/game/[id].tsx
 - `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus the
   inline `ConfirmBar` (now only the three non-undoable confirms). Shared by both layouts, so it is also where every
   affordance that has to exist in both lives — including the `post_placement`
-  ones (`SpecialistDeclareOverlay` and the explorer/haunt banners).
+  ones (the specialist/explorer/haunt banners).
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and the
   viewer's own hand. `TradePanel` and `DiscardPanel` each **replace** the hand
   rather than being a bar of their own, because both are composed by tapping the

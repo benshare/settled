@@ -22,7 +22,7 @@ import { MetropolitanCostPicker } from '@/lib/catan/MetropolitanCostPicker'
 import {
 	ExplorerStatusBanner,
 	HauntStatusBanner,
-	SpecialistDeclareOverlay,
+	SpecialistDeclareBanner,
 } from '@/lib/catan/PostPlacementOverlay'
 import { setupSettlementOrdinals } from '@/lib/catan/placement'
 import { distributeResources } from '@/lib/catan/roll'
@@ -218,14 +218,6 @@ export function BoardArea({
 					/>
 				)}
 
-			{active && postPlacementData?.kind === 'specialist' && (
-				<SpecialistDeclareOverlay
-					waitingOn={postPlacementData.waitingOn}
-					submitting={submitting}
-					onConfirm={onSetSpecialistResource}
-				/>
-			)}
-
 			{active && metroPending && myHand && (
 				<MetropolitanCostPicker
 					hand={myHand}
@@ -252,11 +244,17 @@ export function BoardArea({
 					onReject={onRejectTrade}
 				/>
 			)}
-			{/* Explorer roads and haunt spots are picked on the board itself,
-			    so their status rides above it like the trade banner rather
-			    than blocking it. The specialist's own modal is the exception
-			    (above), and until every specialist has declared these don't
-			    render at all — `postPlacementData` holds that ordering. */}
+			{/* Post-placement bonus picks ride above the board like the trade
+			    banner rather than blocking it. Specialists declare first; until
+			    every one has, the explorer/haunt banners don't render at all —
+			    `postPlacementData` holds that ordering. */}
+			{postPlacementData?.kind === 'specialist' && (
+				<SpecialistDeclareBanner
+					waitingOn={postPlacementData.waitingOn}
+					submitting={submitting}
+					onConfirm={onSetSpecialistResource}
+				/>
+			)}
 			{postPlacementData?.kind === 'explorer' && (
 				<ExplorerStatusBanner
 					remaining={postPlacementData.remaining}

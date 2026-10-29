@@ -133,7 +133,7 @@ export function TopArea() {
 				gameState?.phase.kind === 'post_placement' &&
 				(() => {
 					const specialistPending = gameState.phase.pending.specialist
-					// My own pick is a modal; only surface a top-line status
+					// My own pick is a banner over the board; only surface a top-line status
 					// while I'm waiting on other players to declare theirs.
 					if (specialistPending.includes(meIdx)) return null
 					const waiting = specialistPending

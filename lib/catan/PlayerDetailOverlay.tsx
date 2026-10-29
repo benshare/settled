@@ -32,7 +32,8 @@ import {
 import { knightsPlayed } from './dev'
 import { InvestmentTokens } from './InvestmentTokens'
 import { longestRoadFor } from './longestRoad'
-import { seatColor } from './palette'
+import { resourceColor, seatColor } from './palette'
+import type { Resource } from './board'
 import { gameSizeFor, type GameState } from './types'
 
 export type PlayerDetailOverlayProps = {
@@ -198,6 +199,7 @@ function Body({
 								bonus.id,
 								size
 							)}
+							titleResource={player?.specialistResource}
 							tag="Bonus"
 							tagColor={colors.brand}
 							borderColor={colors.brand}
@@ -421,6 +423,7 @@ function CardBlock({
 	icon,
 	iconColor,
 	title,
+	titleResource,
 	description,
 	clarifications,
 	tag,
@@ -431,6 +434,8 @@ function CardBlock({
 	icon: React.ComponentProps<typeof Ionicons>['name']
 	iconColor: string
 	title: string
+	// The specialist's declared resource, shown as a dot beside the title.
+	titleResource?: Resource
 	description: string
 	clarifications: readonly string[]
 	tag: string
@@ -451,7 +456,20 @@ function CardBlock({
 					<Text style={[styles.cardTag, { color: tagColor }]}>
 						{tag}
 					</Text>
-					<Text style={styles.cardTitle}>{title}</Text>
+					<View style={styles.cardTitleRow}>
+						<Text style={styles.cardTitle}>{title}</Text>
+						{titleResource && (
+							<View
+								style={[
+									styles.resourceDot,
+									{
+										backgroundColor:
+											resourceColor[titleResource],
+									},
+								]}
+							/>
+						)}
+					</View>
 				</View>
 			</View>
 			<CardDescription
@@ -649,6 +667,18 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		textTransform: 'uppercase',
 		letterSpacing: 0.5,
+	},
+	cardTitleRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.xs,
+	},
+	resourceDot: {
+		width: 12,
+		height: 12,
+		borderRadius: radius.full,
+		borderWidth: 1,
+		borderColor: '#2B2B2B',
 	},
 	cardTitle: {
 		fontSize: font.md,

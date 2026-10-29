@@ -899,8 +899,8 @@ function useGameScreenState(gameId: string) {
 	const inPostPlacement =
 		game?.status === 'active' && gameState?.phase.kind === 'post_placement'
 	// The active board tool for the local player during post_placement. Every
-	// start-of-game bonus resolves after specialists declare (their overlay
-	// blocks the board first). One bonus per player, so at most one applies.
+	// start-of-game bonus resolves after specialists declare (the board stays
+	// inert until they have). One bonus per player, so at most one applies.
 	const postPlacementTool: BoardTool | null =
 		inPostPlacement && gameState?.phase.kind === 'post_placement'
 			? gameState.phase.pending.specialist.length > 0
@@ -1818,7 +1818,7 @@ function useGameScreenState(gameId: string) {
 	// Which post_placement affordance this seat owes, already resolved to the
 	// one thing to render. Derived here rather than in the view because both
 	// layouts render it from `BoardArea` and the ordering rule is subtle:
-	// specialists declare first (their overlay blocks the board), so nobody
+	// specialists declare first (the board is inert meanwhile), so nobody
 	// falls through to an explorer/haunt banner until every specialist is in —
 	// the same gate `postPlacementTool` applies to the board itself.
 	const postPlacementData = ((): PostPlacementData => {
