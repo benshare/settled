@@ -946,9 +946,9 @@ function useGameScreenState(gameId: string) {
 	// seat still held the floor. See `.claude/specs/local-action-queue.md`.
 	const canUndo = queue.length > 0 && !isSpectator && !inGameOver
 
-	// Forfeiting / ending. Both are plain user-id arrays on the games row with
-	// no mechanical effect — see `.claude/specs/forfeit-and-end-game.md`. The
-	// menu lives in the nav (`GameMenu`), which is why these hang off the
+	// Forfeiting / ending. Both are plain user-id arrays on the games row; the
+	// only effect of either is server-side (a forfeited seat is played on
+	// autopilot) — see `.claude/specs/forfeit-autopilot.md`. The menu lives in the nav (`GameMenu`), which is why these hang off the
 	// screen context rather than a zone.
 	const forfeitedIds = game?.forfeits ?? []
 	const endVoteIds = game?.end_votes ?? []

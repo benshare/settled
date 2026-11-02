@@ -6,9 +6,10 @@
 //   End game   — the same shape, but it needs the WHOLE table. When it lands,
 //                the game is canceled: no winner, and it counts for nothing.
 //
-// Neither has any mechanical effect while it stands — a forfeited player keeps
-// their seat, their turn and their resources. See
-// `.claude/specs/forfeit-and-end-game.md`.
+// A forfeited player keeps their seat and resources, but the server plays
+// their turns — rolling and ending them, skipping every other decision — until
+// they withdraw. An end-game vote has no mechanical effect. See
+// `.claude/specs/forfeit-and-end-game.md` and `forfeit-autopilot.md`.
 //
 //   Copy game ID — so a report of "the board did something weird" arrives
 //                with the id needed to find the row. Offered to everyone with
@@ -127,7 +128,7 @@ export function GameMenu() {
 						<Section
 							title="Forfeit"
 							status={<ForfeitStatus />}
-							blurb="The last player left standing wins."
+							blurb="Your turns are rolled and ended for you until you withdraw. The last player left standing wins."
 							active={myForfeit}
 							activeLabel="Withdraw forfeit"
 							idleLabel="Forfeit game"
@@ -222,7 +223,7 @@ export function GameMenu() {
 				}
 				message={
 					pending === 'forfeit'
-						? 'Everyone will see it. If every other player has also forfeited, the game ends right now and the remaining player wins.'
+						? 'Everyone will see it. Your turns will be rolled and ended for you until you withdraw. If every other player has also forfeited, the game ends right now and the remaining player wins.'
 						: 'Everyone will see it. Once every player has voted, the game is canceled with no winner and counts for nothing.'
 				}
 				confirmLabel={pending === 'forfeit' ? 'Forfeit' : 'End game'}

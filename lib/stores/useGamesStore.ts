@@ -324,11 +324,28 @@ export type GameEvent =
 	| { kind: 'ghost_spawned'; player: number; vertex: string; at: string }
 	// --- Forfeiting and ending ---------------------------------------------
 	// Two withdrawable, per-player declarations that a game can end without
-	// anyone reaching the VP threshold. Neither has any mechanical effect —
-	// a player holding a standing forfeit keeps their seat and their turn.
-	// See `.claude/specs/forfeit-and-end-game.md`.
+	// anyone reaching the VP threshold. A standing forfeit keeps the seat but
+	// puts it on autopilot (rolled and ended for them, every other decision
+	// skipped); an end-game vote has no mechanical effect. See
+	// `.claude/specs/forfeit-and-end-game.md` and `forfeit-autopilot.md`.
 	| { kind: 'forfeit_submitted'; player: number; at: string }
 	| { kind: 'forfeit_withdrawn'; player: number; at: string }
+	// The autopilot resolved a forfeited seat's obligation without taking it —
+	// as if that step never happened (the robber stays put, nothing is
+	// discarded or claimed).
+	| {
+			kind: 'autopilot_skipped'
+			player: number
+			step:
+				| 'discard'
+				| 'robber'
+				| 'steal'
+				| 'road_building'
+				| 'post_placement'
+				| 'curio'
+				| 'forger'
+			at: string
+	  }
 	| { kind: 'end_game_proposed'; player: number; at: string }
 	| { kind: 'end_game_withdrawn'; player: number; at: string }
 	// Terminal event, written when every seat voted to end. Deliberately not a
@@ -436,8 +453,8 @@ type GamesStore = {
 	) => Promise<BatchResult>
 
 	// Submit (`on`) or withdraw (`!on`) a standing forfeit / end-game vote.
-	// Both are idempotent, and neither has any mechanical effect on the game —
-	// only the thresholds read them (all seats but one forfeited → that seat
+	// Both are idempotent. A forfeit puts the seat on server-side autopilot;
+	// otherwise only the thresholds read them (all seats but one forfeited → that seat
 	// wins; every seat voting to end → the game is canceled with no winner).
 	// See `.claude/specs/forfeit-and-end-game.md`.
 	setForfeit: (gameId: string, on: boolean) => Promise<ActionResult>

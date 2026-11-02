@@ -94,12 +94,12 @@ Two withdrawable, per-player declarations that a game can end without anyone rea
 - **Forfeit**: when every seat but one holds a standing forfeit, that survivor wins **regardless of VP** (`status = 'complete'`, `by_forfeit: true`; `findWinner` is not consulted).
 - **End game**: needs the whole table; the last vote sets `status = 'canceled'`, `winner` null, and writes `game_canceled` (deliberately not `game_complete` — no winner, no scoreboard).
 
-The rule that keeps this small: **neither declaration has any mechanical effect while it stands.** Nothing in the turn engine, robber chain, trade rules, discard, queue or scoring reads either array — only the two thresholds do. Skipping a forfeiter in turn order instead would put a new condition into every turn-advance, steal-target, trade-addressee and discard path. Consequences:
+The rule that keeps this small: **nothing in the rules layer reads either array.** The turn engine, robber chain, trade rules, discard, queue and scoring are all forfeit-blind. A forfeit's one mechanical effect lives entirely in the edge function: a forfeited seat is put on **autopilot** (`.claude/specs/forfeit-autopilot.md`). Whenever the game waits on that seat, the server rolls and ends the turn for it, takes the few choices the game can't continue without (bonus pick, starting pieces, a paid-for scout card) and **skips every other decision**, as if that step never happened. Its robber stays put, and its own discard, steal, curio claim and so on are dropped (each logged as `autopilot_skipped`). Other players still discard on its 7. The seat never leaves turn order, so withdrawing just turns autopilot off. Consequences:
 
 - **`isFinished(status)` is the status test, not `=== 'complete'`** (a canceled game shares History and the "board accepts nothing" posture).
 - **Stats treat the two endings differently**: a canceled game writes no `game_results` rows; a forfeited one writes them with `forfeit: true` and counts toward games played and win rate only.
 
-`GameOverOverlay` takes both as optional props; `PlayerStrip` flags a forfeited seat (a flag, not a dimmed card — the seat is still playing). The affordance is `lib/game/GameMenu.tsx`.
+`GameOverOverlay` takes both as optional props; `PlayerStrip` dims a forfeited seat's card. The affordance is `lib/game/GameMenu.tsx`.
 
 ## Move timeouts
 

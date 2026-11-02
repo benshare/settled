@@ -71,6 +71,7 @@ const CATEGORIES = {
 		'robber_moved',
 		'stolen',
 		'hoarder_kept',
+		'autopilot_skipped',
 	],
 	bonuses: [
 		'bonus_chosen',
@@ -691,6 +692,11 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				text: `${who(e.player)} withdrew ${possessive(e.player, ctx)} forfeit`,
 				player: e.player,
 			}
+		case 'autopilot_skipped':
+			return {
+				text: `${cap(possessive(e.player, ctx))} ${AUTOPILOT_STEP_LABEL[e.step]} was skipped (forfeited)`,
+				player: e.player,
+			}
 		case 'end_game_proposed':
 			return {
 				text: `${who(e.player)} wants to end the game`,
@@ -805,6 +811,19 @@ function handTotal(hand: ResourceHand): number {
 // "your production" rather than "You's production" for the self case.
 function possessive(idx: number, ctx: LogContext): string {
 	return idx === ctx.meIdx ? 'your' : `${nameFor(idx, ctx)}'s`
+}
+
+const AUTOPILOT_STEP_LABEL: Record<
+	Extract<GameEvent, { kind: 'autopilot_skipped' }>['step'],
+	string
+> = {
+	discard: 'discard',
+	robber: 'robber move',
+	steal: 'steal',
+	road_building: 'road building',
+	post_placement: 'starting bonus choice',
+	curio: 'curio claim',
+	forger: 'forger copy',
 }
 
 // For the possessive at the start of a line, where "your" would read as a typo.
