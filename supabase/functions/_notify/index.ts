@@ -80,8 +80,9 @@ type ExpoMessage = {
  */
 export async function sendNotifications(
 	admin: SupabaseClient,
-	targets: NotifyTarget[]
+	allTargets: NotifyTarget[]
 ): Promise<void> {
+	const targets = await dropForfeitedTurnPrompts(admin, allTargets)
 	if (targets.length === 0) return
 
 	const userIds = Array.from(new Set(targets.map((t) => t.userId)))
@@ -184,6 +185,48 @@ export async function sendNotifications(
 	} catch (e) {
 		console.warn('[notify] push send failed', e)
 	}
+}
+
+// Kinds that ask the recipient to act in a game. A forfeited seat is on
+// autopilot, which will have acted before they could tap the push.
+const TURN_PROMPT_KINDS = new Set<NotificationKind>([
+	'your_turn',
+	'discard_required',
+])
+
+// Drops turn prompts addressed to a player who has forfeited that game. On a
+// failed lookup everything is sent — a stray push beats a missing one.
+async function dropForfeitedTurnPrompts(
+	admin: SupabaseClient,
+	targets: NotifyTarget[]
+): Promise<NotifyTarget[]> {
+	const gameIds = Array.from(
+		new Set(
+			targets
+				.filter((t) => TURN_PROMPT_KINDS.has(t.kind) && t.gameId)
+				.map((t) => t.gameId as string)
+		)
+	)
+	if (gameIds.length === 0) return targets
+
+	const { data, error } = await admin
+		.from('games')
+		.select('id, forfeits')
+		.in('id', gameIds)
+	if (error) {
+		console.warn('[notify] forfeits load failed', error.message)
+		return targets
+	}
+	const forfeitsByGame = new Map<string, string[]>()
+	for (const row of (data ?? []) as { id: string; forfeits: string[] }[]) {
+		forfeitsByGame.set(row.id, row.forfeits ?? [])
+	}
+	return targets.filter(
+		(t) =>
+			!TURN_PROMPT_KINDS.has(t.kind) ||
+			!t.gameId ||
+			!(forfeitsByGame.get(t.gameId) ?? []).includes(t.userId)
+	)
 }
 
 /**

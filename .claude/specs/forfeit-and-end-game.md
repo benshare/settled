@@ -1,5 +1,8 @@
 # Forfeiting and ending games
 
+> **§1 is superseded** by `forfeit-autopilot.md`: a standing forfeit now puts
+> the seat on server-side autopilot instead of having no mechanical effect.
+
 Branch: `forfeit-end-game`, off `main`.
 
 Two withdrawable, per-player declarations that a game can end without anyone

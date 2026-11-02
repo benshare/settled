@@ -39,9 +39,9 @@ export function PlayerStrip({
 	// legible — only happens on rows we're allowed to look behind, i.e.
 	// the viewer's own row in an active game and every row at game over.
 	publicByPlayer: number[]
-	// User ids holding a standing (withdrawable) forfeit. It has no mechanical
-	// effect — the seat still plays — so it's shown as a flag beside the name
-	// rather than by dimming the card. See the game menu in `lib/game/`.
+	// User ids holding a standing (withdrawable) forfeit. Their seat is on
+	// server-side autopilot, so the card is dimmed — still on the table, no
+	// longer really playing. See the game menu in `lib/game/`.
 	forfeitedIds?: string[]
 	// `games.deadline_at` — when whoever is on the clock runs out. Null on a
 	// game with no move timeout, which is every game by default.
@@ -96,6 +96,7 @@ export function PlayerStrip({
 								backgroundColor: colors.cardAlt,
 							},
 							pressed && onPressPlayer && styles.pressed,
+							forfeitedIds?.includes(uid) && styles.forfeited,
 						]}
 					>
 						<View style={styles.headerRow}>
@@ -105,13 +106,6 @@ export function PlayerStrip({
 							<Text style={styles.name} numberOfLines={1}>
 								{name}
 							</Text>
-							{forfeitedIds?.includes(uid) && (
-								<Ionicons
-									name="flag"
-									size={11}
-									color={colors.textMuted}
-								/>
-							)}
 							{remaining !== null && onTheClock.includes(i) && (
 								<Text style={styles.countdown}>
 									{formatRemaining(remaining)}
@@ -289,6 +283,9 @@ const styles = StyleSheet.create({
 	},
 	pressed: {
 		opacity: 0.7,
+	},
+	forfeited: {
+		opacity: 0.4,
 	},
 	name: {
 		flex: 1,

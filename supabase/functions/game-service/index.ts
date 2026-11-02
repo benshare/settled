@@ -5826,10 +5826,11 @@ async function handleHonk(
 // --- Forfeiting and ending -------------------------------------------------
 //
 // Two withdrawable, per-player declarations, both stored as user-id arrays on
-// the games row. Neither has any mechanical effect: a player holding a standing
-// forfeit keeps their seat, their turn, their resources and every action they
-// could take before. The only thing that reads them is the threshold below.
-// See .claude/specs/forfeit-and-end-game.md.
+// the games row. A player holding a standing forfeit keeps their seat and
+// resources, but `runAutopilot` plays every turn the game waits on them for —
+// nothing in the rules layer reads the array; the autopilot and the threshold
+// below are its only readers. An end-game vote has no mechanical effect. See
+// .claude/specs/forfeit-and-end-game.md and forfeit-autopilot.md.
 
 // The window in which a declaration can be submitted or withdrawn: the whole
 // time the game is in progress.
@@ -6357,6 +6358,14 @@ async function sweepGame(
 	admin: SupabaseClient,
 	gameId: string
 ): Promise<'warned' | 'expired' | 'none'> {
+	// A forfeited seat on the clock is the autopilot's, not the timeout's —
+	// reachable for a forfeit that was standing before the autopilot shipped,
+	// or one whose step had no legal option last time.
+	if (await runAutopilot(admin, gameId)) {
+		await refreshDeadline(admin, gameId, null)
+		return 'none'
+	}
+
 	const loaded = await loadGame(admin, gameId)
 	if (!loaded.ok) return 'none'
 	const { game, state } = loaded
@@ -6494,6 +6503,13 @@ async function applyTimeout(
 	// Nothing was legal to do. Leave the row untouched so the next tick tries
 	// again rather than telling anyone their turn was skipped.
 	if (skipped.size === 0) return
+
+	// The skip may have handed the floor to a forfeited seat.
+	if (inProgress(cur.game) && (await runAutopilot(admin, cur.game.id))) {
+		const reloaded = await loadGame(admin, cur.game.id)
+		if (!reloaded.ok) return
+		cur = reloaded
+	}
 
 	// `dispatch` was called directly, so serve's post-action bookkeeping never
 	// ran — the runner owns it. The skipped seats stay flagged (they did not
@@ -6724,12 +6740,26 @@ function autoActionFor(
 			}
 			return null
 		}
-		case 'roll':
+		case 'roll': {
 			// A gambler's dice are already thrown and waiting on a decision;
-			// take the first pair. Everyone else just rolls.
-			return phase.pending
-				? { action: 'confirm_roll', game_id: gid, which: 0 }
-				: { action: 'roll', game_id: gid }
+			// take the first pair. A forger has to move the token before the
+			// roll is allowed at all. Everyone else just rolls.
+			if (phase.pending)
+				return { action: 'confirm_roll', game_id: gid, which: 0 }
+			const p = state.players[seat]
+			if (p && mustMoveForgerToken(p)) {
+				const hex = randomOf(
+					hexesAdjacentTo(
+						forgerTokenHex(p, state.robber),
+						state.variant
+					)
+				)
+				return hex
+					? { action: 'move_forger_token', game_id: gid, hex }
+					: null
+			}
+			return { action: 'roll', game_id: gid }
+		}
 		case 'main':
 			return { action: 'end_turn', game_id: gid }
 		case 'discard': {
@@ -6782,6 +6812,216 @@ function autoActionFor(
 		case 'game_over':
 			return null
 	}
+}
+
+// --- Forfeit autopilot -----------------------------------------------------
+//
+// A standing forfeit puts the seat on autopilot: whenever the game is waiting
+// on a forfeited seat, the server acts for it straight away — rolling and
+// ending the turn — and any decision it would have had to make is skipped, as
+// if that step never happened. Withdrawing the forfeit just turns this off;
+// the seat never left turn order. See `.claude/specs/forfeit-autopilot.md`.
+
+// Enough for consecutive forfeited seats in a six-player game each to roll a
+// 7 and clear their turn. Hitting it leaves the rest to the next trigger.
+const MAX_AUTOPILOT_STEPS = 24
+// The serve lease, when an action may hand the floor to the autopilot. A
+// chain of dispatches outlasts the default.
+const AUTOPILOT_LOCK_TTL_MS = 30_000
+
+type AutopilotSkip =
+	| 'discard'
+	| 'robber'
+	| 'steal'
+	| 'road_building'
+	| 'post_placement'
+	| 'curio'
+	| 'forger'
+
+type AutopilotStep = { dispatch: Body } | { skip: AutopilotSkip }
+
+/**
+ * Drives every forfeited seat the game is waiting on until it is waiting on
+ * someone else (or ends). Must run under the game's lease. Returns whether
+ * anything moved; a step with no legal option stops the loop and leaves the
+ * seat to the move timeout.
+ */
+async function runAutopilot(
+	admin: SupabaseClient,
+	gameId: string
+): Promise<boolean> {
+	let moved = false
+	for (let step = 0; step < MAX_AUTOPILOT_STEPS; step++) {
+		const loaded = await loadGame(admin, gameId)
+		if (!loaded.ok) break
+		const { game, state } = loaded
+		if (!inProgress(game)) break
+		const forfeits = game.forfeits ?? []
+		if (forfeits.length === 0) break
+
+		const seat = pendingSeats(state.phase, state.currentTurn).find((idx) =>
+			forfeits.includes(game.player_order[idx])
+		)
+		if (seat === undefined) break
+
+		const next = autopilotStepFor(state, game, seat)
+		if (!next) {
+			console.warn('[autopilot] no legal step', {
+				game: gameId,
+				phase: state.phase.kind,
+				seat,
+			})
+			break
+		}
+		if ('dispatch' in next) {
+			const res = await dispatch(
+				admin,
+				game.player_order[seat],
+				next.dispatch
+			)
+			if (!res.ok) {
+				console.warn('[autopilot] step rejected', {
+					game: gameId,
+					action: next.dispatch.action,
+					status: res.status,
+				})
+				break
+			}
+		} else if (
+			!(await applyAutopilotSkip(admin, game, state, seat, next.skip))
+		) {
+			break
+		}
+		moved = true
+	}
+	return moved
+}
+
+/**
+ * What the autopilot does for `seat`. Only the turn's spine is ever taken —
+ * the roll, ending the turn, and the few choices the game can't proceed
+ * without (a bonus, starting pieces, a paid-for scout card). Every other
+ * decision is skipped.
+ *
+ * Exhaustive over `Phase['kind']`: a new phase must fail to compile rather
+ * than silently stalling on a forfeited seat.
+ */
+function autopilotStepFor(
+	state: GameState,
+	game: GameRow,
+	seat: number
+): AutopilotStep | null {
+	const phase = state.phase
+	const take = (): AutopilotStep | null => {
+		const body = autoActionFor(state, game, seat)
+		return body ? { dispatch: body } : null
+	}
+	switch (phase.kind) {
+		case 'select_bonus':
+		case 'initial_placement':
+		case 'roll':
+		case 'main':
+		case 'special_build':
+		case 'scout_pick':
+		case 'magician_pick':
+			return take()
+		case 'post_placement':
+			return { skip: 'post_placement' }
+		case 'discard':
+			return { skip: 'discard' }
+		case 'move_robber':
+			return { skip: 'robber' }
+		case 'steal':
+			return { skip: 'steal' }
+		case 'road_building':
+			return { skip: 'road_building' }
+		case 'curio_pick':
+			return { skip: 'curio' }
+		case 'forger_pick':
+			return { skip: 'forger' }
+		case 'game_over':
+			return null
+	}
+}
+
+// Resolves `seat`'s obligation in the current phase without taking it, through
+// the same transition the real action ends in, and logs an
+// `autopilot_skipped` event. False when the phase doesn't match the skip.
+async function applyAutopilotSkip(
+	admin: SupabaseClient,
+	game: GameRow,
+	state: GameState,
+	seat: number,
+	skip: AutopilotSkip
+): Promise<boolean> {
+	const phase = state.phase
+	const events: unknown[] = [
+		{
+			kind: 'autopilot_skipped',
+			player: seat,
+			step: skip,
+			at: new Date().toISOString(),
+		},
+	]
+	let next: { players: PlayerState[]; phase: Phase } | null = null
+
+	if (skip === 'discard' && phase.kind === 'discard') {
+		const resolved = resolveDiscard(state, phase, state.players, seat)
+		events.push(...resolved.events)
+		next = resolved
+	} else if (
+		(skip === 'robber' && phase.kind === 'move_robber') ||
+		(skip === 'steal' && phase.kind === 'steal')
+	) {
+		// The robber stays where it is and nobody is robbed: the chain goes
+		// straight to its resume point.
+		next = await exitRobberChain(state, phase.from7, phase.resume, events)
+	} else if (skip === 'road_building' && phase.kind === 'road_building') {
+		next = { players: state.players, phase: phase.resume }
+	} else if (skip === 'post_placement' && phase.kind === 'post_placement') {
+		const explorer = { ...(phase.pending.explorer ?? {}) }
+		delete explorer[seat]
+		next = {
+			players: state.players,
+			phase: postPlacementPhaseFrom({
+				specialist: phase.pending.specialist.filter((i) => i !== seat),
+				explorer,
+				haunt: (phase.pending.haunt ?? []).filter((i) => i !== seat),
+			}),
+		}
+	} else if (skip === 'curio' && phase.kind === 'curio_pick') {
+		const pending = phase.pending.filter((i) => i !== seat)
+		next = await resumeAfterReaction(
+			state,
+			state.players,
+			pending.length > 0 ? { ...phase, pending } : phase.resume,
+			events
+		)
+	} else if (skip === 'forger' && phase.kind === 'forger_pick') {
+		const queue = phase.queue.slice(1)
+		next = await resumeAfterReaction(
+			state,
+			state.players,
+			queue.length > 0 ? { ...phase, queue } : phase.resume,
+			events
+		)
+	}
+	if (!next) return false
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({ players: next.players, phase: next.phase })
+		.eq('game_id', game.id)
+	if (stateErr) {
+		console.warn('[autopilot] skip write failed', stateErr.message)
+		return false
+	}
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({ events: [...(game.events ?? []), ...events] })
+		.eq('id', game.id)
+	if (gameErr) console.warn('[autopilot] skip log failed', gameErr.message)
+	return true
 }
 
 function randomOf<T>(xs: readonly T[]): T | null {
@@ -8410,42 +8650,11 @@ async function handleDiscard(
 		}
 	})
 
-	const nextPending: Partial<Record<number, number>> = {
-		...state.phase.pending,
-	}
-	delete nextPending[meIdx]
-
-	const discardsRemain = Object.keys(nextPending).length > 0
-	const nextPhase: Phase = discardsRemain
-		? {
-				kind: 'discard',
-				resume: state.phase.resume,
-				pending: nextPending,
-				from7: state.phase.from7,
-			}
-		: {
-				kind: 'move_robber',
-				resume: state.phase.resume,
-				from7: state.phase.from7,
-			}
-
-	// Nomad production and the investor's token payout are deferred until every
-	// owed discard is in, so neither gain can be discarded away (or force a
-	// bigger discard).
-	const settled = !discardsRemain && state.phase.from7
-	const nomadResult = settled
-		? applyNomadProduce({ ...state, players: nextPlayers })
-		: { players: nextPlayers, events: [] as unknown[] }
-	const investorResult = settled
-		? applyInvestorPayout(
-				{ ...state, players: nomadResult.players },
-				state.currentTurn ?? 0
-			)
-		: { players: nomadResult.players, events: [] as unknown[] }
+	const resolved = resolveDiscard(state, state.phase, nextPlayers, meIdx)
 
 	const { error: stateErr } = await admin
 		.from('game_states')
-		.update({ players: investorResult.players, phase: nextPhase })
+		.update({ players: resolved.players, phase: resolved.phase })
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
 
@@ -8464,17 +8673,55 @@ async function handleDiscard(
 	const { error: gameErr } = await admin
 		.from('games')
 		.update({
-			events: [
-				...(game.events ?? []),
-				event,
-				...nomadResult.events,
-				...investorResult.events,
-			],
+			events: [...(game.events ?? []), event, ...resolved.events],
 		})
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 
 	return json({ ok: true })
+}
+
+// `seat`'s owed discard is settled — by a real discard, or skipped by the
+// forfeit autopilot — so drop it and, once nobody owes anything, move on to
+// the robber. `players` is the table after `seat`'s cards (if any) are gone.
+function resolveDiscard(
+	state: GameState,
+	phase: Extract<Phase, { kind: 'discard' }>,
+	players: PlayerState[],
+	seat: number
+): { players: PlayerState[]; phase: Phase; events: unknown[] } {
+	const nextPending: Partial<Record<number, number>> = { ...phase.pending }
+	delete nextPending[seat]
+
+	const discardsRemain = Object.keys(nextPending).length > 0
+	const nextPhase: Phase = discardsRemain
+		? {
+				kind: 'discard',
+				resume: phase.resume,
+				pending: nextPending,
+				from7: phase.from7,
+			}
+		: { kind: 'move_robber', resume: phase.resume, from7: phase.from7 }
+
+	// Nomad production and the investor's token payout are deferred until every
+	// owed discard is in, so neither gain can be discarded away (or force a
+	// bigger discard).
+	const settled = !discardsRemain && phase.from7
+	const nomadResult = settled
+		? applyNomadProduce({ ...state, players })
+		: { players, events: [] as unknown[] }
+	const investorResult = settled
+		? applyInvestorPayout(
+				{ ...state, players: nomadResult.players },
+				state.currentTurn ?? 0
+			)
+		: { players: nomadResult.players, events: [] as unknown[] }
+
+	return {
+		players: investorResult.players,
+		phase: nextPhase,
+		events: [...nomadResult.events, ...investorResult.events],
+	}
 }
 
 async function handleMoveRobber(
@@ -8557,55 +8804,12 @@ async function handleMoveRobber(
 		}
 	}
 
-	// Shepherd: the 7-chain is over the moment it lands in main with no steal
-	// to come, so the declared pair is paid here — after the discard AND after
-	// the steal that would otherwise have been able to take it.
-	if (state.phase.from7 && nextPhase.kind === 'main') {
-		const shepherdResult = applyShepherdPayout(
-			{ ...state, players: nextPlayers },
-			state.currentTurn ?? 0
-		)
-		nextPlayers = shepherdResult.players
-		events.push(...shepherdResult.events)
-	}
-
-	// If we're transitioning straight to main (no steal needed), apply
-	// the post-roll FT chain for the active player.
-	const stateAfterRobber: GameState = {
-		...state,
-		players: nextPlayers,
-		robber: hex,
-		phase: nextPhase,
-	}
-	let finalState = stateAfterRobber
-	if (
-		state.phase.from7 &&
-		nextPhase.kind === 'main' &&
-		fortuneTellerTriggersOn(
-			stateAfterRobber.players[state.currentTurn ?? 0]?.bonus,
-			nextPhase.roll
-		)
-	) {
-		const ft = await runFortuneTellerChain(
-			stateAfterRobber,
-			state.currentTurn ?? 0,
-			events
-		)
-		finalState = ft.state
-	}
-
-	// Magician: a 7-roll resolving to main opens the magician's window.
-	if (state.phase.from7 && finalState.phase.kind === 'main') {
-		finalState = {
-			...finalState,
-			phase: wrapMagicianWindow(
-				finalState.phase,
-				finalState,
-				state.currentTurn ?? 0,
-				finalState.phase.roll
-			),
-		}
-	}
+	const finalState = await exitRobberChain(
+		{ ...state, players: nextPlayers, robber: hex },
+		state.phase.from7,
+		nextPhase,
+		events
+	)
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -8624,6 +8828,49 @@ async function handleMoveRobber(
 	if (gameErr) return err(500, 'could not log event')
 
 	return json({ ok: true })
+}
+
+// The robber chain lands on `nextPhase` (its `resume`, or a steal still to
+// come). Every exit to `main` — a move with no steal, a steal, or the forfeit
+// autopilot skipping either — owes the same three things: the shepherd's
+// declared pair (now that nothing can take it), the fortune teller's chain, and
+// the magician's window. `state` carries the board as the chain left it.
+async function exitRobberChain(
+	state: GameState,
+	from7: boolean | undefined,
+	nextPhase: Phase,
+	events: unknown[]
+): Promise<GameState> {
+	const roller = state.currentTurn ?? 0
+	let players = state.players
+	if (from7 && nextPhase.kind === 'main') {
+		const shepherdResult = applyShepherdPayout(state, roller)
+		players = shepherdResult.players
+		events.push(...shepherdResult.events)
+	}
+
+	let finalState: GameState = { ...state, players, phase: nextPhase }
+	if (
+		from7 &&
+		nextPhase.kind === 'main' &&
+		fortuneTellerTriggersOn(players[roller]?.bonus, nextPhase.roll)
+	) {
+		const ft = await runFortuneTellerChain(finalState, roller, events)
+		finalState = ft.state
+	}
+
+	if (from7 && finalState.phase.kind === 'main') {
+		finalState = {
+			...finalState,
+			phase: wrapMagicianWindow(
+				finalState.phase,
+				finalState,
+				roller,
+				finalState.phase.roll
+			),
+		}
+	}
+	return finalState
 }
 
 function pickStolenResource(hand: ResourceHand): Resource | null {
@@ -8694,51 +8941,12 @@ async function handleSteal(
 		},
 	]
 
-	// Shepherd: the steal was the last thing that could have taken the pair,
-	// so it lands now (see applyShepherdPayout).
-	const shepherdResult =
-		state.phase.from7 && nextPhase.kind === 'main'
-			? applyShepherdPayout(
-					{ ...state, players: nextPlayers },
-					state.currentTurn ?? 0
-				)
-			: { players: nextPlayers, events: [] as unknown[] }
-	events.push(...shepherdResult.events)
-
-	// FT chain after a 7 → steal → main transition.
-	let finalState: GameState = {
-		...state,
-		players: shepherdResult.players,
-		phase: nextPhase,
-	}
-	if (
-		state.phase.from7 &&
-		nextPhase.kind === 'main' &&
-		fortuneTellerTriggersOn(
-			nextPlayers[state.currentTurn ?? 0]?.bonus,
-			nextPhase.roll
-		)
-	) {
-		const ft = await runFortuneTellerChain(
-			finalState,
-			state.currentTurn ?? 0,
-			events
-		)
-		finalState = ft.state
-	}
-
-	// Magician: a 7-roll resolving to main opens the magician's window.
-	if (state.phase.from7 && finalState.phase.kind === 'main') {
-		finalState = {
-			...finalState,
-			phase: wrapMagicianWindow(
-				finalState.phase,
-				finalState,
-				state.currentTurn ?? 0,
-				finalState.phase.roll
-			),
-		}
-	}
+	const finalState = await exitRobberChain(
+		{ ...state, players: nextPlayers },
+		state.phase.from7,
+		nextPhase,
+		events
+	)
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -9662,32 +9870,8 @@ async function handleClaimCurio(
 		},
 	]
 
-	// If we transition into main and the active player is FT, fire the
-	// FT chain (mirrors what applyRollOutcome does for the no-pending path).
-	let finalPhase = nextPhase
-	let finalPlayers = nextPlayers
-	if (nextPhase.kind === 'main') {
-		const stateAfter: GameState = {
-			...state,
-			players: nextPlayers,
-			phase: nextPhase,
-		}
-		const activeIdx = state.currentTurn ?? 0
-		if (
-			fortuneTellerTriggersOn(
-				stateAfter.players[activeIdx]?.bonus,
-				nextPhase.roll
-			)
-		) {
-			const ft = await runFortuneTellerChain(
-				stateAfter,
-				activeIdx,
-				events
-			)
-			finalPlayers = ft.state.players
-			finalPhase = ft.state.phase
-		}
-	}
+	const { players: finalPlayers, phase: finalPhase } =
+		await resumeAfterReaction(state, nextPlayers, nextPhase, events)
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -9805,30 +9989,8 @@ async function handlePickForgerTarget(
 		},
 	]
 
-	let finalPhase = nextPhase
-	let finalPlayers = nextPlayers
-	if (nextPhase.kind === 'main') {
-		const activeIdx = state.currentTurn ?? 0
-		if (
-			fortuneTellerTriggersOn(
-				finalPlayers[activeIdx]?.bonus,
-				nextPhase.roll
-			)
-		) {
-			const stateAfter: GameState = {
-				...state,
-				players: finalPlayers,
-				phase: nextPhase,
-			}
-			const ft = await runFortuneTellerChain(
-				stateAfter,
-				activeIdx,
-				events
-			)
-			finalPlayers = ft.state.players
-			finalPhase = ft.state.phase
-		}
-	}
+	const { players: finalPlayers, phase: finalPhase } =
+		await resumeAfterReaction(state, nextPlayers, nextPhase, events)
 
 	const { error: stateErr } = await admin
 		.from('game_states')
@@ -9841,6 +10003,29 @@ async function handlePickForgerTarget(
 		.eq('id', game.id)
 	if (gameErr) return err(500, 'could not log event')
 	return json({ ok: true })
+}
+
+// A curio/forger reaction is resolved — claimed, copied, or skipped by the
+// forfeit autopilot. Landing on `main` fires the active player's fortune
+// teller chain, as `applyRollOutcome` does when no reaction was pending.
+async function resumeAfterReaction(
+	state: GameState,
+	players: PlayerState[],
+	nextPhase: Phase,
+	events: unknown[]
+): Promise<{ players: PlayerState[]; phase: Phase }> {
+	const activeIdx = state.currentTurn ?? 0
+	if (
+		nextPhase.kind !== 'main' ||
+		!fortuneTellerTriggersOn(players[activeIdx]?.bonus, nextPhase.roll)
+	)
+		return { players, phase: nextPhase }
+	const ft = await runFortuneTellerChain(
+		{ ...state, players, phase: nextPhase },
+		activeIdx,
+		events
+	)
+	return { players: ft.state.players, phase: ft.state.phase }
 }
 
 function parseResource(v: unknown): Resource | null {
@@ -10296,15 +10481,22 @@ serve(async (req) => {
 	// `games.deadline_at` is maintained here rather than inside fifty
 	// handlers. Backgrounded — nothing is waiting on it — but still under the
 	// lease, since it read-modify-writes `timed_out`. See refreshDeadline.
-	const refreshes = !TIMEOUT_NEUTRAL_ACTIONS.has(body.action)
+	// Any move can hand the floor to a forfeited seat, so the autopilot runs
+	// first, and the deadline is stamped for whoever it leaves on the clock.
+	// The neutral actions never move the phase, so they need neither.
+	const moves = !TIMEOUT_NEUTRAL_ACTIONS.has(body.action)
 	const locked = await withGameLock(
 		admin,
 		gameId,
-		{ waitMs: GAME_LOCK_WAIT_MS },
+		moves
+			? { waitMs: GAME_LOCK_WAIT_MS, ttlMs: AUTOPILOT_LOCK_TTL_MS }
+			: { waitMs: GAME_LOCK_WAIT_MS },
 		() => dispatch(admin, me, body),
-		refreshes
+		moves
 			? async (res) => {
-					if (res.ok) await refreshDeadline(admin, gameId, me)
+					if (!res.ok) return
+					await runAutopilot(admin, gameId)
+					await refreshDeadline(admin, gameId, me)
 				}
 			: undefined
 	)
