@@ -59,6 +59,7 @@
         "npm:react-native-worklets@0.10.1",
         "npm:react-native@0.86.2",
         "npm:react@19.2.3",
+        "npm:supabase@2.101.0",
         "npm:typescript@~5.9.2",
         "npm:zustand@^5.0.12"
       ]
