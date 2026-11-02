@@ -145,6 +145,15 @@ Vault, not written into the migration** — the migration references
 `select vault.create_secret('<key>', 'service_role_key')` is run by hand in the
 SQL editor. A committed migration must never contain the key.
 
+**The value must be the project's `sb_secret_…` secret key**, the one
+`isServiceRoleCaller` compares against the function's
+`SUPABASE_SERVICE_ROLE_KEY`. The legacy `service_role` JWT is rejected. A wrong
+value fails silently: the job still reports `succeeded` in
+`cron.job_run_details`, and the 401 only shows up in `net._http_response`. That
+is how the sweep went from its launch until 2026-11-02 without ever running,
+because the secret held the literal placeholder. To verify, check that recent
+`net._http_response` rows are 200s.
+
 A minute of granularity is right for a feature whose shortest window is an hour,
 and it is what makes the one-minute penalty window land promptly (worst case
 ~2 minutes).
