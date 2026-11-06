@@ -110,6 +110,7 @@ A per-game clock (`GameConfig.timeout`, default `'2d'`; `null` = off) that skips
 - **Two players: running out of time is losing** — the seat joins `games.forfeits` and the game completes through the ordinary forfeit path (both idle → cancel).
 - **Three or more: the seat is skipped, and the skip is a real action** — the sweep picks an arbitrary legal choice and calls the ordinary handler via `dispatch`, so `ActionLog` shows a normal roll/discard/end turn. There are no timeout event kinds.
 - **A skipped seat's next window is one minute** (`TIMEOUT_PENALTY_MS`, `games.timed_out`) until it acts again, or an absent player would stall the table for a fresh full window every go-around.
+- **"I'm back" clears the penalty without a move.** Off-turn windows (special build, discards) come round faster than a returning player gets a move of their own, so a flagged seat sees `TimeoutBanner` over the board, on and off turn, and its `clear_timeout` drops them from `timed_out`. It restarts the deadline only if the caller is on the clock, never anyone else's. See `.claude/specs/im-back.md`.
 
 ## Player colors
 
