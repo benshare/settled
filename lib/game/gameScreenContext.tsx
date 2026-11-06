@@ -209,6 +209,7 @@ function useGameScreenState(gameId: string) {
 	const batch = useGamesStore((s) => s.batch)
 	const setForfeit = useGamesStore((s) => s.setForfeit)
 	const setEndVote = useGamesStore((s) => s.setEndVote)
+	const clearTimedOut = useGamesStore((s) => s.clearTimedOut)
 
 	const [submitting, setSubmitting] = useState(false)
 	const [buildTool, setBuildTool] = useState<BoardToolChoice>(null)
@@ -955,6 +956,14 @@ function useGameScreenState(gameId: string) {
 	const myForfeit = !!user && forfeitedIds.includes(user.id)
 	const myEndVote = !!user && endVoteIds.includes(user.id)
 	const canEndGame = !isSpectator && meIdx >= 0 && !inGameOver
+	// Skipped by a timeout and not yet acted since, so every window is a
+	// minute. A forfeited seat is on autopilot anyway. See `.claude/specs/im-back.md`.
+	const myTimedOut =
+		!!user &&
+		!isSpectator &&
+		!inGameOver &&
+		!myForfeit &&
+		(game?.timed_out ?? []).includes(user.id)
 
 	// Button enablement: only when it's my main-phase turn, I can afford the
 	// cost (standard or bricklayer alt), AND there is at least one valid
@@ -1391,6 +1400,15 @@ function useGameScreenState(gameId: string) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
 		const res = await setForfeit(game.id, on)
+		setSubmitting(false)
+		if (res.error) notify(res.error)
+	}
+
+	// Move-neutral, so sent straight away rather than behind a barrier flush.
+	async function onClearTimeout() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await clearTimedOut(game.id)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
 	}
@@ -1939,6 +1957,7 @@ function useGameScreenState(gameId: string) {
 		myForfeit,
 		myEndVote,
 		canEndGame,
+		myTimedOut,
 		canUndo,
 		postPlacementTool,
 		postPlacementData,
@@ -2057,6 +2076,7 @@ function useGameScreenState(gameId: string) {
 		onEndSpecialBuild,
 		onSetForfeit,
 		onSetEndVote,
+		onClearTimeout,
 		onBuyDevCard,
 		submitBuyDevCard,
 		onPlayDevCard,

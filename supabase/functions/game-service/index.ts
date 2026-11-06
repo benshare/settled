@@ -108,6 +108,8 @@ type EndSpecialBuildBody = { action: 'end_special_build'; game_id: string }
 // setter can't get out of step with a client that fires twice.
 type SetForfeitBody = { action: 'set_forfeit'; game_id: string; on: boolean }
 type SetEndVoteBody = { action: 'set_end_vote'; game_id: string; on: boolean }
+// "I'm back": the caller leaves `games.timed_out`. See handleClearTimeout.
+type ClearTimeoutBody = { action: 'clear_timeout'; game_id: string }
 type BuildRoadBody = {
 	action: 'build_road'
 	game_id: string
@@ -352,6 +354,7 @@ type Body =
 	| BatchBody
 	| RunTimeoutsBody
 	| SetForfeitBody
+	| ClearTimeoutBody
 	| SetEndVoteBody
 	| DeleteAccountBody
 
@@ -6228,6 +6231,47 @@ function warningStageDue(args: {
 }
 
 /**
+ * "I'm back": drops the caller from `timed_out` without making them take a
+ * move, which they may have no chance to do off-turn before the one-minute
+ * penalty skips them again. If they are on the clock right now, their window
+ * restarts too; nobody else's deadline is touched. See `.claude/specs/im-back.md`.
+ */
+async function handleClearTimeout(
+	admin: SupabaseClient,
+	me: string,
+	body: ClearTimeoutBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (!inProgress(game)) return err(400, 'game is over')
+	const meIdx = seatOf(game, me)
+	if (meIdx === null) return err(403, 'not a participant')
+
+	const prev = game.timed_out ?? []
+	if (!prev.includes(me)) return json({ ok: true })
+	const timedOut = prev.filter((id) => id !== me)
+
+	const update: Record<string, unknown> = { timed_out: timedOut }
+	if (pendingSeats(state.phase, state.currentTurn).includes(meIdx)) {
+		update.deadline_at = deadlineFor({
+			timeout: timeoutOptionOf(game.config),
+			phase: state.phase,
+			currentTurn: state.currentTurn,
+			playerOrder: game.player_order,
+			timedOut,
+			now: Date.now(),
+		})
+		update.timeout_warned = 0
+	}
+
+	const { error } = await admin.from('games').update(update).eq('id', game.id)
+	if (error) return err(500, error.message)
+	return json({ ok: true })
+}
+
+/**
  * Re-stamps `games.deadline_at` after an action. Called from `serve` for every
  * successful game action — one place, rather than in each of the fifty
  * handlers — and inside `EdgeRuntime.waitUntil`, since nothing is waiting on it.
@@ -10511,11 +10555,14 @@ const GAME_LOCK_WAIT_MS = 5_000
 // A honk is a complaint about the stall, not an escape from it, so it must not
 // push the deadline out — the same reason `lastActivityAt` ignores honks. Chat
 // isn't a move either, and nor is an avarice discard — it can land on anyone's
-// turn, and must not clear the discarder's own timed-out flag.
+// turn, and must not clear the discarder's own timed-out flag. `clear_timeout`
+// stamps its own deadline, and only when the caller is on the clock — the
+// after-hook would hand whoever else is a fresh window.
 const TIMEOUT_NEUTRAL_ACTIONS = new Set<string>([
 	'honk',
 	'send_message',
 	'avarice_discard',
+	'clear_timeout',
 ])
 
 function isServiceRoleCaller(req: Request): boolean {
@@ -10626,6 +10673,8 @@ function dispatch(
 			return handleSetForfeit(admin, me, body)
 		case 'set_end_vote':
 			return handleSetEndVote(admin, me, body)
+		case 'clear_timeout':
+			return handleClearTimeout(admin, me, body)
 		case 'delete_account':
 			return handleDeleteAccount(admin, me)
 		default:

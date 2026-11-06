@@ -27,6 +27,7 @@ import {
 import { setupSettlementOrdinals } from '@/lib/catan/placement'
 import { distributeResources } from '@/lib/catan/roll'
 import { ScoutPickOverlay } from '@/lib/catan/ScoutPickOverlay'
+import { TimeoutBanner } from '@/lib/catan/TimeoutBanner'
 import { TradeBanner } from '@/lib/catan/TradeBanner'
 import { emptyHand } from '@/lib/catan/trade'
 import { gameSizeFor, type ResourceHand } from '@/lib/catan/types'
@@ -118,6 +119,8 @@ export function BoardArea({
 		onPickForgerTarget,
 		onCastMagic,
 		onSkipMagic,
+		myTimedOut,
+		onClearTimeout,
 		onConfirmMetropolitanCost,
 		onSetSpecialistResource,
 		onSetHauntSpots,
@@ -249,6 +252,12 @@ export function BoardArea({
 				/>
 			)}
 
+			{myTimedOut && (
+				<TimeoutBanner
+					submitting={submitting}
+					onImBack={onClearTimeout}
+				/>
+			)}
 			{liveOffer && !isSpectator && (
 				<TradeBanner
 					offer={liveOffer}

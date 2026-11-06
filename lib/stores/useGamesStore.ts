@@ -458,6 +458,8 @@ type GamesStore = {
 	// wins; every seat voting to end → the game is canceled with no winner).
 	// See `.claude/specs/forfeit-and-end-game.md`.
 	setForfeit: (gameId: string, on: boolean) => Promise<ActionResult>
+	// "I'm back": leave the one-minute timeout penalty without taking a move.
+	clearTimedOut: (gameId: string) => Promise<ActionResult>
 	setEndVote: (gameId: string, on: boolean) => Promise<ActionResult>
 
 	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
@@ -881,6 +883,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'set_forfeit', game_id: gameId, on },
 			on ? "Couldn't forfeit" : "Couldn't withdraw your forfeit"
+		)
+	},
+
+	async clearTimedOut(gameId) {
+		return callGameService(
+			{ action: 'clear_timeout', game_id: gameId },
+			"Couldn't clear your timeout"
 		)
 	},
 
