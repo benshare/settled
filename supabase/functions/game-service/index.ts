@@ -3964,6 +3964,60 @@ function merchantAppliesTo(
 	return givers.length === 1 ? givers[0] : null
 }
 
+// How the give is cut into piles that are grouped independently. Each resource
+// is its own pile, except that a smith's brick and ore are fungible — so they
+// pool, letting 1 brick + 1 ore fill a 2:1 brick group. Both resources carry
+// the same rates for a smith (`bankRatesFor`), so the pool reads either's.
+function givePiles(
+	state: GameState,
+	playerIdx: number,
+	give: ResourceHand
+): Resource[][] {
+	const givers = RESOURCES.filter((r) => give[r] > 0)
+	if (
+		state.players[playerIdx]?.bonus !== 'smith' ||
+		give.brick === 0 ||
+		give.ore === 0
+	)
+		return givers.map((r) => [r])
+	return [
+		['brick', 'ore'],
+		...givers.filter((r) => r !== 'brick' && r !== 'ore').map((r) => [r]),
+	]
+}
+
+// Split a pooled pile's groups back into per-resource rate records. A mixed
+// group is attributed to the resource its first card came from — the log's
+// "Gave" row stays exact; only the per-rate breakdown rounds.
+function attributePooledGroups(
+	parts: number[],
+	resources: Resource[],
+	give: ResourceHand
+): BankRate[] {
+	const left = resources.map((r) => give[r])
+	const counts = new Map<string, BankRate>()
+	let i = 0
+	for (const ratio of parts) {
+		while (left[i] === 0) i += 1
+		const key = `${resources[i]}:${ratio}`
+		const rec = counts.get(key) ?? {
+			resource: resources[i],
+			ratio,
+			groups: 0,
+		}
+		rec.groups += 1
+		counts.set(key, rec)
+		let need = ratio
+		while (need > 0) {
+			while (left[i] === 0) i += 1
+			const take = Math.min(need, left[i])
+			left[i] -= take
+			need -= take
+		}
+	}
+	return [...counts.values()]
+}
+
 // The partition backing this give/receive, or null if the bank won't take it.
 // A non-null return is both the validity answer and the record of what was
 // charged. Affordability is checked separately by the caller.
@@ -3992,24 +4046,24 @@ function bankPartitionFor(
 	// walk needs. The merchant's 1:1 cards ride on top of a full-price
 	// partition, so they're layered over the table rather than folded into it.
 	type Slot = {
-		resource: Resource
+		resources: Resource[]
 		count: number
 		ratios: number[]
 		table: Set<number>[]
 		reachable: Map<number, number>
 	}
 	const slots: Slot[] = []
-	for (const r of RESOURCES) {
-		if (give[r] === 0) continue
-		const ratios = rates[r]
+	for (const pile of givePiles(state, playerIdx, give)) {
+		const count = pile.reduce((n, r) => n + give[r], 0)
+		const ratios = rates[pile[0]]
 		if (!ratios || ratios.length === 0) return null
-		const table = reachableGroupCounts(give[r], ratios)
+		const table = reachableGroupCounts(count, ratios)
 		// group count → how many of the given cards were spent at full price
 		const reachable = new Map<number, number>()
-		for (const g of table[give[r]]) reachable.set(g, give[r])
-		if (r === merchantResource) {
-			for (let spent = 1; spent < give[r]; spent += 1) {
-				const extra = give[r] - spent
+		for (const g of table[count]) reachable.set(g, count)
+		if (pile.length === 1 && pile[0] === merchantResource) {
+			for (let spent = 1; spent < count; spent += 1) {
+				const extra = count - spent
 				for (const g of table[spent]) {
 					if (g < 1) continue
 					if (!reachable.has(g + extra))
@@ -4018,7 +4072,7 @@ function bankPartitionFor(
 			}
 		}
 		if (reachable.size === 0) return null
-		slots.push({ resource: r, count: give[r], ratios, table, reachable })
+		slots.push({ resources: pile, count, ratios, table, reachable })
 	}
 
 	// Combine across resources: running receive total → one representative
@@ -4055,13 +4109,17 @@ function bankPartitionFor(
 			slot.table
 		)
 		if (parts.length === 0 && spent > 0) return null
+		if (slot.resources.length > 1) {
+			out.push(...attributePooledGroups(parts, slot.resources, give))
+			continue
+		}
 		const byRatio = new Map<number, number>()
 		for (const ratio of parts)
 			byRatio.set(ratio, (byRatio.get(ratio) ?? 0) + 1)
 		if (extra > 0) byRatio.set(1, (byRatio.get(1) ?? 0) + extra)
 		for (const ratio of [...byRatio.keys()].sort((a, b) => a - b)) {
 			out.push({
-				resource: slot.resource,
+				resource: slot.resources[0],
 				ratio,
 				groups: byRatio.get(ratio)!,
 			})

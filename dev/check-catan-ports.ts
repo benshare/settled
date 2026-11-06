@@ -508,7 +508,34 @@ function checkCombinationBonuses() {
 		!!bankPartitionFor(smith, 0, hand({ ore: 2 }), hand({ wood: 1 })),
 		'smith satisfies a brick port with ore'
 	)
+	assert(
+		!!bankPartitionFor(
+			smith,
+			0,
+			hand({ brick: 1, ore: 1 }),
+			hand({ wood: 1 })
+		),
+		'smith fills one 2:1 brick group with a brick and an ore'
+	)
+	assert(
+		!!bankPartitionFor(
+			smith,
+			0,
+			hand({ brick: 3, ore: 1, wheat: 4 }),
+			hand({ wood: 3 })
+		),
+		'pooled brick/ore combines with other resources at the 4:1 bank'
+	)
 	const nonSmith = bankState({ ports: ['brick'] })
+	assert(
+		!bankPartitionFor(
+			nonSmith,
+			0,
+			hand({ brick: 1, ore: 1 }),
+			hand({ wood: 1 })
+		),
+		'without the smith bonus brick and ore never share a group'
+	)
 	assert(
 		!bankPartitionFor(nonSmith, 0, hand({ ore: 2 }), hand({ wood: 1 })),
 		'without the smith bonus a brick port takes only brick'
