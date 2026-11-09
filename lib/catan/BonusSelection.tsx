@@ -16,15 +16,7 @@ import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
-import {
-	Pressable,
-	ScrollView,
-	StyleSheet,
-	Text,
-	View,
-	type StyleProp,
-	type ViewStyle,
-} from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import {
 	bonusById,
@@ -142,6 +134,7 @@ export function BonusSelection({
 						<Text style={styles.subheading}>
 							{selectionCopy(hand.offered.length, curses.length)}
 						</Text>
+						<Text style={styles.rowHeader}>Bonus</Text>
 						<CardRow
 							kind="bonus"
 							cards={hand.offered.map((id) => ({
@@ -167,9 +160,9 @@ export function BonusSelection({
 							colors={colors}
 						/>
 
+						<Text style={styles.rowHeader}>Curse</Text>
 						<CardRow
 							kind="curse"
-							style={styles.curseRow}
 							cards={curses.map((id) => ({
 								id,
 								title: curseById(id)!.title,
@@ -265,7 +258,6 @@ function CardRow({
 	onPick,
 	styles,
 	colors,
-	style,
 }: {
 	kind: 'bonus' | 'curse'
 	cards: PickerCard[]
@@ -276,7 +268,6 @@ function CardRow({
 	onPick: (idx: number) => void
 	styles: ReturnType<typeof makeStyles>
 	colors: ColorScheme
-	style?: StyleProp<ViewStyle>
 }) {
 	const accent = kind === 'bonus' ? colors.brand : colors.error
 	const [rowWidth, setRowWidth] = useState(0)
@@ -326,7 +317,6 @@ function CardRow({
 	return (
 		<ScrollView
 			horizontal
-			style={style}
 			onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}
 			showsHorizontalScrollIndicator={false}
 			contentContainerStyle={styles.cardScroll}
@@ -436,8 +426,13 @@ function makeStyles(colors: ColorScheme) {
 			color: colors.textMuted,
 			fontStyle: 'italic',
 		},
-		curseRow: {
-			marginTop: spacing.sm,
+		rowHeader: {
+			marginTop: 6,
+			fontSize: font.xs,
+			fontWeight: '700',
+			color: colors.textMuted,
+			textTransform: 'uppercase',
+			letterSpacing: 0.5,
 		},
 		cardScroll: {
 			flexDirection: 'row',
