@@ -216,11 +216,7 @@ export function BonusSelection({
 									}
 									loading={submitting}
 								>
-									{bonusIdx === null
-										? 'Pick a bonus'
-										: curseIdx === null
-											? 'Pick a curse'
-											: 'Confirm'}
+									Confirm choices
 								</Button>
 							</View>
 						)}
@@ -253,9 +249,12 @@ type PickerCard = {
 	clarifications: readonly string[]
 }
 
-// One kind's dealt cards: one or two share the pane's width; more sit at a
-// fixed width in a sideways-scrolling row. A `fixed` row (one card, dealt rather
-// than chosen) renders the same card inert.
+// One kind's dealt cards. They share the row's width but never shrink below
+// CARD_MIN_WIDTH; past that the row scrolls sideways. Widths are computed from
+// the measured row rather than left to flex: a horizontal ScrollView gives its
+// content unbounded width, so a flex card lays its text out on one line and
+// runs off screen. A `fixed` row (one card, dealt rather than chosen) renders
+// the same card inert.
 function CardRow({
 	kind,
 	cards,
@@ -279,8 +278,12 @@ function CardRow({
 	colors: ColorScheme
 	style?: StyleProp<ViewStyle>
 }) {
-	const fits = cards.length <= 2
 	const accent = kind === 'bonus' ? colors.brand : colors.error
+	const [rowWidth, setRowWidth] = useState(0)
+	const cardWidth = Math.max(
+		CARD_MIN_WIDTH,
+		(rowWidth - CARD_GAP * (cards.length - 1)) / cards.length
+	)
 
 	const items = cards.map((card, i) => {
 		// A fixed card was dealt, not chosen — it reads as picked from the
@@ -294,7 +297,7 @@ function CardRow({
 				disabled={fixed || committed || disabled}
 				style={({ pressed }) => [
 					styles.card,
-					fits ? styles.cardFlex : styles.cardFixedWidth,
+					{ width: cardWidth },
 					isPicked &&
 						(kind === 'curse'
 							? styles.curseCardPicked
@@ -320,11 +323,11 @@ function CardRow({
 		)
 	})
 
-	if (fits) return <View style={[styles.cardRow, style]}>{items}</View>
 	return (
 		<ScrollView
 			horizontal
 			style={style}
+			onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}
 			showsHorizontalScrollIndicator={false}
 			contentContainerStyle={styles.cardScroll}
 		>
@@ -342,7 +345,7 @@ function selectionCopy(bonusCount: number, curseCount: number): string {
 	if (bonusCount === 1) {
 		return 'Keep one curse card — the rest are discarded. Your bonus card is already yours.'
 	}
-	return 'Keep one bonus card and one curse card. The rest are discarded.'
+	return 'Keep one bonus and one curse, and discard the others.'
 }
 
 function PlayOrderFooter({
@@ -412,7 +415,8 @@ function formatList(names: string[]): string {
 	return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
 }
 
-const CARD_WIDTH = 150
+const CARD_MIN_WIDTH = 150
+const CARD_GAP = spacing.sm
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
@@ -437,17 +441,7 @@ function makeStyles(colors: ColorScheme) {
 		},
 		cardScroll: {
 			flexDirection: 'row',
-			gap: spacing.sm,
-		},
-		cardRow: {
-			flexDirection: 'row',
-			gap: spacing.sm,
-		},
-		cardFlex: {
-			flex: 1,
-		},
-		cardFixedWidth: {
-			width: CARD_WIDTH,
+			gap: CARD_GAP,
 		},
 		card: {
 			padding: spacing.sm,
