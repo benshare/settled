@@ -16,7 +16,15 @@ import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+	Pressable,
+	ScrollView,
+	StyleSheet,
+	Text,
+	View,
+	type StyleProp,
+	type ViewStyle,
+} from 'react-native'
 import type { Profile } from '../stores/useProfileStore'
 import {
 	bonusById,
@@ -161,6 +169,7 @@ export function BonusSelection({
 
 						<CardRow
 							kind="curse"
+							style={styles.curseRow}
 							cards={curses.map((id) => ({
 								id,
 								title: curseById(id)!.title,
@@ -244,9 +253,9 @@ type PickerCard = {
 	clarifications: readonly string[]
 }
 
-// One kind's dealt cards. Two or fewer share the width; three would leave the
-// text unreadable at that size, so the row scrolls sideways instead. A `fixed`
-// row (one card, dealt rather than chosen) renders the same card inert.
+// One kind's dealt cards: one or two share the pane's width; more sit at a
+// fixed width in a sideways-scrolling row. A `fixed` row (one card, dealt rather
+// than chosen) renders the same card inert.
 function CardRow({
 	kind,
 	cards,
@@ -257,6 +266,7 @@ function CardRow({
 	onPick,
 	styles,
 	colors,
+	style,
 }: {
 	kind: 'bonus' | 'curse'
 	cards: PickerCard[]
@@ -267,8 +277,9 @@ function CardRow({
 	onPick: (idx: number) => void
 	styles: ReturnType<typeof makeStyles>
 	colors: ColorScheme
+	style?: StyleProp<ViewStyle>
 }) {
-	const scrolls = cards.length > 2
+	const fits = cards.length <= 2
 	const accent = kind === 'bonus' ? colors.brand : colors.error
 
 	const items = cards.map((card, i) => {
@@ -283,7 +294,7 @@ function CardRow({
 				disabled={fixed || committed || disabled}
 				style={({ pressed }) => [
 					styles.card,
-					scrolls ? styles.cardFixedWidth : styles.cardFlex,
+					fits ? styles.cardFlex : styles.cardFixedWidth,
 					isPicked &&
 						(kind === 'curse'
 							? styles.curseCardPicked
@@ -309,10 +320,11 @@ function CardRow({
 		)
 	})
 
-	if (!scrolls) return <View style={styles.cardRow}>{items}</View>
+	if (fits) return <View style={[styles.cardRow, style]}>{items}</View>
 	return (
 		<ScrollView
 			horizontal
+			style={style}
 			showsHorizontalScrollIndicator={false}
 			contentContainerStyle={styles.cardScroll}
 		>
@@ -400,6 +412,8 @@ function formatList(names: string[]): string {
 	return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
 }
 
+const CARD_WIDTH = 150
+
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
 		scroll: {
@@ -418,20 +432,22 @@ function makeStyles(colors: ColorScheme) {
 			color: colors.textMuted,
 			fontStyle: 'italic',
 		},
-		cardRow: {
-			flexDirection: 'row',
-			gap: spacing.sm,
+		curseRow: {
+			marginTop: spacing.sm,
 		},
 		cardScroll: {
 			flexDirection: 'row',
 			gap: spacing.sm,
-			paddingRight: spacing.sm,
+		},
+		cardRow: {
+			flexDirection: 'row',
+			gap: spacing.sm,
 		},
 		cardFlex: {
 			flex: 1,
 		},
 		cardFixedWidth: {
-			width: 150,
+			width: CARD_WIDTH,
 		},
 		card: {
 			padding: spacing.sm,
