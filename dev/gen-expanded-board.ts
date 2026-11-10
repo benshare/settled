@@ -159,25 +159,19 @@ let prevV = startV
 
 const L = COASTAL_EDGES.length
 const N_PORTS = 11
+// Fractional spacing: a fixed integer step leaves the rounding remainder piled
+// into the wrap-around gap (L = 38 with step 3 left an 8-edge portless stretch).
 const PORT_SLOTS: string[] = []
 {
 	const used = new Set<string>()
-	let idx = 0
 	for (let k = 0; k < N_PORTS; k++) {
-		let tries = 0
-		let e = COASTAL_EDGES[idx % L]
-		while (tries < L) {
-			const [a, b] = e.split(' - ')
-			if (!used.has(a) && !used.has(b)) break
-			idx++
-			e = COASTAL_EDGES[idx % L]
-			tries++
-		}
+		const e = COASTAL_EDGES[Math.round((k * L) / N_PORTS) % L]
 		const [a, b] = e.split(' - ')
+		if (used.has(a) || used.has(b))
+			throw new Error(`port slot ${e} shares a vertex`)
 		used.add(a)
 		used.add(b)
 		PORT_SLOTS.push(e)
-		idx += Math.max(2, Math.round(L / N_PORTS))
 	}
 }
 if (PORT_SLOTS.length !== N_PORTS)

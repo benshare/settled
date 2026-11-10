@@ -9,6 +9,7 @@ import {
 	RESOURCES,
 	STANDARD_PORT_KINDS,
 	adjacentHexes,
+	boardFor,
 	edgeEndpoints,
 	type Edge,
 	type Hex,
@@ -64,6 +65,29 @@ function checkCoastalData() {
 	for (const k of STANDARD_PORT_KINDS) counts[k]++
 	assert(counts['3:1'] === 4, 'expected 4 generic ports')
 	for (const r of RESOURCES) assert(counts[r] === 1, `expected 1 ${r} port`)
+}
+
+// Ports spread evenly round the ring on every board: the gaps between
+// consecutive slots (wrap-around included) differ by at most one edge. A fixed
+// integer step once left an 8-edge portless stretch on the expanded board.
+function checkPortSpacing() {
+	for (const variant of ['standard', 'expanded'] as const) {
+		const { coastalEdges, portSlots } = boardFor(variant)
+		const idx = portSlots.map((e) => coastalEdges.indexOf(e))
+		assert(
+			idx.every((i, k) => i >= 0 && (k === 0 || i > idx[k - 1])),
+			`${variant}: port slots out of ring order`
+		)
+		const gaps = idx.map(
+			(i, k) =>
+				(idx[(k + 1) % idx.length] - i + coastalEdges.length) %
+				coastalEdges.length
+		)
+		assert(
+			Math.max(...gaps) - Math.min(...gaps) <= 1,
+			`${variant}: uneven port gaps ${gaps.join(',')}`
+		)
+	}
 }
 
 function countLandHexes(e: Edge): number {
@@ -630,6 +654,7 @@ function checkApply() {
 
 function main() {
 	checkCoastalData()
+	checkPortSpacing()
 	checkGenerate()
 	checkPlayerPortKinds()
 	checkAvailableOptions()
