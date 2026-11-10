@@ -699,8 +699,13 @@ const styles = StyleSheet.create({
 	// button below stays the same width whether it says "Roll" or "Done
 	// building". Placement's column is left off it — it has no trade beside it
 	// and its confirm labels need the whole row.
+	// Longhand, not `flex: 1`: native Yoga and react-native-web resolve the
+	// shorthand's shrink/basis differently, and either slot growing to its
+	// content starved Trade down to one letter per line.
 	actionSlot: {
-		flex: 1,
+		flexGrow: 1,
+		flexShrink: 1,
+		flexBasis: 0,
 		minWidth: 0,
 	},
 	// Fills its (constant-width) column; the secondary bonus buttons above it

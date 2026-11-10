@@ -228,6 +228,7 @@ export function TradeButton({
 					color={tradeInteractive ? colors.text : colors.textMuted}
 				/>
 				<Text
+					numberOfLines={1}
 					style={[
 						styles.tradeCompactLabel,
 						!tradeInteractive && { color: colors.textMuted },
