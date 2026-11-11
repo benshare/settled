@@ -141,18 +141,13 @@ export const CURSE_SIZE_VARIANTS: {
 		},
 	},
 	// Losing the bank costs you more the fewer people there are to trade with,
-	// so heads-up it's only a surcharge, while at a 5-6 player table — where
-	// there are plenty of trading partners — the bank closes entirely.
+	// so up to 4 players it's only a surcharge, while at a 5-6 player table —
+	// where there are plenty of trading partners — ports close and the bank
+	// goes to 5:1.
 	provinciality: {
-		small: {
-			description:
-				'Every port and bank trade costs one more of the input resource.',
-			bankAccess: 'surcharge',
-		},
 		expanded: {
-			description:
-				"You can't use ports or trade with the bank. Player trades still work.",
-			bankAccess: 'none',
+			description: "You can't use ports, and bank trades cost 5:1.",
+			bankAccess: 'flat_5',
 		},
 	},
 }

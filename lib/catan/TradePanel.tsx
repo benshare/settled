@@ -82,9 +82,9 @@ export function TradePanel({
 	const otherIndices = playerOrder.map((_, i) => i).filter((i) => i !== meIdx)
 	const allSelected = addressed.length === otherIndices.length
 
-	// Empty under the expanded-table Curse of Provinciality, which closes the
-	// bank outright — the one case the button explains itself rather than just
-	// sitting inert.
+	// Empty under a Curse of Provinciality variant that closes the bank outright
+	// (`bankAccess: 'none'`, no size uses it today) — the one case the button
+	// explains itself rather than just sitting inert.
 	const bankOptions = useMemo(
 		() => availableBankOptions(state, meIdx),
 		[state, meIdx]

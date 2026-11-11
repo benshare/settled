@@ -542,16 +542,16 @@ function testYouthTouchedSet() {
 // --- provinciality ----------------------------------------------------------
 
 function testProvincialityBankOption() {
-	const s = setCurse(baseState(), 0, 'provinciality')
+	const s = setCurse(playerState(5, 'expanded'), 0, 'provinciality')
 	const opts = availableBankOptions(s, 0)
 	equal(opts.length, 1, 'provinciality gives one option')
 	equal(opts[0], '5:1', 'that option is 5:1')
 	equal(ratioOf('5:1'), 5, '5:1 ratio')
-	equal(bankSurchargeFor(s, 0), 0, 'no surcharge at 3-4 players')
+	equal(bankSurchargeFor(s, 0), 0, 'no surcharge at 5-6 players')
 }
 
-// Heads-up the curse is a +1 surcharge with ports still usable; at a 5-6
-// player table the bank closes completely.
+// Up to 4 players the curse is a +1 surcharge with ports still usable; at a
+// 5-6 player table ports close and the bank goes to 5:1.
 function testProvincialityBySize() {
 	const give = (h: Partial<ResourceHand>): ResourceHand => ({
 		...emptyHand(),
@@ -603,13 +603,23 @@ function testProvincialityBySize() {
 		'small: surcharged specialist pays the base rate'
 	)
 
-	// --- expanded: no bank trading at all
+	// --- standard: the same surcharge as heads-up
+	const mid = setCurse(playerState(4), 0, 'provinciality')
+	equal(bankSurchargeFor(mid, 0), 1, 'standard: +1 surcharge')
+	assert(
+		availableBankOptions(mid, 0).includes('4:1'),
+		'standard: the option list is not collapsed'
+	)
+
+	// --- expanded: ports closed, flat 5:1
 	const big = setCurse(playerState(5, 'expanded'), 0, 'provinciality')
-	equal(availableBankOptions(big, 0).length, 0, 'expanded: no options')
+	const bigOpts = availableBankOptions(big, 0)
+	equal(bigOpts.length, 1, 'expanded: one option')
+	equal(bigOpts[0], '5:1', 'expanded: that option is 5:1')
 	equal(bankSurchargeFor(big, 0), 0, 'expanded: nothing to surcharge')
 
 	// --- uncursed players are untouched at every size
-	for (const st of [small, big]) {
+	for (const st of [small, mid, big]) {
 		assert(
 			availableBankOptions(st, 1).includes('4:1'),
 			'uncursed player keeps the bank'

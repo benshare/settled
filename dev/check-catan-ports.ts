@@ -595,21 +595,46 @@ function checkCombinationBonuses() {
 }
 
 function checkCombinationProvinciality() {
-	// Small table: +1 on every rate.
-	const surcharged = bankState({ curse: 'provinciality', playerCount: 2 })
-	assert(
-		!!bankPartitionFor(surcharged, 0, hand({ wood: 5 }), hand({ ore: 1 })),
-		'surcharged bank charges 5 for 1'
-	)
-	assert(
-		!bankPartitionFor(surcharged, 0, hand({ wood: 4 }), hand({ ore: 1 })),
-		'the base 4:1 is gone under the surcharge'
-	)
-	// Standard table: flat 5:1, ports ignored.
+	// Small and standard tables: +1 on every rate, ports still usable.
+	for (const playerCount of [2, 4]) {
+		const surcharged = bankState({
+			ports: ['wheat'],
+			curse: 'provinciality',
+			playerCount,
+		})
+		assert(
+			!!bankPartitionFor(
+				surcharged,
+				0,
+				hand({ wood: 5 }),
+				hand({ ore: 1 })
+			),
+			`${playerCount}p: surcharged bank charges 5 for 1`
+		)
+		assert(
+			!bankPartitionFor(
+				surcharged,
+				0,
+				hand({ wood: 4 }),
+				hand({ ore: 1 })
+			),
+			`${playerCount}p: the base 4:1 is gone under the surcharge`
+		)
+		assert(
+			!!bankPartitionFor(
+				surcharged,
+				0,
+				hand({ wheat: 3 }),
+				hand({ ore: 1 })
+			),
+			`${playerCount}p: a 2:1 port charges 3`
+		)
+	}
+	// Expanded table: flat 5:1, ports ignored.
 	const flat = bankState({
 		ports: ['wheat'],
 		curse: 'provinciality',
-		playerCount: 4,
+		playerCount: 5,
 	})
 	assert(
 		!!bankPartitionFor(flat, 0, hand({ wheat: 5 }), hand({ ore: 1 })),
@@ -618,16 +643,6 @@ function checkCombinationProvinciality() {
 	assert(
 		!bankPartitionFor(flat, 0, hand({ wheat: 2 }), hand({ ore: 1 })),
 		'flat_5 ignores the port'
-	)
-	// Expanded table: no bank at all.
-	const closed = bankState({ curse: 'provinciality', playerCount: 5 })
-	assert(
-		availableBankOptions(closed, 0).length === 0,
-		'expanded provinciality closes the bank'
-	)
-	assert(
-		!bankPartitionFor(closed, 0, hand({ wood: 8 }), hand({ ore: 1 })),
-		'a closed bank takes nothing'
 	)
 }
 

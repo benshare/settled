@@ -34,10 +34,10 @@ every size.
 
 ### Curses
 
-| Card              | small (2)                          | standard (3-4)     | expanded (5-6)         |
-| ----------------- | ---------------------------------- | ------------------ | ---------------------- |
-| **Age**           | 5 cards/turn                       | 6                  | 7                      |
-| **Provinciality** | ports usable, every ratio +1 input | no ports, 5:1 bank | no bank trading at all |
+| Card              | small (2)                          | standard (3-4) | expanded (5-6)     |
+| ----------------- | ---------------------------------- | -------------- | ------------------ |
+| **Age**           | 5 cards/turn                       | 6              | 7                  |
+| **Provinciality** | ports usable, every ratio +1 input | same as small  | no ports, 5:1 bank |
 
 ### Bonuses
 
@@ -56,10 +56,12 @@ reads of them survive with no size declaring either, so re-tuning it is a
 
 Two of the live variants needed more than a number:
 
-- **Provinciality** can't be expressed as a `BankKind` at either end. The
-  small version is priced into the ratio (`bankSurchargeFor` → +1) so ports
-  keep working; the expanded version empties `availableBankOptions`, which the
-  UI reads to disable the bank button ("Bank closed (curse)").
+- **Provinciality**'s baseline (2-4 players) can't be expressed as a
+  `BankKind`: it is priced into the ratio (`bankSurchargeFor` → +1) so ports
+  keep working. The 5-6 version is the flat 5:1. A third `bankAccess: 'none'`
+  (bank closed, which empties `availableBankOptions` and labels the bank button
+  "Bank closed (curse)") is still supported but no size uses it — the 5-6 table
+  used it until it was moved to 5:1.
 - **Gambler** at 5-6 throws both pairs up front into
   `phase.pending.{dice, altDice}`; `confirm_roll` takes a `which` to name the
   keeper and `reroll_dice` is rejected. Adds a `roll_choice` event so the

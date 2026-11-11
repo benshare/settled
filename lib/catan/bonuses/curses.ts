@@ -82,7 +82,8 @@ export const CURSE_POOL: readonly Curse[] = [
 	{
 		id: 'provinciality',
 		title: 'Curse of Provinciality',
-		description: "You can't use ports, and bank trades cost 5:1.",
+		description:
+			'Every port and bank trade costs one more of the input resource.',
 		clarifications: [],
 		icon: 'home-outline',
 		set: 'base',

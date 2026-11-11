@@ -1492,8 +1492,7 @@ const CURSE_SIZE_VARIANTS: Partial<
 		expanded: { cardLimit: 7 },
 	},
 	provinciality: {
-		small: { bankAccess: 'surcharge' },
-		expanded: { bankAccess: 'none' },
+		expanded: { bankAccess: 'flat_5' },
 	},
 }
 
@@ -3849,7 +3848,7 @@ function bankAccessFor(
 ): 'open' | 'surcharge' | 'flat_5' | 'none' {
 	if (curseOf(state, playerIdx) !== 'provinciality') return 'open'
 	const size = gameSizeFor(state.players.length)
-	return CURSE_SIZE_VARIANTS.provinciality?.[size]?.bankAccess ?? 'flat_5'
+	return CURSE_SIZE_VARIANTS.provinciality?.[size]?.bankAccess ?? 'surcharge'
 }
 
 // --- Combination bank trades ------------------------------------------------

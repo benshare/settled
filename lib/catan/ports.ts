@@ -42,10 +42,10 @@ export function bankAccessFor(
 ): BankAccess | 'open' {
 	if (state.players[playerIdx]?.curse !== 'provinciality') return 'open'
 	const size = gameSizeFor(state.players.length)
-	return curseVariantFor('provinciality', size)?.bankAccess ?? 'flat_5'
+	return curseVariantFor('provinciality', size)?.bankAccess ?? 'surcharge'
 }
 
-// Extra input the player pays on every ratio — 1 under the small-table
+// Extra input the player pays on every ratio — 1 under the 2-4 player
 // version of provinciality, 0 for everyone else. Callers thread this into
 // `effectiveBankRatioFor` / `isValidBankTradeShape` so the surcharge is
 // applied in exactly one place.
