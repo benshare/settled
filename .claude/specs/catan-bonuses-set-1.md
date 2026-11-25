@@ -277,7 +277,9 @@ hand > 7`.
       Picker re-uses the Year of Plenty two-resource picker pattern.
     - Specially-styled "4 Wood → 1 VP" button on BuildTradeBar (carpenter).
     - RollBar: when a gambler player rolls, the dice show with "Confirm" /
-      "Reroll" buttons until the player commits. Non-gambler players see no
+      "Reroll" buttons until the player commits. (Since moved to the status
+      surface with a preview of the cards the roll pays — see
+      `.claude/specs/game-hud.md` §6.) Non-gambler players see no
       change to the roll flow.
     - TradePanel: bank row highlights declared specialist resource and
       shows a "−1" tag on the matching give row.

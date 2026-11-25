@@ -24,12 +24,12 @@ import {
 	shepherdPendingLabel,
 } from '@/lib/catan/ShepherdSwapPicker'
 import { TradePanel } from '@/lib/catan/TradePanel'
-import { monopolyCap, type DiceRoll, type GameState } from '@/lib/catan/types'
+import { monopolyCap, type GameState } from '@/lib/catan/types'
 import { Button } from '@/lib/modules/Button'
 import type { Game, GameEvent } from '@/lib/stores/useGamesStore'
 import type { Profile } from '@/lib/stores/useProfileStore'
-import { colors, font, radius, spacing } from '@/lib/theme'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { colors, font, spacing } from '@/lib/theme'
+import { StyleSheet, Text, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import { useGameScreen, type PlacementStage } from './gameScreenContext'
 import {
@@ -82,8 +82,6 @@ export function BottomArea() {
 		forgerMustMove,
 		onConfirm,
 		onRoll,
-		onConfirmRoll,
-		onRerollDice,
 		onEndTurn,
 		onHonk,
 		onProposeTrade,
@@ -187,8 +185,6 @@ export function BottomArea() {
 							profilesById={profilesById}
 							submitting={submitting}
 							onRoll={onRoll}
-							onConfirmRoll={onConfirmRoll}
-							onRerollDice={onRerollDice}
 							onEndTurn={onEndTurn}
 							onHonk={onHonk}
 							onRitualPress={
@@ -384,8 +380,6 @@ function MainLoopBar({
 	profilesById,
 	submitting,
 	onRoll,
-	onConfirmRoll,
-	onRerollDice,
 	onEndTurn,
 	onHonk,
 	onRitualPress,
@@ -404,10 +398,6 @@ function MainLoopBar({
 	profilesById: Record<string, Profile>
 	submitting: boolean
 	onRoll: () => void
-	// `which` names the pending pair to keep where the gambler bonus is
-	// choose-of-two (5-6 players); omitted for the single-pair confirm.
-	onConfirmRoll: (which?: 0 | 1) => void
-	onRerollDice: () => void
 	onEndTurn: () => void
 	onHonk: () => void
 	// Set-2 pre-roll affordances. Each is `undefined` when the bar should
@@ -442,29 +432,28 @@ function MainLoopBar({
 			: (profilesById[currentId]?.username ?? 'Player')
 
 	// Gambler pending-dice path: dice are shown but not yet applied. The
-	// player must Confirm (apply distribution / 7-chain) or Reroll (once
-	// per turn). Non-gambler rolls skip this — dice go from roll → main
-	// atomically.
+	// keep-or-reroll decision itself sits in the top zone's status area (see
+	// `GamblerRollDecision`), so this bar only narrates it. Non-gambler rolls
+	// skip this — dice go from roll → main atomically.
 	const pendingDice =
 		phase.kind === 'roll' ? (phase.pending?.dice ?? null) : null
 	// Present only for the choose-of-two gambler: both pairs are already
-	// thrown and the player keeps one, so there is no reroll step.
+	// thrown and the player keeps one.
 	const altDice =
 		phase.kind === 'roll' ? (phase.pending?.altDice ?? null) : null
 	const committedDice = phase.kind === 'main' ? phase.roll : null
 	const dice = pendingDice ?? committedDice
 	const total = dice ? dice.a + dice.b : null
 	const altTotal = altDice ? altDice.a + altDice.b : null
-	const rerolledThisTurn = gameState.players[meIdx]?.rerolledThisTurn ?? false
 
 	let status: string
 	if (pendingDice && altDice) {
 		status = isMyTurn
-			? `You rolled ${total} and ${altTotal} — keep one`
+			? `You rolled ${total} and ${altTotal} — keep one above`
 			: `${currentName} is choosing between ${total} and ${altTotal}`
 	} else if (pendingDice) {
 		status = isMyTurn
-			? `You rolled ${total} — confirm or reroll`
+			? `You rolled ${total} — keep it above`
 			: `${currentName} rolled ${total}`
 	} else if (phase.kind === 'roll') {
 		status = !isMyTurn
@@ -509,39 +498,6 @@ function MainLoopBar({
 							disabled={forgerMustMove}
 						>
 							Roll
-						</Button>
-					</View>
-				)}
-				{isMyTurn && pendingDice && altDice && (
-					<View style={styles.gamblerActions}>
-						<RollChoice
-							dice={pendingDice}
-							disabled={submitting}
-							onPress={() => onConfirmRoll(0)}
-						/>
-						<RollChoice
-							dice={altDice}
-							disabled={submitting}
-							onPress={() => onConfirmRoll(1)}
-						/>
-					</View>
-				)}
-				{isMyTurn && pendingDice && !altDice && (
-					<View style={styles.gamblerActions}>
-						{!rerolledThisTurn && (
-							<Button
-								onPress={onRerollDice}
-								loading={submitting}
-								variant="secondary"
-							>
-								Reroll
-							</Button>
-						)}
-						<Button
-							onPress={() => onConfirmRoll()}
-							loading={submitting}
-						>
-							Confirm
 						</Button>
 					</View>
 				)}
@@ -626,36 +582,6 @@ function confirmLabel(
 	}
 }
 
-// One of the choose-of-two gambler's pending rolls: the pair as dice faces
-// with its total, tappable to keep it. Both are already thrown, so this is a
-// pick rather than a commit — there is no separate Confirm step.
-function RollChoice({
-	dice,
-	disabled,
-	onPress,
-}: {
-	dice: DiceRoll
-	disabled: boolean
-	onPress: () => void
-}) {
-	return (
-		<Pressable
-			onPress={onPress}
-			disabled={disabled}
-			style={({ pressed }) => [
-				styles.rollChoice,
-				pressed && !disabled && styles.rollChoicePressed,
-			]}
-		>
-			<View style={sharedStyles.diceRow}>
-				<DieFaceView value={dice.a} tone="red" />
-				<DieFaceView value={dice.b} tone="yellow" />
-			</View>
-			<Text style={styles.rollChoiceTotal}>{dice.a + dice.b}</Text>
-		</Pressable>
-	)
-}
-
 const styles = StyleSheet.create({
 	mainLoopBar: {
 		paddingHorizontal: spacing.md,
@@ -680,31 +606,6 @@ const styles = StyleSheet.create({
 		fontSize: font.sm,
 		color: colors.textSecondary,
 		fontWeight: '600',
-	},
-	gamblerActions: {
-		flexDirection: 'row',
-		gap: spacing.xs,
-	},
-	// Sized to the 52pt action row so a pair of these reads as the row's
-	// buttons rather than as loose dice.
-	rollChoice: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.xs,
-		height: 52,
-		paddingHorizontal: spacing.sm,
-		borderRadius: radius.md,
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-	},
-	rollChoicePressed: {
-		opacity: 0.7,
-	},
-	rollChoiceTotal: {
-		fontSize: font.md,
-		fontWeight: '700',
-		color: colors.text,
 	},
 	rollActions: {
 		flexDirection: 'row',

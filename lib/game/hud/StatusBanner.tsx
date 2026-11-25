@@ -14,13 +14,22 @@
 // only honk at someone else and only undo your own move — so they share the
 // slot. They're the only interactive things here, hence `box-none` on the card
 // and `none` on the text.
+//
+// The one exception to "status, not instruction": a gambler holding pending
+// dice gets the keep-or-reroll decision here in place of the status line (see
+// `GamblerRollDecision`); the dock's Roll just sits disabled meanwhile.
 
 import { useGameScreen } from '@/lib/game/gameScreenContext'
+import {
+	GamblerRollDecision,
+	gamblerDecisionFor,
+} from '@/lib/game/GamblerRollDecision'
 import {
 	DieFaceView,
 	HonkButton,
 	UndoButton,
 } from '@/lib/game/gameScreenShared'
+import type { DiceRoll } from '@/lib/catan/types'
 import type { GameEvent } from '@/lib/stores/useGamesStore'
 import { colors, radius, spacing } from '@/lib/theme'
 import { StyleSheet, Text, View } from 'react-native'
@@ -43,6 +52,7 @@ export function StatusBanner() {
 		pendingWin,
 		flushState,
 		robberDraftHex,
+		isMyActiveTurn,
 	} = useGameScreen()
 	if (!game || !gameState) return null
 	// The bonus pane owns the screen while a player picks (BoardArea hides the
@@ -64,24 +74,25 @@ export function StatusBanner() {
 	const { label, dice } = islandStatus(ctx)
 	const status = bannerStatus(ctx)
 
+	const decision = gamblerDecisionFor(gameState, meIdx, isMyActiveTurn)
+	if (decision) {
+		// Choose-of-two shows each pair on its own tile, so the island's single
+		// pair would only repeat one of them.
+		return (
+			<View style={[styles.card, styles.decisionCard]}>
+				<IslandRow
+					dice={decision.altDice ? null : dice}
+					label={label}
+				/>
+				<GamblerRollDecision />
+			</View>
+		)
+	}
+
 	return (
 		<View style={styles.card} pointerEvents="box-none">
 			<View style={styles.lines} pointerEvents="none">
-				<View style={styles.islandRow}>
-					{dice && (
-						<View style={styles.dice}>
-							<DieFaceView value={dice.a} tone="red" size={22} />
-							<DieFaceView
-								value={dice.b}
-								tone="yellow"
-								size={22}
-							/>
-						</View>
-					)}
-					<Text style={styles.islandLabel} numberOfLines={1}>
-						{label}
-					</Text>
-				</View>
+				<IslandRow dice={dice} label={label} />
 				{status && (
 					<Text style={styles.statusText} numberOfLines={2}>
 						{status}
@@ -118,6 +129,22 @@ export function StatusBanner() {
 	)
 }
 
+function IslandRow({ dice, label }: { dice: DiceRoll | null; label: string }) {
+	return (
+		<View style={styles.islandRow} pointerEvents="none">
+			{dice && (
+				<View style={styles.dice}>
+					<DieFaceView value={dice.a} tone="red" size={22} />
+					<DieFaceView value={dice.b} tone="yellow" size={22} />
+				</View>
+			)}
+			<Text style={styles.islandLabel} numberOfLines={1}>
+				{label}
+			</Text>
+		</View>
+	)
+}
+
 const styles = StyleSheet.create({
 	card: {
 		maxWidth: '96%',
@@ -133,6 +160,12 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: colors.border,
 		boxShadow: '0px 2px 6px rgba(0,0,0,0.12)',
+	},
+	// Stacked rather than side by side: the decision row is wider than the
+	// island and has to be tappable.
+	decisionCard: {
+		flexDirection: 'column',
+		alignItems: 'center',
 	},
 	// The two text rows, so the honk button can sit beside them rather than
 	// under them. `shrink` so a long status line yields to the button instead

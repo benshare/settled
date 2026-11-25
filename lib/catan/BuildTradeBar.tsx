@@ -26,6 +26,11 @@ const BUILD_OPTIONS: readonly BuildOption[] = [
 	{ key: 'dev_card', label: 'Dev card', icon: 'albums-outline' },
 ]
 
+// The icon row's gap. Exported because the HUD dock's trade + primary-action
+// row below the bare bar must use the same gap for its two halves to land on
+// icon edges (see `bare`).
+export const BUILD_ICON_GAP = spacing.xs
+
 export type BuildEnablement = Record<BuildKind | 'dev_card', boolean>
 export type BuildCurseHints = Partial<Record<BuildKind | 'dev_card', CurseHint>>
 
@@ -74,8 +79,11 @@ export function BuildTradeBar({
 	showTrade?: boolean
 	// Strips the bar down to the build icon row alone — no card, no title, no
 	// padding of its own. The HUD dock uses it: the dock is already a card, and
-	// the naked row lines up with the trade + primary-action row below it.
-	// Implies build-only (trade is the dock's own row).
+	// the naked row is a column grid for the trade + primary-action row below
+	// it, each of which spans half the row. An odd icon count is padded with an
+	// empty cell so the halves still meet on an icon edge (with the usual four,
+	// each spans exactly two icons). Implies build-only (trade is the dock's
+	// own row).
 	bare?: boolean
 	// Config gate: when the game wasn't created with dev cards, the button
 	// is hidden entirely rather than just disabled.
@@ -112,6 +120,15 @@ export function BuildTradeBar({
 	const options = devCardsEnabled
 		? BUILD_OPTIONS
 		: BUILD_OPTIONS.filter((o) => o.key !== 'dev_card')
+	const iconCount =
+		options.length +
+		[
+			carpenterEnabled,
+			superCityEnabled,
+			fenceEnabled,
+			accountantEnabled,
+			investorEnabled,
+		].filter((e) => e !== undefined).length
 	const iconRow = (
 		<View style={styles.iconRow}>
 			{options.map((opt) => (
@@ -167,6 +184,7 @@ export function BuildTradeBar({
 					onPress={() => onInvest?.()}
 				/>
 			)}
+			{bare && iconCount % 2 === 1 && <View style={styles.iconCell} />}
 		</View>
 	)
 	if (bare) return iconRow
@@ -629,17 +647,32 @@ const styles = StyleSheet.create({
 	iconRow: {
 		flexDirection: 'row',
 		flexWrap: 'wrap',
-		gap: spacing.xs,
+		gap: BUILD_ICON_GAP,
+	},
+	// One equal grid cell. Longhand, not `flex: 1`: native Yoga and
+	// react-native-web resolve the shorthand's basis differently, and the dock
+	// needs every cell exactly equal for its lower row to line up.
+	iconCell: {
+		flexGrow: 1,
+		flexShrink: 1,
+		flexBasis: 0,
+		minWidth: 0,
 	},
 	// Layout carrier for a tooltip-wrapped button: takes the row share the
 	// button itself would claim, and stays row-direction so the button's
-	// `flex: 1` keeps resolving horizontally.
+	// cell sizing keeps resolving horizontally.
 	iconSlot: {
-		flex: 1,
+		flexGrow: 1,
+		flexShrink: 1,
+		flexBasis: 0,
+		minWidth: 0,
 		flexDirection: 'row',
 	},
 	iconBtn: {
-		flex: 1,
+		flexGrow: 1,
+		flexShrink: 1,
+		flexBasis: 0,
+		minWidth: 0,
 		height: 40,
 		borderRadius: radius.sm,
 		backgroundColor: colors.white,
