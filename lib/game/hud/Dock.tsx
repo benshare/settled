@@ -17,7 +17,11 @@ import {
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel, VoluntaryDiscardPanel } from '@/lib/catan/DiscardPanel'
-import { BuildTradeBar, TradeButton } from '@/lib/catan/BuildTradeBar'
+import {
+	BUILD_ICON_GAP,
+	BuildTradeBar,
+	TradeButton,
+} from '@/lib/catan/BuildTradeBar'
 import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
@@ -30,19 +34,15 @@ import {
 	shepherdPendingLabel,
 } from '@/lib/catan/ShepherdSwapPicker'
 import { TradePanel } from '@/lib/catan/TradePanel'
-import { monopolyCap, type DiceRoll } from '@/lib/catan/types'
-import {
-	DieFaceView,
-	sharedStyles,
-	UndoButton,
-} from '@/lib/game/gameScreenShared'
+import { monopolyCap } from '@/lib/catan/types'
+import { UndoButton } from '@/lib/game/gameScreenShared'
 import {
 	useGameScreen,
 	type PlacementStage,
 } from '@/lib/game/gameScreenContext'
 import { Button } from '@/lib/modules/Button'
 import { colors, font, radius, spacing } from '@/lib/theme'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 // The dock floats as an inset card, its bottom gap kept above the safe area so
@@ -366,7 +366,6 @@ function PrimaryAction() {
 	const {
 		game,
 		gameState,
-		meIdx,
 		myPlayer,
 		submitting,
 		isDev,
@@ -385,8 +384,6 @@ function PrimaryAction() {
 		placementPairs,
 		placementDraft,
 		onRoll,
-		onConfirmRoll,
-		onRerollDice,
 		onEndTurn,
 		onEndSpecialBuild,
 		forgerMustMove,
@@ -450,60 +447,21 @@ function PrimaryAction() {
 	)
 		return null
 
-	// Gambler pending dice (your turn only): the choose-of-two / confirm-reroll
-	// takes over the whole control.
-	if (phase.kind === 'roll' && isMyActiveTurn && phase.pending?.dice) {
-		const pendingDice = phase.pending.dice
-		const altDice = phase.pending.altDice ?? null
-		const rerolled = gameState.players[meIdx]?.rerolledThisTurn ?? false
-		return (
-			<View style={[styles.actionCol, styles.actionSlot]}>
-				{altDice ? (
-					<>
-						<RollChoice
-							dice={pendingDice}
-							disabled={submitting}
-							onPress={() => onConfirmRoll(0)}
-						/>
-						<RollChoice
-							dice={altDice}
-							disabled={submitting}
-							onPress={() => onConfirmRoll(1)}
-						/>
-					</>
-				) : (
-					<>
-						{!rerolled && (
-							<Button
-								size="small"
-								variant="secondary"
-								onPress={onRerollDice}
-								loading={submitting}
-							>
-								Reroll
-							</Button>
-						)}
-						<Button
-							size="small"
-							onPress={() => onConfirmRoll()}
-							loading={submitting}
-						>
-							Confirm
-						</Button>
-					</>
-				)}
-			</View>
-		)
-	}
+	// A gambler holding pending dice decides in the status banner (see
+	// `GamblerRollDecision`); here the row just stays as it was, Roll disabled,
+	// so the decision has exactly one set of controls.
+	const deciding = phase.kind === 'roll' && !!phase.pending?.dice
 
 	// Pre-roll bonus buttons — only on your own roll.
 	const canRitual =
 		phase.kind === 'roll' &&
+		!deciding &&
 		isMyActiveTurn &&
 		myPlayer?.bonus === 'ritualist' &&
 		!myPlayer?.ritualWasUsedThisTurn
 	const canShepherd =
 		phase.kind === 'roll' &&
+		!deciding &&
 		isMyActiveTurn &&
 		!!myPlayer &&
 		canShepherdSwap(myPlayer)
@@ -516,7 +474,7 @@ function PrimaryAction() {
 
 	return (
 		<View style={[styles.actionCol, styles.actionSlot]}>
-			{phase.kind === 'roll' && isMyActiveTurn && isDev && (
+			{phase.kind === 'roll' && !deciding && isMyActiveTurn && isDev && (
 				<DevRollPicker
 					value={devRollTotal ?? null}
 					disabled={submitting}
@@ -557,8 +515,8 @@ function PrimaryAction() {
 					size="small"
 					style={styles.phaseButton}
 					onPress={onRoll}
-					loading={submitting && isMyActiveTurn}
-					disabled={!isMyActiveTurn || forgerMustMove}
+					loading={submitting && isMyActiveTurn && !deciding}
+					disabled={!isMyActiveTurn || forgerMustMove || deciding}
 				>
 					Roll
 				</Button>
@@ -584,34 +542,6 @@ function PrimaryAction() {
 				</Button>
 			)}
 		</View>
-	)
-}
-
-// One of the gambler's two thrown pairs, tappable to keep it.
-function RollChoice({
-	dice,
-	disabled,
-	onPress,
-}: {
-	dice: DiceRoll
-	disabled: boolean
-	onPress: () => void
-}) {
-	return (
-		<Pressable
-			onPress={onPress}
-			disabled={disabled}
-			style={({ pressed }) => [
-				styles.rollChoice,
-				pressed && !disabled && styles.pressed,
-			]}
-		>
-			<View style={sharedStyles.diceRow}>
-				<DieFaceView value={dice.a} tone="red" />
-				<DieFaceView value={dice.b} tone="yellow" />
-			</View>
-			<Text style={styles.rollChoiceTotal}>{dice.a + dice.b}</Text>
-		</Pressable>
 	)
 }
 
@@ -677,12 +607,13 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 	},
 	// Bottom-aligned so the tall trade panel and the short primary button share a
-	// baseline.
+	// baseline. The gap is the build row's own, so trade and the primary action
+	// each span exactly half the icon grid above (see `BuildTradeBar`'s `bare`).
 	actionRow: {
 		flexDirection: 'row',
 		alignItems: 'flex-end',
 		justifyContent: 'space-between',
-		gap: spacing.sm,
+		gap: BUILD_ICON_GAP,
 	},
 	actionCol: {
 		gap: spacing.xs,
@@ -713,24 +644,5 @@ const styles = StyleSheet.create({
 	phaseButton: {
 		alignSelf: 'stretch',
 		paddingHorizontal: spacing.sm,
-	},
-	rollChoice: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.xs,
-		height: 52,
-		paddingHorizontal: spacing.sm,
-		borderRadius: radius.md,
-		borderWidth: 1,
-		borderColor: colors.border,
-		backgroundColor: colors.card,
-	},
-	rollChoiceTotal: {
-		fontSize: font.md,
-		fontWeight: '700',
-		color: colors.text,
-	},
-	pressed: {
-		opacity: 0.7,
 	},
 })

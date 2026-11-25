@@ -56,6 +56,10 @@ app/game/[id].tsx
   card buy). `DiscardPanel` reads
   the live hand, not `displayHand`, so a reveal animation can't hide a card from
   the picker.
+- `GamblerRollDecision.tsx` — the gambler's keep-or-reroll, with the cards the
+  pending roll would pay (`distributeResources`, the server's own rule). Both
+  layouts put it in their status surface, not the bottom controls: the HUD
+  banner, and the classic top zone in place of the (idle) build/trade bar.
 - `gameScreenShared.tsx` — the few things both menu zones render (`DieFaceView`,
   `HonkButton`, `UndoButton`, bar styles), so neither imports the other. Also
   the hooks both layouts share: `usePinToggle`, and `useMarkResultSeen`, which

@@ -22,6 +22,7 @@ import { Button } from '@/lib/modules/Button'
 import { colors, font, spacing } from '@/lib/theme'
 import { StyleSheet, Text, View } from 'react-native'
 import { useGameScreen, type PlacementStage } from './gameScreenContext'
+import { GamblerRollDecision, gamblerDecisionFor } from './GamblerRollDecision'
 import {
 	HonkButton,
 	DieFaceView,
@@ -75,6 +76,7 @@ export function TopArea() {
 		onUndo,
 		onInvest,
 		robberDraftHex,
+		isMyActiveTurn,
 	} = useGameScreen()
 
 	// A spectator has no PlayerStrip chip to read — their one status line is
@@ -83,6 +85,12 @@ export function TopArea() {
 	const spectatorRemaining = useCountdown(game?.deadline_at)
 
 	if (!game) return null
+
+	// The gambler keeps or rerolls here, in place of the build/trade bar (both
+	// of which are idle until the roll lands anyway); the bottom bar only
+	// narrates. See `GamblerRollDecision`.
+	const gamblerDeciding =
+		!!gameState && !!gamblerDecisionFor(gameState, meIdx, isMyActiveTurn)
 
 	return (
 		<>
@@ -200,7 +208,12 @@ export function TopArea() {
 				!isSpectator &&
 				gameState && (
 					<>
-						{!inRoadBuilding && (
+						{gamblerDeciding && (
+							<View style={styles.statusWrap}>
+								<GamblerRollDecision />
+							</View>
+						)}
+						{!inRoadBuilding && !gamblerDeciding && (
 							<BuildTradeBar
 								active={buildTool}
 								enabled={buildEnabled}

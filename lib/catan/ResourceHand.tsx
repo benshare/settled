@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import { colors } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { resourceColor, resourceShadowColor } from './palette'
@@ -6,10 +6,48 @@ import type { ResourceHand as ResourceHandType } from './types'
 
 // Fan geometry, per size. `full` keeps the original physical-hand look used
 // across the game; `compact` shrinks everything proportionally so two fans
-// stack inside a half-width trade-panel column.
+// stack inside a half-width trade-panel column; `mini` is a one-line preview
+// that fits inside a status banner (the gambler's would-gain cards).
 const DIMS = {
-	full: { w: 56, h: 84, overlap: 14, step: 4, lift: 2, radius: 8 },
-	compact: { w: 38, h: 58, overlap: 12, step: 3, lift: 1.5, radius: 6 },
+	full: {
+		w: 56,
+		h: 84,
+		overlap: 14,
+		step: 4,
+		lift: 2,
+		radius: 8,
+		pad: 24,
+		name: 11,
+		count: 22,
+		padX: 4,
+		padY: 6,
+	},
+	compact: {
+		w: 38,
+		h: 58,
+		overlap: 12,
+		step: 3,
+		lift: 1.5,
+		radius: 6,
+		pad: 12,
+		name: 9,
+		count: 16,
+		padX: 4,
+		padY: 6,
+	},
+	mini: {
+		w: 32,
+		h: 40,
+		overlap: 4,
+		step: 2,
+		lift: 1,
+		radius: 4,
+		pad: 4,
+		name: 8,
+		count: 14,
+		padX: 1,
+		padY: 3,
+	},
 } as const
 
 export type CardFanSize = keyof typeof DIMS
@@ -37,7 +75,7 @@ export function CardFan({
 	emptyLabel?: string
 }) {
 	const dim = DIMS[size]
-	const rowStyle = size === 'full' ? styles.rowFull : styles.rowCompact
+	const rowStyle = ROW_STYLES[size]
 
 	if (entries.length === 0) {
 		return (
@@ -45,7 +83,7 @@ export function CardFan({
 				style={[
 					rowStyle,
 					styles.emptyRow,
-					{ minHeight: dim.h + (size === 'full' ? 24 : 12) },
+					{ minHeight: dim.h + dim.pad },
 				]}
 			>
 				{emptyLabel ? (
@@ -58,12 +96,7 @@ export function CardFan({
 	const center = (entries.length - 1) / 2
 
 	return (
-		<View
-			style={[
-				rowStyle,
-				{ minHeight: dim.h + (size === 'full' ? 24 : 12) },
-			]}
-		>
+		<View style={[rowStyle, { minHeight: dim.h + dim.pad }]}>
 			{entries.map(({ resource: r, count }, i) => {
 				const offset = i - center
 				const disabled = disabledResources?.includes(r) ?? false
@@ -126,6 +159,8 @@ function Card({
 					width: dim.w,
 					height: dim.h,
 					borderRadius: dim.radius,
+					paddingHorizontal: dim.padX,
+					paddingVertical: dim.padY,
 					backgroundColor: bg,
 				},
 				variant === 'shadow' && styles.cardShadow,
@@ -137,17 +172,14 @@ function Card({
 					styles.name,
 					{
 						fontSize:
-							(dim.w < 50 ? 9 : 11) -
-							(WIDE_LABELS.has(resource) ? 1 : 0),
+							dim.name - (WIDE_LABELS.has(resource) ? 1 : 0),
 					},
 				]}
 			>
 				{RESOURCE_LABELS[resource]}
 			</Text>
 			{showCount ? (
-				<Text
-					style={[styles.count, { fontSize: dim.w < 50 ? 16 : 22 }]}
-				>
+				<Text style={[styles.count, { fontSize: dim.count }]}>
 					{count}
 				</Text>
 			) : null}
@@ -222,6 +254,14 @@ const styles = StyleSheet.create({
 		paddingTop: 8,
 		paddingBottom: 4,
 	},
+	rowMini: {
+		flexDirection: 'row',
+		alignItems: 'flex-end',
+		justifyContent: 'center',
+		paddingHorizontal: 2,
+		paddingTop: 2,
+		paddingBottom: 2,
+	},
 	emptyRow: {
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -232,8 +272,6 @@ const styles = StyleSheet.create({
 		fontStyle: 'italic',
 	},
 	card: {
-		paddingVertical: 6,
-		paddingHorizontal: 4,
 		justifyContent: 'space-between',
 		alignItems: 'center',
 		borderWidth: 1,
@@ -257,3 +295,9 @@ const styles = StyleSheet.create({
 		opacity: 0.7,
 	},
 })
+
+const ROW_STYLES: Record<CardFanSize, ViewStyle> = {
+	full: styles.rowFull,
+	compact: styles.rowCompact,
+	mini: styles.rowMini,
+}
