@@ -8,6 +8,7 @@
 // animations, and the toast. See `.claude/specs/game-hud.md`.
 
 import { FortuneTellerAnimation } from '@/lib/catan/FortuneTellerAnimation'
+import { HonkAnimation } from '@/lib/catan/HonkAnimation'
 import { ChatPanel } from '@/lib/catan/GameChat'
 import { FinalScoreButton, GameOverOverlay } from '@/lib/catan/GameOverOverlay'
 import { NomadAnimation } from '@/lib/catan/NomadAnimation'
@@ -64,6 +65,8 @@ export function HudGame({ active = true }: { active?: boolean } = {}) {
 		dismissNomadAnim,
 		ftAnim,
 		dismissFtAnim,
+		honkAlert,
+		dismissHonkAlert,
 		toast,
 		hideToast,
 	} = useGameScreen()
@@ -220,6 +223,13 @@ export function HudGame({ active = true }: { active?: boolean } = {}) {
 					playerName={ftAnim.playerName}
 					meIsFortuneTeller={ftAnim.meIsFortuneTeller}
 					onDismiss={dismissFtAnim}
+				/>
+			)}
+			{active && honkAlert && (
+				<HonkAnimation
+					key={honkAlert.key}
+					text={honkAlert.text}
+					onDismiss={dismissHonkAlert}
 				/>
 			)}
 

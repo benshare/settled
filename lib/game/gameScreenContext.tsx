@@ -74,6 +74,7 @@ import {
 	type GameDraft,
 } from '@/lib/stores/useLocalDraftStore'
 import { parsePlayPrefs, useProfileStore } from '@/lib/stores/useProfileStore'
+import { useHonkAlert } from './useHonkAlert'
 import {
 	createContext,
 	useCallback,
@@ -234,9 +235,10 @@ function useGameScreenState(gameId: string) {
 	// instead. See `.claude/specs/local-action-queue.md`.
 	// The player's own opt-in confirm before a dev card buy (`play_prefs`). A
 	// modal rather than the confirm bar above, since it names no board spot.
-	const confirmDevCardBuy = parsePlayPrefs(
+	const playPrefs = parsePlayPrefs(
 		useProfileStore((s) => s.profile?.play_prefs)
-	).confirmDevCardBuy
+	)
+	const confirmDevCardBuy = playPrefs.confirmDevCardBuy
 	const [devBuyConfirmOpen, setDevBuyConfirmOpen] = useState(false)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
@@ -891,6 +893,19 @@ function useGameScreenState(gameId: string) {
 		if (queued.length > 0) setFtAnimQueue((q) => [...q, ...queued])
 	}, [game, meIdx, profilesById, holdMyHand])
 	const ftAnim = ftAnimQueue[0] ?? null
+
+	// --- Honk goose --------------------------------------------------------
+	// Not an event-cursor animation like the three above: its cursor is
+	// persisted per game, so it also fires for honks that landed while away.
+	const { honkAlert, dismissHonkAlert } = useHonkAlert({
+		gameId: game?.id,
+		events: game?.events as GameEvent[] | undefined,
+		playerOrder: game?.player_order,
+		meIdx,
+		userId: user?.id,
+		profilesById,
+		enabled: playPrefs.honkAnimation,
+	})
 
 	// Declared after all three animation effects on purpose: they read this to
 	// learn the hand as it stood *before* the state row they are reacting to.
@@ -2045,6 +2060,8 @@ function useGameScreenState(gameId: string) {
 			releaseHold(ftAnim?.key)
 			setFtAnimQueue((q) => q.slice(1))
 		},
+		honkAlert,
+		dismissHonkAlert,
 
 		// --- Actions ----------------------------------------------------
 		onPickBonus,

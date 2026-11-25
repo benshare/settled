@@ -10,7 +10,9 @@ While `phase.kind === 'roll'` and it is **not** your turn, a `Honk` button appea
 next to the `[user] to roll` status in `MainLoopBar` — but only once the game has
 been idle for **≥ 5 minutes**. Tapping it:
 
-- appends a `honked` event → the action log reads `[user] has been Honked`
+- appends a `honked` event → the action log reads `[sender] honked [user]`
+  (`You honked Bob`, `Alice honked you`; an event without `from` falls back to
+  the old `[user] has been Honked`)
 - sends the current player a push: `HONK. It's your turn. (Sent by [sender])`
 
 Each waiting player gets **one honk per stalled turn**. After you honk, your button
@@ -39,8 +41,8 @@ already loads and the server already appends to:
 ```
 
 `player` = the honked (current) player's seat index, `from` = the sender's seat.
-`from` is what makes the one-per-sender check possible; the log line only renders
-`player`.
+`from` is what makes the one-per-sender check possible, and names the sender in
+the log line and the goose below.
 
 **The current turn's window** = every event after the most recent `turn_ended`
 event (the whole array if none exists yet — i.e. the first turn out of placement).
@@ -167,9 +169,31 @@ EdgeRuntime.waitUntil(
 The client's `canHonk` is a UI affordance only — a stale clock, a replayed
 request, or a hand-rolled call must fail the same predicate on the server.
 
+## The goose (receipt animation)
+
+The honked player sees a wobbling goose (`assets/images/goose.png`, swappable
+art) over "Bob honked you" / "Bob and 2 others honked you" — named for the
+**latest** honker, counting other _distinct_ senders. It fires on opening a
+game honked since the viewer last looked, and live for a honk landing on screen.
+
+- **"Last looked" is a device-local cursor per user + game** (`authStorage`,
+  `settled.honkSeen.<user>.<game>`): the `at` of the newest honk shown. Honks
+  only matter to whoever is looking at the board, so nothing is synced; chat's
+  `last_read_at` was not reused because it tracks the chat panel, not the board.
+- **No cursor yet (first open on this device)** counts only the current turn's
+  window, then anchors the cursor at the newest event — so an upgrade or a new
+  phone doesn't replay old honks.
+- **The cursor advances with the animation off**, so turning the
+  `honkAnimation` play pref (Account → Gameplay, default on) back on doesn't
+  replay a backlog. The pref only governs the viewer's own screen.
+
+Rule: `honkAlertSince` / `honkAlertText` in `lib/catan/honk.ts` (client-only,
+not mirrored). Wiring: `lib/game/useHonkAlert.ts` → `gameScreenContext` →
+`HonkAnimation` in both layouts.
+
 ## Out of scope
 
 - No honking during `main`, `special_build`, placement, or any robber/discard
   sub-phase.
-- No honk pref toggle in account settings.
-- No sound, haptic, or animation on receipt — the push notification is the payoff.
+- No honk notification pref — the push stays ungated (the goose toggle is display-only).
+- No sound or haptic on receipt.
