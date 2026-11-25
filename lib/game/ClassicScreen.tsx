@@ -11,6 +11,7 @@
 // the screen reads as scrolling sideways.
 
 import { FortuneTellerAnimation } from '@/lib/catan/FortuneTellerAnimation'
+import { HonkAnimation } from '@/lib/catan/HonkAnimation'
 import { ChatPanel } from '@/lib/catan/GameChat'
 import { FinalScoreButton, GameOverOverlay } from '@/lib/catan/GameOverOverlay'
 import { NomadAnimation } from '@/lib/catan/NomadAnimation'
@@ -69,6 +70,8 @@ function Game() {
 		dismissNomadAnim,
 		ftAnim,
 		dismissFtAnim,
+		honkAlert,
+		dismissHonkAlert,
 		toast,
 		hideToast,
 	} = useGameScreen()
@@ -183,6 +186,13 @@ function Game() {
 					playerName={ftAnim.playerName}
 					meIsFortuneTeller={ftAnim.meIsFortuneTeller}
 					onDismiss={dismissFtAnim}
+				/>
+			)}
+			{honkAlert && (
+				<HonkAnimation
+					key={honkAlert.key}
+					text={honkAlert.text}
+					onDismiss={dismissHonkAlert}
 				/>
 			)}
 

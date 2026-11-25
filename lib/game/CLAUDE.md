@@ -41,7 +41,9 @@ app/game/[id].tsx
 - `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus the
   inline `ConfirmBar` (now only the three non-undoable confirms). Shared by both layouts, so it is also where every
   affordance that has to exist in both lives — including the `post_placement`
-  ones (the specialist/explorer/haunt banners).
+  ones (the specialist/explorer/haunt banners). The setup I / II badges show
+  through placement only, unless the viewer's `showPlacementNumbers` play pref
+  keeps them all game.
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and the
   viewer's own hand. `TradePanel` and `DiscardPanel` each **replace** the hand
   rather than being a bar of their own, because both are composed by tapping the
@@ -108,6 +110,9 @@ app/game/[id].tsx
   which lags one render on a switch). A `games` row arriving without its `events`
   column would also read as a rewound log — that's kept out of the context
   entirely via `isPartialGameRow` (see `lib/stores/CLAUDE.md`).
+  The honk goose is the exception: its cursor is persisted per game on the
+  device (`useHonkAlert.ts`), because it must also fire for honks that landed
+  while the viewer was away. See `.claude/specs/honk.md`.
 - **A reveal animation holds the viewer's hand, it does not delay the state.** The
   steal/nomad/fortune-teller animations fire _after_ the resource reaches the hand
   (the steal one recovers which resource by diffing the hand). Each registers the

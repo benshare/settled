@@ -15,7 +15,11 @@ import {
 	type PushPermissionStatus,
 } from '@/lib/notifications'
 import { clearAllUserStores } from '@/lib/stores'
-import { parsePlayPrefs, useProfileStore } from '@/lib/stores/useProfileStore'
+import {
+	parsePlayPrefs,
+	useProfileStore,
+	type PlayPrefs,
+} from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { ThemeMode, useTheme } from '@/lib/ThemeContext'
@@ -450,14 +454,11 @@ function GameplaySettings() {
 	const [saving, setSaving] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
-	async function toggleConfirmDevCardBuy() {
+	async function togglePref(key: keyof PlayPrefs) {
 		if (saving) return
 		setSaving(true)
 		setError(null)
-		const res = await updatePlayPrefs({
-			...prefs,
-			confirmDevCardBuy: !prefs.confirmDevCardBuy,
-		})
+		const res = await updatePlayPrefs({ ...prefs, [key]: !prefs[key] })
 		setSaving(false)
 		if (res.error) setError(res.error)
 	}
@@ -468,7 +469,23 @@ function GameplaySettings() {
 			<NotifToggleRow
 				label="Confirm when buying dev cards"
 				value={prefs.confirmDevCardBuy}
-				onToggle={toggleConfirmDevCardBuy}
+				onToggle={() => togglePref('confirmDevCardBuy')}
+				disabled={!profile || saving}
+				dimmed={false}
+				styles={styles}
+			/>
+			<NotifToggleRow
+				label="Honking animation"
+				value={prefs.honkAnimation}
+				onToggle={() => togglePref('honkAnimation')}
+				disabled={!profile || saving}
+				dimmed={false}
+				styles={styles}
+			/>
+			<NotifToggleRow
+				label="Show placement numbers"
+				value={prefs.showPlacementNumbers}
+				onToggle={() => togglePref('showPlacementNumbers')}
 				disabled={!profile || saving}
 				dimmed={false}
 				styles={styles}

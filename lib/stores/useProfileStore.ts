@@ -189,21 +189,31 @@ export type PlayPrefs = {
 	// Ask before a dev card buy goes to the server. The buy is a barrier (it
 	// can't be undone), so this is the one confirm a player can opt back into.
 	confirmDevCardBuy: boolean
+	// Play the goose when the viewer has been honked (on open, or live).
+	honkAnimation: boolean
+	// Keep the I / II badges on setup settlements for the whole game, not just
+	// through initial placement.
+	showPlacementNumbers: boolean
 }
 
 export const DEFAULT_PLAY_PREFS: PlayPrefs = {
 	confirmDevCardBuy: false,
+	honkAnimation: true,
+	showPlacementNumbers: false,
 }
 
 // Narrow the JSONB blob, falling back per field on shape drift.
 export function parsePlayPrefs(raw: unknown): PlayPrefs {
 	const src =
 		raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+	const bool = (k: keyof PlayPrefs) =>
+		typeof src[k] === 'boolean'
+			? (src[k] as boolean)
+			: DEFAULT_PLAY_PREFS[k]
 	return {
-		confirmDevCardBuy:
-			typeof src.confirmDevCardBuy === 'boolean'
-				? src.confirmDevCardBuy
-				: DEFAULT_PLAY_PREFS.confirmDevCardBuy,
+		confirmDevCardBuy: bool('confirmDevCardBuy'),
+		honkAnimation: bool('honkAnimation'),
+		showPlacementNumbers: bool('showPlacementNumbers'),
 	}
 }
 

@@ -34,6 +34,7 @@ import { gameSizeFor, type ResourceHand } from '@/lib/catan/types'
 import { StopWatchingButton, WatcherButton } from '@/lib/catan/Watchers'
 import { ConfirmModal } from '@/lib/modules/ConfirmModal'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
+import { parsePlayPrefs, useProfileStore } from '@/lib/stores/useProfileStore'
 import { BUBBLE_SIZE } from '@/lib/modules/MinimizableSheet'
 import { colors, font, radius, shadow, spacing, z } from '@/lib/theme'
 import { useMemo } from 'react'
@@ -145,12 +146,17 @@ export function BoardArea({
 		return out
 	}, [gameState, meIdx])
 
+	// Placement-only by default; the viewer's `showPlacementNumbers` play pref
+	// keeps them for the whole game.
+	const keepOrdinals = parsePlayPrefs(
+		useProfileStore((s) => s.profile?.play_prefs)
+	).showPlacementNumbers
 	const setupOrdinals = useMemo(
 		() =>
-			inPlacement
+			inPlacement || keepOrdinals
 				? setupSettlementOrdinals((game?.events ?? []) as GameEvent[])
 				: undefined,
-		[inPlacement, game?.events]
+		[inPlacement, keepOrdinals, game?.events]
 	)
 
 	const phase = gameState?.phase

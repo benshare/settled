@@ -95,3 +95,58 @@ export function canHonk(args: {
 	const last = lastActivityAt(events)
 	return last !== null && now - last >= HONK_IDLE_MS
 }
+
+// --- The honked player's goose (client-only; no edge mirror) -------------
+
+export type HonkAlert = {
+	// The newest honk at the viewer past the cursor — what the goose names.
+	at: string
+	from: number
+	// How many *other* distinct seats also honked them in that span.
+	others: number
+}
+
+/**
+ * The honks aimed at `meIdx` strictly after `since` (an event `at`), folded
+ * into one alert, or null when there are none. `since === null` means this
+ * device has no record for the game yet; then only the current turn's window
+ * (after the last `turn_ended`) counts, so a first open on a new device
+ * doesn't dig up honks from turns long gone.
+ */
+export function honkAlertSince(
+	events: GameEvent[],
+	meIdx: number,
+	since: string | null
+): HonkAlert | null {
+	if (meIdx < 0) return null
+	let cutoff = since === null ? null : Date.parse(since)
+	let start = 0
+	if (since === null) {
+		for (let i = events.length - 1; i >= 0; i--) {
+			if (events[i]?.kind === 'turn_ended') {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if (cutoff !== null && Number.isNaN(cutoff)) cutoff = null
+	let latest: { at: string; from: number } | null = null
+	const senders = new Set<number>()
+	for (let i = start; i < events.length; i++) {
+		const e = events[i]
+		if (e?.kind !== 'honked' || e.player !== meIdx) continue
+		if (typeof e.from !== 'number') continue
+		const t = Date.parse(e.at)
+		if (cutoff !== null && !(t > cutoff)) continue
+		senders.add(e.from)
+		latest = { at: e.at, from: e.from }
+	}
+	if (!latest) return null
+	return { ...latest, others: senders.size - 1 }
+}
+
+/** "Bob honked you" / "Bob and 2 others honked you". */
+export function honkAlertText(name: string, others: number): string {
+	if (others <= 0) return `${name} honked you`
+	return `${name} and ${others} other${others === 1 ? '' : 's'} honked you`
+}

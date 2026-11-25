@@ -2,7 +2,13 @@
 // `npx tsx dev/check-catan-honk.ts`. Exits 0 on success; throws with a
 // specific message on the first failure.
 
-import { HONK_IDLE_MS, canHonk, honkersThisTurn } from '../lib/catan/honk'
+import {
+	HONK_IDLE_MS,
+	canHonk,
+	honkAlertSince,
+	honkAlertText,
+	honkersThisTurn,
+} from '../lib/catan/honk'
 import type { GameEvent } from '../lib/stores/useGamesStore'
 import type { Phase } from '../lib/catan/types'
 
@@ -166,6 +172,36 @@ function testDisabledGameIsNeverHonkable() {
 	)
 }
 
+function testHonkAlert() {
+	const log = [
+		rolled(0, 50_000),
+		honked(1, 0, 40_000),
+		turnEnded(0, 30_000),
+		honked(2, 0, 20_000),
+		honked(3, 0, 15_000),
+		honked(2, 0, 10_000),
+		honked(0, 1, 5_000),
+	]
+	// No record: only the current turn's window counts.
+	const fresh = honkAlertSince(log, 0, null)
+	assert(fresh?.from === 2, 'latest honker names the alert')
+	assert(fresh?.others === 1, 'distinct other honkers, not honks')
+	// A cursor excludes everything at or before it.
+	const since = honkAlertSince(log, 0, at(15_000))
+	assert(since?.from === 2 && since.others === 0, 'cursor is exclusive')
+	assert(honkAlertSince(log, 0, at(10_000)) === null, 'nothing new')
+	// A cursor reaches back past the turn boundary.
+	assert(
+		honkAlertSince(log, 0, at(45_000))?.others === 2,
+		'cursor spans turns'
+	)
+	assert(honkAlertSince(log, 3, null) === null, 'never honked')
+	assert(honkAlertSince(log, -1, null) === null, 'spectator')
+	assert(honkAlertText('Bob', 0) === 'Bob honked you', 'single text')
+	assert(honkAlertText('Bob', 1) === 'Bob and 1 other honked you', 'one')
+	assert(honkAlertText('Bob', 2) === 'Bob and 2 others honked you', 'many')
+}
+
 const tests: [string, () => void][] = [
 	['idle threshold boundary', testIdleThreshold],
 	['no events is not honkable', testNoEventsIsNotHonkable],
@@ -183,6 +219,7 @@ const tests: [string, () => void][] = [
 	['first turn window', testFirstTurnWindow],
 	['uses newest activity', testUsesNewestActivity],
 	['disabled game is never honkable', testDisabledGameIsNeverHonkable],
+	['honk alert since a cursor', testHonkAlert],
 ]
 
 for (const [name, fn] of tests) {
