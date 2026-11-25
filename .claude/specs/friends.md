@@ -25,7 +25,7 @@ Out of scope:
 - Blocking users.
 - Notifications (push/email).
 - Realtime subscriptions — re-fetch on screen focus.
-- Mutual-friend counts, suggestions, contacts sync.
+- Mutual-friend counts, suggestions, contacts sync. (Contact suggestions later landed in `contacts-onboarding.md`.)
 - Friend activity feed.
 
 ## Design decisions (locked in)

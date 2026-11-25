@@ -14,6 +14,32 @@ export type Database = {
   }
   public: {
     Tables: {
+      contact_match_quota: {
+        Row: {
+          checked: number
+          user_id: string
+          window_start: string
+        }
+        Insert: {
+          checked?: number
+          user_id: string
+          window_start?: string
+        }
+        Update: {
+          checked?: number
+          user_id?: string
+          window_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_match_quota_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       debug_prompts: {
         Row: {
           enabled: boolean
@@ -470,6 +496,7 @@ export type Database = {
         Row: {
           avatar_path: string | null
           color_prefs: Json
+          contacts_onboarded_at: string | null
           created_at: string
           dev: boolean
           game_defaults: Json
@@ -483,6 +510,7 @@ export type Database = {
         Insert: {
           avatar_path?: string | null
           color_prefs?: Json
+          contacts_onboarded_at?: string | null
           created_at?: string
           dev?: boolean
           game_defaults?: Json
@@ -496,6 +524,7 @@ export type Database = {
         Update: {
           avatar_path?: string | null
           color_prefs?: Json
+          contacts_onboarded_at?: string | null
           created_at?: string
           dev?: boolean
           game_defaults?: Json
@@ -595,6 +624,16 @@ export type Database = {
       acquire_game_lock: {
         Args: { p_game_id: string; p_token: string; p_ttl_ms: number }
         Returns: boolean
+      }
+      match_contacts: {
+        Args: { p_include_dev?: boolean; p_phones: string[] }
+        Returns: {
+          avatar_path: string
+          contact_index: number
+          id: string
+          updated_at: string
+          username: string
+        }[]
       }
       release_game_lock: {
         Args: { p_game_id: string; p_token: string }

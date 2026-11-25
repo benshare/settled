@@ -48,6 +48,7 @@ export function deletedProfile(id: string): Profile {
 		play_prefs: {},
 		spectating: [],
 		color_prefs: null,
+		contacts_onboarded_at: null,
 		deleted: true,
 	}
 }
@@ -223,7 +224,7 @@ export function parsePlayPrefs(raw: unknown): PlayPrefs {
 }
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, play_prefs, spectating, color_prefs'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, play_prefs, spectating, color_prefs, contacts_onboarded_at'
 
 type UpdateResult = { error: string | null }
 
@@ -250,6 +251,10 @@ type ProfileStore = {
 	// Drop any recorded id no longer in the watchable set (a game that ended
 	// while the app was closed, an unfriended host). Writes only on a change.
 	pruneSpectating: (validIds: string[]) => void
+	// Record that the contacts prompt has been shown, so it never shows again
+	// (see `.claude/specs/contacts-onboarding.md`). Optimistic, reverting on
+	// failure — a revert only means the prompt may come back next launch.
+	markContactsOnboarded: () => void
 	// Permanent, irreversible: cancels every unfinished game the user sits at,
 	// deletes the invitations they're a party to, and deletes the auth user
 	// (cascading the profile row and everything keyed to it). Touches no local
@@ -432,6 +437,23 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 		const next = current.spectating.filter((id) => valid.has(id))
 		if (next.length === current.spectating.length) return
 		setSpectating(get, set, next)
+	},
+
+	markContactsOnboarded() {
+		const current = get().profile
+		if (!current || current.contacts_onboarded_at) return
+		const stamp = new Date().toISOString()
+		set({ profile: { ...current, contacts_onboarded_at: stamp } })
+		void supabase
+			.from('profiles')
+			.update({ contacts_onboarded_at: stamp })
+			.eq('id', current.id)
+			.then(({ error }) => {
+				if (!error) return
+				const latest = get().profile
+				if (latest && latest.contacts_onboarded_at === stamp)
+					set({ profile: { ...latest, contacts_onboarded_at: null } })
+			})
 	},
 
 	async deleteAccount() {

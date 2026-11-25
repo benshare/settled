@@ -20,7 +20,8 @@
 		},
 		"android": {
 			"package": "com.benshare.settled",
-			"predictiveBackGestureEnabled": false
+			"predictiveBackGestureEnabled": false,
+			"blockedPermissions": ["android.permission.WRITE_CONTACTS"]
 		},
 		"web": {
 			"output": "static",
@@ -45,7 +46,13 @@
 			"expo-notifications",
 			"expo-updates",
 			"expo-web-browser",
-			"expo-sharing"
+			"expo-sharing",
+			[
+				"expo-contacts",
+				{
+					"contactsPermission": "Allow Settled to check which of your contacts already play, so you can add them as friends. Your contacts are never stored."
+				}
+			]
 		],
 		"experiments": {
 			"typedRoutes": true,

@@ -87,4 +87,6 @@ Account deletion hard-deletes the `profiles` row (`.claude/specs/account-deletio
 2. Direct profile queries add `.eq('dev', false)`; queries that embed profiles via joins fetch and post-filter client-side.
 3. **Filter from searches, not from specific lookups.** A query that surfaces profiles a user could meet for the first time (user search, friend suggestions, invitable lists) is filtered; a query that dereferences ids the user is already connected to (game participants, past messages, existing friends) is not — hiding a dev user they're already entangled with breaks the UI more than it protects. Self-loads and username-uniqueness checks are never filtered.
 
+A `security definer` RPC can't see `__DEV__`, so it takes the flag as a parameter: `match_contacts` (contact suggestions, `.claude/specs/contacts-onboarding.md`) gets `p_include_dev: !HIDE_DEV_PROFILES`.
+
 Any new query that surfaces profiles needs to follow this. If you're unsure whether a query counts as user-facing, the default is yes — filter it.

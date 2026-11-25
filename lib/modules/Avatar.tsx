@@ -6,8 +6,13 @@ import { supabase } from '../supabase'
 import { useTheme } from '../ThemeContext'
 import { ColorScheme } from '../theme'
 
+// Only the fields it renders, so a contact suggestion (which carries no full
+// profile row) can use it too.
+type AvatarProfile = Pick<Profile, 'username' | 'avatar_path' | 'updated_at'> &
+	Pick<Partial<Profile>, 'deleted'>
+
 interface AvatarProps {
-	profile: Profile | null | undefined
+	profile: AvatarProfile | null | undefined
 	size?: number
 }
 

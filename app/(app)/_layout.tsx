@@ -1,5 +1,6 @@
 import { useAdminStore } from '@/lib/admin'
 import { useAuth } from '@/lib/auth'
+import { useContactsOnboarding } from '@/lib/contacts'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import { ensurePermissionAndRegister } from '@/lib/notifications'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
@@ -7,7 +8,7 @@ import { needsMyResponse, useGamesStore } from '@/lib/stores/useGamesStore'
 import { useTheme } from '@/lib/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { type ColorValue } from 'react-native'
 
 export const unstable_settings = {
@@ -19,6 +20,7 @@ export default function AppLayout() {
 	const { user } = useAuth()
 	const actingAs = useAdminStore((s) => s.actingAs)
 	const adminRestored = useAdminStore((s) => s.restored)
+	const [pushPromptSettled, setPushPromptSettled] = useState(false)
 
 	// Registration belongs here — it is about being signed in and inside the
 	// app. Routing tapped notifications is not, and lives at the root.
@@ -30,7 +32,14 @@ export default function AppLayout() {
 	useEffect(() => {
 		if (!user?.id || !adminRestored || actingAs) return
 		ensurePermissionAndRegister(user.id)
+			.catch(() => {})
+			.finally(() => setPushPromptSettled(true))
 	}, [user?.id, adminRestored, actingAs])
+
+	// After the push prompt has been answered, so a new sign-up never gets two
+	// OS permission dialogs stacked. Same impersonation guard: it would stamp
+	// the borrowed account as onboarded.
+	useContactsOnboarding(user?.id, pushPromptSettled && !actingAs)
 
 	return (
 		<Tabs

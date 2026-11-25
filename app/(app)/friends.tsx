@@ -1,3 +1,4 @@
+import { contactsAvailable } from '@/lib/contacts'
 import { Avatar } from '@/lib/modules/Avatar'
 import { Button } from '@/lib/modules/Button'
 import {
@@ -52,6 +53,30 @@ export default function FriendsScreen() {
 						/>
 					</Pressable>
 				</View>
+
+				{contactsAvailable && (
+					<Pressable
+						onPress={() => router.push('/find-friends')}
+						style={({ pressed }) => [
+							styles.contactsRow,
+							pressed && styles.pressed,
+						]}
+					>
+						<Ionicons
+							name="people-circle-outline"
+							size={24}
+							color={colors.brand}
+						/>
+						<Text style={styles.contactsLabel}>
+							Find friends from contacts
+						</Text>
+						<Ionicons
+							name="chevron-forward"
+							size={18}
+							color={colors.textMuted}
+						/>
+					</Pressable>
+				)}
 
 				{showBanner && (
 					<ManageRequestsBanner
@@ -245,6 +270,22 @@ function makeStyles(colors: ColorScheme) {
 		},
 		pressed: {
 			opacity: 0.7,
+		},
+		contactsRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: spacing.sm,
+			borderWidth: 1,
+			borderColor: colors.border,
+			backgroundColor: colors.card,
+			borderRadius: radius.md,
+			paddingHorizontal: spacing.md,
+			paddingVertical: spacing.sm,
+		},
+		contactsLabel: {
+			flex: 1,
+			fontSize: font.base,
+			color: colors.text,
 		},
 		banner: {
 			borderWidth: 1,

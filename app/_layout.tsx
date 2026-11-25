@@ -154,6 +154,7 @@ function RootNav() {
 					    push over the tab that opened them, not a swap. */}
 					<Stack.Screen name="create-game" options={SUB_SCREEN} />
 					<Stack.Screen name="player-colors" options={SUB_SCREEN} />
+					<Stack.Screen name="find-friends" options={SUB_SCREEN} />
 					<Stack.Screen name="privacy" />
 					<Stack.Screen name="support" />
 				</Stack>

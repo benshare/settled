@@ -10,7 +10,7 @@ type FriendRequest = Database['public']['Tables']['friend_requests']['Row']
 type FriendRow = Database['public']['Tables']['friends']['Row']
 
 const PROFILE_COLS =
-	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, play_prefs, spectating, color_prefs'
+	'id, username, avatar_path, created_at, updated_at, dev, game_defaults, notification_prefs, play_prefs, spectating, color_prefs, contacts_onboarded_at'
 
 // In production builds, exclude profiles flagged `dev = true` from user-facing
 // lists. See lib/stores/CLAUDE.md for the full convention.
@@ -44,6 +44,15 @@ export type SearchResult = {
 
 type ActionResult = { error: string | null }
 
+// A suggestion from the device's contacts. Deliberately not a `Profile`: the
+// RPC returns only the public fields a row needs, never the phone number.
+// `contact_index` indexes the phones array passed to `matchContacts`.
+export type ContactMatch =
+	Database['public']['Functions']['match_contacts']['Returns'][number]
+
+// Mirrors the per-call cap in `match_contacts` (20261125140000).
+const MATCH_BATCH = 1000
+
 type FriendsStore = {
 	friends: FriendEntry[]
 	pendingIncoming: IncomingRequest[]
@@ -59,6 +68,11 @@ type FriendsStore = {
 	rejectRequest: (requestId: string) => Promise<ActionResult>
 
 	search: (meId: string, query: string) => Promise<SearchResult[]>
+	// Normalized E.164 numbers in, accounts the caller could still friend out
+	// (no self, friends, or any existing request in either direction).
+	matchContacts: (
+		phones: string[]
+	) => Promise<{ matches: ContactMatch[]; error: string | null }>
 }
 
 export const useFriendsStore = create<FriendsStore>((set, get) => ({
@@ -321,6 +335,34 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
 						? 'pending'
 						: 'none',
 		}))
+	},
+
+	async matchContacts(phones) {
+		const byId = new Map<string, ContactMatch>()
+		// Sequential: the server meters numbers per user per day, and a big
+		// address book shouldn't fan out into parallel calls.
+		for (let start = 0; start < phones.length; start += MATCH_BATCH) {
+			const { data, error } = await supabase.rpc('match_contacts', {
+				p_phones: phones.slice(start, start + MATCH_BATCH),
+				p_include_dev: !HIDE_DEV_PROFILES,
+			})
+			if (error) {
+				// Keep whatever earlier batches found rather than show nothing.
+				if (byId.size > 0) break
+				return { matches: [], error: "Couldn't check your contacts" }
+			}
+			for (const row of data ?? []) {
+				if (byId.has(row.id)) continue
+				byId.set(row.id, {
+					...row,
+					contact_index: row.contact_index + start,
+				})
+			}
+		}
+		const matches = [...byId.values()].sort((a, b) =>
+			a.username.localeCompare(b.username)
+		)
+		return { matches, error: null }
 	},
 }))
 
