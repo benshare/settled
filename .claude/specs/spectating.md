@@ -413,6 +413,12 @@ explicit "Watch" button.
   itself disappears for free either way — `useSwitchableGames` intersects
   `spectating` with `spectatableGames`, which already drops completed games.
 
+### Pinning
+
+Separate from the tab strip: a spectator can pin a game to the Games tab from
+the overflow menu, and unlike `spectating` a pin survives the game ending. See
+`unseen-results-and-pins.md`.
+
 ### The strip — `useSwitchableGames`
 
 `[...activeGames, ...spectatableGames.filter((g) => spectating.includes(g.id))]`,

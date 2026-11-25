@@ -18,6 +18,9 @@
 //
 //   Game settings — read-only `GameSettingsModal` of the game's config.
 //
+//   Pin / Unpin — spectators only: keeps the game on the Games tab (see
+//                `usePinToggle`), including after it ends.
+//
 // It lives in `Nav` (opposite the back chevron) rather than in a zone because,
 // like the title, it is about *which game you're on* rather than about what the
 // board is waiting for. Until the game has loaded there are no ids to copy and
@@ -34,7 +37,7 @@ import { useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { GameSettingsModal } from './GameSettingsModal'
 import { useGameScreen } from './gameScreenContext'
-import { isWeb } from './gameScreenShared'
+import { isWeb, usePinToggle } from './gameScreenShared'
 
 // Matches the "your turn" dot on the Games list and the header tab strip.
 const PENDING_DOT_SIZE = 8
@@ -56,6 +59,7 @@ export function GameMenu() {
 		showToast,
 	} = useGameScreen()
 	const { setLayout } = useGameLayout()
+	const pin = usePinToggle()
 
 	const [open, setOpen] = useState(false)
 	const [pending, setPending] = useState<Pending>(null)
@@ -173,6 +177,34 @@ export function GameMenu() {
 				</Pressable>
 
 				<View style={styles.divider} />
+
+				{pin && (
+					<>
+						<Pressable
+							onPress={() => {
+								setOpen(false)
+								pin.toggle()
+							}}
+							style={({ pressed }) => [
+								styles.row,
+								pressed && styles.pressed,
+							]}
+						>
+							<Ionicons
+								name={pin.pinned ? 'pin' : 'pin-outline'}
+								size={18}
+								color={colors.textSecondary}
+							/>
+							<Text style={styles.rowText}>
+								{pin.pinned
+									? 'Unpin from Games'
+									: 'Pin to Games'}
+							</Text>
+						</Pressable>
+
+						<View style={styles.divider} />
+					</>
+				)}
 
 				<Pressable
 					// Swap sheets rather than stack them — see `ask`.

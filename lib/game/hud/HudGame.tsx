@@ -15,6 +15,7 @@ import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
 import { StealAnimation } from '@/lib/catan/StealAnimation'
 import { BoardArea } from '@/lib/game/BoardArea'
 import { useGameScreen } from '@/lib/game/gameScreenContext'
+import { useMarkResultSeen } from '@/lib/game/gameScreenShared'
 import { colors, spacing, z } from '@/lib/theme'
 import { type GameEvent } from '@/lib/stores/useGamesStore'
 import { useRouter } from 'expo-router'
@@ -64,10 +65,12 @@ export function HudGame({ active = true }: { active?: boolean } = {}) {
 		dismissNomadAnim,
 		ftAnim,
 		dismissFtAnim,
+		isSpectator,
 		toast,
 		hideToast,
 	} = useGameScreen()
 	const router = useRouter()
+	useMarkResultSeen(game?.id, active && inGameOver && !isSpectator)
 	const insets = useSafeAreaInsets()
 	const [dockHeight, setDockHeight] = useState(0)
 	// Measured so the board area (and the trade banner that flows at its top)

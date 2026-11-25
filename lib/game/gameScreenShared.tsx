@@ -18,11 +18,52 @@ import {
 
 import type { Phase } from '@/lib/catan/types'
 import { Button } from '@/lib/modules/Button'
-import type { GameEvent } from '@/lib/stores/useGamesStore'
+import { useGamesStore, type GameEvent } from '@/lib/stores/useGamesStore'
+import { useGameScreen } from './gameScreenContext'
 import { Ionicons } from '@expo/vector-icons'
 
 // On web we trim chrome around the board a bit so the SVG can breathe.
 export const isWeb = Platform.OS === 'web'
+
+// Clears the Games list's "Complete" tag once the result is actually on screen —
+// called by both layouts where the game-over overlay mounts (so an off-screen
+// HUD pane doesn't count). Re-runs when a resync re-adds the id while the
+// screen is open, and once the store learns who the user is.
+export function useMarkResultSeen(
+	gameId: string | undefined,
+	onScreen: boolean
+) {
+	const unseen = useGamesStore(
+		(s) => !!gameId && s.unseenGameIds.includes(gameId)
+	)
+	const meId = useGamesStore((s) => s.meId)
+	const markResultSeen = useGamesStore((s) => s.markResultSeen)
+	useEffect(() => {
+		if (gameId && onScreen && meId) void markResultSeen(gameId)
+	}, [gameId, onScreen, unseen, meId, markResultSeen])
+}
+
+// The spectator's pin affordance, shared by both overflow menus. `null` for a
+// seated player (their games are listed anyway) or before the game loads.
+// Toasts the outcome, since the effect lands on a different screen.
+export function usePinToggle(): { pinned: boolean; toggle: () => void } | null {
+	const { game, isSpectator, showToast } = useGameScreen()
+	const pinned = useGamesStore(
+		(s) => !!game && !!s.pinnedGames?.some((g) => g.id === game.id)
+	)
+	const pinGame = useGamesStore((s) => s.pinGame)
+	const unpinGame = useGamesStore((s) => s.unpinGame)
+	if (!game || !isSpectator) return null
+	return {
+		pinned,
+		toggle: async () => {
+			const { error } = pinned
+				? await unpinGame(game.id)
+				: await pinGame(game)
+			showToast(error ?? (pinned ? 'Unpinned' : 'Pinned to Games'))
+		},
+	}
+}
 
 // The two physical dice: the first is red, the second yellow. Callers pass the
 // tone rather than an index so a surface showing a single die (a picker, a

@@ -30,8 +30,10 @@ app/game/[id].tsx
   Outside every sliding area **and outside `<Game>`**
   because it's the one thing on screen that's about _which_ game you're on. The
   `⋯` menu holds forfeit / end-game (each submittable and withdrawable), Copy
-  game ID, and Game settings (read-only `GameSettingsModal`, shared with the
-  HUD menu); it carries an accent dot whenever a declaration is standing.
+  game ID, Game settings (read-only `GameSettingsModal`, shared with the
+  HUD menu) and, for a spectator, Pin / Unpin to the Games tab (`usePinToggle`,
+  also in the HUD menu); it carries an accent dot whenever a declaration is
+  standing.
 - `gameScreenContext.tsx` — `GameScreenProvider` / `useGameScreen()`: all local
   UI state, every phase-derived flag, and one handler per store action. New
   screen state or actions go here.
@@ -51,7 +53,11 @@ app/game/[id].tsx
   the live hand, not `displayHand`, so a reveal animation can't hide a card from
   the picker.
 - `gameScreenShared.tsx` — the few things both menu zones render (`DieFaceView`,
-  `HonkButton`, `UndoButton`, bar styles), so neither imports the other.
+  `HonkButton`, `UndoButton`, bar styles), so neither imports the other. Also
+  the hooks both layouts share: `usePinToggle`, and `useMarkResultSeen`, which
+  each layout calls where it mounts `GameOverOverlay` — showing the result is
+  what clears the Games list's `Complete` tag
+  (`.claude/specs/unseen-results-and-pins.md`).
 - `app/game/request/[id].tsx` — the pending-invite view. Unrelated to the above.
 
 ## Rules

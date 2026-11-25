@@ -32,6 +32,9 @@ const PROFILE_COLS =
 
 let requestsChannel: RealtimeChannel | null = null
 let gamesChannel: RealtimeChannel | null = null
+// Results shown on this device, so a late realtime ending can't re-tag one.
+// See `markResultSeen`.
+const seenThisSession = new Set<string>()
 
 export type InvitedEntry = {
 	user: string
@@ -381,6 +384,13 @@ type GamesStore = {
 	// participation — see loadForUser.
 	spectatableGames: Game[] | undefined
 	completeGames: Game[] | undefined
+	// Ids of finished games (a subset of `completeGames`) whose result the
+	// viewer hasn't opened yet — `unseen_game_results`. They list under Active
+	// with a "Complete" tag instead of under History.
+	unseenGameIds: string[]
+	// Games the viewer pinned while spectating (`game_pins`), newest pin first.
+	// Any status: a pin outlives the game ending, unlike `spectatableGames`.
+	pinnedGames: Game[] | undefined
 	profilesById: Record<string, Profile>
 	// The user the lists were loaded for. Kept so the realtime handler can
 	// route an incoming row into the right list without a hook's help.
@@ -392,6 +402,11 @@ type GamesStore = {
 	// Fetch and cache any profiles we don't already hold. Spectators and their
 	// chat messages surface ids that were never in a participant list.
 	ensureProfiles: (ids: string[]) => Promise<void>
+
+	// Optimistic, rolled back on error.
+	markResultSeen: (gameId: string) => Promise<void>
+	pinGame: (game: Game) => Promise<ActionResult>
+	unpinGame: (gameId: string) => Promise<ActionResult>
 
 	createRequest: (
 		meId: string,
@@ -572,6 +587,8 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 	activeGames: undefined,
 	spectatableGames: undefined,
 	completeGames: undefined,
+	unseenGameIds: [],
+	pinnedGames: undefined,
 	profilesById: {},
 	meId: undefined,
 	loading: false,
@@ -600,11 +617,27 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			.contains('participants', [userId])
 			.order('completed_at', { ascending: false, nullsFirst: false })
 
-		const [requestsRes, activeRes, completeRes] = await Promise.all([
-			requestsPromise,
-			activePromise,
-			completePromise,
-		])
+		const unseenPromise = supabase
+			.from('unseen_game_results')
+			.select('game_id')
+			.eq('user_id', userId)
+
+		// The embed runs under the games select policies, so a pin on a game
+		// the viewer can no longer read (unfriended) comes back with no game.
+		const pinsPromise = supabase
+			.from('game_pins')
+			.select('game_id, games(*)')
+			.eq('user_id', userId)
+			.order('created_at', { ascending: false })
+
+		const [requestsRes, activeRes, completeRes, unseenRes, pinsRes] =
+			await Promise.all([
+				requestsPromise,
+				activePromise,
+				completePromise,
+				unseenPromise,
+				pinsPromise,
+			])
 
 		const pendingRequests: GameRequest[] = []
 		if (requestsRes.data) {
@@ -627,6 +660,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			(g) => !g.participants.includes(userId)
 		)
 		const completeGames: Game[] = completeRes.data ?? []
+		// A failed read keeps what we had rather than blanking the tags.
+		const unseenGameIds = unseenRes.data
+			? unseenRes.data.map((r) => r.game_id)
+			: get().unseenGameIds
+		const pinnedGames: Game[] = pinsRes.data
+			? pinsRes.data.flatMap((r) => (r.games ? [r.games] : []))
+			: (get().pinnedGames ?? [])
 
 		const ids = new Set<string>()
 		for (const r of pendingRequests) {
@@ -638,6 +678,7 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			for (const p of g.participants) ids.add(p)
 		for (const g of completeGames)
 			for (const p of g.participants) ids.add(p)
+		for (const g of pinnedGames) for (const p of g.participants) ids.add(p)
 		ids.add(userId)
 
 		const profilesById: Record<string, Profile> = {}
@@ -674,6 +715,8 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			activeGames,
 			spectatableGames,
 			completeGames,
+			unseenGameIds,
+			pinnedGames,
 			profilesById,
 			loading: false,
 		})
@@ -717,11 +760,14 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			supabase.removeChannel(gamesChannel)
 			gamesChannel = null
 		}
+		seenThisSession.clear()
 		set({
 			pendingRequests: undefined,
 			activeGames: undefined,
 			spectatableGames: undefined,
 			completeGames: undefined,
+			unseenGameIds: [],
+			pinnedGames: undefined,
 			profilesById: {},
 			meId: undefined,
 			loading: false,
@@ -746,6 +792,73 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 			if (!next[id]) next[id] = deletedProfile(id)
 		}
 		set({ profilesById: next })
+	},
+
+	async markResultSeen(gameId) {
+		const meId = get().meId
+		if (!meId) return
+		// The delete goes out even when the id isn't held: the player whose
+		// move ended the game sees the result before this store's channel
+		// delivers the ending, so the row exists here before the id does.
+		seenThisSession.add(gameId)
+		const wasUnseen = get().unseenGameIds.includes(gameId)
+		if (wasUnseen) {
+			set({
+				unseenGameIds: get().unseenGameIds.filter(
+					(id) => id !== gameId
+				),
+			})
+		}
+		const { error } = await supabase
+			.from('unseen_game_results')
+			.delete()
+			.eq('user_id', meId)
+			.eq('game_id', gameId)
+		if (error) {
+			seenThisSession.delete(gameId)
+			if (wasUnseen && !get().unseenGameIds.includes(gameId)) {
+				set({ unseenGameIds: [gameId, ...get().unseenGameIds] })
+			}
+		}
+	},
+
+	async pinGame(game) {
+		const meId = get().meId
+		const pinned = get().pinnedGames ?? []
+		if (!meId) return { error: 'Not signed in' }
+		if (pinned.some((g) => g.id === game.id)) return { error: null }
+		set({ pinnedGames: [game, ...pinned] })
+		const { error } = await supabase
+			.from('game_pins')
+			.insert({ user_id: meId, game_id: game.id })
+		// A duplicate (pinned from another device) is already the goal.
+		if (error && error.code !== '23505') {
+			set({
+				pinnedGames: (get().pinnedGames ?? []).filter(
+					(g) => g.id !== game.id
+				),
+			})
+			return { error: "Couldn't pin game" }
+		}
+		return { error: null }
+	},
+
+	async unpinGame(gameId) {
+		const meId = get().meId
+		const pinned = get().pinnedGames ?? []
+		const held = pinned.find((g) => g.id === gameId)
+		if (!meId || !held) return { error: null }
+		set({ pinnedGames: pinned.filter((g) => g.id !== gameId) })
+		const { error } = await supabase
+			.from('game_pins')
+			.delete()
+			.eq('user_id', meId)
+			.eq('game_id', gameId)
+		if (error) {
+			set({ pinnedGames: [held, ...(get().pinnedGames ?? [])] })
+			return { error: "Couldn't unpin game" }
+		}
+		return { error: null }
 	},
 
 	async createRequest(_meId, invitedIds, config) {
@@ -1063,6 +1176,7 @@ function handleGameChange(
 	const active = get().activeGames
 	const spectatable = get().spectatableGames
 	const complete = get().completeGames
+	const pinned = get().pinnedGames ?? []
 	const meId = get().meId
 	if (!active || !spectatable || !complete || !meId) return
 
@@ -1075,6 +1189,8 @@ function handleGameChange(
 			activeGames: active.filter((g) => g.id !== oldId),
 			spectatableGames: spectatable.filter((g) => g.id !== oldId),
 			completeGames: complete.filter((g) => g.id !== oldId),
+			pinnedGames: pinned.filter((g) => g.id !== oldId),
+			unseenGameIds: get().unseenGameIds.filter((id) => id !== oldId),
 		})
 		return
 	}
@@ -1086,9 +1202,16 @@ function handleGameChange(
 	// no row to merge onto there is nothing to complete it with; drop it and let
 	// the next full payload (or the foreground resync) bring the game in.
 	const game = isPartialGameRow(payload.new)
-		? mergePartialGame(incoming, active, spectatable, complete)
+		? mergePartialGame(incoming, active, spectatable, complete, pinned)
 		: incoming
 	if (!game) return
+	// A pin is independent of which list the game sits in, and survives it
+	// ending, so it is refreshed on every event before the routing below.
+	if (pinned.some((g) => g.id === game.id)) {
+		set({
+			pinnedGames: pinned.map((g) => (g.id === game.id ? game : g)),
+		})
+	}
 	// A game reaches this handler either because I'm seated at it or because
 	// the spectator policy let it through; which list it belongs in follows
 	// from participation, exactly as in loadForUser.
@@ -1114,7 +1237,19 @@ function handleGameChange(
 			// viewer already on the screen still sees the recap (the RLS policy
 			// is status-agnostic), the tab just goes away.
 			if (!mine) useProfileStore.getState().stopSpectating(game.id)
+			// The `unseen_game_results` trigger fires on exactly this flip, so
+			// a game leaving my Active list is unseen by construction; the
+			// game screen, if it's open, marks it seen straight back.
+			const justEnded =
+				mine &&
+				active.some((g) => g.id === game.id) &&
+				!seenThisSession.has(game.id)
+			const unseen = get().unseenGameIds
 			set({
+				unseenGameIds:
+					justEnded && !unseen.includes(game.id)
+						? [game.id, ...unseen]
+						: unseen,
 				activeGames: active.filter((g) => g.id !== game.id),
 				// A game that ends stops being watchable; the spectator keeps
 				// read access (the RLS policy is status-agnostic) so a viewer

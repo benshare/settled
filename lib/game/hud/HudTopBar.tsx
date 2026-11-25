@@ -10,6 +10,7 @@
 import { useGameLayout } from '@/lib/GameLayoutContext'
 import { GameSettingsModal } from '@/lib/game/GameSettingsModal'
 import { useGameScreen } from '@/lib/game/gameScreenContext'
+import { usePinToggle } from '@/lib/game/gameScreenShared'
 import { Modal } from '@/lib/modules/Modal'
 import { colors, font, radius, spacing } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
@@ -88,6 +89,7 @@ function HudMenu({ dropTop }: { dropTop: number }) {
 		showToast,
 	} = useGameScreen()
 	const { setLayout } = useGameLayout()
+	const pin = usePinToggle()
 	const [open, setOpen] = useState(false)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -155,6 +157,16 @@ function HudMenu({ dropTop }: { dropTop: number }) {
 					label="Copy game ID"
 					onPress={copyGameId}
 				/>
+				{pin && (
+					<MenuRow
+						icon={pin.pinned ? 'pin' : 'pin-outline'}
+						label={pin.pinned ? 'Unpin from Games' : 'Pin to Games'}
+						onPress={() => {
+							setOpen(false)
+							pin.toggle()
+						}}
+					/>
+				)}
 				{game && (
 					<MenuRow
 						icon="settings-outline"

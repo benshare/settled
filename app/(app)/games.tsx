@@ -3,6 +3,7 @@ import { Avatar } from '@/lib/modules/Avatar'
 import { useGameStatesStore } from '@/lib/stores/useGameStatesStore'
 import {
 	describePendingRequest,
+	isFinished,
 	isMyTurn,
 	needsMyResponse,
 	useGamesStore,
@@ -36,6 +37,8 @@ export default function GamesScreen() {
 	const activeGames = useGamesStore((s) => s.activeGames)
 	const spectatableGames = useGamesStore((s) => s.spectatableGames)
 	const completeGames = useGamesStore((s) => s.completeGames)
+	const unseenGameIds = useGamesStore((s) => s.unseenGameIds)
+	const pinnedGames = useGamesStore((s) => s.pinnedGames)
 	const profilesById = useGamesStore((s) => s.profilesById)
 	const [historyOpen, setHistoryOpen] = useState(false)
 
@@ -52,6 +55,24 @@ export default function GamesScreen() {
 		return [toAnswer, awaitingOthers]
 	}, [pendingRequests, user?.id])
 
+	// A finished game stays up under Active, tagged, until I've opened its
+	// result; only then does it drop to History.
+	const [unseenFinished, history] = useMemo(() => {
+		const unseen: Game[] = []
+		const seen: Game[] = []
+		for (const g of completeGames ?? []) {
+			if (unseenGameIds.includes(g.id)) unseen.push(g)
+			else seen.push(g)
+		}
+		return [unseen, seen]
+	}, [completeGames, unseenGameIds])
+
+	// A pinned game is lifted out of Watch rather than listed twice.
+	const watchable = useMemo(() => {
+		const pinnedIds = new Set((pinnedGames ?? []).map((g) => g.id))
+		return (spectatableGames ?? []).filter((g) => !pinnedIds.has(g.id))
+	}, [spectatableGames, pinnedGames])
+
 	const storeLoaded =
 		pendingRequests !== undefined &&
 		activeGames !== undefined &&
@@ -64,7 +85,8 @@ export default function GamesScreen() {
 		pendingRequests.length === 0 &&
 		activeGames.length === 0 &&
 		spectatableGames.length === 0 &&
-		completeGames.length === 0
+		completeGames.length === 0 &&
+		(pinnedGames ?? []).length === 0
 
 	return (
 		<SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -107,9 +129,18 @@ export default function GamesScreen() {
 					</View>
 				)}
 
-				{(activeGames ?? []).length > 0 && (
+				{unseenFinished.length + (activeGames ?? []).length > 0 && (
 					<View style={styles.section}>
 						<Text style={styles.sectionHeading}>Active</Text>
+						{unseenFinished.map((g) => (
+							<GameRow
+								key={g.id}
+								game={g}
+								profilesById={profilesById}
+								meId={user?.id}
+								onPress={() => router.push(`/game/${g.id}`)}
+							/>
+						))}
 						{(activeGames ?? []).map((g) => (
 							<GameRow
 								key={g.id}
@@ -139,10 +170,10 @@ export default function GamesScreen() {
 					</View>
 				)}
 
-				{(spectatableGames ?? []).length > 0 && (
+				{(pinnedGames ?? []).length > 0 && (
 					<View style={styles.section}>
-						<Text style={styles.sectionHeading}>Watch</Text>
-						{(spectatableGames ?? []).map((g) => (
+						<Text style={styles.sectionHeading}>Pinned</Text>
+						{(pinnedGames ?? []).map((g) => (
 							<SpectateRow
 								key={g.id}
 								game={g}
@@ -153,7 +184,21 @@ export default function GamesScreen() {
 					</View>
 				)}
 
-				{(completeGames ?? []).length > 0 && (
+				{watchable.length > 0 && (
+					<View style={styles.section}>
+						<Text style={styles.sectionHeading}>Watch</Text>
+						{watchable.map((g) => (
+							<SpectateRow
+								key={g.id}
+								game={g}
+								profilesById={profilesById}
+								onPress={() => router.push(`/game/${g.id}`)}
+							/>
+						))}
+					</View>
+				)}
+
+				{history.length > 0 && (
 					<View style={styles.section}>
 						<Pressable
 							onPress={() => setHistoryOpen((open) => !open)}
@@ -175,7 +220,7 @@ export default function GamesScreen() {
 							/>
 						</Pressable>
 						{historyOpen &&
-							(completeGames ?? []).map((g) => (
+							history.map((g) => (
 								<GameHistoryRow
 									key={g.id}
 									game={g}
@@ -266,6 +311,7 @@ function GameRow({
 
 	const state = useGameStatesStore((s) => s.byId[game.id])
 	const myTurn = isMyTurn(game, meId, state)
+	const finished = isFinished(game.status)
 
 	return (
 		<Pressable
@@ -281,7 +327,11 @@ function GameRow({
 			<Text style={styles.rowText} numberOfLines={1}>
 				{names}
 			</Text>
-			{myTurn && <View style={styles.turnBadge} />}
+			{finished ? (
+				<FinishedTag game={game} />
+			) : (
+				myTurn && <View style={styles.turnBadge} />
+			)}
 			<Ionicons
 				name="chevron-forward"
 				size={20}
@@ -325,12 +375,27 @@ function SpectateRow({
 			<Text style={styles.rowText} numberOfLines={1}>
 				{label}
 			</Text>
+			{isFinished(game.status) && <FinishedTag game={game} />}
 			<Ionicons
 				name="chevron-forward"
 				size={20}
 				color={colors.textMuted}
 			/>
 		</Pressable>
+	)
+}
+
+// Marks a finished game sitting in a list of live ones (an unseen result under
+// Active, an ended game under Pinned).
+function FinishedTag({ game }: { game: Game }) {
+	const { colors } = useTheme()
+	const styles = useMemo(() => makeStyles(colors), [colors])
+	return (
+		<View style={styles.tag}>
+			<Text style={styles.tagText}>
+				{game.status === 'canceled' ? 'Canceled' : 'Complete'}
+			</Text>
+		</View>
 	)
 }
 
@@ -460,6 +525,17 @@ function makeStyles(colors: ColorScheme) {
 			height: TURN_BADGE_SIZE,
 			borderRadius: TURN_BADGE_SIZE / 2,
 			backgroundColor: colors.accent,
+		},
+		tag: {
+			paddingHorizontal: spacing.sm,
+			paddingVertical: 2,
+			borderRadius: radius.full,
+			backgroundColor: colors.accentDim,
+		},
+		tagText: {
+			fontSize: font.xs,
+			fontWeight: '600',
+			color: colors.accent,
 		},
 		historyHeader: {
 			flexDirection: 'row',
