@@ -42,6 +42,7 @@ export function StatusBanner() {
 		needsNomination,
 		pendingWin,
 		flushState,
+		robberDraftHex,
 	} = useGameScreen()
 	if (!game || !gameState) return null
 	// The bonus pane owns the screen while a player picks (BoardArea hides the
@@ -58,6 +59,7 @@ export function StatusBanner() {
 		needsNomination,
 		pendingWin,
 		flushState,
+		pickingVictim: robberDraftHex !== null,
 	}
 	const { label, dice } = islandStatus(ctx)
 	const status = bannerStatus(ctx)

@@ -38,6 +38,8 @@ type Ctx = {
 	// Where a flush of the local queue stands. Only the two stuck states say
 	// anything — a send in flight is too brief to narrate.
 	flushState: FlushState
+	// The viewer has drafted a robber hex and is choosing among 2+ victims.
+	pickingVictim: boolean
 }
 
 // Roll-family events never populate the banner: an ordinary roll is what the
@@ -201,7 +203,9 @@ function waitLine(ctx: Ctx): string | null {
 		case 'curio_pick':
 			return `Waiting for ${listOf(seats, ctx)} to claim resources`
 		case 'move_robber':
-			return `${isPhrase(gameState.currentTurn ?? 0, ctx)} moving the robber`
+			return ctx.pickingVictim && gameState.currentTurn === ctx.meIdx
+				? 'Pick a player to steal from'
+				: `${isPhrase(gameState.currentTurn ?? 0, ctx)} moving the robber`
 		case 'steal':
 			return `${isPhrase(gameState.currentTurn ?? 0, ctx)} stealing a card`
 		case 'road_building':
