@@ -347,15 +347,19 @@ function DockTradeButton() {
 		onTradePress,
 	} = useGameScreen()
 	if (!gameState) return null
+	// Wrapped in a bare slot rather than styled as one: Yoga floors a
+	// zero-basis item at its own padding + border, so a padded Trade sized
+	// directly would come out wider than the primary action's unpadded column.
 	return (
-		<TradeButton
-			compact
-			style={styles.actionSlot}
-			tradeEnabled={tradeButtonEnabled}
-			tradeActive={tradeButtonActive}
-			color={seatColor(gameState, meIdx)}
-			onTradePress={onTradePress}
-		/>
+		<View style={styles.actionSlot}>
+			<TradeButton
+				compact
+				tradeEnabled={tradeButtonEnabled}
+				tradeActive={tradeButtonActive}
+				color={seatColor(gameState, meIdx)}
+				onTradePress={onTradePress}
+			/>
+		</View>
 	)
 }
 
@@ -607,8 +611,8 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 	},
 	// Bottom-aligned so the tall trade panel and the short primary button share a
-	// baseline. The gap is the build row's own, so trade and the primary action
-	// each span exactly half the icon grid above (see `BuildTradeBar`'s `bare`).
+	// baseline. Trade and the primary action split the row evenly; with four
+	// build icons above, the shared gap lands each on exactly two of them.
 	actionRow: {
 		flexDirection: 'row',
 		alignItems: 'flex-end',

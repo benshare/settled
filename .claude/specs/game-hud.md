@@ -190,8 +190,8 @@ waiting on. **One line of text; the turn dot is a separate set** (see §7).
     - **Placement:** the placement confirm + local undo occupy the right column;
       `MainLoopBar` does not render.
 - **Grid:** Trade and the primary action split their row evenly at the build
-  icon row's gap, so each spans exactly two of the four build icons above (an
-  odd icon count is padded with an empty cell to keep the seam on an edge).
+  icon row's gap, so with four build icons above each spans exactly two (an
+  odd count just splits unevenly against the icons).
 - Compact styling throughout (the whole point of the redesign is reclaiming the
   two fat action bars).
 - **Open:** the left column's content during initial placement (the round-1 hand

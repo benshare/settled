@@ -76,10 +76,11 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
 - **The chips' dot set is `pendingSeats` (+ trade responders), not
   `current_turn`** (`actingSeats` in `status.ts`) — the seats that owe an action
   now, often not the turn-holder.
-- **The dock's lower row is gridded on the build icons above it.** Trade and
-  the primary action each take half the row at the icon row's own gap
-  (`BUILD_ICON_GAP`), so with four icons each spans exactly two; an odd count
-  is padded with an empty cell (`BuildTradeBar`'s `bare`).
+- **Trade and the primary action are always equal width.** Each takes half
+  the dock's lower row at the icon row's own gap (`BUILD_ICON_GAP`), so with
+  four icons each spans exactly two. Trade sits inside a bare slot: Yoga floors
+  a zero-basis item at its own padding, so a padded button sized directly
+  comes out wider than its neighbour.
 - **The dock renders nothing for a spectator** (their readout is island +
   banner); the trade / discard composers replace the hand row rather than
   stacking, since each is composed by tapping the hand.
