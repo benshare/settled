@@ -43,7 +43,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		description:
 			'When buying a development card, draw two and keep one. The other goes to the bottom of the deck.',
 		clarifications: [
-			'You may pay a second copy of one required resource in place of another.',
+			'You may pay Wheat in place of the Sheep, or Sheep in place of the Wheat. Ore cannot be substituted.',
 		],
 		icon: 'eye-outline',
 		set: '2',
@@ -182,7 +182,7 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'investor',
 		title: 'Investor',
 		description:
-			'During your turn, set aside three of one resource for an investment token. Each token pays one of that resource after you roll.',
+			'During your turn, set aside three of one resource for an investment token, up to six tokens. Each token pays one of that resource after you roll.',
 		clarifications: ['Activates once you have 3 points.'],
 		icon: 'trending-up-outline',
 		set: '3',

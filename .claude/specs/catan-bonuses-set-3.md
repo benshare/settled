@@ -24,8 +24,8 @@ pattern, `placedTurn` fields).
 - `smith` — may substitute Brick for Ore and vice versa when paying for
   buildings, dev cards, and bank/port trades.
 - `investor` — once your total VP is ≥3, during your turn you may set aside 3
-  of one resource to gain an "investment token" for it, with no cap on how
-  many. At the start of each of your turns, gain 1 resource per token.
+  of one resource to gain an "investment token" for it, up to 6 tokens in
+  all. At the start of each of your turns, gain 1 resource per token.
   Invested cards are set aside — not stealable and not counted toward the
   7-discard hand limit.
 - `magician` — after your own roll resolves, you may once discard N+1 cards to
@@ -148,7 +148,7 @@ cost.brick)` units to ore; symmetrically for an ore component. Non-smith →
 - `INVEST_TRIO = 3`.
 - `investorTokenCount(p): number` — sum of `p.investments`.
 - `canInvest(p, resource, totalVP): boolean` — bonus investor, `totalVP ≥ 3`,
-  `p.resources[resource] ≥ 3`. Tokens are uncapped.
+  `p.resources[resource] ≥ 3`, fewer than `INVESTOR_MAX_TOKENS` (6) tokens.
 - `investorPayout(p): ResourceHand` — 1 per token per resource (the hand
   granted at the start of the investor's turn).
 
@@ -252,8 +252,8 @@ out`), or a dedicated `merchant_trade` event carrying both halves.
     - phase = main, current turn = me, bonus investor.
     - `canInvest(me, resource, totalVP(state, meIdx))` — the ≥3-VP gate blocks
       investing entirely below the threshold; needs ≥3 of `resource`.
-    - Effect: deduct 3 of `resource`; `investments[resource] += 1`. No cap on
-      tokens; may invest multiple times per turn.
+    - Effect: deduct 3 of `resource`; `investments[resource] += 1`. Capped at
+      6 tokens total; may invest multiple times per turn.
     - Runs `applyEndOfActionChecks` (no VP change, but keeps the pattern).
 - Start-of-turn payout: in `handleEndTurn`, after computing the incoming
   active player, if they are an investor with ≥1 token AND `totalVP ≥ 3`, add

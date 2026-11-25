@@ -52,6 +52,7 @@ import {
 	liquidatableTargets,
 	roadLiquidationBlocked,
 	scoutDevCardCost,
+	scoutSwapForSelection,
 	shepherdEffectiveHandSize,
 	specialistGiveResource,
 	superCityCount,
@@ -66,6 +67,7 @@ import {
 	investorActivateVPFor,
 	investorPayout,
 	investorTokenCount,
+	INVESTOR_MAX_TOKENS,
 	isFenceReservedAgainst,
 	isValidMagicTarget,
 	isValidMerchantAddon,
@@ -953,7 +955,9 @@ function testForger() {
 
 function testScout() {
 	assert(isValidScoutSwap({ from: 'sheep', to: 'wheat' }), 'sheep→wheat ok')
-	assert(isValidScoutSwap({ from: 'wheat', to: 'ore' }), 'wheat→ore ok')
+	assert(isValidScoutSwap({ from: 'wheat', to: 'sheep' }), 'wheat→sheep ok')
+	assert(!isValidScoutSwap({ from: 'wheat', to: 'ore' }), 'wheat→ore invalid')
+	assert(!isValidScoutSwap({ from: 'ore', to: 'sheep' }), 'ore→sheep invalid')
 	assert(
 		!isValidScoutSwap({ from: 'sheep', to: 'sheep' }),
 		'self swap invalid'
@@ -962,10 +966,12 @@ function testScout() {
 		!isValidScoutSwap({ from: 'brick' as never, to: 'wheat' }),
 		'non-cost from invalid'
 	)
-	const c = scoutDevCardCost({ from: 'sheep', to: 'ore' })
+	const c = scoutDevCardCost({ from: 'sheep', to: 'wheat' })
 	equal(c.sheep, 0, 'sheep removed')
-	equal(c.wheat, 1, 'wheat unchanged')
-	equal(c.ore, 2, 'ore doubled')
+	equal(c.wheat, 2, 'wheat doubled')
+	equal(c.ore, 1, 'ore unchanged')
+	const bad = scoutDevCardCost({ from: 'sheep', to: 'ore' })
+	equal(bad.ore, 1, 'invalid ore swap falls back to standard')
 	const std = scoutDevCardCost()
 	equal(std.sheep, 1, 'standard 1 sheep')
 	equal(std.wheat, 1, 'standard 1 wheat')
@@ -982,18 +988,51 @@ function testScout() {
 	equal(subOpts.length, 1, 'exactly one affordable route')
 	assert(subOpts[0] !== null, 'the affordable route is a swap, not standard')
 
+	// Ore can't be covered by wheat/sheep, nor stand in for them.
+	assert(
+		!canScoutAffordDevCard({ ...emptyHand(), wheat: 2, sheep: 1 }),
+		'no ore: unaffordable'
+	)
+	assert(
+		!canScoutAffordDevCard({ ...emptyHand(), wheat: 1, ore: 2 }),
+		'ore cannot replace sheep'
+	)
+
 	// Standard hand: only the no-swap route is affordable.
 	const exact: ResourceHand = { ...emptyHand(), sheep: 1, wheat: 1, ore: 1 }
 	const exactOpts = affordableScoutSwaps(exact)
 	equal(exactOpts.length, 1, 'standard-only exact hand: one route')
 	equal(exactOpts[0], null, 'that route is the standard cost')
 
-	// Rich hand: standard plus every swap is affordable (1 standard + 6 swaps).
+	// Rich hand: standard plus both wheat/sheep swaps.
 	const rich: ResourceHand = { ...emptyHand(), sheep: 2, wheat: 2, ore: 2 }
-	equal(affordableScoutSwaps(rich).length, 7, 'rich hand: all 7 routes')
+	equal(affordableScoutSwaps(rich).length, 3, 'rich hand: all 3 routes')
 
 	// No wheat/sheep/ore at all: cannot afford by any route.
 	assert(!canScoutAffordDevCard(emptyHand()), 'empty hand affords nothing')
+
+	// Hand-tapped selections map to a route only when they match one exactly.
+	equal(
+		scoutSwapForSelection({ ...emptyHand(), sheep: 1, wheat: 1, ore: 1 }),
+		null,
+		'standard selection'
+	)
+	assert(
+		JSON.stringify(
+			scoutSwapForSelection({ ...emptyHand(), sheep: 2, ore: 1 })
+		) === JSON.stringify({ from: 'wheat', to: 'sheep' }),
+		'2 sheep + ore → wheat→sheep'
+	)
+	equal(
+		scoutSwapForSelection({ ...emptyHand(), wheat: 1, ore: 2 }),
+		undefined,
+		'ore-doubled selection invalid'
+	)
+	equal(
+		scoutSwapForSelection({ ...emptyHand(), wheat: 1, ore: 1 }),
+		undefined,
+		'short selection invalid'
+	)
 }
 
 function testAccountantLiquidation() {
@@ -1562,9 +1601,15 @@ function testInvestor() {
 	const loaded: PlayerState = {
 		...base,
 		resources: hand({ wheat: 9 }),
-		investments: { wheat: 3, ore: 3 },
+		investments: { wheat: 3, ore: 2 },
 	}
-	assert(canInvest(loaded, 'wheat', 5, 'standard'), 'tokens are uncapped')
+	assert(canInvest(loaded, 'wheat', 5, 'standard'), 'under the cap ok')
+	const capped: PlayerState = {
+		...loaded,
+		investments: { wheat: 4, ore: 2 },
+	}
+	equal(investorTokenCount(capped), INVESTOR_MAX_TOKENS, 'at the cap')
+	assert(!canInvest(capped, 'wheat', 5, 'standard'), 'capped at 6 tokens')
 }
 
 // Withheld entirely heads-up; active from turn one at a 5-6 player table.

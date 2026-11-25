@@ -5,9 +5,9 @@
 // disables itself off-turn instead of popping in and out. The nudge is not
 // here: honking is about the table stalling, not about your turn, so it hangs
 // off the status banner (see `StatusBanner.tsx`). The trade and discard
-// composers replace the whole row, since each is built by tapping the hand
-// itself. A spectator gets no dock at all (their readout is
-// the island + banner). See `.claude/specs/game-hud.md` §10.
+// composers (and the scout's dev-card payment) replace the whole row, since
+// each is built by tapping the hand itself. A spectator gets no dock at all
+// (their readout is the island + banner). See `.claude/specs/game-hud.md` §10.
 
 import {
 	canShepherdSwap,
@@ -23,7 +23,7 @@ import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
-import { ScoutCostPicker } from '@/lib/catan/ScoutCostPicker'
+import { ScoutBuyPanel } from '@/lib/catan/ScoutBuyPanel'
 import { seatColor } from '@/lib/catan/palette'
 import {
 	ShepherdSwapPicker,
@@ -96,8 +96,8 @@ export function Dock({
 		setShepherdOpen,
 		investOpen,
 		setInvestOpen,
-		scoutCostOpen,
-		setScoutCostOpen,
+		scoutBuyOpen,
+		setScoutBuyOpen,
 		onInvest,
 		submitBuyDevCard,
 		onRitualRoll,
@@ -157,6 +157,13 @@ export function Dock({
 					submitting={submitting}
 					onSubmit={onAvariceDiscard}
 					onCancel={() => setAvariceDiscardOpen(false)}
+				/>
+			) : scoutBuyOpen ? (
+				<ScoutBuyPanel
+					hand={gameState.players[meIdx].resources}
+					submitting={submitting}
+					onSubmit={submitBuyDevCard}
+					onCancel={() => setScoutBuyOpen(false)}
 				/>
 			) : (
 				<View style={styles.row}>
@@ -253,14 +260,6 @@ export function Dock({
 					submitting={submitting}
 					onCancel={() => setInvestOpen(false)}
 					onConfirm={onInvest}
-				/>
-			)}
-			{active && scoutCostOpen && myPlayer && (
-				<ScoutCostPicker
-					hand={myPlayer.resources}
-					submitting={submitting}
-					onCancel={() => setScoutCostOpen(false)}
-					onConfirm={(swap) => submitBuyDevCard(swap)}
 				/>
 			)}
 		</View>

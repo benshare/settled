@@ -101,7 +101,7 @@ export const BONUS_SIZE_VARIANTS: {
 		small: { available: false },
 		expanded: {
 			description:
-				'During your turn, set aside three of one resource for an investment token. Each token pays one of that resource after you roll.',
+				'During your turn, set aside three of one resource for an investment token, up to six tokens. Each token pays one of that resource after you roll.',
 			clarifications: [],
 			activateVP: 0,
 		},

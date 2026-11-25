@@ -1,8 +1,9 @@
 // Modal overlay rendered when the user taps a player card in the strip.
 // Shows the player's avatar + name, their point/card totals, what's left in
 // their piece supply, and — if the game is running with bonuses — the full
-// bonus and curse cards they hold. An investor's bonus card carries their
-// set-aside investment tokens in its footer (public to the whole table).
+// bonus and curse cards they hold. A bonus card's footer carries the public
+// state its rules have produced: an investor's set-aside tokens, a carpenter's
+// bought victory points.
 
 import { Avatar } from '@/lib/modules/Avatar'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
@@ -10,7 +11,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { Modal } from '../modules/Modal'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, spacing } from '../theme'
-import { METROPOLITAN_SUPER_CITY_CAP, superCityCount } from './bonus'
+import {
+	carpenterVPOf,
+	METROPOLITAN_SUPER_CITY_CAP,
+	superCityCount,
+} from './bonus'
 import {
 	bonusById,
 	bonusClarificationsFor,
@@ -208,6 +213,10 @@ function Body({
 									<InvestmentTokens
 										investments={player?.investments}
 									/>
+								) : bonus.id === 'carpenter' && player ? (
+									<Text style={styles.cardFooterText}>
+										Carpenter VP: {carpenterVPOf(player)}
+									</Text>
 								) : undefined
 							}
 						/>
@@ -441,8 +450,8 @@ function CardBlock({
 	tag: string
 	tagColor: string
 	borderColor: string
-	// Whatever state the card's own rules have produced so far — today only the
-	// investor's tokens. Sits under the description rather than in a block of
+	// Whatever state the card's own rules have produced so far (investor
+	// tokens, carpenter VP). Sits under the description rather than in a block of
 	// its own so the card stays one object.
 	footer?: React.ReactNode
 }) {
@@ -688,6 +697,11 @@ const styles = StyleSheet.create({
 	cardDescription: {
 		fontSize: font.sm,
 		color: colors.textSecondary,
+	},
+	cardFooterText: {
+		fontSize: font.sm,
+		fontWeight: '700',
+		color: colors.text,
 	},
 	emptyBlock: {
 		borderRadius: radius.md,

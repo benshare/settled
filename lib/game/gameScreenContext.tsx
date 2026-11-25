@@ -13,7 +13,6 @@ import { useAuth } from '@/lib/auth'
 import { RESOURCES, type Hex, type Resource } from '@/lib/catan/board'
 import type { BonusId, CurseId } from '@/lib/catan/bonuses'
 import {
-	affordableScoutSwaps,
 	canBuildMoreSuperCities,
 	canInvest,
 	forgerTokenHex,
@@ -219,7 +218,9 @@ function useGameScreenState(gameId: string) {
 	const [avariceDiscardOpen, setAvariceDiscardOpen] = useState(false)
 	const [ritualOpen, setRitualOpen] = useState(false)
 	const [shepherdOpen, setShepherdOpen] = useState(false)
-	const [scoutCostOpen, setScoutCostOpen] = useState(false)
+	// The scout's dev-card composer (pick the cards to pay with from the hand),
+	// which replaces the hand like the trade composer does.
+	const [scoutBuyOpen, setScoutBuyOpen] = useState(false)
 	// When a city / super_city build is pending and the metropolitan
 	// player can swap wheat→ore, this carries the picked vertex until the
 	// swap modal resolves.
@@ -1423,31 +1424,27 @@ function useGameScreenState(gameId: string) {
 
 	async function onBuyDevCard() {
 		if (!game || !myPlayer) return
+		// A scout picks the cards to pay with by tapping their hand (wheat and
+		// sheep are interchangeable), so the buy opens that composer instead —
+		// it is its own confirmation, so the opt-in confirm is skipped.
+		if (myPlayer.bonus === 'scout') {
+			const opening = !scoutBuyOpen
+			setScoutBuyOpen(opening)
+			if (opening) {
+				setTradePanelOpen(false)
+				setAvariceDiscardOpen(false)
+			}
+			return
+		}
 		if (confirmDevCardBuy) {
 			setDevBuyConfirmOpen(true)
 			return
 		}
-		return startBuyDevCard()
+		return submitBuyDevCard(null)
 	}
 
 	async function onConfirmDevCardBuy() {
 		setDevBuyConfirmOpen(false)
-		return startBuyDevCard()
-	}
-
-	async function startBuyDevCard() {
-		if (!game || !myPlayer) return
-		// A scout may pay with a swapped resource. If more than one payment
-		// route is affordable, let them choose which cards to spend; a lone
-		// route is submitted automatically.
-		if (myPlayer.bonus === 'scout') {
-			const options = affordableScoutSwaps(myPlayer.resources)
-			if (options.length > 1) {
-				setScoutCostOpen(true)
-				return
-			}
-			return submitBuyDevCard(options[0] ?? null)
-		}
 		return submitBuyDevCard(null)
 	}
 
@@ -1468,7 +1465,7 @@ function useGameScreenState(gameId: string) {
 			smithSwap
 		)
 		setSubmitting(false)
-		setScoutCostOpen(false)
+		setScoutBuyOpen(false)
 		if (res.error) notify('Buy failed', res.error)
 	}
 
@@ -1607,7 +1604,10 @@ function useGameScreenState(gameId: string) {
 	function onAvariceDiscardPress() {
 		const opening = !avariceDiscardOpen
 		setAvariceDiscardOpen(opening)
-		if (opening) setTradePanelOpen(false)
+		if (opening) {
+			setTradePanelOpen(false)
+			setScoutBuyOpen(false)
+		}
 	}
 
 	async function onDiscard(selection: ResourceHandType) {
@@ -1661,6 +1661,7 @@ function useGameScreenState(gameId: string) {
 			setPendingConfirm(null)
 			setMetroPending(null)
 			setAvariceDiscardOpen(false)
+			setScoutBuyOpen(false)
 		}
 	}
 
@@ -1756,6 +1757,12 @@ function useGameScreenState(gameId: string) {
 			!!gameState &&
 			canBuyDevCard(gameState, meIdx, gameState?.currentTurn ?? -1),
 	}
+	// The scout's pay-with composer goes with the buy it was opened for — the
+	// turn passing, the hand no longer affording it, or the deck running out.
+	const canBuyDev = buildEnabled.dev_card
+	useEffect(() => {
+		if (!canBuyDev) setScoutBuyOpen(false)
+	}, [canBuyDev])
 	const buildCurseHints: BuildCurseHints = (() => {
 		if (!gameState || meIdx < 0) return {}
 		const out: BuildCurseHints = {}
@@ -2020,8 +2027,8 @@ function useGameScreenState(gameId: string) {
 		setRitualOpen,
 		shepherdOpen,
 		setShepherdOpen,
-		scoutCostOpen,
-		setScoutCostOpen,
+		scoutBuyOpen,
+		setScoutBuyOpen,
 		investOpen,
 		setInvestOpen,
 		metroPending,
