@@ -169,3 +169,14 @@ app/game/[id].tsx
   two the server treats as move-neutral. Only three confirm bars survive (move
   robber, steal, move forger token), because those three can't be taken back.
   See `.claude/specs/local-action-queue.md`.
+- **The robber and its steal confirm once.** A hex with 2+ steal candidates is
+  only drafted (`robberDraftHex`: the piece is drawn there and the victims
+  pulse beside the other hexes); the victim tap raises the single confirm and
+  `move_robber` carries the `victim`, so both land in one write. With 0–1
+  candidates the hex tap confirms as before. The bare steal confirm remains
+  only for a `steal` phase the server still produces (an older client, or a
+  pre-deploy server ignoring `victim`). See `.claude/specs/catan-robber.md`.
+- **`play_prefs.keepRoadSelected`** (Account → Gameplay, default off) leaves
+  the road tool armed after a queued road, but only if the post-road
+  projection still passes the road button's own gates (floor held, a payable
+  edge, no curse hint) — otherwise it drops as usual.

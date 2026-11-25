@@ -68,6 +68,9 @@ export type BuildInteraction = {
 
 export type RobberInteraction = {
 	meIdx: number
+	// A hex picked but not yet sent (2+ victims to choose from); the piece is
+	// drawn there so the steal targets read against it.
+	draftHex?: Hex | null
 	onMoveRobber: (hex: Hex) => void
 	onSteal: (victim: number) => void
 }
@@ -384,8 +387,9 @@ function BoardSvg({
 						)
 					})}
 				{(() => {
+					const robberAt = robber?.draftHex ?? state.robber
 					const robberHex = layout.hexes.find(
-						(h) => h.id === state.robber
+						(h) => h.id === robberAt
 					)
 					if (!robberHex) return null
 					return (
@@ -463,6 +467,7 @@ function BoardSvg({
 						layoutS={layout.s}
 						hexLayouts={layout.hexes}
 						vertexPositions={vertexPositions}
+						draftHex={robber.draftHex}
 						onMoveRobber={robber.onMoveRobber}
 						onSteal={robber.onSteal}
 					/>

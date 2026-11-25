@@ -311,3 +311,16 @@ Add phase-specific branches to whatever rendering `MainLoopBar` / status current
 - Victory-condition check on every state write.
 - Trade (bank / port / player-to-player).
 - Replace edge-function helper duplication with a shared shim.
+
+## Amendment: one confirm when there is a victim to choose
+
+Moving the robber onto a hex with 2+ candidates used to confirm twice — the
+hex, then the victim — over two round trips. Now the hex is drafted locally
+(the piece moves there, its victims pulse, other hexes stay tappable to
+re-pick), and the victim tap raises the only confirm ("Move robber here and
+steal from X?"). `move_robber` takes an optional `victim`: with 2+ candidates it
+must be one of them (400 otherwise) and the steal happens in the same write;
+with 0–1 candidates it is ignored. Without it the server still enters `steal`,
+which is what the timeout sweep, older clients, and a pre-deploy server
+(which ignores `victim`) all fall back to — so the `steal` phase, its layer and
+its confirm stay. The steal mutation is shared as `applySteal`.

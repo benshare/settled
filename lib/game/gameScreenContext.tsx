@@ -54,6 +54,7 @@ import {
 	type PlacementDraftEntry,
 } from '@/lib/catan/placement'
 import type { PlacementSelection } from '@/lib/catan/PlacementLayer'
+import { stealCandidates } from '@/lib/catan/robber'
 import { useSwitchableGames } from '@/lib/catan/switchableGames'
 import { visibleOfferFor } from '@/lib/catan/TradeBanner'
 import { isOfferRejectedByAll } from '@/lib/catan/trade'
@@ -229,20 +230,30 @@ function useGameScreenState(gameId: string) {
 		| { kind: 'super_city'; vertex: string }
 		| null
 	>(null)
-	// The three confirms that survive the local queue: move robber, steal, and
-	// the forger's token move. All three are actions the player cannot take
-	// back — everything undoable now answers "are you sure?" with the arrow
-	// instead. See `.claude/specs/local-action-queue.md`.
+	// The confirms that survive the local queue: move robber (which carries
+	// its steal when there is a victim to choose), a bare steal, and the
+	// forger's token move. All are actions the player cannot take back —
+	// everything undoable now answers "are you sure?" with the arrow instead.
+	// See `.claude/specs/local-action-queue.md`.
 	// The player's own opt-in confirm before a dev card buy (`play_prefs`). A
 	// modal rather than the confirm bar above, since it names no board spot.
 	const playPrefs = parsePlayPrefs(
 		useProfileStore((s) => s.profile?.play_prefs)
 	)
-	const confirmDevCardBuy = playPrefs.confirmDevCardBuy
+	const { confirmDevCardBuy } = playPrefs
 	const [devBuyConfirmOpen, setDevBuyConfirmOpen] = useState(false)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		run: () => void | Promise<void>
+	} | null>(null)
+	// A robber hex chosen with 2+ steal candidates, held locally until the
+	// victim is picked so the two go up (and confirm) as one. Anchored on the
+	// game and the robber's current hex, so a later robber move — or another
+	// game — reads it as stale without a reset effect.
+	const [robberDraft, setRobberDraft] = useState<{
+		gameId: string
+		from: Hex
+		hex: Hex
 	} | null>(null)
 	const [openPlayerIdx, setOpenPlayerIdx] = useState<number | null>(null)
 	// Haunt: the vertices the local haunt player has tapped (needs 2) during
@@ -942,6 +953,15 @@ function useGameScreenState(gameId: string) {
 		(phaseKind === 'discard' ||
 			phaseKind === 'move_robber' ||
 			phaseKind === 'steal')
+	const robberDraftHex =
+		robberDraft &&
+		game &&
+		robberDraft.gameId === game.id &&
+		phaseKind === 'move_robber' &&
+		isMyActiveTurn &&
+		robberDraft.from === gameState?.robber
+			? robberDraft.hex
+			: null
 	const inRoadBuilding =
 		game?.status === 'active' && phaseKind === 'road_building'
 	// Both endings, so a canceled game stops the board and shows the overlay
@@ -1594,7 +1614,40 @@ function useGameScreenState(gameId: string) {
 								vertex: sel.vertex,
 								...buildOpts('city'),
 							}
-		if (enqueue(action)) selectBoardTool(null)
+		if (!enqueue(action)) return
+		// `keepRoadSelected`: a road leaves the tool armed while the board left
+		// behind still has a road this seat may build and pay for.
+		if (
+			action.action === 'build_road' &&
+			playPrefs.keepRoadSelected &&
+			canBuildRoadAfter(gameState, action)
+		)
+			return
+		selectBoardTool(null)
+	}
+
+	// Whether `action` leaves this seat holding a build floor with a payable
+	// road. Folds it onto this render's projection (enqueue just did the same),
+	// since the projection itself doesn't catch up until the next render.
+	function canBuildRoadAfter(state: GameState, action: LocalAction): boolean {
+		const res = applyLocalAction(state, meIdx, action, '')
+		if (isApplyError(res)) return false
+		const next = res.state
+		const ph = next.phase
+		const holdsFloor =
+			ph.kind === 'main'
+				? next.currentTurn === meIdx
+				: ph.kind === 'special_build' &&
+					ph.queue[0] === meIdx &&
+					(!next.config.extraBuild.moreThanSeven ||
+						handSize(next.players[meIdx]) > 7)
+		// Same gates as the road button: payable edges, and no curse hint
+		// (which disables it).
+		return (
+			holdsFloor &&
+			payableBuildRoadEdges(next, meIdx).length > 0 &&
+			!curseBuildReason(next, meIdx, 'road')
+		)
 	}
 
 	// Own turn: queued and undoable like a bank trade, flushed by the turn's
@@ -1633,8 +1686,17 @@ function useGameScreenState(gameId: string) {
 		if (res.error) notify('Discard failed', res.error)
 	}
 
+	// With 2+ steal candidates the hex is only drafted: the victim tap that
+	// follows raises the one confirm and sends both together. Otherwise the
+	// server picks (or skips) the victim, so the hex alone is the decision.
 	function onMoveRobberRequest(hex: Hex) {
-		if (!game) return
+		if (!game || !gameState) return
+		if (stealCandidates(gameState, hex, meIdx).length > 1) {
+			setPendingConfirm(null)
+			setRobberDraft({ gameId: game.id, from: gameState.robber, hex })
+			return
+		}
+		setRobberDraft(null)
 		confirmAction('Move robber here?', async () => {
 			if (!(await flushBeforeBarrier())) return
 			const res = await moveRobber(game.id, hex)
@@ -1647,6 +1709,19 @@ function useGameScreenState(gameId: string) {
 		if (!game) return
 		const victimId = game.player_order[victim]
 		const name = profilesById[victimId]?.username ?? 'player'
+		if (robberDraftHex) {
+			const hex = robberDraftHex
+			confirmAction(
+				`Move robber here and steal from ${name}?`,
+				async () => {
+					if (!(await flushBeforeBarrier())) return
+					const res = await moveRobber(game.id, hex, victim)
+					setSubmitting(false)
+					if (res.error) notify('Move failed', res.error)
+				}
+			)
+			return
+		}
 		confirmAction(`Steal from ${name}?`, async () => {
 			if (!(await flushBeforeBarrier())) return
 			const res = await steal(game.id, victim)
@@ -2016,6 +2091,7 @@ function useGameScreenState(gameId: string) {
 		showAvariceDiscard,
 		canAvariceDiscard,
 		pendingConfirm,
+		robberDraftHex,
 		devBuyConfirmOpen,
 		setDevBuyConfirmOpen,
 		onConfirmDevCardBuy,

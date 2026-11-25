@@ -485,7 +485,12 @@ type GamesStore = {
 		gameId: string,
 		discard: ResourceHand
 	) => Promise<ActionResult>
-	moveRobber: (gameId: string, hex: string) => Promise<ActionResult>
+	// `victim` (2+ steal candidates) makes the steal part of the same write.
+	moveRobber: (
+		gameId: string,
+		hex: string,
+		victim?: number
+	) => Promise<ActionResult>
 	steal: (gameId: string, victim: number) => Promise<ActionResult>
 
 	proposeTrade: (
@@ -1028,9 +1033,14 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async moveRobber(gameId, hex) {
+	async moveRobber(gameId, hex, victim) {
 		return callGameService(
-			{ action: 'move_robber', game_id: gameId, hex },
+			{
+				action: 'move_robber',
+				game_id: gameId,
+				hex,
+				...(victim === undefined ? {} : { victim }),
+			},
 			"Couldn't move robber"
 		)
 	},

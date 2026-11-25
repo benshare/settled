@@ -490,6 +490,14 @@ function GameplaySettings() {
 				dimmed={false}
 				styles={styles}
 			/>
+			<NotifToggleRow
+				label="Keep road placement selected"
+				value={prefs.keepRoadSelected}
+				onToggle={() => togglePref('keepRoadSelected')}
+				disabled={!profile || saving}
+				dimmed={false}
+				styles={styles}
+			/>
 		</View>
 	)
 }

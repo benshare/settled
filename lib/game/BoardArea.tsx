@@ -93,6 +93,7 @@ export function BoardArea({
 		tradePanelOpen,
 		liveOffer,
 		pendingConfirm,
+		robberDraftHex,
 		devBuyConfirmOpen,
 		setDevBuyConfirmOpen,
 		onConfirmDevCardBuy,
@@ -397,6 +398,7 @@ export function BoardArea({
 							gameState.phase.kind === 'steal')
 							? {
 									meIdx,
+									draftHex: robberDraftHex,
 									onMoveRobber: onMoveRobberRequest,
 									onSteal: onStealRequest,
 								}

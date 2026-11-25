@@ -78,6 +78,7 @@ export function TopArea() {
 		onUndo,
 		onInvest,
 		submitBuyDevCard,
+		robberDraftHex,
 	} = useGameScreen()
 
 	// A spectator has no PlayerStrip chip to read — their one status line is
@@ -270,6 +271,7 @@ export function TopArea() {
 								gameState={gameState}
 								meIdx={meIdx}
 								profilesById={profilesById}
+								pickingVictim={robberDraftHex !== null}
 							/>
 						)}
 						{gameState.phase.kind === 'special_build' && (
@@ -383,11 +385,14 @@ function RobberStatus({
 	gameState,
 	meIdx,
 	profilesById,
+	pickingVictim,
 }: {
 	game: Game
 	gameState: GameState
 	meIdx: number
 	profilesById: Record<string, Profile>
+	// A robber hex is drafted and its victim is the next tap.
+	pickingVictim: boolean
 }) {
 	const phase = gameState.phase
 	if (
@@ -423,9 +428,11 @@ function RobberStatus({
 	} else if (phase.kind === 'move_robber') {
 		status =
 			meIdx === currentIdx
-				? phase.from7
-					? 'You rolled 7 — move the robber'
-					: 'You played a knight — move the robber'
+				? pickingVictim
+					? 'Pick a player to steal from'
+					: phase.from7
+						? 'You rolled 7 — move the robber'
+						: 'You played a knight — move the robber'
 				: `${currentName} is moving the robber`
 	} else {
 		status =

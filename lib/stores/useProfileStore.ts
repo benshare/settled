@@ -194,12 +194,16 @@ export type PlayPrefs = {
 	// Keep the I / II badges on setup settlements for the whole game, not just
 	// through initial placement.
 	showPlacementNumbers: boolean
+	// Leave the road tool armed after a road is queued, while another is
+	// still payable.
+	keepRoadSelected: boolean
 }
 
 export const DEFAULT_PLAY_PREFS: PlayPrefs = {
 	confirmDevCardBuy: false,
 	honkAnimation: true,
 	showPlacementNumbers: false,
+	keepRoadSelected: false,
 }
 
 // Narrow the JSONB blob, falling back per field on shape drift.
@@ -214,6 +218,7 @@ export function parsePlayPrefs(raw: unknown): PlayPrefs {
 		confirmDevCardBuy: bool('confirmDevCardBuy'),
 		honkAnimation: bool('honkAnimation'),
 		showPlacementNumbers: bool('showPlacementNumbers'),
+		keepRoadSelected: bool('keepRoadSelected'),
 	}
 }
 
