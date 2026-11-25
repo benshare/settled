@@ -20,6 +20,7 @@ import { StealAnimation } from '@/lib/catan/StealAnimation'
 import { BoardArea } from '@/lib/game/BoardArea'
 import { BottomArea } from '@/lib/game/BottomArea'
 import { useGameScreen } from '@/lib/game/gameScreenContext'
+import { useMarkResultSeen } from '@/lib/game/gameScreenShared'
 import { Nav } from '@/lib/game/Nav'
 import { TopArea } from '@/lib/game/TopArea'
 import { SlidingArea } from '@/lib/modules/SlidingArea'
@@ -72,10 +73,12 @@ function Game() {
 		dismissFtAnim,
 		honkAlert,
 		dismissHonkAlert,
+		isSpectator,
 		toast,
 		hideToast,
 	} = useGameScreen()
 	const router = useRouter()
+	useMarkResultSeen(game?.id, inGameOver && !isSpectator)
 	const insets = useSafeAreaInsets()
 
 	if (!game) {

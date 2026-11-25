@@ -65,6 +65,12 @@ Sections, top to bottom:
 `completeGames.length === 0` — a user with only finished games shouldn't be
 told they have none.
 
+### Later additions
+
+An ended game is held under Active with a `Complete` tag until its result is
+seen, and a spectator's pinned games get a `Pinned` section above Watch — see
+`unseen-results-and-pins.md`.
+
 ## Stats screen
 
 `app/(app)/stats.tsx` — `SafeAreaView` + `ScrollView` matching the other tabs,
