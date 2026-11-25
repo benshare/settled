@@ -49,14 +49,42 @@ export type ChatMessage = {
 	created_at: string
 }
 
+// A row as the panel renders it. `outgoing` marks one of the viewer's own
+// sends the server hasn't confirmed yet; its `id` is a local one until then.
+export type ThreadMessage = ChatMessage & {
+	outgoing?: { status: 'sending' | 'failed'; error: string | null }
+}
+
+// An optimistic send, held until its row turns up in `messages`.
+type Outgoing = {
+	localId: string
+	body: string
+	created_at: string
+	status: 'sending' | 'failed'
+	error: string | null
+	// The inserted row's id, once the send has answered.
+	serverId?: string
+	// Ids already in the thread when this was sent, so a match by body can't
+	// claim an older identical message ("gg"). Null when the thread hadn't
+	// loaded yet — that send can only be matched by `serverId`.
+	priorIds: Set<string> | null
+}
+
 export type ChatContextValue = {
-	// undefined = still loading, per the store convention.
+	// undefined = still loading, per the store convention. Server rows only —
+	// what the unread count reads.
 	messages: ChatMessage[] | undefined
+	// `messages` plus the viewer's unconfirmed sends, appended in send order.
+	thread: ThreadMessage[] | undefined
 	unreadCount: number
 	open: boolean
 	setOpen: (open: boolean) => void
-	send: (body: string) => Promise<{ error: string | null }>
-	sending: boolean
+	// Optimistic: the message joins `thread` at once and reconciles with its
+	// row when the row arrives (realtime or refetch, whichever is first).
+	send: (body: string) => void
+	// For a failed send: try again, or drop it from the thread.
+	retry: (localId: string) => void
+	discard: (localId: string) => void
 	// Everyone except the viewer currently composing a message in this game.
 	typingIds: string[]
 	// Called by the composer on every keystroke, with whether the draft still
@@ -87,7 +115,7 @@ export function ChatProvider({
 
 	const [messages, setMessages] = useState<ChatMessage[] | undefined>()
 	const [open, setOpen] = useState(requestOpen)
-	const [sending, setSending] = useState(false)
+	const [outbox, setOutbox] = useState<Outgoing[]>([])
 	const [lastReadAt, setLastReadAt] = useState<string | null>(null)
 	const [typingIds, setTypingIds] = useState<string[]>([])
 	const [typing, setTyping] = useState(false)
@@ -132,6 +160,7 @@ export function ChatProvider({
 	// foregrounding doesn't flash the panel back into its loading state.
 	useEffect(() => {
 		setMessages(undefined)
+		setOutbox([])
 		setLastReadAt(null)
 		setTypingIds([])
 		setTyping(false)
@@ -311,31 +340,161 @@ export function ChatProvider({
 		).length
 	}, [messages, meId, lastReadAt])
 
-	const send = useCallback(
-		async (body: string) => {
-			const text = body.trim()
-			if (!text) return { error: null }
-			setSending(true)
-			const { error } = await sendMessage(gameId, text)
-			setSending(false)
+	// --- Optimistic sends -------------------------------------------------
+	// Read at send time, outside render.
+	const messagesRef = useRef(messages)
+	useEffect(() => {
+		messagesRef.current = messages
+	}, [messages])
+	const localSeq = useRef(0)
+
+	const deliver = useCallback(
+		async (localId: string, body: string) => {
+			const forGame = gameId
+			const { error, id } = await sendMessage(gameId, body)
+			if (currentId.current !== forGame) return
+			setOutbox((prev) =>
+				prev.map((o) =>
+					o.localId !== localId
+						? o
+						: error
+							? { ...o, status: 'failed', error }
+							: { ...o, serverId: id }
+				)
+			)
+			// Realtime usually delivers the row first; this covers a dropped
+			// channel so a confirmed send can't sit "sending" forever.
 			if (!error) fetchMessages()
-			return { error }
 		},
 		[gameId, sendMessage, fetchMessages]
 	)
 
+	const send = useCallback(
+		(body: string) => {
+			const text = body.trim()
+			if (!text) return
+			localSeq.current += 1
+			const localId = `local:${localSeq.current}`
+			const loaded = messagesRef.current
+			setOutbox((prev) => [
+				...prev,
+				{
+					localId,
+					body: text,
+					created_at: new Date().toISOString(),
+					status: 'sending',
+					error: null,
+					priorIds: loaded ? new Set(loaded.map((m) => m.id)) : null,
+				},
+			])
+			deliver(localId, text)
+		},
+		[deliver]
+	)
+
+	const retry = useCallback(
+		(localId: string) => {
+			const target = outbox.find((o) => o.localId === localId)
+			if (!target || target.status !== 'failed') return
+			setOutbox((prev) =>
+				prev.map((o) =>
+					o.localId === localId
+						? {
+								...o,
+								status: 'sending',
+								error: null,
+								// A retry is a new send as far as the thread
+								// is concerned: it moves to now.
+								created_at: new Date().toISOString(),
+							}
+						: o
+				)
+			)
+			deliver(localId, target.body)
+		},
+		[outbox, deliver]
+	)
+
+	const discard = useCallback((localId: string) => {
+		setOutbox((prev) => prev.filter((o) => o.localId !== localId))
+	}, [])
+
+	// Pair each outgoing send with its row. A confirmed send matches by id; one
+	// still in flight matches the first new own row with the same body — the
+	// realtime INSERT routinely beats the HTTP response, and waiting for the id
+	// would show the message twice in between. A failed send can match too: a
+	// timeout whose insert actually landed resolves itself.
+	const { thread, landed } = useMemo(() => {
+		const landed = new Set<string>()
+		if (!messages) return { thread: undefined, landed }
+		const claimed = new Set<string>()
+		const byId = new Set(messages.map((m) => m.id))
+		for (const o of outbox) {
+			if (o.serverId && byId.has(o.serverId)) {
+				claimed.add(o.serverId)
+				landed.add(o.localId)
+			}
+		}
+		for (const o of outbox) {
+			if (landed.has(o.localId) || o.serverId || !o.priorIds) continue
+			const hit = messages.find(
+				(m) =>
+					m.sender === meId &&
+					m.body === o.body &&
+					!o.priorIds!.has(m.id) &&
+					!claimed.has(m.id)
+			)
+			if (hit) {
+				claimed.add(hit.id)
+				landed.add(o.localId)
+			}
+		}
+		const pending: ThreadMessage[] = outbox
+			.filter((o) => !landed.has(o.localId))
+			.map((o) => ({
+				id: o.localId,
+				game_id: gameId,
+				sender: meId ?? '',
+				body: o.body,
+				created_at: o.created_at,
+				outgoing: { status: o.status, error: o.error },
+			}))
+		return {
+			thread: pending.length ? [...messages, ...pending] : messages,
+			landed,
+		}
+	}, [messages, outbox, meId, gameId])
+
+	// A landed send has its row now; stop carrying it.
+	useEffect(() => {
+		if (landed.size === 0) return
+		setOutbox((prev) => prev.filter((o) => !landed.has(o.localId)))
+	}, [landed])
+
 	const value = useMemo<ChatContextValue>(
 		() => ({
 			messages,
+			thread,
 			unreadCount,
 			open,
 			setOpen,
 			send,
-			sending,
+			retry,
+			discard,
 			typingIds,
 			noteTyping,
 		}),
-		[messages, unreadCount, open, send, sending, typingIds, noteTyping]
+		[
+			messages,
+			thread,
+			unreadCount,
+			open,
+			send,
+			retry,
+			discard,
+			typingIds,
+			noteTyping,
+		]
 	)
 
 	return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
