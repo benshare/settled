@@ -491,16 +491,22 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				player: e.player,
 				detail: [{ label: 'Gained', text: handText(e.gain) }],
 			}
-		// Spelled out for self because `nameFor` returns 'You', and
-		// "You has been Honked" is broken grammar.
-		case 'honked':
-			return {
-				text:
-					e.player === ctx.meIdx
-						? 'You have been Honked'
-						: `${who(e.player)} has been Honked`,
-				player: e.player,
+		// `from` has always been written, but the event is untyped JSON, so a
+		// row without it falls back to the sender-less line. The self cases
+		// are spelled out because `nameFor` returns a capitalised 'You'.
+		case 'honked': {
+			if (typeof e.from !== 'number') {
+				return {
+					text:
+						e.player === ctx.meIdx
+							? 'You have been Honked'
+							: `${who(e.player)} has been Honked`,
+					player: e.player,
+				}
 			}
+			const target = e.player === ctx.meIdx ? 'you' : who(e.player)
+			return { text: `${who(e.from)} honked ${target}`, player: e.from }
+		}
 		case 'bonus_chosen': {
 			const bonus = bonusById(e.bonus)?.title ?? 'a bonus'
 			const curse = e.curse ? curseById(e.curse)?.title : null

@@ -75,7 +75,8 @@ export type GameEvent =
 	  }
 	| { kind: 'turn_ended'; player: number; at: string }
 	// `player` is the honked (stalled) seat, `from` the sender's. `from` backs
-	// the one-honk-per-sender-per-turn rule; the log line only renders `player`.
+	// the one-honk-per-sender-per-turn rule, the log's "A honked B" line and
+	// the honked player's goose animation.
 	| { kind: 'honked'; player: number; from: number; at: string }
 	| { kind: 'road_built'; player: number; edge: string; at: string }
 	| { kind: 'settlement_built'; player: number; vertex: string; at: string }
