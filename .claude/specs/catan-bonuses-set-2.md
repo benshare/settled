@@ -10,8 +10,8 @@ PlayerStrip bonus badge, GameOverOverlay scoreboard line per bonus VP).
 
 ## Scope — all 10 set-2 bonuses
 
-- `scout` — buying a dev card: may swap one required resource for a
-  duplicate of one of the others, then draw 3 from the deck, choose 1,
+- `scout` — buying a dev card: may pay wheat in place of sheep or sheep in
+  place of wheat (never ore), then draw 3 from the deck, choose 1,
   return the other two to the bottom in their drawn order.
 - `accountant` — during your turn, liquidate any of your own roads and
   buildings back into their full resource cost. Cannot liquidate
@@ -100,11 +100,15 @@ PlayerStrip bonus badge, GameOverOverlay scoreboard line per bonus VP).
 ### scout
 
 - Buying a dev card: action gains optional `swap?: { from: Resource;
-to: Resource }` payload. `from` must be one of the three standard
-  cost resources; `to` must be one of the others. Hand check:
-  cost = standard − {from: 1} + {to: 1}. Bricklayer alt cost is NOT
-  combinable with scout swap (scout text is "one of the required
-  resources").
+to: Resource }` payload. `from`/`to` must be sheep and wheat, one each way
+  (so the payable profiles are sheep+wheat+ore, 2 wheat+ore, 2 sheep+ore —
+  ore is never substituted). Hand check: cost = standard − {from: 1} +
+  {to: 1}. Bricklayer alt cost is NOT combinable with scout swap.
+- Client: a scout's Buy opens `ScoutBuyPanel` in place of the hand (the
+  discard composer's tap-the-hand gesture); Buy enables once the tapped pile
+  is exactly one payable profile (`scoutSwapForSelection`), which becomes the
+  `swap` payload. It replaces the old `ScoutCostPicker` modal and the opt-in
+  dev-buy confirm (the composer is its own confirmation).
 - After paying, the handler draws the top 3 cards from `devDeck` (or
   fewer if the deck has < 3) into a per-player `pending.scout` entry:
   `{ playerIdx, cards: DevCardId[] }`. The state moves to a new sub-

@@ -18,6 +18,7 @@ import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
 import { RitualistPicker } from '@/lib/catan/RitualistPicker'
+import { ScoutBuyPanel } from '@/lib/catan/ScoutBuyPanel'
 import {
 	ShepherdSwapPicker,
 	shepherdPendingLabel,
@@ -98,6 +99,9 @@ export function BottomArea() {
 		canAvariceDiscard,
 		onAvariceDiscard,
 		onAvariceDiscardPress,
+		scoutBuyOpen,
+		setScoutBuyOpen,
+		submitBuyDevCard,
 		onUndo,
 		pendingWin,
 	} = useGameScreen()
@@ -111,9 +115,10 @@ export function BottomArea() {
 		gameState?.phase.kind === 'discard' && meIdx >= 0
 			? (gameState.phase.pending[meIdx] ?? null)
 			: null
-	// Either discard composer takes the hand's place, and with it the rows
-	// that hang off the hand.
-	const composingDiscard = owedDiscard !== null || avariceDiscardOpen
+	// Either discard composer, or the scout's dev-card payment, takes the
+	// hand's place, and with it the rows that hang off the hand.
+	const composingDiscard =
+		owedDiscard !== null || avariceDiscardOpen || scoutBuyOpen
 
 	return (
 		<>
@@ -278,6 +283,13 @@ export function BottomArea() {
 								submitting={submitting}
 								onSubmit={onAvariceDiscard}
 								onCancel={() => setAvariceDiscardOpen(false)}
+							/>
+						) : scoutBuyOpen ? (
+							<ScoutBuyPanel
+								hand={gameState.players[meIdx].resources}
+								submitting={submitting}
+								onSubmit={submitBuyDevCard}
+								onCancel={() => setScoutBuyOpen(false)}
 							/>
 						) : (
 							/* `displayHand`, not the live hand: a card a reveal

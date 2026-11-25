@@ -3182,11 +3182,12 @@ function mustMoveForgerToken(p: PlayerState): boolean {
 	return p.bonus === 'forger' && !p.forgerMovedThisTurn
 }
 
-const SCOUT_COST_RESOURCES: readonly Resource[] = ['sheep', 'wheat', 'ore']
+// Mirror of lib/catan/bonus.ts: wheat and sheep are interchangeable, ore is not.
+const SCOUT_SWAP_RESOURCES: readonly Resource[] = ['sheep', 'wheat']
 
 function isValidScoutSwap(swap: { from: Resource; to: Resource }): boolean {
-	if (!SCOUT_COST_RESOURCES.includes(swap.from)) return false
-	if (!SCOUT_COST_RESOURCES.includes(swap.to)) return false
+	if (!SCOUT_SWAP_RESOURCES.includes(swap.from)) return false
+	if (!SCOUT_SWAP_RESOURCES.includes(swap.to)) return false
 	if (swap.from === swap.to) return false
 	return true
 }
@@ -3212,8 +3213,8 @@ function scoutDevCardCost(swap?: {
 // True if a scout can buy a dev card by any swap route (or the standard cost).
 function canScoutAffordDevCard(hand: ResourceHand): boolean {
 	if (canAfford(hand, scoutDevCardCost())) return true
-	for (const from of SCOUT_COST_RESOURCES) {
-		for (const to of SCOUT_COST_RESOURCES) {
+	for (const from of SCOUT_SWAP_RESOURCES) {
+		for (const to of SCOUT_SWAP_RESOURCES) {
 			if (from === to) continue
 			if (canAfford(hand, scoutDevCardCost({ from, to }))) return true
 		}
@@ -3392,6 +3393,7 @@ function smithPortResourceOk(
 // Investor.
 const INVESTOR_ACTIVATE_VP = 3
 const INVEST_TRIO = 3
+const INVESTOR_MAX_TOKENS = 6
 
 function investorTokenCount(p: PlayerState): number {
 	const inv = p.investments
@@ -3416,6 +3418,7 @@ function canInvest(
 ): boolean {
 	if (p.bonus !== 'investor') return false
 	if (vp < investorActivateVPFor(size)) return false
+	if (investorTokenCount(p) >= INVESTOR_MAX_TOKENS) return false
 	return p.resources[resource] >= INVEST_TRIO
 }
 
@@ -9536,8 +9539,8 @@ async function handleBuyDevCard(
 	if (state.devDeck.length === 0) return err(400, 'dev deck empty')
 	const useBricklayer = !!body.use_bricklayer
 
-	// Scout: optionally swap one of the standard cost resources for a
-	// duplicate of one of the others. Mutually exclusive with bricklayer.
+	// Scout: optionally pay wheat for sheep or sheep for wheat (never ore).
+	// Mutually exclusive with bricklayer.
 	let scoutSwap: { from: Resource; to: Resource } | null = null
 	if (body.scout_swap && bonusOf(state, meIdx) === 'scout') {
 		const from = parseResource(body.scout_swap.from)

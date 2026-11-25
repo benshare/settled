@@ -156,13 +156,14 @@ export function VoluntaryDiscardPanel({
 // The gesture itself, without the framing: the pile of cards being given up
 // above, the hand they came from below, a tap moving one either way. Shared so
 // anything that asks for a discard asks for it the same way the 7 does — the
-// magician's window is the other caller.
+// magician's window and the scout's dev-card payment are the other callers.
 export function DiscardComposer({
 	hand,
 	selection,
 	required,
 	handFanSize = 'full',
 	pileEmptyLabel = 'Tap cards below to discard them',
+	lockedResources,
 	onAdd,
 	onTake,
 }: {
@@ -171,6 +172,8 @@ export function DiscardComposer({
 	required: number
 	handFanSize?: CardFanSize
 	pileEmptyLabel?: string
+	// Hand cards a tap can't add even under the cap (the scout's payment).
+	lockedResources?: readonly Resource[]
 	onAdd: (r: Resource) => void
 	onTake: (r: Resource) => void
 }) {
@@ -197,7 +200,7 @@ export function DiscardComposer({
 				entries={remaining}
 				size={handFanSize}
 				onCardPress={onAdd}
-				disabledResources={atCap ? RESOURCES : undefined}
+				disabledResources={atCap ? RESOURCES : lockedResources}
 				emptyLabel="Your hand is empty"
 			/>
 		</>

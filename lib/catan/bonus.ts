@@ -524,10 +524,12 @@ export function canMoveForgerToken(
 
 // --- Scout ------------------------------------------------------------------
 //
-// Buying a dev card may swap one of the standard cost resources for a
-// duplicate of one of the others. `from` must be one of the three cost
-// resources (sheep / wheat / ore); `to` must be one of the other two.
+// A scout's dev card may be paid with wheat and sheep interchangeable: 1 sheep
+// + 1 wheat + 1 ore, 2 wheat + 1 ore, or 2 sheep + 1 ore. Ore is never
+// swapped in or out. Encoded as a `{ from, to }` swap (the wire shape of
+// `buy_dev_card.scout_swap`), so the only valid swaps are sheep↔wheat.
 const SCOUT_COST_RESOURCES: readonly Resource[] = ['sheep', 'wheat', 'ore']
+const SCOUT_SWAP_RESOURCES: readonly Resource[] = ['sheep', 'wheat']
 
 export type ScoutSwap = { from: Resource; to: Resource }
 
@@ -535,8 +537,8 @@ export function isValidScoutSwap(swap: {
 	from: Resource
 	to: Resource
 }): boolean {
-	if (!SCOUT_COST_RESOURCES.includes(swap.from)) return false
-	if (!SCOUT_COST_RESOURCES.includes(swap.to)) return false
+	if (!SCOUT_SWAP_RESOURCES.includes(swap.from)) return false
+	if (!SCOUT_SWAP_RESOURCES.includes(swap.to)) return false
 	if (swap.from === swap.to) return false
 	return true
 }
@@ -563,12 +565,11 @@ export function scoutDevCardCost(swap?: {
 }
 
 // Every dev-card payment profile a scout can choose: the standard cost
-// (`null` = no swap) followed by each valid single-resource swap. Stable
-// order — standard first, then swaps in `from × to` order.
+// (`null` = no swap) followed by each valid swap. Stable order.
 export function scoutSwapOptions(): (ScoutSwap | null)[] {
 	const out: (ScoutSwap | null)[] = [null]
-	for (const from of SCOUT_COST_RESOURCES) {
-		for (const to of SCOUT_COST_RESOURCES) {
+	for (const from of SCOUT_SWAP_RESOURCES) {
+		for (const to of SCOUT_SWAP_RESOURCES) {
 			if (from !== to) out.push({ from, to })
 		}
 	}
@@ -581,6 +582,17 @@ export function affordableScoutSwaps(hand: ResourceHand): (ScoutSwap | null)[] {
 	return scoutSwapOptions().filter((swap) => {
 		const cost = scoutDevCardCost(swap ?? undefined)
 		return SCOUT_COST_RESOURCES.every((r) => hand[r] >= cost[r])
+	})
+}
+
+// The payment profile a hand-tapped `selection` spells out exactly, or
+// `undefined` when it matches none (`null` is the standard cost).
+export function scoutSwapForSelection(
+	selection: ResourceHand
+): ScoutSwap | null | undefined {
+	return scoutSwapOptions().find((swap) => {
+		const cost = scoutDevCardCost(swap ?? undefined)
+		return RESOURCES.every((r) => selection[r] === cost[r])
 	})
 }
 
@@ -862,13 +874,14 @@ export function smithPortResourceOk(
 
 // --- Investor ---------------------------------------------------------------
 //
-// Once total VP ≥ 3, set aside 3 of a resource for an investment token, with no
-// limit on how many. Each token pays 1 of its resource once the investor's roll
+// Once total VP ≥ 3, set aside 3 of a resource for an investment token, up to
+// `INVESTOR_MAX_TOKENS` in all. Each token pays 1 of its resource once the investor's roll
 // resolves — after any owed discard, so the payout can't push them over the
 // 7-card limit. Set-aside cards live in `player.investments`, immune to steal
 // and excluded from the 7-discard hand size.
 export const INVESTOR_ACTIVATE_VP = 3
 export const INVEST_TRIO = 3
+export const INVESTOR_MAX_TOKENS = 6
 
 export function investorTokenCount(p: PlayerState): number {
 	const inv = p.investments
@@ -892,6 +905,7 @@ export function canInvest(
 ): boolean {
 	if (p.bonus !== 'investor') return false
 	if (totalVP < investorActivateVPFor(size)) return false
+	if (investorTokenCount(p) >= INVESTOR_MAX_TOKENS) return false
 	return p.resources[resource] >= INVEST_TRIO
 }
 

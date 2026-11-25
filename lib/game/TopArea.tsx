@@ -3,8 +3,8 @@
 // only — the background it slides against belongs to the frame (see
 // `styles.topMenu` in `[id].tsx`).
 //
-// Also owns the modals opened from this zone (the build bar's invest /
-// scout-cost pickers, and a player's detail sheet from the strip).
+// Also owns the modals opened from this zone (the build bar's invest picker,
+// and a player's detail sheet from the strip).
 
 import { investorTokenCount } from '@/lib/catan/bonus'
 import { BuildTradeBar } from '@/lib/catan/BuildTradeBar'
@@ -12,7 +12,6 @@ import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { PlayerDetailOverlay } from '@/lib/catan/PlayerDetailOverlay'
 import { seatColor } from '@/lib/catan/palette'
 import { PlayerStrip } from '@/lib/catan/PlayerStrip'
-import { ScoutCostPicker } from '@/lib/catan/ScoutCostPicker'
 import { formatRemaining } from '@/lib/catan/timeout'
 import type { GameState } from '@/lib/catan/types'
 import { useCountdown } from '@/lib/catan/useCountdown'
@@ -66,8 +65,6 @@ export function TopArea() {
 		setOpenPlayerIdx,
 		investOpen,
 		setInvestOpen,
-		scoutCostOpen,
-		setScoutCostOpen,
 		onBuildToolSelect,
 		onTradePress,
 		onBuyDevCard,
@@ -77,7 +74,6 @@ export function TopArea() {
 		onHonk,
 		onUndo,
 		onInvest,
-		submitBuyDevCard,
 		robberDraftHex,
 	} = useGameScreen()
 
@@ -297,15 +293,6 @@ export function TopArea() {
 					submitting={submitting}
 					onCancel={() => setInvestOpen(false)}
 					onConfirm={onInvest}
-				/>
-			)}
-
-			{scoutCostOpen && myPlayer && (
-				<ScoutCostPicker
-					hand={myPlayer.resources}
-					submitting={submitting}
-					onCancel={() => setScoutCostOpen(false)}
-					onConfirm={(swap) => submitBuyDevCard(swap)}
 				/>
 			)}
 

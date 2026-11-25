@@ -51,7 +51,9 @@ app/game/[id].tsx
   rather than being a bar of their own, because both are composed by tapping the
   hand itself — the composer has to be where the hand is. The avarice curse's
   voluntary discard (`VoluntaryDiscardPanel`) does the same, opened from a
-  Discard button under the hand that is offered on anyone's turn. `DiscardPanel` reads
+  Discard button under the hand that is offered on anyone's turn, and so does
+  the scout's dev-card payment (`ScoutBuyPanel`, opened by the build bar's dev
+  card buy). `DiscardPanel` reads
   the live hand, not `displayHand`, so a reveal animation can't hide a card from
   the picker.
 - `gameScreenShared.tsx` — the few things both menu zones render (`DieFaceView`,
