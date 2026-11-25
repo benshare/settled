@@ -189,10 +189,14 @@ export type PlayPrefs = {
 	// Ask before a dev card buy goes to the server. The buy is a barrier (it
 	// can't be undone), so this is the one confirm a player can opt back into.
 	confirmDevCardBuy: boolean
+	// Leave the road tool armed after a road is queued, while another is
+	// still payable.
+	keepRoadSelected: boolean
 }
 
 export const DEFAULT_PLAY_PREFS: PlayPrefs = {
 	confirmDevCardBuy: false,
+	keepRoadSelected: false,
 }
 
 // Narrow the JSONB blob, falling back per field on shape drift.
@@ -204,6 +208,10 @@ export function parsePlayPrefs(raw: unknown): PlayPrefs {
 			typeof src.confirmDevCardBuy === 'boolean'
 				? src.confirmDevCardBuy
 				: DEFAULT_PLAY_PREFS.confirmDevCardBuy,
+		keepRoadSelected:
+			typeof src.keepRoadSelected === 'boolean'
+				? src.keepRoadSelected
+				: DEFAULT_PLAY_PREFS.keepRoadSelected,
 	}
 }
 

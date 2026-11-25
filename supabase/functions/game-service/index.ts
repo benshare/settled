@@ -30,8 +30,9 @@
 //     discard is submitted, transitions to phase='move_robber'.
 //   - move_robber: during phase='move_robber' and on the caller's turn,
 //     validates the target hex (must be different from current), writes
-//     state.robber, computes steal candidates. Transitions to phase='steal'
-//     (if ≥1 candidate) or directly to phase='main'.
+//     state.robber, computes steal candidates. One candidate is stolen from
+//     automatically; with 2+, an optional `victim` steals in the same write
+//     (the client's one-confirm path), else it transitions to phase='steal'.
 //   - steal: during phase='steal' and on the caller's turn, picks a random
 //     resource from the chosen victim (must be in phase.candidates), moves
 //     one card, transitions to phase='main'.
@@ -141,7 +142,15 @@ type DiscardBody = {
 	game_id: string
 	discard: ResourceHand
 }
-type MoveRobberBody = { action: 'move_robber'; game_id: string; hex: string }
+// `victim` lets the client choose the steal up front, so hex + victim land as
+// one atomic write. Optional: without it (timeout sweep, older clients) a 2+
+// candidate move still enters the `steal` phase.
+type MoveRobberBody = {
+	action: 'move_robber'
+	game_id: string
+	hex: string
+	victim?: number
+}
 type StealBody = { action: 'steal'; game_id: string; victim: number }
 type ProposeTradeBody = {
 	action: 'propose_trade'
@@ -8850,50 +8859,36 @@ async function handleMoveRobber(
 	if (hex === state.robber) return err(400, 'robber must move')
 
 	const candidates = stealCandidates(state, hex, meIdx)
+	if (
+		body.victim !== undefined &&
+		candidates.length > 1 &&
+		!candidates.includes(body.victim)
+	)
+		return err(400, 'invalid victim')
 	const now = new Date().toISOString()
 	const events: unknown[] = [
 		{ kind: 'robber_moved', player: meIdx, hex, at: now },
 	]
 
-	// Three cases:
+	// Four cases:
 	//   0 candidates → straight to main, no steal.
 	//   1 candidate  → auto-steal (skip the extra selection step).
-	//   2+ candidates → steal phase with a picker.
+	//   2+ with a chosen victim → steal from them in this same write.
+	//   2+ without   → steal phase with a picker.
 	let nextPlayers: PlayerState[] = state.players
 	let nextPhase: Phase = state.phase.resume
 
-	if (candidates.length === 1) {
-		const victim = candidates[0]
-		const stolen = pickStolenResource(state.players[victim].resources)
+	const victim =
+		candidates.length === 1
+			? candidates[0]
+			: candidates.length > 1 && body.victim !== undefined
+				? body.victim
+				: null
+	if (victim !== null) {
+		const stolen = applySteal(state.players, meIdx, victim, now)
 		if (stolen) {
-			nextPlayers = state.players.map((p, i) => {
-				if (i === victim) {
-					return {
-						...p,
-						resources: {
-							...p.resources,
-							[stolen]: p.resources[stolen] - 1,
-						},
-					}
-				}
-				if (i === meIdx) {
-					return {
-						...p,
-						resources: {
-							...p.resources,
-							[stolen]: p.resources[stolen] + 1,
-						},
-					}
-				}
-				return p
-			})
-			events.push({
-				kind: 'stolen',
-				thief: meIdx,
-				victim,
-				resource: stolen,
-				at: now,
-			})
+			nextPlayers = stolen.players
+			events.push(stolen.event)
 		}
 	} else if (candidates.length > 1) {
 		nextPhase = {
@@ -8974,6 +8969,42 @@ async function exitRobberChain(
 	return finalState
 }
 
+// One random card from `victim` to `thief`. Null when the victim's hand is
+// empty. Shared by `handleSteal` and the batched victim on `move_robber`.
+function applySteal(
+	players: PlayerState[],
+	thief: number,
+	victim: number,
+	at: string
+): { players: PlayerState[]; event: unknown } | null {
+	const stolen = pickStolenResource(players[victim].resources)
+	if (!stolen) return null
+	return {
+		players: players.map((p, i) => {
+			if (i === victim) {
+				return {
+					...p,
+					resources: {
+						...p.resources,
+						[stolen]: p.resources[stolen] - 1,
+					},
+				}
+			}
+			if (i === thief) {
+				return {
+					...p,
+					resources: {
+						...p.resources,
+						[stolen]: p.resources[stolen] + 1,
+					},
+				}
+			}
+			return p
+		}),
+		event: { kind: 'stolen', thief, victim, resource: stolen, at },
+	}
+}
+
 function pickStolenResource(hand: ResourceHand): Resource | null {
 	const total = handSize(hand)
 	if (total <= 0) return null
@@ -9004,43 +9035,18 @@ async function handleSteal(
 	if (!state.phase.candidates.includes(body.victim))
 		return err(400, 'invalid victim')
 
-	const victimHand = state.players[body.victim].resources
-	const stolen = pickStolenResource(victimHand)
+	const stolen = applySteal(
+		state.players,
+		meIdx,
+		body.victim,
+		new Date().toISOString()
+	)
 	if (!stolen) return err(400, 'victim has no cards')
-
-	const nextPlayers = state.players.map((p, i) => {
-		if (i === body.victim) {
-			return {
-				...p,
-				resources: {
-					...p.resources,
-					[stolen]: p.resources[stolen] - 1,
-				},
-			}
-		}
-		if (i === meIdx) {
-			return {
-				...p,
-				resources: {
-					...p.resources,
-					[stolen]: p.resources[stolen] + 1,
-				},
-			}
-		}
-		return p
-	})
+	const nextPlayers = stolen.players
 
 	const nextPhase: Phase = state.phase.resume
 
-	const events: unknown[] = [
-		{
-			kind: 'stolen',
-			thief: meIdx,
-			victim: body.victim,
-			resource: stolen,
-			at: new Date().toISOString(),
-		},
-	]
+	const events: unknown[] = [stolen.event]
 
 	const finalState = await exitRobberChain(
 		{ ...state, players: nextPlayers },

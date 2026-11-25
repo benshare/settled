@@ -462,6 +462,18 @@ function GameplaySettings() {
 		if (res.error) setError(res.error)
 	}
 
+	async function toggleKeepRoadSelected() {
+		if (saving) return
+		setSaving(true)
+		setError(null)
+		const res = await updatePlayPrefs({
+			...prefs,
+			keepRoadSelected: !prefs.keepRoadSelected,
+		})
+		setSaving(false)
+		if (res.error) setError(res.error)
+	}
+
 	return (
 		<View style={styles.notifBlock}>
 			{error && <Text style={styles.errorText}>{error}</Text>}
@@ -469,6 +481,14 @@ function GameplaySettings() {
 				label="Confirm when buying dev cards"
 				value={prefs.confirmDevCardBuy}
 				onToggle={toggleConfirmDevCardBuy}
+				disabled={!profile || saving}
+				dimmed={false}
+				styles={styles}
+			/>
+			<NotifToggleRow
+				label="Keep road placement selected"
+				value={prefs.keepRoadSelected}
+				onToggle={toggleKeepRoadSelected}
 				disabled={!profile || saving}
 				dimmed={false}
 				styles={styles}
