@@ -37,6 +37,7 @@ import { useGamesStore } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, shadow, spacing, z } from '../theme'
 import { CHAT_MAX_CHARS, useChat, type ChatMessage } from './chatContext'
+import { chunkHeaderLabel, exactSentLabel, startsTimeChunk } from './chatTime'
 
 // Translucent so the board stays faintly visible behind the conversation. The
 // 0.9 is a product requirement, not an arbitrary style value.
@@ -283,6 +284,10 @@ function ChatBody({
 	seatColors: readonly string[]
 	meId: string | undefined
 }) {
+	// The one message showing its exact send time. One at a time, so a tap
+	// elsewhere moves the detail rather than accumulating them.
+	const [revealedId, setRevealedId] = useState<string | null>(null)
+
 	if (messages === undefined) {
 		return (
 			<View style={styles.centered}>
@@ -307,18 +312,31 @@ function ChatBody({
 			style={styles.list}
 			contentContainerStyle={styles.listBody}
 			keyboardShouldPersistTaps="handled"
-			renderItem={({ item, index }) => (
-				<MessageRow
-					message={item}
-					// The list is reversed, so index + 1 is the chronologically
-					// previous message: a run starts where the sender changes.
-					startsRun={inverted[index + 1]?.sender !== item.sender}
-					playerOrder={playerOrder}
-					profilesById={profilesById}
-					seatColors={seatColors}
-					meId={meId}
-				/>
-			)}
+			extraData={revealedId}
+			renderItem={({ item, index }) => {
+				// The list is reversed, so index + 1 is the chronologically
+				// previous message. A time chunk opens after a silence; a run
+				// opens where the sender changes or a new chunk starts.
+				const prev = inverted[index + 1]
+				const startsChunk = startsTimeChunk(prev, item)
+				return (
+					<MessageRow
+						message={item}
+						startsChunk={startsChunk}
+						startsRun={startsChunk || prev?.sender !== item.sender}
+						revealed={revealedId === item.id}
+						onToggleReveal={() =>
+							setRevealedId((id) =>
+								id === item.id ? null : item.id
+							)
+						}
+						playerOrder={playerOrder}
+						profilesById={profilesById}
+						seatColors={seatColors}
+						meId={meId}
+					/>
+				)
+			}}
 		/>
 	)
 }
@@ -452,16 +470,25 @@ function ChatComposer({
 
 function MessageRow({
 	message,
+	startsChunk,
 	startsRun,
+	revealed,
+	onToggleReveal,
 	playerOrder,
 	profilesById,
 	seatColors,
 	meId,
 }: {
 	message: ChatMessage
+	// First message after a silence of `CHAT_CHUNK_GAP_MS`: it carries the
+	// centered time header.
+	startsChunk: boolean
 	// First message of a consecutive run by one sender: it carries the name
 	// header and the extra separation from the run above.
 	startsRun: boolean
+	// Showing the exact send time under the bubble (toggled by a tap).
+	revealed: boolean
+	onToggleReveal: () => void
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	// Each seat's color, in seat order. Resolved once in `gameContext`
@@ -473,47 +500,78 @@ function MessageRow({
 	const seat = playerOrder.indexOf(message.sender)
 	const name = profilesById[message.sender]?.username ?? 'Player'
 
-	const gap = startsRun && styles.rowGroupStart
+	// A chunk header already separates the run from what's above it.
+	const gap = startsRun && !startsChunk && styles.rowGroupStart
+
+	const header = startsChunk && (
+		<Text style={styles.chunkHeader}>
+			{chunkHeaderLabel(message.created_at)}
+		</Text>
+	)
+
+	const detail = revealed && (
+		<Text style={styles.sentDetail}>
+			{exactSentLabel(message.created_at)}
+		</Text>
+	)
 
 	if (mine) {
 		return (
-			<View style={[styles.row, styles.rowMine, gap]}>
-				<View style={[styles.bubble, styles.bubbleMine]}>
-					<Text style={styles.bubbleTextMine}>{message.body}</Text>
+			<>
+				{header}
+				<View style={[styles.row, styles.rowMine, gap]}>
+					<Pressable
+						onPress={onToggleReveal}
+						style={[styles.bubble, styles.bubbleMine]}
+						accessibilityHint="Shows when it was sent"
+					>
+						<Text style={styles.bubbleTextMine}>
+							{message.body}
+						</Text>
+					</Pressable>
+					{detail}
 				</View>
-			</View>
+			</>
 		)
 	}
 
 	return (
-		<View style={[styles.row, gap]}>
-			{startsRun && (
-				<View style={styles.senderLine}>
-					<Text
-						style={[
-							styles.sender,
-							{
-								color:
-									seat >= 0
-										? (seatColors[seat] ??
-											colors.textSecondary)
-										: colors.textSecondary,
-							},
-						]}
-					>
-						{name}
-					</Text>
-					{/* No seat means the sender isn't at the table — they're
-					    spectating. Labeled once per run, alongside the name. */}
-					{seat < 0 && (
-						<Text style={styles.spectatorTag}>watching</Text>
-					)}
-				</View>
-			)}
-			<View style={styles.bubble}>
-				<Text style={styles.bubbleText}>{message.body}</Text>
+		<>
+			{header}
+			<View style={[styles.row, gap]}>
+				{startsRun && (
+					<View style={styles.senderLine}>
+						<Text
+							style={[
+								styles.sender,
+								{
+									color:
+										seat >= 0
+											? (seatColors[seat] ??
+												colors.textSecondary)
+											: colors.textSecondary,
+								},
+							]}
+						>
+							{name}
+						</Text>
+						{/* No seat means the sender isn't at the table — they're
+						    spectating. Labeled once per run, alongside the name. */}
+						{seat < 0 && (
+							<Text style={styles.spectatorTag}>watching</Text>
+						)}
+					</View>
+				)}
+				<Pressable
+					onPress={onToggleReveal}
+					style={styles.bubble}
+					accessibilityHint="Shows when it was sent"
+				>
+					<Text style={styles.bubbleText}>{message.body}</Text>
+				</Pressable>
+				{detail}
 			</View>
-		</View>
+		</>
 	)
 }
 
@@ -630,6 +688,21 @@ const styles = StyleSheet.create({
 		// The run's first (oldest) message is the visual top of the run, so its
 		// separation from the run above is a marginTop.
 		marginTop: spacing.sm,
+	},
+	// iMessage-style: centered, small and subdued, with room above it to read
+	// as a break in the conversation.
+	chunkHeader: {
+		alignSelf: 'center',
+		marginTop: spacing.md,
+		marginBottom: spacing.xs,
+		fontSize: font.xs,
+		fontWeight: '600',
+		color: colors.textMuted,
+	},
+	sentDetail: {
+		paddingHorizontal: spacing.xs,
+		fontSize: font.xs,
+		color: colors.textMuted,
 	},
 	senderLine: {
 		flexDirection: 'row',

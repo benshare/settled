@@ -329,7 +329,14 @@ Each row:
 - others: left-aligned bubble, username label above in the sender's seat color
   (`playerColors[seatIndex]`, resolved through `player_order`, matching how
   `ActionLog` colors its dots)
-- a relative timestamp is **not** shown in v1 (see Out of scope)
+- a run also breaks at a **time chunk**: a silence of `CHAT_CHUNK_GAP_MS`
+  (3 min, `chatTime.ts`) opens a centered, muted time header above the next
+  message, iMessage style — "Today 3:42 PM", "Yesterday …", the weekday within
+  the week, a short date beyond (with the year only when it isn't this one).
+  The sender's name repeats after a header even if the same person resumes.
+- tapping a bubble reveals its exact send time (date + seconds) beneath it;
+  tapping again hides it. One message at a time — tapping another moves it.
+  Bubbles have no other tap or long-press behaviour.
 
 Empty state: "No messages yet." in `colors.textMuted`, matching `ActionLog`'s.
 
@@ -475,7 +482,6 @@ Deployed with `npm run edge`.
 - Typing indicators and read receipts (the presence signal exists, but is not
   surfaced in the UI).
 - Attachments, images, emoji picker, link previews, rich text.
-- Per-message timestamps in the UI.
 - Moderation, muting an individual player, or reporting.
 - The Android notification icon asset (see "Notification icon" above).
 - Web push. Chat pushes are native-only, like every other kind — web users see
