@@ -189,11 +189,13 @@ export type ChatMessage = {
 
 type ChatValue = {
 	messages: ChatMessage[] | undefined // undefined = loading (store convention)
+	thread: ThreadMessage[] | undefined // messages + own unconfirmed sends
 	unreadCount: number
 	open: boolean
 	setOpen: (open: boolean) => void
-	send: (body: string) => Promise<{ error: string | null }>
-	sending: boolean
+	send: (body: string) => void // optimistic; see "Optimistic send"
+	retry: (localId: string) => void
+	discard: (localId: string) => void
 }
 
 export function ChatProvider({
@@ -226,6 +228,24 @@ Fetch: last 100 messages, `order('created_at', { ascending: false }).limit(100)`
 reversed for display. No pagination in v1 (see Out of scope). Realtime INSERTs
 are appended, de-duplicated by `id` — the row may arrive from both the channel
 and a refetch.
+
+#### Optimistic send
+
+`send()` returns immediately: the message joins `thread` (appended after the
+server rows, in send order) as an outgoing entry, and the request runs behind
+it. `messages` stays server rows only, so the unread count never sees a pending
+send. An outgoing entry leaves `thread` once its row is in `messages`:
+
+- by **id**, once `send_message` answers (`sendMessage` returns the inserted
+  `id`);
+- before that, by **body** — the first own row with the same text that wasn't
+  in the thread when it was sent. The realtime INSERT routinely beats the HTTP
+  response, and waiting for the id would show the message twice in between.
+  The same rule lets a timed-out send whose insert did land resolve itself.
+
+A failure keeps the entry as **failed**, with Retry (resends, moving it to now)
+and Remove. A resend after an ambiguous timeout can duplicate the message; that
+is accepted rather than adding an idempotency key.
 
 Sender profiles are **not** fetched here. `[id].tsx` already loads
 `profilesById` for the participants, and chat is participants-only, so every
@@ -325,7 +345,9 @@ avoids the manual `scrollToEnd` dance.
 
 Each row:
 
-- own messages: right-aligned, accent-tinted bubble, no name label
+- own messages: right-aligned, accent-tinted bubble, no name label; dimmed
+  while sending, and red-edged with "Not sent — <error> · Retry · Remove"
+  beneath it on failure
 - others: left-aligned bubble, username label above in the sender's seat color
   (`playerColors[seatIndex]`, resolved through `player_order`, matching how
   `ActionLog` colors its dots)
@@ -334,9 +356,15 @@ Each row:
   message, iMessage style — "Today 3:42 PM", "Yesterday …", the weekday within
   the week, a short date beyond (with the year only when it isn't this one).
   The sender's name repeats after a header even if the same person resumes.
-- tapping a bubble reveals its exact send time (date + seconds) beneath it;
-  tapping again hides it. One message at a time — tapping another moves it.
-  Bubbles have no other tap or long-press behaviour.
+- tapping a bubble reveals its send time beneath it in the header's format
+  minus "Today" ("3:42 PM", "Yesterday 3:42 PM", …), expanding and collapsing
+  with a height + fade animation; tapping again hides it. One message at a
+  time — tapping another moves it. Bubbles have no other tap or long-press
+  behaviour.
+
+A row's chunk header must be **inside the row's single root view**, not a
+sibling: an inverted list lays each cell's children out column-reverse, so a
+sibling header renders below its message.
 
 Empty state: "No messages yet." in `colors.textMuted`, matching `ActionLog`'s.
 
@@ -346,9 +374,10 @@ plus a send `Pressable`. Per the project's form convention the send affordance i
 `cursor-default` styling when disabled, never a forbidden cursor. Focus ring /
 outline is disabled, as elsewhere in the app.
 
-On send: clear the input optimistically, call `send()`, and on failure restore
-the text and surface the propagated error message inline (not a generic string)
-— per the error-handling convention.
+On send: clear the input and call `send()`. The send button never waits on an
+in-flight send. A failure surfaces on the message itself (see "Optimistic
+send"), carrying the propagated error message, not a generic string — per the
+error-handling convention.
 
 ### `lib/stores/useGamesStore.ts`
 

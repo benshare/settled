@@ -22,11 +22,10 @@ function startOfDay(d: Date): number {
 	return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 }
 
-function clock(d: Date, seconds = false): string {
+function clock(d: Date): string {
 	return d.toLocaleTimeString(undefined, {
 		hour: 'numeric',
 		minute: '2-digit',
-		...(seconds && { second: '2-digit' }),
 	})
 }
 
@@ -36,12 +35,14 @@ function daysAgo(d: Date, now: Date): number {
 	return Math.round((startOfDay(now) - startOfDay(d)) / DAY_MS)
 }
 
-// "Today 3:42 PM", "Yesterday 9:10 AM", "Monday 3:42 PM" within the week,
-// "Nov 3, 3:42 PM" (plus the year, when it isn't this one) beyond.
-export function chunkHeaderLabel(iso: string, now = new Date()): string {
+// When a message was sent, relative to `now`, with the day named only when it
+// isn't today: "3:42 PM", "Yesterday 9:10 AM", "Monday 3:42 PM" within the
+// week, "Nov 3, 3:42 PM" (plus the year, when it isn't this one) beyond. This
+// is the tap-to-reveal detail under a bubble.
+export function sentAtLabel(iso: string, now = new Date()): string {
 	const d = new Date(iso)
 	const days = daysAgo(d, now)
-	if (days <= 0) return `Today ${clock(d)}`
+	if (days <= 0) return clock(d)
 	if (days === 1) return `Yesterday ${clock(d)}`
 	if (days < 7)
 		return `${d.toLocaleDateString(undefined, { weekday: 'long' })} ${clock(d)}`
@@ -53,15 +54,9 @@ export function chunkHeaderLabel(iso: string, now = new Date()): string {
 	return `${date}, ${clock(d)}`
 }
 
-// The tap-to-reveal detail under one message: the full date and the time to
-// the second, regardless of how recent.
-export function exactSentLabel(iso: string): string {
-	const d = new Date(iso)
-	const date = d.toLocaleDateString(undefined, {
-		weekday: 'short',
-		month: 'short',
-		day: 'numeric',
-		year: 'numeric',
-	})
-	return `Sent ${date} at ${clock(d, true)}`
+// The centered header over a time chunk: `sentAtLabel`, but a header stands
+// alone in the thread, so today is named too ("Today 3:42 PM").
+export function chunkHeaderLabel(iso: string, now = new Date()): string {
+	const label = sentAtLabel(iso, now)
+	return daysAgo(new Date(iso), now) <= 0 ? `Today ${label}` : label
 }
