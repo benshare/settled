@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/auth'
 import { useContactsOnboarding } from '@/lib/contacts'
 import { TabBarIcon } from '@/lib/modules/TabBarIcon'
 import { ensurePermissionAndRegister } from '@/lib/notifications'
+import { usePatchNotes } from '@/lib/patchNotes'
 import { useFriendsStore } from '@/lib/stores/useFriendsStore'
 import { needsMyResponse, useGamesStore } from '@/lib/stores/useGamesStore'
 import { useTheme } from '@/lib/ThemeContext'
@@ -39,7 +40,13 @@ export default function AppLayout() {
 	// After the push prompt has been answered, so a new sign-up never gets two
 	// OS permission dialogs stacked. Same impersonation guard: it would stamp
 	// the borrowed account as onboarded.
-	useContactsOnboarding(user?.id, pushPromptSettled && !actingAs)
+	const contactsPending = useContactsOnboarding(
+		user?.id,
+		pushPromptSettled && !actingAs
+	)
+
+	// Last in the queue, one screen at a time.
+	usePatchNotes(pushPromptSettled && !actingAs && !contactsPending)
 
 	return (
 		<Tabs
