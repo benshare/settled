@@ -43,7 +43,7 @@ app/game/[id].tsx
 - `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus the
   inline `ConfirmBar` (now only the three non-undoable confirms). Shared by both layouts, so it is also where every
   affordance that has to exist in both lives — including the `post_placement`
-  ones (the specialist/explorer/haunt banners). The setup I / II badges show
+  ones (the specialist/explorer/haunt banners) and the curio claim banner. The setup I / II badges show
   through placement only, unless the viewer's `showPlacementNumbers` play pref
   keeps them all game.
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and the
@@ -56,6 +56,10 @@ app/game/[id].tsx
   card buy). `DiscardPanel` reads
   the live hand, not `displayHand`, so a reveal animation can't hide a card from
   the picker.
+- `GamblerRollDecision.tsx` — the gambler's keep-or-reroll, with the cards the
+  pending roll would pay (`distributeResources`, the server's own rule). Both
+  layouts put it in their status surface, not the bottom controls: the HUD
+  banner, and the classic top zone in place of the (idle) build/trade bar.
 - `gameScreenShared.tsx` — the few things both menu zones render (`DieFaceView`,
   `HonkButton`, `UndoButton`, bar styles), so neither imports the other. Also
   the hooks both layouts share: `usePinToggle`, and `useMarkResultSeen`, which

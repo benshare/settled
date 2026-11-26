@@ -124,6 +124,11 @@ waiting on. **One line of text; the turn dot is a separate set** (see §7).
   confirm"), and that stage is `placementStage` — a client-local draft, since a
   placement turn submits its settlement and road together. A viewer who isn't
   acting has no draft, so they read the phase-level "…turn to place settlement".
+- **Gambler exception:** while the roller holds pending dice, their banner
+  carries the decision itself — the resource cards the roll would pay (via
+  `distributeResources`, a 7 reads "Robber") with Reroll / Confirm, or for the
+  5–6p choose-of-two, one tappable tile per pair with its cards. The dock is
+  left as-is with Roll disabled. Other viewers keep the plain status line.
 - **Precedence:** live pending-wait > most-recent completed action > nothing.
   When any seat is pending, the wait line wins; a bare roll with nothing pending
   shows no banner. **All non-roll actions are shown, including the viewer's own.**
@@ -178,11 +183,15 @@ waiting on. **One line of text; the turn dot is a separate set** (see §7).
     - **Main phase:** build tools at top (road / settlement / city, plus the
       bonus builds that apply to this seat — super city, carpenter VP, accountant,
       invest, buy dev card), the **Trade** button, then **End turn** below.
-    - **Roll phase:** Roll (plus gambler Confirm / Reroll, ritual-roll /
-      shepherd-swap, and the dev roll picker for `dev` seats). Build/trade are
+    - **Roll phase:** Roll (plus ritual-roll / shepherd-swap and the dev roll
+      picker for `dev` seats; the gambler's Confirm / Reroll live in the
+      banner, §6). Build/trade are
       hidden, so the right column **may take over the freed space** for these.
     - **Placement:** the placement confirm + local undo occupy the right column;
       `MainLoopBar` does not render.
+- **Grid:** Trade and the primary action split their row evenly at the build
+  icon row's gap, so with four build icons above each spans exactly two (an
+  odd count just splits unevenly against the icons).
 - Compact styling throughout (the whole point of the redesign is reclaiming the
   two fat action bars).
 - **Open:** the left column's content during initial placement (the round-1 hand

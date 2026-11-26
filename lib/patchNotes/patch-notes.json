@@ -1,0 +1,76 @@
+[
+	{
+		"id": "2026-11-25.1",
+		"notes": [
+			"Chat now shows the time above each burst of messages.",
+			"Tap a chat message to see when it was sent."
+		]
+	},
+	{
+		"id": "2026-11-25.2",
+		"notes": [
+			"Getting honked now plays a goose animation. Turn it off in Account → Gameplay.",
+			"The game log now says who honked whom.",
+			"New setting: keep the I / II markers on your starting settlements all game."
+		]
+	},
+	{
+		"id": "2026-11-25.3",
+		"notes": [
+			"Finished games stay in your Active list, marked Complete, until you've seen the result.",
+			"Spectators can pin a game to their Games tab from the game menu."
+		]
+	},
+	{
+		"id": "2026-11-25.4",
+		"notes": [
+			"Moving the robber takes one confirm: when there's a choice of who to rob, you confirm after picking the player.",
+			"New setting: keep the road tool selected after placing a road, while you can afford another."
+		]
+	},
+	{
+		"id": "2026-11-25.5",
+		"notes": [
+			"Investor: you can hold at most six investment tokens.",
+			"Scout: Wheat and Sheep can stand in for each other when buying a dev card. Ore can't be swapped.",
+			"Scout: buying a dev card now opens your hand so you tap the cards to pay with.",
+			"Player details now show a Carpenter's bought victory points."
+		]
+	},
+	{
+		"id": "2026-11-25.7",
+		"notes": [
+			"Chat time headers now sit above their messages, and the sender's name repeats under each one.",
+			"Tapping a chat message shows a shorter time, and it slides open and closed.",
+			"Your chat messages appear the moment you send them."
+		]
+	},
+	{
+		"id": "2026-11-25.8",
+		"notes": [
+			"Gambler: keep or reroll from the status banner, which shows the cards the roll would pay you."
+		]
+	},
+	{
+		"id": "2026-11-25.9",
+		"notes": ["Trade and Roll / End turn are now the same width."]
+	},
+	{
+		"id": "2026-11-26.1",
+		"notes": [
+			"Curio Collector picks now use a compact banner, so you can still see the board.",
+			"The Ritualist picker can be minimized while you check the board."
+		]
+	},
+	{
+		"id": "2026-11-26.2",
+		"notes": ["You'll now see what's new after each update."]
+	},
+	{
+		"id": "2026-11-26.3",
+		"notes": [
+			"Knight, Road Building and Year of Plenty can now be undone. A knight can be taken back until you place the robber.",
+			"Tapping Road Building goes straight to placing your free roads."
+		]
+	}
+]

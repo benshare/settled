@@ -13,7 +13,7 @@
 //   — and only its bottom edge moves for the keyboard.
 
 import { Ionicons } from '@expo/vector-icons'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
 	FlatList,
 	Pressable,
@@ -24,6 +24,7 @@ import {
 } from 'react-native'
 import Animated, {
 	Easing,
+	runOnJS,
 	useAnimatedKeyboard,
 	useAnimatedStyle,
 	useSharedValue,
@@ -36,8 +37,8 @@ import { Avatar } from '../modules/Avatar'
 import { useGamesStore } from '../stores/useGamesStore'
 import type { Profile } from '../stores/useProfileStore'
 import { colors, font, radius, shadow, spacing, z } from '../theme'
-import { CHAT_MAX_CHARS, useChat, type ChatMessage } from './chatContext'
-import { chunkHeaderLabel, exactSentLabel, startsTimeChunk } from './chatTime'
+import { CHAT_MAX_CHARS, useChat, type ThreadMessage } from './chatContext'
+import { chunkHeaderLabel, sentAtLabel, startsTimeChunk } from './chatTime'
 
 // Translucent so the board stays faintly visible behind the conversation. The
 // 0.9 is a product requirement, not an arbitrary style value.
@@ -66,6 +67,9 @@ const MAX_TYPING_FACES = 3
 const WAVE_HALF_MS = 300
 const WAVE_STAGGER_MS = 130
 const WAVE_RISE = 3
+
+// The tap-to-reveal send time expands and collapses rather than popping.
+const REVEAL_MS = 180
 
 export function ChatButton({
 	anchorBottom,
@@ -135,10 +139,18 @@ export function ChatPanel({
 	seatColors: readonly string[]
 	meId: string | undefined
 }) {
-	const { open, setOpen, messages, send, sending, typingIds, noteTyping } =
-		useChat()
+	const {
+		open,
+		setOpen,
+		messages,
+		thread,
+		send,
+		retry,
+		discard,
+		typingIds,
+		noteTyping,
+	} = useChat()
 	const [draft, setDraft] = useState('')
-	const [error, setError] = useState<string | null>(null)
 
 	// Spectators send into this thread but were never in a participant list, so
 	// their profiles aren't in the store's cache. Without this they'd all
@@ -167,13 +179,14 @@ export function ChatPanel({
 		return { bottom: Math.max(bottomOffset, aboveKeyboard) - DISMISS_SLOP }
 	})
 
-	const canSend = draft.trim().length > 0 && !sending
+	// Sends are optimistic, so nothing waits on the previous one.
+	const canSend = draft.trim().length > 0
 
 	// An inverted list sticks to the bottom as messages arrive, which is what a
 	// chat wants, and saves a manual scrollToEnd on every insert.
 	const inverted = useMemo(
-		() => (messages ? messages.slice().reverse() : []),
-		[messages]
+		() => (thread ? thread.slice().reverse() : []),
+		[thread]
 	)
 
 	function onChangeDraft(v: string) {
@@ -181,18 +194,14 @@ export function ChatPanel({
 		noteTyping(v.trim().length > 0)
 	}
 
-	async function onSend() {
+	function onSend() {
 		const text = draft.trim()
 		if (!text) return
 		setDraft('')
 		noteTyping(false)
-		setError(null)
-		const res = await send(text)
-		if (res.error) {
-			// Put the message back rather than losing what they typed.
-			setDraft(text)
-			setError(res.error)
-		}
+		// A failure stays in the thread as a failed bubble with retry/remove,
+		// so the draft isn't restored.
+		send(text)
 	}
 
 	if (!open) return null
@@ -240,8 +249,10 @@ export function ChatPanel({
 					</View>
 
 					<ChatBody
-						messages={messages}
+						loading={thread === undefined}
 						inverted={inverted}
+						onRetry={retry}
+						onDiscard={discard}
 						playerOrder={playerOrder}
 						profilesById={profilesById}
 						seatColors={seatColors}
@@ -252,8 +263,6 @@ export function ChatPanel({
 						typingIds={typingIds}
 						profilesById={profilesById}
 					/>
-
-					{error && <Text style={styles.error}>{error}</Text>}
 
 					<ChatComposer
 						draft={draft}
@@ -268,15 +277,19 @@ export function ChatPanel({
 }
 
 function ChatBody({
-	messages,
+	loading,
 	inverted,
+	onRetry,
+	onDiscard,
 	playerOrder,
 	profilesById,
 	seatColors,
 	meId,
 }: {
-	messages: ChatMessage[] | undefined
-	inverted: ChatMessage[]
+	loading: boolean
+	inverted: ThreadMessage[]
+	onRetry: (id: string) => void
+	onDiscard: (id: string) => void
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	// Each seat's color, in seat order. Resolved once in `gameContext`
@@ -288,7 +301,7 @@ function ChatBody({
 	// elsewhere moves the detail rather than accumulating them.
 	const [revealedId, setRevealedId] = useState<string | null>(null)
 
-	if (messages === undefined) {
+	if (loading) {
 		return (
 			<View style={styles.centered}>
 				<Text style={styles.empty}>Loading…</Text>
@@ -325,6 +338,8 @@ function ChatBody({
 						startsChunk={startsChunk}
 						startsRun={startsChunk || prev?.sender !== item.sender}
 						revealed={revealedId === item.id}
+						onRetry={() => onRetry(item.id)}
+						onDiscard={() => onDiscard(item.id)}
 						onToggleReveal={() =>
 							setRevealedId((id) =>
 								id === item.id ? null : item.id
@@ -474,21 +489,25 @@ function MessageRow({
 	startsRun,
 	revealed,
 	onToggleReveal,
+	onRetry,
+	onDiscard,
 	playerOrder,
 	profilesById,
 	seatColors,
 	meId,
 }: {
-	message: ChatMessage
+	message: ThreadMessage
 	// First message after a silence of `CHAT_CHUNK_GAP_MS`: it carries the
 	// centered time header.
 	startsChunk: boolean
-	// First message of a consecutive run by one sender: it carries the name
-	// header and the extra separation from the run above.
+	// First message of a consecutive run by one sender, or of a time chunk: it
+	// carries the name header and the extra separation from the run above.
 	startsRun: boolean
-	// Showing the exact send time under the bubble (toggled by a tap).
+	// Showing the send time under the bubble (toggled by a tap).
 	revealed: boolean
 	onToggleReveal: () => void
+	onRetry: () => void
+	onDiscard: () => void
 	playerOrder: string[]
 	profilesById: Record<string, Profile>
 	// Each seat's color, in seat order. Resolved once in `gameContext`
@@ -499,47 +518,23 @@ function MessageRow({
 	const mine = message.sender === meId
 	const seat = playerOrder.indexOf(message.sender)
 	const name = profilesById[message.sender]?.username ?? 'Player'
+	const outgoing = message.outgoing
 
 	// A chunk header already separates the run from what's above it.
 	const gap = startsRun && !startsChunk && styles.rowGroupStart
 
-	const header = startsChunk && (
-		<Text style={styles.chunkHeader}>
-			{chunkHeaderLabel(message.created_at)}
-		</Text>
-	)
-
-	const detail = revealed && (
-		<Text style={styles.sentDetail}>
-			{exactSentLabel(message.created_at)}
-		</Text>
-	)
-
-	if (mine) {
-		return (
-			<>
-				{header}
-				<View style={[styles.row, styles.rowMine, gap]}>
-					<Pressable
-						onPress={onToggleReveal}
-						style={[styles.bubble, styles.bubbleMine]}
-						accessibilityHint="Shows when it was sent"
-					>
-						<Text style={styles.bubbleTextMine}>
-							{message.body}
-						</Text>
-					</Pressable>
-					{detail}
-				</View>
-			</>
-		)
-	}
-
+	// One element per cell, header included. An inverted list lays each cell's
+	// children out column-reverse (it's how it keeps separators in place), so a
+	// header returned as a sibling of the row lands *below* it.
 	return (
-		<>
-			{header}
-			<View style={[styles.row, gap]}>
-				{startsRun && (
+		<View style={gap}>
+			{startsChunk && (
+				<Text style={styles.chunkHeader}>
+					{chunkHeaderLabel(message.created_at)}
+				</Text>
+			)}
+			<View style={[styles.row, mine && styles.rowMine]}>
+				{!mine && startsRun && (
 					<View style={styles.senderLine}>
 						<Text
 							style={[
@@ -564,14 +559,89 @@ function MessageRow({
 				)}
 				<Pressable
 					onPress={onToggleReveal}
-					style={styles.bubble}
+					style={[
+						styles.bubble,
+						mine && styles.bubbleMine,
+						outgoing?.status === 'sending' && styles.bubbleSending,
+						outgoing?.status === 'failed' && styles.bubbleFailed,
+					]}
 					accessibilityHint="Shows when it was sent"
 				>
-					<Text style={styles.bubbleText}>{message.body}</Text>
+					<Text
+						style={mine ? styles.bubbleTextMine : styles.bubbleText}
+					>
+						{message.body}
+					</Text>
 				</Pressable>
-				{detail}
+				<Reveal open={revealed} alignEnd={mine}>
+					<Text style={styles.sentDetail}>
+						{sentAtLabel(message.created_at)}
+					</Text>
+				</Reveal>
+				{outgoing?.status === 'failed' && (
+					<View style={styles.failedLine}>
+						<Text style={styles.failedText} numberOfLines={2}>
+							Not sent
+							{outgoing.error ? ` — ${outgoing.error}` : ''}
+						</Text>
+						<Pressable onPress={onRetry} hitSlop={8}>
+							<Text style={styles.failedAction}>Retry</Text>
+						</Pressable>
+						<Pressable onPress={onDiscard} hitSlop={8}>
+							<Text style={styles.failedAction}>Remove</Text>
+						</Pressable>
+					</View>
+				)}
 			</View>
-		</>
+		</View>
+	)
+}
+
+// Expands to its content's height and fades in; collapses the same way, then
+// unmounts. The content is laid out absolutely so it reports its natural height
+// while the clip around it is still animating up from zero.
+function Reveal({
+	open,
+	alignEnd,
+	children,
+}: {
+	open: boolean
+	alignEnd: boolean
+	children: ReactNode
+}) {
+	const [mounted, setMounted] = useState(open)
+	const [height, setHeight] = useState(0)
+	const progress = useSharedValue(open ? 1 : 0)
+
+	useEffect(() => {
+		// Every row mounts closed; don't run a no-op animation for each.
+		if (!open && progress.value === 0) return
+		if (open) setMounted(true)
+		progress.value = withTiming(
+			open ? 1 : 0,
+			{ duration: REVEAL_MS, easing: Easing.out(Easing.quad) },
+			(finished) => {
+				if (finished && !open) runOnJS(setMounted)(false)
+			}
+		)
+	}, [open, progress])
+
+	const style = useAnimatedStyle(() => ({
+		height: progress.value * height,
+		opacity: progress.value,
+	}))
+
+	if (!mounted) return null
+
+	return (
+		<Animated.View style={[styles.revealClip, style]}>
+			<View
+				style={[styles.revealContent, alignEnd && styles.revealEnd]}
+				onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
+			>
+				{children}
+			</View>
+		</Animated.View>
 	)
 }
 
@@ -677,9 +747,10 @@ const styles = StyleSheet.create({
 		fontSize: font.sm,
 		color: colors.textMuted,
 	},
+	// No `gap`: the reveal below the bubble is a 0-height child when closed,
+	// and a gap would jump 2px the moment it mounts. Spacing is per child.
 	row: {
 		alignItems: 'flex-start',
-		gap: 2,
 	},
 	rowMine: {
 		alignItems: 'flex-end',
@@ -699,12 +770,28 @@ const styles = StyleSheet.create({
 		fontWeight: '600',
 		color: colors.textMuted,
 	},
+	revealClip: {
+		alignSelf: 'stretch',
+		overflow: 'hidden',
+	},
+	revealContent: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		alignItems: 'flex-start',
+	},
+	revealEnd: {
+		alignItems: 'flex-end',
+	},
 	sentDetail: {
+		paddingTop: 2,
 		paddingHorizontal: spacing.xs,
 		fontSize: font.xs,
 		color: colors.textMuted,
 	},
 	senderLine: {
+		marginBottom: 2,
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: spacing.xs,
@@ -735,6 +822,32 @@ const styles = StyleSheet.create({
 	bubbleMine: {
 		backgroundColor: colors.accent,
 		borderColor: colors.accent,
+	},
+	// Optimistic: shown at once, dimmed until the server confirms it.
+	bubbleSending: {
+		opacity: 0.6,
+	},
+	bubbleFailed: {
+		opacity: 0.6,
+		borderColor: colors.error,
+	},
+	failedLine: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+		paddingTop: 2,
+		paddingHorizontal: spacing.xs,
+		maxWidth: '85%',
+	},
+	failedText: {
+		flexShrink: 1,
+		fontSize: font.xs,
+		color: colors.error,
+	},
+	failedAction: {
+		fontSize: font.xs,
+		fontWeight: '700',
+		color: colors.error,
 	},
 	bubbleText: {
 		fontSize: font.base,
@@ -776,12 +889,6 @@ const styles = StyleSheet.create({
 		height: 4,
 		borderRadius: 2,
 		backgroundColor: colors.textMuted,
-	},
-	error: {
-		paddingHorizontal: spacing.md,
-		paddingBottom: spacing.xs,
-		fontSize: font.sm,
-		color: colors.error,
 	},
 	inputRow: {
 		flexDirection: 'row',

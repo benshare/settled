@@ -53,6 +53,11 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
   so sees the phase-level "settlement". It **doesn't render during bonus selection**
   for a seated viewer — the bonus pane owns the screen and already names who
   it's waiting on. A spectator has no pane, so they keep it.
+- **The gambler's keep-or-reroll is the one instruction the banner carries.**
+  For the roller only, the status line becomes `GamblerRollDecision` (the cards
+  the pending roll would pay + Reroll / Confirm); the dock's Roll stays put,
+  disabled, so there is one set of controls. Everyone else reads the usual
+  "…is confirming the roll".
 - **The banner is mounted inside the board layer, not beside it.** It shares its
   line with the board's utility buttons and the log / legend panels those open,
   which expand upward over it — and `zIndex` only orders siblings, so the panels
@@ -71,6 +76,11 @@ HudScreen        water frame + one full-screen SlidingArea + fixed HudTopBar
 - **The chips' dot set is `pendingSeats` (+ trade responders), not
   `current_turn`** (`actingSeats` in `status.ts`) — the seats that owe an action
   now, often not the turn-holder.
+- **Trade and the primary action are always equal width.** Each takes half
+  the dock's lower row at the icon row's own gap (`BUILD_ICON_GAP`), so with
+  four icons each spans exactly two. Trade sits inside a bare slot: Yoga floors
+  a zero-basis item at its own padding, so a padded button sized directly
+  comes out wider than its neighbour.
 - **The dock renders nothing for a spectator** (their readout is island +
   banner); the trade / discard composers replace the hand row rather than
   stacking, since each is composed by tapping the hand.

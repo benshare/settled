@@ -19,3 +19,19 @@ Describe UI at the layout altitude, not the mechanism. For example:
 
 Depth belongs in `.claude/specs/*`, which the module docs link to for full
 designs.
+
+## Patch notes (every push to `main`)
+
+Each push to `main` publishes an OTA, and players see what changed on their next launch. So **every commit that lands on `main` with a player-visible change appends one entry**, in that same commit to `lib/patchNotes/patch-notes.json` (oldest first):
+
+```json
+{
+	"id": "2026-11-26.1",
+	"notes": ["Robber placement no longer gets stuck after a reconnect."]
+}
+```
+
+- `id`: the commit's UTC date plus a per-day counter from 1 (`.2` for the second that day). Must sort after the previous entry.
+- `notes`: one short line per change, in player-facing language (what they'll notice, not how it was done), sentence case with a full stop. No internal changes (refactors, docs, tooling, edge-function-only fixes with no visible effect).
+- A commit with no player-visible change adds **no entry**. Several commits pushed together each keep their own entry; the screen concatenates them. (Per commit rather than per OTA because the author always knows its commit, not how commits will be batched into a push.)
+- Run `npx tsx dev/check-patch-notes.ts` before pushing. Design: `.claude/specs/patch-notes.md`.

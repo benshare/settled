@@ -91,6 +91,14 @@ Unit-style checks for `lib/stats.ts` — the Stats tab's aggregations (averages 
 npx tsx dev/check-stats.ts
 ```
 
+### `check-patch-notes.ts`
+
+Validates `lib/patchNotes/patch-notes.json` (ids `YYYY-MM-DD.N` strictly increasing, notes non-empty strings) and checks the which-entries-to-show rule. Run after editing the file — every push to `main` should.
+
+```sh
+npx tsx dev/check-patch-notes.ts
+```
+
 ### `backfill-game-results.ts`
 
 Fills `game_results` for games that finished before the edge function started writing summaries. Reads each completed game's `game_states` row and scores it with the real `totalVP`, so backfilled rows match what a game completing today would record. Idempotent — games that already have rows are skipped. `offered_bonuses` stays null; the declined bonus pair was never stored for those games.

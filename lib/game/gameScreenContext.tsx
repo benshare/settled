@@ -633,15 +633,23 @@ function useGameScreenState(gameId: string) {
 	// A pending confirm — and the metropolitan cost picker, which is the same
 	// thing behind a sheet — is tied to the current phase/turn. If either flips
 	// under us (realtime), drop it so its closure doesn't fire against the
-	// wrong state.
+	// wrong state. The ritual picker too: it is a pre-roll choice, and once
+	// minimized the player can roll normally from under it.
 	const confirmScopeKey = `${gameState?.currentTurn ?? 'x'}:${gameState?.phase.kind ?? 'x'}`
 	useEffect(() => {
 		setPendingConfirm(null)
 		setMetroPending(null)
+		setRitualOpen(false)
 	}, [confirmScopeKey])
 	const promptMinimized = minimizedScope === confirmScopeKey
 	const togglePromptMinimized = () =>
 		setMinimizedScope(promptMinimized ? null : confirmScopeKey)
+	// The Ritual buttons stay visible while the picker sits minimized as a
+	// bubble, so pressing one again restores it rather than doing nothing.
+	const openRitual = () => {
+		setRitualOpen(true)
+		if (promptMinimized) setMinimizedScope(null)
+	}
 
 	// --- Held hand ---------------------------------------------------------
 	// The three reveal animations below all fire *after* the resource has
@@ -2120,6 +2128,7 @@ function useGameScreenState(gameId: string) {
 		hideToast: () => setToast(null),
 		ritualOpen,
 		setRitualOpen,
+		openRitual,
 		shepherdOpen,
 		setShepherdOpen,
 		scoutBuyOpen,
