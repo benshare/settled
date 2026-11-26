@@ -259,6 +259,9 @@ export function TopArea() {
 								gameState={gameState}
 								meIdx={meIdx}
 								profilesById={profilesById}
+								submitting={submitting}
+								canUndo={canUndo}
+								onUndo={onUndo}
 							/>
 						)}
 						{inRobberFlow && (
@@ -268,6 +271,9 @@ export function TopArea() {
 								meIdx={meIdx}
 								profilesById={profilesById}
 								pickingVictim={robberDraftHex !== null}
+								submitting={submitting}
+								canUndo={canUndo}
+								onUndo={onUndo}
 							/>
 						)}
 						{gameState.phase.kind === 'special_build' && (
@@ -373,6 +379,9 @@ function RobberStatus({
 	meIdx,
 	profilesById,
 	pickingVictim,
+	submitting,
+	canUndo,
+	onUndo,
 }: {
 	game: Game
 	gameState: GameState
@@ -380,6 +389,11 @@ function RobberStatus({
 	profilesById: Record<string, Profile>
 	// A robber hex is drafted and its victim is the next tap.
 	pickingVictim: boolean
+	// The queued knight or Road Building play is still undoable here; a
+	// 7's robber chain never is (the roll flushed the queue).
+	submitting: boolean
+	canUndo: boolean
+	onUndo: () => void
 }) {
 	const phase = gameState.phase
 	if (
@@ -443,6 +457,9 @@ function RobberStatus({
 					</View>
 				)}
 				<Text style={sharedStyles.mainLoopStatus}>{status}</Text>
+				{canUndo && (
+					<UndoButton submitting={submitting} onPress={onUndo} />
+				)}
 			</View>
 		</View>
 	)
@@ -453,11 +470,17 @@ function RoadBuildingStatus({
 	gameState,
 	meIdx,
 	profilesById,
+	submitting,
+	canUndo,
+	onUndo,
 }: {
 	game: Game
 	gameState: GameState
 	meIdx: number
 	profilesById: Record<string, Profile>
+	submitting: boolean
+	canUndo: boolean
+	onUndo: () => void
 }) {
 	const phase = gameState.phase
 	if (phase.kind !== 'road_building') return null
@@ -474,6 +497,9 @@ function RoadBuildingStatus({
 		<View style={sharedStyles.actionBar}>
 			<View style={sharedStyles.mainLoopRow}>
 				<Text style={sharedStyles.mainLoopStatus}>{status}</Text>
+				{canUndo && (
+					<UndoButton submitting={submitting} onPress={onUndo} />
+				)}
 			</View>
 		</View>
 	)

@@ -23,6 +23,7 @@ import {
 	isApplyError,
 	projectQueue,
 } from '../lib/catan/apply'
+import type { DevCardId } from '../lib/catan/devCards'
 import { initialGameState } from '../lib/catan/generate'
 import {
 	DEFAULT_CONFIG,
@@ -345,6 +346,155 @@ function testEmptyQueueIsIdentity() {
 	equal(projected.valid, 0, 'nothing applied')
 }
 
+// --- Dev-card plays ---------------------------------------------------------
+
+// Seat 0 holds `cards` (bought last round, so playable) and `knights` played.
+function withCards(s: GameState, cards: DevCardId[], knights = 0): GameState {
+	return {
+		...s,
+		players: s.players.map((p, i) =>
+			i === 0
+				? {
+						...p,
+						devCards: cards.map((id) => ({ id, purchasedTurn: 4 })),
+						devCardsPlayed: knights ? { knight: knights } : {},
+					}
+				: p
+		),
+	}
+}
+
+const play = (id: 'knight' | 'road_building'): LocalAction => ({
+	action: 'play_dev_card',
+	id,
+})
+
+function testRoadBuildingFoldsAndUndoes() {
+	const s = withCards(baseState(), ['road_building'])
+	const played = ok(applyLocalAction(s, 0, play('road_building'), AT))
+	equal(played.phase.kind, 'road_building', 'enters free-road placement')
+	equal(played.players[0].devCards.length, 0, 'card leaves the hand')
+	assert(played.players[0].playedDevThisTurn, 'one card per turn')
+
+	const [e1] = homeEdges()
+	const afterOne = ok(
+		applyLocalAction(played, 0, { action: 'build_road', edge: e1 }, AT)
+	)
+	const e2 = continuationOf(afterOne, e1)
+	const queue: LocalAction[] = [
+		play('road_building'),
+		{ action: 'build_road', edge: e1 },
+		{ action: 'build_road', edge: e2 },
+	]
+	const full = projectQueue(s, 0, queue)
+	equal(full.valid, 3, 'whole queue applies')
+	equal(full.state.phase.kind, 'main', 'resumes after two roads')
+	equal(full.state.players[0].resources.wood, 8, 'free roads cost nothing')
+	equal(projectQueue(s, 0, []).state, s, 'undoing everything is the row')
+}
+
+function testRoadBuildingWithNoRoomResumes() {
+	// No settlement anywhere: no edge connects, so there's nowhere to build.
+	const s = withCards({ ...baseState(), vertices: {} }, ['road_building'])
+	const played = ok(applyLocalAction(s, 0, play('road_building'), AT))
+	equal(played.phase.kind, 'main', 'card spent, phase unchanged')
+}
+
+function testKnightStopsAtTheRobber() {
+	const s = withCards(baseState(), ['knight'], 2)
+	const played = ok(applyLocalAction(s, 0, play('knight'), AT))
+	equal(played.phase.kind, 'move_robber', 'robber is next')
+	assert(
+		played.phase.kind === 'move_robber' &&
+			played.phase.resume.kind === 'main',
+		'resumes into main'
+	)
+	equal(played.largestArmy, 0, 'third knight takes Largest Army')
+}
+
+function testKnightCanWinThroughLargestArmy() {
+	// 1 settlement + 7 hidden VP + Largest Army's 2 = 10.
+	const s = withCards(
+		baseState(),
+		['knight', ...Array<DevCardId>(7).fill('victory_point')],
+		2
+	)
+	const played = ok(applyLocalAction(s, 0, play('knight'), AT))
+	equal(played.phase.kind, 'game_over', 'the knight wins on the spot')
+}
+
+function testYearOfPlentyTakesTwo() {
+	const s = withCards(baseState(), ['year_of_plenty'])
+	const played = ok(
+		applyLocalAction(
+			s,
+			0,
+			{
+				action: 'play_dev_card',
+				id: 'year_of_plenty',
+				payload: { r1: 'ore', r2: 'ore' },
+			},
+			AT
+		)
+	)
+	equal(played.players[0].resources.ore, 10, 'a repeated pick adds twice')
+	equal(played.phase.kind, 'main', 'no sub-phase')
+}
+
+function testDevPlayRejections() {
+	const s = withCards(baseState(), ['knight', 'monopoly'])
+	const monopoly = applyLocalAction(
+		s,
+		0,
+		{ action: 'play_dev_card', id: 'monopoly' } as unknown as LocalAction,
+		AT
+	)
+	assert(isApplyError(monopoly), 'monopoly never queues')
+
+	const fresh: GameState = {
+		...s,
+		players: s.players.map((p, i) =>
+			i === 0
+				? { ...p, devCards: [{ id: 'knight', purchasedTurn: 5 }] }
+				: p
+		),
+	}
+	assert(
+		isApplyError(applyLocalAction(fresh, 0, play('knight'), AT)),
+		'a card bought this turn waits'
+	)
+
+	const twice = applyLocalActions(
+		withCards(baseState(), ['knight', 'road_building']),
+		0,
+		[play('road_building'), play('knight')],
+		AT
+	)
+	assert('index' in twice && twice.index === 1, 'one card per turn')
+
+	const pending: GameState = {
+		...s,
+		phase: { kind: 'roll', pending: { dice: { a: 2, b: 3 } } },
+	}
+	assert(
+		isApplyError(applyLocalAction(pending, 0, play('knight'), AT)),
+		"a gambler's unconfirmed dice can't be dropped by a play"
+	)
+	const preRoll = ok(
+		applyLocalAction(
+			{ ...s, phase: { kind: 'roll' } },
+			0,
+			play('knight'),
+			AT
+		)
+	)
+	assert(
+		preRoll.phase.kind === 'move_robber' &&
+			preRoll.phase.resume.kind === 'roll',
+		'pre-roll knight resumes into the roll'
+	)
+}
+
 // --- The mirror -------------------------------------------------------------
 
 // The edge function re-declares these reducers (the Deno bundler can't import
@@ -361,13 +511,15 @@ function testEdgeMirrorIsInSync() {
 	const names = [...lib.matchAll(/\nfunction (apply[A-Za-z]+)\(/g)].map(
 		(m) => m[1]
 	)
-	equal(names.length, 14, 'one reducer per undoable action')
+	equal(names.length, 15, 'one reducer per undoable action')
+	names.push('startDevPlay')
 	for (const name of names) {
 		// The carpenter's cost is the one deliberate divergence: the edge names
 		// it as a scalar (`CARPENTER_WOOD_COST`) where lib has a ResourceHand.
 		if (name === 'applyBuyCarpenterVP') continue
 		const body = (src: string) => {
-			const i = src.indexOf(`\nfunction ${name}(`)
+			const fn = src.indexOf(`\nfunction ${name}(`)
+			const i = fn >= 0 ? fn : src.indexOf(`\nexport function ${name}(`)
 			assert(i >= 0, `${name} exists in both files`)
 			const j = src.indexOf('\n}\n', i)
 			return src.slice(i, j + 3)
@@ -394,6 +546,12 @@ const tests: [string, () => void][] = [
 	['truncation equals prefix fold', testTruncationEqualsPrefixFold],
 	['projection truncates on rebase', testProjectionTruncatesOnRebase],
 	['empty queue is identity', testEmptyQueueIsIdentity],
+	['road building folds and undoes', testRoadBuildingFoldsAndUndoes],
+	['road building with no room resumes', testRoadBuildingWithNoRoomResumes],
+	['knight stops at the robber', testKnightStopsAtTheRobber],
+	['knight can win via Largest Army', testKnightCanWinThroughLargestArmy],
+	['year of plenty takes two', testYearOfPlentyTakesTwo],
+	['dev play rejections', testDevPlayRejections],
 	['edge mirror is in sync', testEdgeMirrorIsInSync],
 ]
 

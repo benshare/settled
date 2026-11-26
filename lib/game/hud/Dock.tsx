@@ -14,6 +14,7 @@ import {
 	investorTokenCount,
 	ritualCardCost,
 } from '@/lib/catan/bonus'
+import { hasLegalRoadPlacement } from '@/lib/catan/dev'
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel, VoluntaryDiscardPanel } from '@/lib/catan/DiscardPanel'
@@ -187,6 +188,14 @@ export function Dock({
 								playedDevThisTurn={
 									gameState.players[meIdx].playedDevThisTurn
 								}
+								rollPending={
+									gameState.phase.kind === 'roll' &&
+									!!gameState.phase.pending
+								}
+								canPlaceRoad={hasLegalRoadPlacement(
+									gameState,
+									meIdx
+								)}
 								monopolyPerPlayerCap={
 									gameState.config.limitMonopoly
 										? monopolyCap(gameState.players.length)

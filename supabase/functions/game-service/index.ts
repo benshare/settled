@@ -7502,6 +7502,13 @@ type LocalAction =
 	| { action: 'cast_magic'; target: number; discard: ResourceHand }
 	| { action: 'skip_magic' }
 	| { action: 'avarice_discard'; discard: ResourceHand }
+	| {
+			action: 'play_dev_card'
+			id: QueueableDevCardId
+			payload?: { r1: Resource; r2: Resource }
+	  }
+
+type QueueableDevCardId = 'knight' | 'road_building' | 'year_of_plenty'
 
 type LiquidationTargetBody =
 	| { kind: 'road'; edge: Edge }
@@ -7618,6 +7625,23 @@ function parseLocalAction(raw: unknown): LocalAction | null {
 			const discard = normalizeHand(o.discard)
 			return discard ? { action: 'avarice_discard', discard } : null
 		}
+		// Monopoly is deliberately absent: it reads opponents' hands, so it is
+		// never queueable and a batch carrying one is refused here.
+		case 'play_dev_card': {
+			if (o.id === 'knight' || o.id === 'road_building')
+				return { action: 'play_dev_card', id: o.id }
+			if (o.id !== 'year_of_plenty') return null
+			const p = (o.payload ?? null) as Record<string, unknown> | null
+			const r1 = p ? parseResource(p.r1) : null
+			const r2 = p ? parseResource(p.r2) : null
+			return r1 && r2
+				? {
+						action: 'play_dev_card',
+						id: 'year_of_plenty',
+						payload: { r1, r2 },
+					}
+				: null
+		}
 		default:
 			return null
 	}
@@ -7684,6 +7708,8 @@ export function applyLocalAction(
 			return applySkipMagic(state, meIdx, at)
 		case 'avarice_discard':
 			return applyAvariceDiscard(state, meIdx, action, at)
+		case 'play_dev_card':
+			return applyPlayDevCard(state, meIdx, action, at)
 	}
 }
 
@@ -8554,6 +8580,147 @@ function applyAvariceDiscard(
 	)
 }
 
+// --- Dev-card plays ---------------------------------------------------------
+
+const QUEUEABLE_DEV_CARDS: readonly string[] = [
+	'knight',
+	'road_building',
+	'year_of_plenty',
+]
+
+// The half of a dev play every card shares: the gates, then the card leaving
+// the hand. Exported because Monopoly isn't queueable — its haul reads the
+// opponents' hands — so the edge function's open-coded Monopoly arm starts
+// here too, and the two paths can't disagree about when a card may be played.
+export function startDevPlay(
+	state: GameState,
+	meIdx: number,
+	id: DevCardId
+): { error: string } | { players: PlayerState[]; resume: ResumePhase } {
+	const phase = state.phase
+	// Classic Catan allows pre-roll plays; everything else must be main.
+	if (phase.kind !== 'main' && phase.kind !== 'roll')
+		return { error: 'expected main or roll phase' }
+	if (state.currentTurn !== meIdx) return { error: 'not your turn' }
+	// A gambler's thrown-but-unconfirmed dice live on the roll phase, and a
+	// play resumes to a bare `roll` — so allowing it would discard the dice
+	// and hand out a free reroll.
+	if (phase.kind === 'roll' && phase.pending)
+		return { error: 'confirm your roll first' }
+	if (id === 'victory_point') return { error: 'VP cards cannot be played' }
+	const player = state.players[meIdx]
+	if (player.playedDevThisTurn)
+		return { error: 'already played a dev card this turn' }
+	const entryIdx = player.devCards.findIndex(
+		(c) => c.id === id && c.purchasedTurn < state.round
+	)
+	if (entryIdx < 0) return { error: 'no playable card of that id' }
+
+	const resume: ResumePhase =
+		phase.kind === 'main'
+			? { kind: 'main', roll: phase.roll, trade: phase.trade }
+			: { kind: 'roll' }
+	const devCards = [...player.devCards]
+	devCards.splice(entryIdx, 1)
+	const played: PlayerState = {
+		...player,
+		devCards,
+		devCardsPlayed: {
+			...player.devCardsPlayed,
+			[id]: (player.devCardsPlayed[id] ?? 0) + 1,
+		},
+		playedDevThisTurn: true,
+	}
+	return {
+		players: state.players.map((p, i) => (i === meIdx ? played : p)),
+		resume,
+	}
+}
+
+// A knight stops at `move_robber`: the hex is the barrier, because the move
+// can auto-steal and open other seats' reaction windows. Its Largest Army
+// swing runs here, so a knight that wins projects a pending win like a build.
+function applyPlayDevCard(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'play_dev_card' }>,
+	at: string
+): ApplyResult {
+	// The wire is typed, but a cast or a stale client could still carry one.
+	if (!QUEUEABLE_DEV_CARDS.includes(action.id))
+		return { error: 'not a queueable dev card' }
+	const started = startDevPlay(state, meIdx, action.id)
+	if ('error' in started) return started
+	const { resume } = started
+	let players = started.players
+	let next: GameState
+	const events: unknown[] = []
+
+	switch (action.id) {
+		case 'knight': {
+			const speculative: GameState = { ...state, players }
+			const holder = recomputeLargestArmy(speculative)
+			if (holder !== state.largestArmy && holder !== null)
+				events.push({
+					kind: 'largest_army_changed',
+					player: holder,
+					at,
+				})
+			next = {
+				...speculative,
+				largestArmy: holder,
+				phase: { kind: 'move_robber', resume },
+			}
+			events.push({ kind: 'dev_played', player: meIdx, id: 'knight', at })
+			break
+		}
+		case 'road_building': {
+			const speculative: GameState = { ...state, players }
+			// No legal spot: the card is spent and the phase doesn't move.
+			next = {
+				...speculative,
+				phase: hasLegalRoadPlacement(speculative, meIdx)
+					? { kind: 'road_building', resume, remaining: 2 }
+					: resume,
+			}
+			events.push({
+				kind: 'dev_played',
+				player: meIdx,
+				id: 'road_building',
+				at,
+			})
+			break
+		}
+		case 'year_of_plenty': {
+			const take = action.payload
+			if (
+				!take ||
+				!RESOURCES.includes(take.r1) ||
+				!RESOURCES.includes(take.r2)
+			)
+				return { error: 'invalid year_of_plenty payload' }
+			// r1 and r2 may match, so add cumulatively.
+			players = players.map((p, i) => {
+				if (i !== meIdx) return p
+				const resources = { ...p.resources }
+				resources[take.r1] += 1
+				resources[take.r2] += 1
+				return { ...p, resources }
+			})
+			next = { ...state, players, phase: resume }
+			events.push({
+				kind: 'dev_played',
+				player: meIdx,
+				id: 'year_of_plenty',
+				take: [take.r1, take.r2],
+				at,
+			})
+			break
+		}
+	}
+	return finish(next, events, at, { recomputeRoads: false })
+}
+
 // The mutable `game_states` columns that actually differ. The reducers only
 // build a new object for something they changed, so reference inequality is
 // exactly the right test — and writing only what moved keeps a seat acting in
@@ -8571,6 +8738,8 @@ function changedStateColumns(
 		update.fence_tokens = after.fenceTokens
 	if (after.longestRoad !== before.longestRoad)
 		update.longest_road = after.longestRoad
+	if (after.largestArmy !== before.largestArmy)
+		update.largest_army = after.largestArmy
 	return update
 }
 
@@ -10358,191 +10527,83 @@ async function handlePlayDevCard(
 	me: string,
 	body: PlayDevCardBody
 ): Promise<Response> {
-	const loaded = await loadGame(admin, body.game_id)
-	if (!loaded.ok) return loaded.response
-	const { game, state } = loaded
-
-	if (game.status !== 'active') return err(400, 'not active')
-
-	const meIdx = currentPlayerIndex(game, state, me)
-	if (meIdx === null) return err(403, 'not a participant')
-	if (state.currentTurn !== meIdx) return err(403, 'not your turn')
-
-	const phase = state.phase
-	// Classic Catan allows pre-roll dev plays. Everything else must be main.
-	if (phase.kind !== 'main' && phase.kind !== 'roll')
-		return err(400, 'expected main or roll phase')
-
 	if (
 		typeof body.id !== 'string' ||
 		!DEV_CARD_IDS.includes(body.id as DevCardId)
 	)
 		return err(400, 'unknown dev card id')
-	const id = body.id as DevCardId
-	if (id === 'victory_point') return err(400, 'VP cards cannot be played')
-
-	const player = state.players[meIdx]
-	if (player.playedDevThisTurn)
-		return err(400, 'already played a dev card this turn')
-
-	// Find an entry bought on a prior turn (`purchasedTurn < state.round`).
-	const entryIdx = player.devCards.findIndex(
-		(c) => c.id === id && c.purchasedTurn < state.round
-	)
-	if (entryIdx < 0) return err(400, 'no playable card of that id')
-
-	const resume: ResumePhase =
-		phase.kind === 'main'
-			? { kind: 'main', roll: phase.roll, trade: phase.trade }
-			: { kind: 'roll' }
-
-	const now = new Date().toISOString()
-	const events: unknown[] = []
-
-	// Shared mutations: remove the card, bump played count, set the flag.
-	const nextDevCards = [...player.devCards]
-	nextDevCards.splice(entryIdx, 1)
-	const nextDevCardsPlayed = {
-		...player.devCardsPlayed,
-		[id]: (player.devCardsPlayed[id] ?? 0) + 1,
-	}
-	const basePlayer: PlayerState = {
-		...player,
-		devCards: nextDevCards,
-		devCardsPlayed: nextDevCardsPlayed,
-		playedDevThisTurn: true,
+	if (body.id !== 'monopoly') {
+		// Every other card is a queueable play: one path, shared with `batch`.
+		const action = parseLocalAction({
+			action: 'play_dev_card',
+			id: body.id,
+			payload: body.payload,
+		})
+		if (!action) return err(400, `invalid ${body.id} play`)
+		return commitLocalActions(admin, me, body.game_id, [action])
 	}
 
-	let nextPlayers: PlayerState[] = state.players.map((p, i) =>
-		i === meIdx ? basePlayer : p
-	)
-	let nextPhase: Phase = resume
-	let nextLargestArmy: number | null = state.largestArmy
-	const update: Record<string, unknown> = {}
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+	if (game.status !== 'active') return err(400, 'not active')
+	const meIdx = currentPlayerIndex(game, state, me)
+	if (meIdx === null) return err(403, 'not a participant')
 
-	switch (id) {
-		case 'knight': {
-			// Update Largest Army, then enter move_robber with the stored resume.
-			const speculative: GameState = {
-				...state,
-				players: nextPlayers,
-				largestArmy: state.largestArmy,
-			}
-			const newHolder = recomputeLargestArmy(speculative)
-			if (newHolder !== state.largestArmy) {
-				nextLargestArmy = newHolder
-				if (newHolder !== null) {
-					events.push({
-						kind: 'largest_army_changed',
-						player: newHolder,
-						at: now,
-					})
-				}
-			}
-			nextPhase = { kind: 'move_robber', resume }
-			break
+	const started = startDevPlay(state, meIdx, 'monopoly')
+	if ('error' in started) return err(400, started.error)
+
+	const payload = body.payload as { resource?: unknown } | null
+	const resource = payload ? parseResource(payload.resource) : null
+	if (!resource) return err(400, 'invalid monopoly payload')
+	// `limitMonopoly` caps what any single opponent loses; the total haul
+	// across the table stays uncapped.
+	const perPlayerCap = state.config.limitMonopoly
+		? monopolyCap(started.players.length)
+		: Infinity
+	let stolen = 0
+	let nextPlayers = started.players.map((p, i) => {
+		if (i === meIdx) return p
+		const take = Math.min(p.resources[resource], perPlayerCap)
+		stolen += take
+		return {
+			...p,
+			resources: {
+				...p.resources,
+				[resource]: p.resources[resource] - take,
+			},
 		}
-		case 'road_building': {
-			const speculative: GameState = { ...state, players: nextPlayers }
-			if (!hasLegalRoadPlacement(speculative, meIdx)) {
-				// No legal placements → card is consumed, phase doesn't change.
-				nextPhase = resume
-			} else {
-				nextPhase = { kind: 'road_building', resume, remaining: 2 }
-			}
-			break
-		}
-		case 'year_of_plenty': {
-			const payload = body.payload as {
-				r1?: unknown
-				r2?: unknown
-			} | null
-			const r1 = payload ? parseResource(payload.r1) : null
-			const r2 = payload ? parseResource(payload.r2) : null
-			if (!r1 || !r2) return err(400, 'invalid year_of_plenty payload')
-			nextPlayers = nextPlayers.map((p, i) => {
-				if (i !== meIdx) return p
-				// r1 and r2 can be the same resource, so add cumulatively rather
-				// than with two computed keys (the second would clobber the first).
-				const resources = { ...p.resources }
-				resources[r1] += 1
-				resources[r2] += 1
-				return { ...p, resources }
-			})
-			events.push({
-				kind: 'dev_played',
-				player: meIdx,
-				id,
-				take: [r1, r2],
-				at: now,
-			})
-			break
-		}
-		case 'monopoly': {
-			const payload = body.payload as { resource?: unknown } | null
-			const resource = payload ? parseResource(payload.resource) : null
-			if (!resource) return err(400, 'invalid monopoly payload')
-			// `limitMonopoly` caps what any single opponent loses; the total
-			// haul across the table stays uncapped.
-			const perPlayerCap = state.config.limitMonopoly
-				? monopolyCap(nextPlayers.length)
-				: Infinity
-			let stolen = 0
-			nextPlayers = nextPlayers.map((p, i) => {
-				if (i === meIdx) return p
-				const take = Math.min(p.resources[resource], perPlayerCap)
-				stolen += take
-				return {
+	})
+	nextPlayers = nextPlayers.map((p, i) =>
+		i === meIdx
+			? {
 					...p,
 					resources: {
 						...p.resources,
-						[resource]: p.resources[resource] - take,
+						[resource]: p.resources[resource] + stolen,
 					},
 				}
-			})
-			nextPlayers = nextPlayers.map((p, i) =>
-				i === meIdx
-					? {
-							...p,
-							resources: {
-								...p.resources,
-								[resource]: p.resources[resource] + stolen,
-							},
-						}
-					: p
-			)
-			events.push({
-				kind: 'dev_played',
-				player: meIdx,
-				id,
-				resource,
-				total: stolen,
-				at: now,
-			})
-			break
-		}
+			: p
+	)
+	const events: unknown[] = [
+		{
+			kind: 'dev_played',
+			player: meIdx,
+			id: 'monopoly',
+			resource,
+			total: stolen,
+			at: new Date().toISOString(),
+		},
+	]
+	const update: Record<string, unknown> = {
+		players: nextPlayers,
+		phase: started.resume,
 	}
-
-	// Knight + road_building log their `dev_played` with no extra payload.
-	if (id === 'knight' || id === 'road_building') {
-		events.push({ kind: 'dev_played', player: meIdx, id, at: now })
-	}
-
-	update.players = nextPlayers
-	update.phase = nextPhase
-	if (nextLargestArmy !== state.largestArmy) {
-		update.largest_army = nextLargestArmy
-	}
-
 	const nextState: GameState = {
 		...state,
 		players: nextPlayers,
-		phase: nextPhase,
-		largestArmy: nextLargestArmy,
+		phase: started.resume,
 	}
-	// A knight play can shift Largest Army (+2 VP swing) and push the new
-	// holder over 10. Road Building card's actual road placements flow
-	// through handleBuildRoad, which runs its own recompute — skip here.
 	const winner = applyEndOfActionChecks(nextState, update, events, {
 		recomputeRoads: false,
 	})

@@ -60,6 +60,8 @@ export function DevCardHand({
 	myTurn,
 	phaseKind,
 	playedDevThisTurn,
+	rollPending,
+	canPlaceRoad,
 	monopolyPerPlayerCap,
 	onPlay,
 }: {
@@ -68,6 +70,11 @@ export function DevCardHand({
 	myTurn: boolean
 	phaseKind: string
 	playedDevThisTurn: boolean
+	// A gambler's thrown dice are waiting on confirm/reroll.
+	rollPending: boolean
+	// Whether a free road has anywhere to go — Road Building with none would
+	// spend the card for nothing.
+	canPlaceRoad: boolean
 	// Per-opponent Monopoly ceiling, or null when the haul is uncapped.
 	monopolyPerPlayerCap: number | null
 	onPlay: (p: DevPlayPayload) => void
@@ -86,8 +93,11 @@ export function DevCardHand({
 		if (!myTurn) return 'Wait for your turn.'
 		if (phaseKind !== 'main' && phaseKind !== 'roll')
 			return 'Wait for the next turn.'
+		if (rollPending) return 'Confirm your roll first.'
 		if (playedDevThisTurn) return 'One dev card per turn.'
 		if (group.oldestPurchasedTurn >= round) return 'Available next turn.'
+		if (group.id === 'road_building' && !canPlaceRoad)
+			return 'No room for a road.'
 		return null
 	}
 
@@ -95,6 +105,16 @@ export function DevCardHand({
 	const openReason = openGroup
 		? reasonUnplayable(groups.find((g) => g.id === openGroup)!)
 		: null
+
+	// Road Building's play is undoable and its effect is on the board, so a
+	// playable tile skips the sheet and goes straight to placing roads.
+	function onTilePress(group: Group) {
+		if (group.id === 'road_building' && reasonUnplayable(group) === null) {
+			onPlay({ id: 'road_building' })
+			return
+		}
+		setOpenGroup(group.id)
+	}
 
 	function onPlayPress() {
 		if (!openGroup) return
@@ -124,7 +144,7 @@ export function DevCardHand({
 							disabled && styles.tileDim,
 							pressed && styles.pressed,
 						]}
-						onPress={() => setOpenGroup(g.id)}
+						onPress={() => onTilePress(g)}
 					>
 						<Ionicons
 							name={card.icon}

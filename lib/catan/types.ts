@@ -751,9 +751,10 @@ export type GameState = {
 // taken back".
 //
 // The rule for membership is unchanged and still the reason the list is short:
-// solo and information-free. Rolling, buying or playing a dev card, and anything
-// involving another player are excluded — taking them reveals something, so
-// unwinding them would leak it.
+// solo and information-free. Rolling, buying a dev card, playing Monopoly, and
+// anything involving another player are excluded — taking them reveals
+// something, so unwinding them would leak it. The other dev plays qualify: a
+// knight is undoable up to its robber move, which is the barrier.
 //
 // Mirrored in the edge function, where it is what `handleBatch` will accept.
 // See `.claude/specs/local-action-queue.md`.
@@ -778,6 +779,9 @@ export const UNDOABLE_ACTIONS = [
 	// rather than queued (see gameScreenContext), but on the player's own turn
 	// it is as solo and information-free as a bank trade.
 	'avarice_discard',
+	// Every card but Monopoly, whose haul reads opponents' hands — see
+	// `QueueableDevCardId` and `.claude/specs/reversible-dev-cards.md`.
+	'play_dev_card',
 ] as const
 
 export type UndoableAction = (typeof UNDOABLE_ACTIONS)[number]
@@ -820,6 +824,13 @@ export type LocalAction =
 	| { action: 'cast_magic'; target: number; discard: ResourceHand }
 	| { action: 'skip_magic' }
 	| { action: 'avarice_discard'; discard: ResourceHand }
+	| {
+			action: 'play_dev_card'
+			id: QueueableDevCardId
+			payload?: { r1: Resource; r2: Resource }
+	  }
+
+export type QueueableDevCardId = 'knight' | 'road_building' | 'year_of_plenty'
 
 // Compile-time proof that the queue covers exactly `UNDOABLE_ACTIONS` — adding
 // one without a `LocalAction` arm (or the reverse) fails here rather than at

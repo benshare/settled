@@ -55,7 +55,12 @@ import {
 	canPlaceUnderPower,
 	canSpendUnderAge,
 } from './curses'
-import { findWinner, hasLegalRoadPlacement, vpCardCountsByPlayer } from './dev'
+import {
+	findWinner,
+	hasLegalRoadPlacement,
+	recomputeLargestArmy,
+	vpCardCountsByPlayer,
+} from './dev'
 import { recomputeLongestRoad } from './longestRoad'
 import {
 	applyBankTradeToPlayer,
@@ -74,7 +79,9 @@ import {
 	type Phase,
 	type PlayerState,
 	type ResourceHand,
+	type ResumePhase,
 } from './types'
+import type { DevCardId } from './devCards'
 
 // Events are `unknown[]` rather than a typed union for the same reason the edge
 // function types them that way: this layer writes them, `ActionLog` reads them,
@@ -125,6 +132,8 @@ export function applyLocalAction(
 			return applySkipMagic(state, meIdx, at)
 		case 'avarice_discard':
 			return applyAvariceDiscard(state, meIdx, action, at)
+		case 'play_dev_card':
+			return applyPlayDevCard(state, meIdx, action, at)
 	}
 }
 
@@ -1037,4 +1046,145 @@ function applyAvariceDiscard(
 		at,
 		{ recomputeRoads: false }
 	)
+}
+
+// --- Dev-card plays ---------------------------------------------------------
+
+const QUEUEABLE_DEV_CARDS: readonly string[] = [
+	'knight',
+	'road_building',
+	'year_of_plenty',
+]
+
+// The half of a dev play every card shares: the gates, then the card leaving
+// the hand. Exported because Monopoly isn't queueable — its haul reads the
+// opponents' hands — so the edge function's open-coded Monopoly arm starts
+// here too, and the two paths can't disagree about when a card may be played.
+export function startDevPlay(
+	state: GameState,
+	meIdx: number,
+	id: DevCardId
+): { error: string } | { players: PlayerState[]; resume: ResumePhase } {
+	const phase = state.phase
+	// Classic Catan allows pre-roll plays; everything else must be main.
+	if (phase.kind !== 'main' && phase.kind !== 'roll')
+		return { error: 'expected main or roll phase' }
+	if (state.currentTurn !== meIdx) return { error: 'not your turn' }
+	// A gambler's thrown-but-unconfirmed dice live on the roll phase, and a
+	// play resumes to a bare `roll` — so allowing it would discard the dice
+	// and hand out a free reroll.
+	if (phase.kind === 'roll' && phase.pending)
+		return { error: 'confirm your roll first' }
+	if (id === 'victory_point') return { error: 'VP cards cannot be played' }
+	const player = state.players[meIdx]
+	if (player.playedDevThisTurn)
+		return { error: 'already played a dev card this turn' }
+	const entryIdx = player.devCards.findIndex(
+		(c) => c.id === id && c.purchasedTurn < state.round
+	)
+	if (entryIdx < 0) return { error: 'no playable card of that id' }
+
+	const resume: ResumePhase =
+		phase.kind === 'main'
+			? { kind: 'main', roll: phase.roll, trade: phase.trade }
+			: { kind: 'roll' }
+	const devCards = [...player.devCards]
+	devCards.splice(entryIdx, 1)
+	const played: PlayerState = {
+		...player,
+		devCards,
+		devCardsPlayed: {
+			...player.devCardsPlayed,
+			[id]: (player.devCardsPlayed[id] ?? 0) + 1,
+		},
+		playedDevThisTurn: true,
+	}
+	return {
+		players: state.players.map((p, i) => (i === meIdx ? played : p)),
+		resume,
+	}
+}
+
+// A knight stops at `move_robber`: the hex is the barrier, because the move
+// can auto-steal and open other seats' reaction windows. Its Largest Army
+// swing runs here, so a knight that wins projects a pending win like a build.
+function applyPlayDevCard(
+	state: GameState,
+	meIdx: number,
+	action: Extract<LocalAction, { action: 'play_dev_card' }>,
+	at: string
+): ApplyResult {
+	// The wire is typed, but a cast or a stale client could still carry one.
+	if (!QUEUEABLE_DEV_CARDS.includes(action.id))
+		return { error: 'not a queueable dev card' }
+	const started = startDevPlay(state, meIdx, action.id)
+	if ('error' in started) return started
+	const { resume } = started
+	let players = started.players
+	let next: GameState
+	const events: unknown[] = []
+
+	switch (action.id) {
+		case 'knight': {
+			const speculative: GameState = { ...state, players }
+			const holder = recomputeLargestArmy(speculative)
+			if (holder !== state.largestArmy && holder !== null)
+				events.push({
+					kind: 'largest_army_changed',
+					player: holder,
+					at,
+				})
+			next = {
+				...speculative,
+				largestArmy: holder,
+				phase: { kind: 'move_robber', resume },
+			}
+			events.push({ kind: 'dev_played', player: meIdx, id: 'knight', at })
+			break
+		}
+		case 'road_building': {
+			const speculative: GameState = { ...state, players }
+			// No legal spot: the card is spent and the phase doesn't move.
+			next = {
+				...speculative,
+				phase: hasLegalRoadPlacement(speculative, meIdx)
+					? { kind: 'road_building', resume, remaining: 2 }
+					: resume,
+			}
+			events.push({
+				kind: 'dev_played',
+				player: meIdx,
+				id: 'road_building',
+				at,
+			})
+			break
+		}
+		case 'year_of_plenty': {
+			const take = action.payload
+			if (
+				!take ||
+				!RESOURCES.includes(take.r1) ||
+				!RESOURCES.includes(take.r2)
+			)
+				return { error: 'invalid year_of_plenty payload' }
+			// r1 and r2 may match, so add cumulatively.
+			players = players.map((p, i) => {
+				if (i !== meIdx) return p
+				const resources = { ...p.resources }
+				resources[take.r1] += 1
+				resources[take.r2] += 1
+				return { ...p, resources }
+			})
+			next = { ...state, players, phase: resume }
+			events.push({
+				kind: 'dev_played',
+				player: meIdx,
+				id: 'year_of_plenty',
+				take: [take.r1, take.r2],
+				at,
+			})
+			break
+		}
+	}
+	return finish(next, events, at, { recomputeRoads: false })
 }

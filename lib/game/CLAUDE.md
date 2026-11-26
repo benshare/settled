@@ -171,6 +171,12 @@ app/game/[id].tsx
   two the server treats as move-neutral. Only three confirm bars survive (move
   robber, steal, move forger token), because those three can't be taken back.
   See `.claude/specs/local-action-queue.md`.
+- **Dev plays other than Monopoly are queued, not sent** (`onPlayDevCard`).
+  So a knight's `move_robber` and Road Building's free-road phase can be
+  projection-only, and the classic layout's robber and road-building bars carry
+  the undo arrow too. Undo also drops a drafted robber hex. A playable Road
+  Building tile skips its info sheet and goes straight to placement. See
+  `.claude/specs/reversible-dev-cards.md`.
 - **The robber and its steal confirm once.** A hex with 2+ steal candidates is
   only drafted (`robberDraftHex`: the piece is drawn there and the victims
   pulse beside the other hexes); the victim tap raises the single confirm and

@@ -1315,8 +1315,10 @@ function useGameScreenState(gameId: string) {
 	// spinner — and no limit on how far back it goes within a turn.
 	function onUndo() {
 		updateDraft((d) => ({ ...d, queue: d.queue.slice(0, -1) }))
-		// The board state a tool was armed against is gone.
+		// The board state a tool (or a drafted robber hex, if this undoes a
+		// knight) was armed against is gone.
 		selectBoardTool(null)
+		setRobberDraft(null)
 	}
 
 	// A board tap during placement: it appends to the locally-drafted turn, or
@@ -1504,24 +1506,26 @@ function useGameScreenState(gameId: string) {
 		if (res.error) notify('Buy failed', res.error)
 	}
 
+	// Monopoly is the one play that reveals something (the haul reads the
+	// opponents' hands), so it alone is a barrier; the rest queue and undo.
 	async function onPlayDevCard(payload: DevPlayPayload) {
 		if (!game) return
-		let res
-		if (payload.id === 'year_of_plenty') {
-			if (!(await flushBeforeBarrier())) return
-			res = await playDevCard(game.id, payload.id, {
-				r1: payload.r1,
-				r2: payload.r2,
-			})
-		} else if (payload.id === 'monopoly') {
-			if (!(await flushBeforeBarrier())) return
-			res = await playDevCard(game.id, payload.id, {
-				resource: payload.resource,
-			})
-		} else {
-			if (!(await flushBeforeBarrier())) return
-			res = await playDevCard(game.id, payload.id)
+		if (payload.id !== 'monopoly') {
+			enqueue(
+				payload.id === 'year_of_plenty'
+					? {
+							action: 'play_dev_card',
+							id: payload.id,
+							payload: { r1: payload.r1, r2: payload.r2 },
+						}
+					: { action: 'play_dev_card', id: payload.id }
+			)
+			return
 		}
+		if (!(await flushBeforeBarrier())) return
+		const res = await playDevCard(game.id, payload.id, {
+			resource: payload.resource,
+		})
 		setSubmitting(false)
 		if (res.error) notify('Play failed', res.error)
 	}
