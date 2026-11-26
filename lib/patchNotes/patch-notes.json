@@ -38,12 +38,6 @@
 		]
 	},
 	{
-		"id": "2026-11-25.6",
-		"notes": [
-			"Find friends from your contacts: you'll be asked once, and can search again any time from the Friends tab. Needs the latest app version."
-		]
-	},
-	{
 		"id": "2026-11-25.7",
 		"notes": [
 			"Chat time headers now sit above their messages, and the sender's name repeats under each one.",
