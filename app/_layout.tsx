@@ -155,6 +155,10 @@ function RootNav() {
 					<Stack.Screen name="create-game" options={SUB_SCREEN} />
 					<Stack.Screen name="player-colors" options={SUB_SCREEN} />
 					<Stack.Screen name="find-friends" options={SUB_SCREEN} />
+					<Stack.Screen
+						name="patch-notes"
+						options={{ animation: 'slide_from_bottom' }}
+					/>
 					<Stack.Screen name="privacy" />
 					<Stack.Screen name="support" />
 				</Stack>
