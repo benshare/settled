@@ -4,7 +4,7 @@ After the app restarts onto a new bundle — an OTA (CI publishes one on every p
 
 ## Data
 
-`lib/patchNotes/patch-notes.json`: an array, oldest first, of `{ "id": "YYYY-MM-DD.N", "notes": string[] }`. One entry per push to `main` that changes something players can see; authoring rule in the root `CLAUDE.md`, validated by `npx tsx dev/check-patch-notes.ts`.
+`lib/patchNotes/patch-notes.json`: an array, oldest first, of `{ "id": "YYYY-MM-DD.N", "notes": string[] }`. One entry per commit landing on `main` that changes something players can see; authoring rule in the root `CLAUDE.md`, validated by `npx tsx dev/check-patch-notes.ts`.
 
 **Id format.** The push's date (UTC is fine; it only has to increase) plus a per-day counter from 1. Chosen over a bare integer because it is easy to author without looking up the last value, it doubles as the screen's group label, and two branches written the same day collide visibly (same id → the check fails) rather than silently. The counter is numeric, so ids are compared by parts (`compareIds`), never as strings.
 
@@ -19,7 +19,7 @@ The device stores the newest id it has shown under `patch_notes_last_seen` in `a
 `entriesToShow(entries, lastSeen, accountCreatedAt)`:
 
 - **Stored id:** every entry newer than it, newest first. A stored id ahead of the bundle (an OTA rolled back) shows nothing and is left alone.
-- **No stored id** (fresh install, or the first OTA containing this feature): only the newest entry, not the whole history — that is the update the player just received. **Except** when the account was created on or after that entry's date: a new player has no "before" to compare with, so nothing is shown and the cursor is silently set to the newest id so the next update shows normally. Day granularity means an existing account created the same day as the newest entry also skips it — acceptable.
+- **No stored id** (fresh install, or the first OTA containing this feature): every entry dated on or after the later of `NO_RECORD_BASELINE_DATE` (2026-11-25, the first day of notes, so launch-day players read the whole batch as if coming from the prior update) and a week before the newest entry (so a new device on an old account isn't handed months of history). **Except** when the account was created on or after the newest entry's date: a new player has no "before" to compare with, so nothing is shown and the cursor is silently set to the newest id so the next update shows normally. Day granularity means an existing account created the same day as the newest entry also skips it — acceptable.
 - **Empty file:** nothing, and nothing is stored.
 
 ## Trigger and sequencing

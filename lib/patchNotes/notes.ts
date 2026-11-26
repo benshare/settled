@@ -25,12 +25,25 @@ export function compareIds(a: string, b: string): number {
 	return pa.n - pb.n
 }
 
+// A device with no record (patch notes are new to it) shows every entry since
+// the last update that shipped before patch notes existed, so the launch batch
+// reads as one changelog. The window keeps a new device on an old account from
+// receiving months of history once that baseline is long past.
+export const NO_RECORD_BASELINE_DATE = '2026-11-25'
+const NO_RECORD_WINDOW_DAYS = 7
+
+function daysBefore(date: string, days: number): string {
+	const d = new Date(`${date}T00:00:00Z`)
+	d.setUTCDate(d.getUTCDate() - days)
+	return d.toISOString().slice(0, 10)
+}
+
 /**
  * The entries to show, newest first. `lastSeen` is this device's stored id
- * (null if none or unparseable). With no record, show only the newest entry —
- * the history before it predates the device's first look — unless the account
- * was created on or after that entry's date, i.e. a new player for whom
- * nothing has changed.
+ * (null if none or unparseable). With no record, show the entries dated on or
+ * after the later of the baseline and a week before the newest entry —
+ * unless the account was created on or after the newest entry's date, i.e. a
+ * new player for whom nothing has changed.
  */
 export function entriesToShow(
 	entries: PatchNoteEntry[],
@@ -40,9 +53,14 @@ export function entriesToShow(
 	if (entries.length === 0) return []
 	const newest = entries[entries.length - 1]
 	if (lastSeen == null || !parseId(lastSeen)) {
+		const newestDate = parseId(newest.id)!.date
 		const created = accountCreatedAt?.slice(0, 10)
-		if (created && created >= parseId(newest.id)!.date) return []
-		return [newest]
+		if (created && created >= newestDate) return []
+		const window = daysBefore(newestDate, NO_RECORD_WINDOW_DAYS)
+		const floor =
+			window > NO_RECORD_BASELINE_DATE ? window : NO_RECORD_BASELINE_DATE
+		const shown = entries.filter((e) => parseId(e.id)!.date >= floor)
+		return (shown.length ? shown : [newest]).reverse()
 	}
 	return entries.filter((e) => compareIds(e.id, lastSeen) > 0).reverse()
 }

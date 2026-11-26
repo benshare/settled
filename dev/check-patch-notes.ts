@@ -40,11 +40,13 @@ assert(
 	'stored id ahead of the bundle (rolled back) shows nothing'
 )
 assert(
-	ids(entriesToShow(file, null, OLD)) === '2026-11-28.1',
-	'no record, existing account: newest only'
+	ids(entriesToShow(file, null, OLD)) ===
+		'2026-11-28.1 2026-11-26.2 2026-11-26.1',
+	'no record, existing account: everything since the baseline'
 )
 assert(
-	ids(entriesToShow(file, 'garbage', OLD)) === '2026-11-28.1',
+	ids(entriesToShow(file, 'garbage', OLD)) ===
+		'2026-11-28.1 2026-11-26.2 2026-11-26.1',
 	'unparseable record treated as none'
 )
 assert(
@@ -52,12 +54,23 @@ assert(
 	'no record, account created on the newest entry date: nothing'
 )
 assert(
-	ids(entriesToShow(file, null, '2026-11-27T23:59:00Z')) === '2026-11-28.1',
-	'no record, account older than newest entry: newest only'
+	ids(entriesToShow(file, null, '2026-11-27T23:59:00Z')) ===
+		'2026-11-28.1 2026-11-26.2 2026-11-26.1',
+	'no record, account older than newest entry: since the baseline'
 )
 assert(
-	ids(entriesToShow(file, null, null)) === '2026-11-28.1',
-	'unknown account age: newest only'
+	ids(entriesToShow(file, null, null)) ===
+		'2026-11-28.1 2026-11-26.2 2026-11-26.1',
+	'unknown account age: since the baseline'
+)
+const later = [E('2026-11-24.1'), ...file, E('2027-03-01.1'), E('2027-03-05.1')]
+assert(
+	ids(entriesToShow(later, null, OLD)) === '2027-03-05.1 2027-03-01.1',
+	'no record long after the baseline: only the last week'
+)
+assert(
+	ids(entriesToShow([E('2026-11-24.1')], null, OLD)) === '2026-11-24.1',
+	'nothing inside the window: newest only'
 )
 
 const bad = validatePatchNotes([
