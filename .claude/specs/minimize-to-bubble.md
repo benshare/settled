@@ -6,7 +6,8 @@ Applies to every surface that uses `CollapsibleSheet` today:
 
 - the three `MinimizableModal` prompts (`ScoutPickOverlay`,
   `ForgerPickOverlay`, `MagicianPickOverlay`; the specialist declaration became
-  an inline banner on main in parallel), and
+  an inline banner on main in parallel). `RitualistPicker` joined later, and
+  the curio claim became an inline banner instead), and
 - the in-tree bonus-selection pane (`BonusSelection`).
 
 ## Behavior

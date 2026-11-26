@@ -9,11 +9,7 @@
 // each is built by tapping the hand itself. A spectator gets no dock at all
 // (their readout is the island + banner). See `.claude/specs/game-hud.md` §10.
 
-import {
-	canShepherdSwap,
-	investorTokenCount,
-	ritualCardCost,
-} from '@/lib/catan/bonus'
+import { canShepherdSwap, investorTokenCount } from '@/lib/catan/bonus'
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel, VoluntaryDiscardPanel } from '@/lib/catan/DiscardPanel'
@@ -26,7 +22,6 @@ import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
 import { InvestPicker } from '@/lib/catan/InvestPicker'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
-import { RitualistPicker } from '@/lib/catan/RitualistPicker'
 import { ScoutBuyPanel } from '@/lib/catan/ScoutBuyPanel'
 import { seatColor } from '@/lib/catan/palette'
 import {
@@ -90,8 +85,6 @@ export function Dock({
 		canAvariceDiscard,
 		onAvariceDiscard,
 		onAvariceDiscardPress,
-		ritualOpen,
-		setRitualOpen,
 		shepherdOpen,
 		setShepherdOpen,
 		investOpen,
@@ -100,7 +93,6 @@ export function Dock({
 		setScoutBuyOpen,
 		onInvest,
 		submitBuyDevCard,
-		onRitualRoll,
 		onShepherdSwap,
 	} = ctx
 
@@ -236,16 +228,8 @@ export function Dock({
 
 			{/* Modals opened from the dock's affordances. All Modal-based, so
 			    where they sit in the tree has no layout consequence; gated on
-			    `active` so an off-screen pane's can't portal over the active. */}
-			{active && ritualOpen && myPlayer && (
-				<RitualistPicker
-					hand={myPlayer.resources}
-					cardCost={ritualCardCost(gameState, meIdx)}
-					submitting={submitting}
-					onCancel={() => setRitualOpen(false)}
-					onConfirm={onRitualRoll}
-				/>
-			)}
+			    `active` so an off-screen pane's can't portal over the active.
+			    (The ritualist's is minimizable, so it lives in BoardArea.) */}
 			{active && shepherdOpen && (
 				<ShepherdSwapPicker
 					submitting={submitting}

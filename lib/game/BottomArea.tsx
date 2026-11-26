@@ -12,12 +12,11 @@
 import { DevCardHand } from '@/lib/catan/DevCardHand'
 import { DevRollPicker } from '@/lib/catan/DevRollPicker'
 import { DiscardPanel, VoluntaryDiscardPanel } from '@/lib/catan/DiscardPanel'
-import { canShepherdSwap, ritualCardCost } from '@/lib/catan/bonus'
+import { canShepherdSwap } from '@/lib/catan/bonus'
 import type { Resource } from '@/lib/catan/board'
 import { InvestmentTokens } from '@/lib/catan/InvestmentTokens'
 import { KnightTapBar } from '@/lib/catan/KnightTapBar'
 import { ResourceHand } from '@/lib/catan/ResourceHand'
-import { RitualistPicker } from '@/lib/catan/RitualistPicker'
 import { ScoutBuyPanel } from '@/lib/catan/ScoutBuyPanel'
 import {
 	ShepherdSwapPicker,
@@ -75,7 +74,6 @@ export function BottomArea() {
 		canUndo,
 		tradePanelOpen,
 		setTradePanelOpen,
-		ritualOpen,
 		setRitualOpen,
 		shepherdOpen,
 		setShepherdOpen,
@@ -88,7 +86,6 @@ export function BottomArea() {
 		onBankTrade,
 		onPlayDevCard,
 		onTapKnight,
-		onRitualRoll,
 		onShepherdSwap,
 		onDiscard,
 		avariceDiscardOpen,
@@ -350,16 +347,6 @@ export function BottomArea() {
 						)}
 					</Animated.View>
 				)}
-
-			{ritualOpen && myPlayer && gameState && (
-				<RitualistPicker
-					hand={myPlayer.resources}
-					cardCost={ritualCardCost(gameState, meIdx)}
-					submitting={submitting}
-					onCancel={() => setRitualOpen(false)}
-					onConfirm={onRitualRoll}
-				/>
-			)}
 
 			{shepherdOpen && (
 				<ShepherdSwapPicker

@@ -43,7 +43,7 @@ app/game/[id].tsx
 - `BoardArea.tsx` — `BoardView` and the panels/buttons floating over it, plus the
   inline `ConfirmBar` (now only the three non-undoable confirms). Shared by both layouts, so it is also where every
   affordance that has to exist in both lives — including the `post_placement`
-  ones (the specialist/explorer/haunt banners). The setup I / II badges show
+  ones (the specialist/explorer/haunt banners) and the curio claim banner. The setup I / II badges show
   through placement only, unless the viewer's `showPlacementNumbers` play pref
   keeps them all game.
 - `BottomArea.tsx` — the placement confirm, `MainLoopBar`, `TradePanel`, and the

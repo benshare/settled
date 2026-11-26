@@ -408,7 +408,9 @@ cards: DevCardId[] }`. Only the owner can act; others see a "waiting
 - New `ScoutPickOverlay`: full-screen during `scout_pick` for the
   buying player; shows the 3 drawn cards face-up and a Confirm.
   Spectator view is a "waiting on X to peek" overlay.
-- New `CurioPickOverlay`: similar pattern, for `curio_pick`.
+- New `CurioPickOverlay`: similar pattern, for `curio_pick`. (Since
+  replaced by the inline `CurioPickBanner` over the board — see
+  `lib/catan/CLAUDE.md` rule 2 of the sub-phase overlays.)
 - New `ForgerPickOverlay`: similar pattern, for `forger_pick`. Lists
   candidate players and the gain each received from the token's hex.
 - `DiscardBar`: when shepherd, badge "Sheep don't count toward your
