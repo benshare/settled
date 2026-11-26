@@ -74,7 +74,7 @@ export function BottomArea() {
 		canUndo,
 		tradePanelOpen,
 		setTradePanelOpen,
-		setRitualOpen,
+		openRitual,
 		shepherdOpen,
 		setShepherdOpen,
 		forgerMustMove,
@@ -190,7 +190,7 @@ export function BottomArea() {
 								!gameState.phase.pending?.dice &&
 								myPlayer?.bonus === 'ritualist' &&
 								!myPlayer?.ritualWasUsedThisTurn
-									? () => setRitualOpen(true)
+									? openRitual
 									: undefined
 							}
 							onShepherdPress={

@@ -375,7 +375,7 @@ function PrimaryAction() {
 		onEndTurn,
 		onEndSpecialBuild,
 		forgerMustMove,
-		setRitualOpen,
+		openRitual,
 		setShepherdOpen,
 		pendingWin,
 	} = ctx
@@ -473,7 +473,7 @@ function PrimaryAction() {
 				<Button
 					size="small"
 					variant="secondary"
-					onPress={() => setRitualOpen(true)}
+					onPress={openRitual}
 					disabled={submitting}
 				>
 					Ritual

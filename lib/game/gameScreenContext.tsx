@@ -644,6 +644,12 @@ function useGameScreenState(gameId: string) {
 	const promptMinimized = minimizedScope === confirmScopeKey
 	const togglePromptMinimized = () =>
 		setMinimizedScope(promptMinimized ? null : confirmScopeKey)
+	// The Ritual buttons stay visible while the picker sits minimized as a
+	// bubble, so pressing one again restores it rather than doing nothing.
+	const openRitual = () => {
+		setRitualOpen(true)
+		if (promptMinimized) setMinimizedScope(null)
+	}
 
 	// --- Held hand ---------------------------------------------------------
 	// The three reveal animations below all fire *after* the resource has
@@ -2118,6 +2124,7 @@ function useGameScreenState(gameId: string) {
 		hideToast: () => setToast(null),
 		ritualOpen,
 		setRitualOpen,
+		openRitual,
 		shepherdOpen,
 		setShepherdOpen,
 		scoutBuyOpen,
