@@ -35,4 +35,4 @@ Only cold starts check: the OTA check in `app/_layout.tsx` runs on launch, so a 
 
 ## Screen
 
-Full-screen, slides up from the bottom: "App updates" title, a bullet list of the notes (grouped under a small date label when more than one entry is shown), and a "Got it" button. The cursor is stamped **on show**, like contacts onboarding — a back gesture or killing the app counts as seen, and a failed write can't re-push it this process.
+Full-screen, slides up from the bottom: "App updates" title, a bullet list of the notes (entries merged into one group per day, newest first, each under a small date label when more than one day is shown — commits are an authoring unit, not something players read by), and a "Got it" button. The cursor is stamped **on show**, like contacts onboarding — a back gesture or killing the app counts as seen, and a failed write can't re-push it this process.

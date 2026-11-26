@@ -1,7 +1,8 @@
 export {
 	compareIds,
 	entriesToShow,
-	entryDateLabel,
+	dayLabel,
+	groupByDay,
 	parseId,
 	PATCH_NOTES,
 	type PatchNoteEntry,

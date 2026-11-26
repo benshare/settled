@@ -4,6 +4,7 @@
 import {
 	compareIds,
 	entriesToShow,
+	groupByDay,
 	PATCH_NOTES,
 	validatePatchNotes,
 	type PatchNoteEntry,
@@ -71,6 +72,21 @@ assert(
 assert(
 	ids(entriesToShow([E('2026-11-24.1')], null, OLD)) === '2026-11-24.1',
 	'nothing inside the window: newest only'
+)
+
+const grouped = groupByDay(
+	[...file, { id: '2026-11-28.2', notes: ['x', 'y'] }].reverse()
+)
+assert(
+	JSON.stringify(grouped) ===
+		JSON.stringify([
+			{ date: '2026-11-28', notes: ['x', 'y', 'note 2026-11-28.1'] },
+			{
+				date: '2026-11-26',
+				notes: ['note 2026-11-26.2', 'note 2026-11-26.1'],
+			},
+		]),
+	'one group per day, newest first, entry notes in order'
 )
 
 const bad = validatePatchNotes([

@@ -6,7 +6,8 @@
 import { Button } from '@/lib/modules/Button'
 import {
 	compareIds,
-	entryDateLabel,
+	dayLabel,
+	groupByDay,
 	markPatchNotesSeen,
 	parseId,
 	PATCH_NOTES,
@@ -24,12 +25,12 @@ export default function PatchNotesScreen() {
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const { from } = useLocalSearchParams<{ from?: string }>()
 
-	const entries = useMemo(() => {
+	const days = useMemo(() => {
 		const valid = from && parseId(from)
 		const shown = valid
 			? PATCH_NOTES.filter((e) => compareIds(e.id, from) >= 0)
 			: PATCH_NOTES.slice(-1)
-		return [...shown].reverse()
+		return groupByDay([...shown].reverse())
 	}, [from])
 
 	// Stamped on show, not on "Got it": a back gesture or killing the app
@@ -47,14 +48,14 @@ export default function PatchNotesScreen() {
 		<SafeAreaView style={styles.safe}>
 			<Text style={styles.title}>App updates</Text>
 			<ScrollView contentContainerStyle={styles.list}>
-				{entries.map((entry) => (
-					<View key={entry.id} style={styles.group}>
-						{entries.length > 1 && (
+				{days.map((day) => (
+					<View key={day.date} style={styles.group}>
+						{days.length > 1 && (
 							<Text style={styles.date}>
-								{entryDateLabel(entry.id)}
+								{dayLabel(day.date)}
 							</Text>
 						)}
-						{entry.notes.map((note, i) => (
+						{day.notes.map((note, i) => (
 							<View key={i} style={styles.row}>
 								<Text style={styles.bullet}>{'•'}</Text>
 								<Text style={styles.note}>{note}</Text>

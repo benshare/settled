@@ -97,12 +97,28 @@ export function validatePatchNotes(entries: unknown): string[] {
 	return errors
 }
 
+/**
+ * Entries (newest first) merged into one group per day, newest day first.
+ * Within a day, newer entries come first; each entry's notes keep their order.
+ */
+export function groupByDay(
+	entries: PatchNoteEntry[]
+): { date: string; notes: string[] }[] {
+	const days: { date: string; notes: string[] }[] = []
+	for (const e of entries) {
+		const date = parseId(e.id)?.date
+		if (!date) continue
+		const last = days[days.length - 1]
+		if (last?.date === date) last.notes.push(...e.notes)
+		else days.push({ date, notes: [...e.notes] })
+	}
+	return days
+}
+
 const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')
 
-/** "Nov 26": the entry's group label on the screen. */
-export function entryDateLabel(id: string): string {
-	const p = parseId(id)
-	if (!p) return ''
-	const [, m, d] = p.date.split('-').map(Number)
-	return `${MONTHS[m - 1]} ${d}`
+/** "Nov 26": a day group's label on the screen, from `YYYY-MM-DD`. */
+export function dayLabel(date: string): string {
+	const [, m, d] = date.split('-').map(Number)
+	return m && d ? `${MONTHS[m - 1]} ${d}` : ''
 }
