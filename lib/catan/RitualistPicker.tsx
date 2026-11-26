@@ -1,11 +1,12 @@
 // Modal for the ritualist to choose a dice total (2..6, 8..12 — never 7)
 // and discard the required cards. Cost is 2 cards if the ritualist has no
-// cities/super_cities, else 3.
+// cities/super_cities, else 3. Minimizable, since the total is chosen by which
+// numbers the player's buildings sit on.
 
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { Modal } from '../modules/Modal'
 import { Button } from '../modules/Button'
+import { MinimizableModal } from '../modules/MinimizableModal'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Resource } from './board'
@@ -21,6 +22,8 @@ export function RitualistPicker({
 	submitting,
 	onCancel,
 	onConfirm,
+	minimized,
+	onToggleMinimized,
 }: {
 	hand: ResourceHand
 	// Flat or city-dependent depending on table size — see ritualCardCost.
@@ -28,6 +31,8 @@ export function RitualistPicker({
 	submitting: boolean
 	onCancel: () => void
 	onConfirm: (discard: ResourceHand, total: number) => void
+	minimized: boolean
+	onToggleMinimized: () => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
@@ -44,8 +49,13 @@ export function RitualistPicker({
 	}
 
 	return (
-		<Modal visible onDismiss={onCancel} contentStyle={styles.sheet}>
-			<Text style={styles.title}>Ritual roll</Text>
+		<MinimizableModal
+			title="Ritual roll"
+			onDismiss={onCancel}
+			maxWidth={460}
+			minimized={minimized}
+			onToggleMinimized={onToggleMinimized}
+		>
 			<Text style={styles.subtitle}>
 				Discard {cardCost} cards and choose your dice value. No other
 				player receives resources from this roll.
@@ -105,7 +115,7 @@ export function RitualistPicker({
 					</Button>
 				</View>
 			</View>
-		</Modal>
+		</MinimizableModal>
 	)
 }
 
@@ -187,19 +197,6 @@ function StepButton({
 
 function makeStyles(colors: ColorScheme) {
 	return StyleSheet.create({
-		sheet: {
-			width: '100%',
-			maxWidth: 460,
-			backgroundColor: colors.card,
-			borderRadius: radius.md,
-			padding: spacing.lg,
-			gap: spacing.md,
-		},
-		title: {
-			fontSize: font.lg,
-			fontWeight: '700',
-			color: colors.text,
-		},
 		subtitle: {
 			fontSize: font.sm,
 			color: colors.textSecondary,

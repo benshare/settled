@@ -5,20 +5,22 @@
 // floating panels position against the water's edges rather than their own
 // content.
 //
-// Also owns the overlays whose choice is about the board: the phase pickers
-// that block it (scout / curio / forger / magician), the metropolitan cost
-// picker a board tap opens, and the inline confirm bar.
+// Also owns the overlays whose choice is about the board: the minimizable
+// pickers (scout / forger / magician / ritualist), the curio banner, the
+// metropolitan cost picker a board tap opens, and the inline confirm bar.
 
 import { ActionLog } from '@/lib/catan/ActionLog'
 import { BoardLegend } from '@/lib/catan/BoardLegend'
 import { BoardView } from '@/lib/catan/BoardView'
 import { BonusSelection } from '@/lib/catan/BonusSelection'
 import type { Vertex } from '@/lib/catan/board'
-import { CurioPickOverlay } from '@/lib/catan/CurioPickOverlay'
+import { CurioPickBanner } from '@/lib/catan/CurioPickBanner'
 import { ForgerPickOverlay } from '@/lib/catan/ForgerPickOverlay'
 import { ChatButton } from '@/lib/catan/GameChat'
 import { MagicianPickOverlay } from '@/lib/catan/MagicianPickOverlay'
 import { MetropolitanCostPicker } from '@/lib/catan/MetropolitanCostPicker'
+import { ritualCardCost } from '@/lib/catan/bonus'
+import { RitualistPicker } from '@/lib/catan/RitualistPicker'
 import {
 	ExplorerStatusBanner,
 	HauntStatusBanner,
@@ -121,6 +123,9 @@ export function BoardArea({
 		onPickForgerTarget,
 		onCastMagic,
 		onSkipMagic,
+		ritualOpen,
+		setRitualOpen,
+		onRitualRoll,
 		myTimedOut,
 		onClearTimeout,
 		onConfirmMetropolitanCost,
@@ -168,13 +173,14 @@ export function BoardArea({
 		phase.queue[0].idx === meIdx
 	const showMagicianPick =
 		phase?.kind === 'magician_pick' && phase.roller === meIdx && !!myPlayer
+	const showRitual = ritualOpen && !!myPlayer
 	// A minimized picker's bubble takes the top slot of the classic top-right
 	// stack, pushing the utility buttons down one. The HUD's stack sits at the
 	// bottom and never meets it; the bonus pane hides the stack outright.
 	const stackOffset =
 		promptMinimized &&
 		floatingButtonsBottom == null &&
-		(showScoutPick || showForgerPick || showMagicianPick)
+		(showScoutPick || showForgerPick || showMagicianPick || showRitual)
 			? STACK_SLOT
 			: 0
 
@@ -191,16 +197,6 @@ export function BoardArea({
 						cards={gameState.phase.cards}
 						submitting={submitting}
 						onConfirm={onConfirmScoutCard}
-					/>
-				)}
-
-			{active &&
-				gameState &&
-				gameState.phase.kind === 'curio_pick' &&
-				gameState.phase.pending.includes(meIdx) && (
-					<CurioPickOverlay
-						submitting={submitting}
-						onConfirm={onClaimCurio}
 					/>
 				)}
 
@@ -249,6 +245,18 @@ export function BoardArea({
 					/>
 				)}
 
+			{active && showRitual && gameState && myPlayer && (
+				<RitualistPicker
+					minimized={promptMinimized}
+					onToggleMinimized={togglePromptMinimized}
+					hand={myPlayer.resources}
+					cardCost={ritualCardCost(gameState, meIdx)}
+					submitting={submitting}
+					onCancel={() => setRitualOpen(false)}
+					onConfirm={onRitualRoll}
+				/>
+			)}
+
 			{active && metroPending && myHand && (
 				<MetropolitanCostPicker
 					hand={myHand}
@@ -281,6 +289,14 @@ export function BoardArea({
 					onReject={onRejectTrade}
 				/>
 			)}
+			{/* In-tree, like the banners below, so it needs no `active` gate. */}
+			{gameState?.phase.kind === 'curio_pick' &&
+				gameState.phase.pending.includes(meIdx) && (
+					<CurioPickBanner
+						submitting={submitting}
+						onConfirm={onClaimCurio}
+					/>
+				)}
 			{/* Post-placement bonus picks ride above the board like the trade
 			    banner rather than blocking it. Specialists declare first; until
 			    every one has, the explorer/haunt banners don't render at all —
