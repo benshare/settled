@@ -13,6 +13,7 @@ import type { Database } from '../database-types'
 import { callGameService } from '../gameService'
 import type { NotificationPrefs } from '../notifications'
 import { supabase } from '../supabase'
+import { bannedUsernameError } from '../username'
 import type { AutoLoadedStore } from './index'
 
 // `deleted` is never present on a row that came from the database — it marks the
@@ -293,6 +294,12 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 	async updateUsername(username) {
 		const current = get().profile
 		if (!current) return { error: 'No profile loaded' }
+
+		// Client backstop for the reserved-word rule; the DB trigger is the real
+		// authority. Grandfathered against the current name so keeping a reserved
+		// username one already holds still writes (other fields, re-save).
+		const banned = bannedUsernameError(username, current.username)
+		if (banned) return { error: banned }
 
 		const { data, error } = await supabase
 			.from('profiles')

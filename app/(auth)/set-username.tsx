@@ -5,6 +5,7 @@ import { useProfileStore } from '@/lib/stores/useProfileStore'
 import { supabase } from '@/lib/supabase'
 import { useTheme } from '@/lib/ThemeContext'
 import { ColorScheme, font, spacing } from '@/lib/theme'
+import { bannedUsernameError } from '@/lib/username'
 import { useRouter } from 'expo-router'
 import { useMemo, useState } from 'react'
 import {
@@ -23,7 +24,7 @@ function validateUsername(value: string): string | null {
 	if (value.length > 20) return 'Username must be 20 characters or fewer'
 	if (!USERNAME_REGEX.test(value))
 		return 'Letters, numbers, and underscores only'
-	return null
+	return bannedUsernameError(value)
 }
 
 export default function SetUsernameScreen() {

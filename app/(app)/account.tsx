@@ -23,6 +23,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { ColorScheme, font, radius, spacing } from '@/lib/theme'
 import { ThemeMode, useTheme } from '@/lib/ThemeContext'
+import { bannedUsernameError } from '@/lib/username'
 import { VERSION_LABEL } from '@/lib/version'
 import * as ImagePicker from 'expo-image-picker'
 import { useFocusEffect, useRouter } from 'expo-router'
@@ -44,11 +45,16 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/
 
-function validateUsername(value: string): string | null {
+// `currentUsername` grandfathers a reserved name the user already holds, so
+// opening edit on it never flashes an error.
+function validateUsername(
+	value: string,
+	currentUsername?: string | null
+): string | null {
 	if (value.length < 3) return 'At least 3 characters'
 	if (value.length > 20) return '20 characters max'
 	if (!USERNAME_REGEX.test(value)) return 'Letters, numbers, underscores only'
-	return null
+	return bannedUsernameError(value, currentUsername)
 }
 
 const THEME_OPTIONS: { key: ThemeMode; label: string }[] = [
@@ -97,7 +103,7 @@ export default function AccountScreen() {
 		setTaken(false)
 		setSaveError(null)
 
-		const err = validateUsername(draft)
+		const err = validateUsername(draft, profile?.username)
 		if (err) {
 			setFormatError(err)
 			return
@@ -135,7 +141,7 @@ export default function AccountScreen() {
 
 	async function handleSave() {
 		if (!profile) return
-		const err = validateUsername(draft)
+		const err = validateUsername(draft, profile.username)
 		if (err) {
 			setFormatError(err)
 			return
