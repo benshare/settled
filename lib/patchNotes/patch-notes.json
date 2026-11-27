@@ -82,5 +82,11 @@
 	{
 		"id": "2026-11-27.2",
 		"notes": ["Tapping Knight goes straight to moving the robber."]
+	},
+	{
+		"id": "2026-11-27.3",
+		"notes": [
+			"Some reserved words, like resource and game terms, can no longer be used as usernames."
+		]
 	}
 ]

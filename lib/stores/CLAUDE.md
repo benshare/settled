@@ -68,6 +68,10 @@ With the spectator RLS policies in place (see `.claude/specs/spectating.md`), `s
 
 `PROFILE_COLS` is declared separately in `useProfileStore`, `useFriendsStore` and `useGamesStore`, and all three must select the **same** set — each constructs a full `Profile` row, so a column added to the table must be added to all three or the two that missed it fail to typecheck. Only `useProfileStore` ever writes profile fields (`updateColorPrefs`, optimistic with rollback); the other two fetch them purely to build `Profile` objects.
 
+## Username rules live in `lib/username.ts`
+
+Length/format (`^[A-Za-z0-9_]{3,20}$`) plus a reserved-word blocklist (pronouns, resources, `robber`, `player`, game keywords), matched exactly + case-insensitively. `updateUsername` and both auth screens (`set-username.tsx`, `account.tsx`) call `bannedUsernameError`. **Existing holders of a reserved name are grandfathered** — the client skips the check when the name is unchanged, and the server's `profiles_reject_banned_username` trigger fires only on insert or a username *change* (a `CHECK` constraint would block every other update to the row). The blocklist is mirrored client↔SQL; `dev/check-banned-usernames.ts` asserts they match. See `.claude/specs/banned-usernames.md`.
+
 ## A deleted account is a dangling id, answered with a placeholder
 
 Account deletion hard-deletes the `profiles` row (`.claude/specs/account-deletion.md`), but the uuid survives in `games.participants` / `player_order` / `events`, where rewriting it would corrupt the seat indices every finished game is scored against. So both places `useGamesStore` builds `profilesById` — `loadForUser` and `ensureProfiles` — fill any id the query didn't answer with `deletedProfile(id)` (owned by `useProfileStore`, alongside the `DELETED_USERNAME` sentinel and the `deleted?: true` marker on `Profile`).
