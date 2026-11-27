@@ -343,6 +343,7 @@ function rowToState(row: Record<string, unknown>): BoardState {
 		largestArmy: (row.largest_army as GameState['largestArmy']) ?? null,
 		longestRoad: (row.longest_road as GameState['longestRoad']) ?? null,
 		round: (row.round as GameState['round']) ?? 0,
+		endTurnUndo: (row.end_turn_undo as GameState['endTurnUndo']) ?? null,
 	}
 }
 

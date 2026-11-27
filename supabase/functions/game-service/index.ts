@@ -97,6 +97,7 @@ type ConfirmRollBody = {
 }
 type RerollDiceBody = { action: 'reroll_dice'; game_id: string }
 type EndTurnBody = { action: 'end_turn'; game_id: string }
+type UndoEndTurnBody = { action: 'undo_end_turn'; game_id: string }
 type HonkBody = { action: 'honk'; game_id: string }
 type SendMessageBody = {
 	action: 'send_message'
@@ -327,6 +328,7 @@ type Body =
 	| ConfirmRollBody
 	| RerollDiceBody
 	| EndTurnBody
+	| UndoEndTurnBody
 	| EndSpecialBuildBody
 	| BuildRoadBody
 	| BuildSettlementBody
@@ -1789,6 +1791,29 @@ type GameState = {
 	largestArmy: number | null
 	longestRoad: number | null
 	round: number
+}
+
+// Snapshot of what the most recent `end_turn` changed, stored on
+// `game_states.end_turn_undo` so the ending seat can take it back until the next
+// player acts. `handleEndTurn` writes only four columns (phase, players[by],
+// round, current_turn) plus one appended `turn_ended`, and within players only
+// the ending seat — so this is all the reversal needs. Opponents' full
+// `PlayerState` (resources included) is already in the broadcast row and hidden
+// only in the UI, so carrying `prevPlayer` here leaks nothing new. Mirror of
+// lib/catan/types.ts. See `.claude/specs/end-turn-undo.md`.
+type EndTurnUndo = {
+	// Seat that ended the turn; current_turn restores to this on undo.
+	by: number
+	// players[by] before end_turn reset its per-turn flags.
+	prevPlayer: PlayerState
+	// The { kind:'main', roll, trade } phase the turn was ended from.
+	prevPhase: Phase
+	// round before the end_turn ++ .
+	prevRound: number
+	// games.events length before `turn_ended` was appended — so `turn_ended` sits
+	// at exactly this index, and undo removes that one element (keeping any
+	// move-neutral event that landed in the window after it).
+	eventsLen: number
 }
 
 function vertexStateOf(state: GameState, v: Vertex): VertexState {
@@ -6353,6 +6378,21 @@ async function handleClearTimeout(
  * `lastActivityAt` ignores honks: the nudge is a complaint about the stall, not
  * an escape from it.
  */
+// Null out the end-turn undo snapshot, gated on one being set so the common case
+// (no pending window) writes nothing and emits no realtime event. Runs in
+// `serve`'s post-action hook under the lease. See `.claude/specs/end-turn-undo.md`.
+async function clearEndTurnUndo(
+	admin: SupabaseClient,
+	gameId: string
+): Promise<void> {
+	const { error } = await admin
+		.from('game_states')
+		.update({ end_turn_undo: null })
+		.eq('game_id', gameId)
+		.not('end_turn_undo', 'is', null)
+	if (error) console.error('[undo] clear failed', gameId, error.message)
+}
+
 async function refreshDeadline(
 	admin: SupabaseClient,
 	gameId: string,
@@ -7353,6 +7393,17 @@ async function handleEndTurn(
 			? { kind: 'special_build', queue: sbQueue }
 			: { kind: 'roll' }
 
+	// Snapshot enough to reverse this end_turn until the next player acts. Only
+	// the ending seat's player state changed, and the phase we leave is always
+	// the `main` one gated at the top. See `.claude/specs/end-turn-undo.md`.
+	const undo: EndTurnUndo = {
+		by: meIdx,
+		prevPlayer: state.players[meIdx],
+		prevPhase: state.phase,
+		prevRound: state.round,
+		eventsLen: (game.events ?? []).length,
+	}
+
 	const { error: stateErr } = await admin
 		.from('game_states')
 		.update({
@@ -7360,6 +7411,7 @@ async function handleEndTurn(
 			players: nextPlayers,
 			round: nextRound,
 			current_turn: nextTurn,
+			end_turn_undo: undo,
 		})
 		.eq('game_id', game.id)
 	if (stateErr) return err(500, 'could not update state')
@@ -7385,6 +7437,76 @@ async function handleEndTurn(
 			])
 		)
 	}
+
+	return json({ ok: true })
+}
+
+// Take back the most recent end_turn, returning the floor to the seat that
+// ended. Valid only while the window is open — the next committed move clears
+// `end_turn_undo` (see the central clear in `serve`), and the per-game lease
+// serializes that clear ahead of this call, so a present snapshot naming the
+// caller is the whole guard. Restores the four columns end_turn touched and pops
+// the `turn_ended` event. See `.claude/specs/end-turn-undo.md`.
+async function handleUndoEndTurn(
+	admin: SupabaseClient,
+	me: string,
+	body: UndoEndTurnBody
+): Promise<Response> {
+	const loaded = await loadGame(admin, body.game_id)
+	if (!loaded.ok) return loaded.response
+	const { game, state } = loaded
+
+	if (game.status !== 'active') return err(400, 'not active')
+
+	// The ending seat is off-turn now (current_turn has moved on), so resolve the
+	// seat via player_order like the forfeit setters, not currentPlayerIndex.
+	const meIdx = game.player_order.indexOf(me)
+	if (meIdx < 0) return err(403, 'not a participant')
+
+	// loadGame's typed state drops the snapshot column, so read it directly.
+	const { data: snapRow, error: snapErr } = await admin
+		.from('game_states')
+		.select('end_turn_undo')
+		.eq('game_id', game.id)
+		.maybeSingle()
+	if (snapErr || !snapRow) return err(500, 'could not load undo state')
+	const undo = (snapRow.end_turn_undo as EndTurnUndo | null) ?? null
+	if (!undo) return err(409, 'nothing to undo')
+	if (undo.by !== meIdx) return err(403, 'not your end turn to undo')
+
+	// Only the ending seat changed while the window was open (any other move
+	// would have cleared the snapshot), so restore just that seat.
+	const players = state.players.map((p, i) =>
+		i === meIdx ? undo.prevPlayer : p
+	)
+
+	const { error: stateErr } = await admin
+		.from('game_states')
+		.update({
+			phase: undo.prevPhase,
+			players,
+			round: undo.prevRound,
+			current_turn: meIdx,
+			end_turn_undo: null,
+		})
+		.eq('game_id', game.id)
+	if (stateErr) return err(500, 'could not update state')
+
+	// Remove exactly the `turn_ended` we appended — it sits at index `eventsLen`
+	// (the length just before the push). A move-neutral event that landed in the
+	// window (a honk, an avarice discard) sits after it and is kept, so the log
+	// stays consistent with the state those actions also changed.
+	const ev = game.events ?? []
+	const { error: gameErr } = await admin
+		.from('games')
+		.update({
+			events: [
+				...ev.slice(0, undo.eventsLen),
+				...ev.slice(undo.eventsLen + 1),
+			],
+		})
+		.eq('id', game.id)
+	if (gameErr) return err(500, 'could not update game')
 
 	return json({ ok: true })
 }
@@ -10666,6 +10788,17 @@ serve(async (req) => {
 		moves
 			? async (res) => {
 					if (!res.ok) return
+					// Any committed move by anyone closes an open end-turn undo
+					// window — except end_turn (which just opened one) and
+					// undo_end_turn (which clears its own). The move-neutral
+					// actions never reach this hook. Cleared before autopilot so a
+					// forfeited seat's auto-end-turn can open its own window. See
+					// `.claude/specs/end-turn-undo.md`.
+					if (
+						body.action !== 'end_turn' &&
+						body.action !== 'undo_end_turn'
+					)
+						await clearEndTurnUndo(admin, gameId)
 					await runAutopilot(admin, gameId)
 					await refreshDeadline(admin, gameId, me)
 				}
@@ -10724,6 +10857,8 @@ function dispatch(
 			return handleRerollDice(admin, me, body)
 		case 'end_turn':
 			return handleEndTurn(admin, me, body)
+		case 'undo_end_turn':
+			return handleUndoEndTurn(admin, me, body)
 		case 'honk':
 			return handleHonk(admin, me, body)
 		case 'send_message':

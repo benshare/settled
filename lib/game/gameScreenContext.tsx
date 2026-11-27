@@ -186,6 +186,7 @@ function useGameScreenState(gameId: string) {
 	const confirmRoll = useGamesStore((s) => s.confirmRoll)
 	const rerollDice = useGamesStore((s) => s.rerollDice)
 	const endTurn = useGamesStore((s) => s.endTurn)
+	const undoEndTurn = useGamesStore((s) => s.undoEndTurn)
 	const honk = useGamesStore((s) => s.honk)
 	const endSpecialBuild = useGamesStore((s) => s.endSpecialBuild)
 	const discard = useGamesStore((s) => s.discard)
@@ -991,6 +992,14 @@ function useGameScreenState(gameId: string) {
 	// seat still held the floor. See `.claude/specs/local-action-queue.md`.
 	const canUndo = queue.length > 0 && !isSpectator && !inGameOver
 
+	// Undoing the end of a turn is a server action, not the local queue: end
+	// turn was committed so the next player could act, and the window stays open
+	// until they do. Read off `serverState` (the raw row carries the snapshot),
+	// gated to the seat that ended. See `.claude/specs/end-turn-undo.md`.
+	const endTurnUndo = serverState?.endTurnUndo ?? null
+	const canUndoEndTurn =
+		!!endTurnUndo && endTurnUndo.by === meIdx && !isSpectator && !inGameOver
+
 	// Forfeiting / ending. Both are plain user-id arrays on the games row; the
 	// only effect of either is server-side (a forfeited seat is played on
 	// autopilot) — see `.claude/specs/forfeit-autopilot.md`. The menu lives in the nav (`GameMenu`), which is why these hang off the
@@ -1424,6 +1433,17 @@ function useGameScreenState(gameId: string) {
 		const res = await endTurn(game.id)
 		setSubmitting(false)
 		if (res.error) notify(res.error)
+	}
+
+	// Nothing to flush — this seat's queue is empty once it has ended its turn,
+	// and the undo is a plain server round-trip that hands the floor back. The
+	// server refuses it if the next player already acted.
+	async function onUndoEndTurn() {
+		if (!game) return
+		setSubmitting(true)
+		const res = await undoEndTurn(game.id)
+		setSubmitting(false)
+		if (res.error) notify("Couldn't undo end turn", res.error)
 	}
 
 	async function onHonk() {
@@ -2068,6 +2088,7 @@ function useGameScreenState(gameId: string) {
 		canEndGame,
 		myTimedOut,
 		canUndo,
+		canUndoEndTurn,
 		postPlacementTool,
 		postPlacementData,
 		liveOffer,
@@ -2185,6 +2206,7 @@ function useGameScreenState(gameId: string) {
 		onConfirmRoll,
 		onRerollDice,
 		onEndTurn,
+		onUndoEndTurn,
 		onHonk,
 		onEndSpecialBuild,
 		onSetForfeit,

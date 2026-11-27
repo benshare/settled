@@ -38,6 +38,7 @@ import {
 	isWeb,
 	sharedStyles,
 	UndoButton,
+	UndoEndTurnButton,
 } from './gameScreenShared'
 
 const PANEL_IN = FadeIn.duration(160)
@@ -505,6 +506,9 @@ function MainLoopBar({
 						End turn
 					</Button>
 				)}
+				{/* Self-gates on the server snapshot: shows only for the seat
+				    that just ended, while the next player hasn't acted. */}
+				<UndoEndTurnButton />
 				{!isMyTurn && (
 					<HonkButton
 						events={(game.events ?? []) as GameEvent[]}

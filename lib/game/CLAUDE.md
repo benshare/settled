@@ -166,6 +166,15 @@ app/game/[id].tsx
   — it existed because the server snapshot was a property of the _game_, so it
   had to ask whether this seat still held the floor; a queue is a property of
   this client. The placement arrow (`canUndoPlacement`) is still separate.
+- **Undoing the end of a turn is a different control from the undo arrow.**
+  `canUndoEndTurn` / `onUndoEndTurn` are a server round-trip that reclaims the
+  turn, gated on a snapshot the server puts on `serverState.endTurnUndo` (read
+  the raw row, not the projection — it isn't queue state). It surfaces as the
+  labelled `UndoEndTurnButton` (self-gating on the context), shown to the seat
+  that just ended their turn — in the Dock's primary slot (HUD) and the
+  `MainLoopBar` / `SpecialBuildBar` (classic), in place of the disabled,
+  not-your-turn phase button, until the next player acts. See
+  `.claude/specs/end-turn-undo.md`.
 - **An undoable action never leaves the device when it is taken.** Tapping a
   build spot appends to the queue; every action that _isn't_ undoable is a
   barrier that flushes it first (`flushBeforeBarrier`, opening each such
