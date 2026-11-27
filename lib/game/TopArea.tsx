@@ -186,18 +186,14 @@ export function TopArea() {
 				)}
 
 			{gameState?.phase.kind === 'curio_pick' &&
-				!gameState.phase.pending.includes(meIdx) && (
+				gameState.phase.owner !== meIdx && (
 					<View style={styles.statusWrap}>
 						<Text style={styles.statusLine}>
 							Waiting on{' '}
-							{gameState.phase.pending
-								.map(
-									(i) =>
-										profilesById[game.player_order[i]]
-											?.username ?? 'Player'
-								)
-								.join(', ')}{' '}
-							to claim 3 resources…
+							{profilesById[
+								game.player_order[gameState.phase.owner]
+							]?.username ?? 'Player'}{' '}
+							to collect curios…
 						</Text>
 					</View>
 				)}
@@ -621,7 +617,7 @@ function spectatorStatus(
 		case 'scout_pick':
 			return `${nameOf(phase.owner)} is peeking at dev cards`
 		case 'curio_pick':
-			return `Waiting on ${listOf(phase.pending)} to claim 3 resources`
+			return `${nameOf(phase.owner)} is collecting curios`
 		case 'forger_pick':
 			return phase.queue.length > 0
 				? `${nameOf(phase.queue[0].idx)} is forging a copy`

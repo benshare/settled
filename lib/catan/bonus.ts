@@ -26,6 +26,7 @@ import {
 	type DiceRoll,
 	type GameSize,
 	type GameState,
+	type Phase,
 	type PlayerState,
 	type ResourceHand,
 	type Variant,
@@ -464,8 +465,13 @@ export function metropolitanCityCost(
 
 // --- Curio Collector --------------------------------------------------------
 //
-// Whenever you gain ≥ 1 card from a 2 or 12 ORIGINAL roll, take 3 additional
-// resource cards of your choice. Bonus rolls (fortune_teller) don't trigger.
+// Whenever you gain ≥ 1 card from a 2 or 12 ORIGINAL roll, you are owed
+// `3 × (cards gained)` resource cards of your choice. The cards are NOT taken on
+// that roll: they accumulate in `PlayerState.curioOwed` and are picked once the
+// collector's OWN next roll resolves to `main` — a deferred gain, so no 7 (not
+// even the collector's own) can discard them in between. Bonus rolls
+// (fortune_teller) don't trigger. See
+// `.claude/specs/curio-collector-deferred-scaling.md`.
 export function curioCollectorTriggers(
 	bonus: BonusId | undefined,
 	total: number,
@@ -476,7 +482,43 @@ export function curioCollectorTriggers(
 	return gainedCount >= 1
 }
 
-export const CURIO_PICK_SIZE = 3
+// Curio cards owed for a single 2/12 roll: three of your choice for each
+// resource card gained.
+export const CURIO_CARDS_PER_RESOURCE = 3
+
+export function curioPickSize(cardsGained: number): number {
+	return CURIO_CARDS_PER_RESOURCE * cardsGained
+}
+
+// Open the collector's deferred pick when their roll resolves to `main`. Called
+// at every such exit (the non-7 path and all three 7-chain exits), mirroring
+// `applyShepherdPayout`'s contract. Carves the owed count accumulated BEFORE
+// this roll into the `curio_pick` phase and leaves `curioOwed` holding only
+// what this roll itself contributed (deferred to the collector's next turn).
+// `players` is returned already adjusted; no-op (phase unchanged) when nothing
+// is owed.
+export function wrapCurioPick(
+	phase: Phase,
+	players: PlayerState[],
+	activeIdx: number,
+	thisRollContribution: number
+): { phase: Phase; players: PlayerState[] } {
+	const owedBefore = (players[activeIdx]?.curioOwed ?? 0) - thisRollContribution
+	const carried = Math.max(0, thisRollContribution)
+	const nextPlayers = players.map((p, i) => {
+		if (i !== activeIdx) return p
+		if ((p.curioOwed ?? 0) === carried) return p
+		const next: PlayerState = { ...p }
+		if (carried > 0) next.curioOwed = carried
+		else delete next.curioOwed
+		return next
+	})
+	if (owedBefore <= 0) return { phase, players: nextPlayers }
+	return {
+		phase: { kind: 'curio_pick', resume: phase, owner: activeIdx, count: owedBefore },
+		players: nextPlayers,
+	}
+}
 
 // --- Forger -----------------------------------------------------------------
 

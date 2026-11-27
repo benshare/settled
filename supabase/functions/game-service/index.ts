@@ -726,6 +726,10 @@ type PlayerState = {
 	ritualWasUsedThisTurn?: boolean
 	shepherdUsedThisTurn?: boolean
 	shepherdPending?: [Resource, Resource]
+	// curio_collector: curio cards owed, accumulated across turns (3 × cards
+	// gained per 2/12), picked on the collector's own next roll resolution.
+	// NOT cleared on end_turn — designed to cross turns.
+	curioOwed?: number
 	forgerToken?: Hex
 	forgerMovedThisTurn?: boolean
 	// Set 3.
@@ -1746,11 +1750,13 @@ type Phase =
 			owner: number
 			cards: DevCardId[]
 	  }
-	// curio_pick and forger_pick can chain: a roll that triggers both
-	// enters forger_pick(resume=curio_pick(resume=main)). Their resume
+	// curio_pick (the collector's deferred pick, opened on their OWN roll
+	// resolution) and forger_pick can chain: a forger reaction on the same roll
+	// nests outside as forger_pick(resume=curio_pick(resume=main)). Their resume
 	// therefore accepts any Phase (recursive) — not just ResumePhase —
-	// since the next thing might itself be another sub-phase.
-	| { kind: 'curio_pick'; resume: Phase; pending: number[] }
+	// since the next thing might itself be another sub-phase. `owner` is the
+	// acting collector; `count` = 3 × resources gained from the owed 2/12 rolls.
+	| { kind: 'curio_pick'; resume: Phase; owner: number; count: number }
 	| { kind: 'forger_pick'; resume: Phase; queue: ForgerPickEntry[] }
 	// Set 3: magician post-roll window (own roll only). Fires before any
 	// curio/forger reactions.
@@ -3154,6 +3160,47 @@ function curioCollectorTriggers(
 	if (bonus !== 'curio_collector') return false
 	if (total !== 2 && total !== 12) return false
 	return gainedCount >= 1
+}
+
+const CURIO_CARDS_PER_RESOURCE = 3
+
+function curioPickSize(cardsGained: number): number {
+	return CURIO_CARDS_PER_RESOURCE * cardsGained
+}
+
+// Open the collector's deferred pick when their roll resolves to `main`. Called
+// at every such exit (the non-7 path and all three 7-chain exits), mirroring
+// `applyShepherdPayout`'s contract. `thisRollContribution` is what this very
+// roll added to the active seat's `curioOwed` (0 on a 7 or a non-collector);
+// everything owed BEFORE it becomes the pick's `count`, and `curioOwed` is left
+// holding only this roll's contribution (deferred to the collector's next
+// turn). No-op (phase unchanged) when nothing was owed before this roll.
+function wrapCurioPick(
+	phase: Phase,
+	players: PlayerState[],
+	activeIdx: number,
+	thisRollContribution: number
+): { phase: Phase; players: PlayerState[] } {
+	const owedBefore = (players[activeIdx]?.curioOwed ?? 0) - thisRollContribution
+	const carried = Math.max(0, thisRollContribution)
+	const nextPlayers = players.map((p, i) => {
+		if (i !== activeIdx) return p
+		if ((p.curioOwed ?? 0) === carried) return p
+		const next: PlayerState = { ...p }
+		if (carried > 0) next.curioOwed = carried
+		else delete next.curioOwed
+		return next
+	})
+	if (owedBefore <= 0) return { phase, players: nextPlayers }
+	return {
+		phase: {
+			kind: 'curio_pick',
+			resume: phase,
+			owner: activeIdx,
+			count: owedBefore,
+		},
+		players: nextPlayers,
+	}
 }
 
 function hexesAdjacentTo(hex: Hex, variant: Variant): Hex[] {
@@ -5203,15 +5250,24 @@ async function applyRollOutcome(
 				...shepherdResult.events,
 			]
 			const mainPhase: Phase = { kind: 'main', roll: dice, trade: null }
-			const nextPhase = wrapMagicianWindow(
+			// Curio collector: this friendly 7 is a straight-to-main exit, so
+			// anything owed from prior turns is picked here (nothing to
+			// accumulate — a 7 is never a 2/12).
+			const curioWrap = wrapCurioPick(
 				mainPhase,
-				{ ...state, players: shepherdResult.players },
+				shepherdResult.players,
+				activeIdx,
+				0
+			)
+			const nextPhase = wrapMagicianWindow(
+				curioWrap.phase,
+				{ ...state, players: curioWrap.players },
 				activeIdx,
 				dice
 			)
 			const stateUpdate: Record<string, unknown> = { phase: nextPhase }
-			if (rollEvents.length > 0) {
-				stateUpdate.players = shepherdResult.players
+			if (rollEvents.length > 0 || curioWrap.phase.kind === 'curio_pick') {
+				stateUpdate.players = curioWrap.players
 			}
 			const { error: stateErr } = await admin
 				.from('game_states')
@@ -5392,10 +5448,13 @@ async function applyRollOutcome(
 		events.push(...shepherdResult.events)
 	}
 
-	// Curio collector: queue picks for any curio_collector who gained ≥ 1
-	// card from this 2/12 original roll. Skipped on bonus rolls
-	// (distributeOnlyTo set), and skipped on totals other than 2/12.
-	const curioPending: number[] = []
+	// Curio collector: accumulate `3 × (cards gained)` into `curioOwed` for
+	// every collector who gained from this 2/12. The cards are NOT taken now —
+	// they are picked once the collector's OWN next roll resolves (wrapCurioPick
+	// below). `curioThisRollActive` is the active roller's own contribution, so
+	// wrapCurioPick can carry it to their next turn rather than paying it this
+	// turn. Skipped on bonus rolls and on totals other than 2/12.
+	let curioThisRollActive = 0
 	if (
 		options.distributeOnlyTo === undefined &&
 		(total === 2 || total === 12)
@@ -5403,15 +5462,20 @@ async function applyRollOutcome(
 		for (const idxStr of Object.keys(gains)) {
 			const idx = Number(idxStr)
 			if (
-				curioCollectorTriggers(
-					stateAfter.players[idx]?.bonus,
+				!curioCollectorTriggers(
+					nextPlayers[idx]?.bonus,
 					total,
 					handTotal(gains[idx])
 				)
-			) {
-				curioPending.push(idx)
-			}
+			)
+				continue
+			const add = curioPickSize(handTotal(gains[idx]))
+			if (idx === activeIdx) curioThisRollActive = add
+			nextPlayers = nextPlayers.map((p, i) =>
+				i === idx ? { ...p, curioOwed: (p.curioOwed ?? 0) + add } : p
+			)
 		}
+		stateAfter = { ...stateAfter, players: nextPlayers }
 	}
 
 	// Forger: queue picks for any forger whose token's hex rolled AND for whom
@@ -5471,16 +5535,17 @@ async function applyRollOutcome(
 	// On a bonus roll, no sub-phases fire and we don't want to stomp the
 	// active main phase (we're already inside it). Skip the phase update.
 	if (options.distributeOnlyTo === undefined) {
-		// Resolution order: forger first, then curio, then main. We chain
+		// Resolution order: forger (others' reactions) outside the active
+		// collector's own curio pick, which sits innermost above main. We chain
 		// via the recursive `resume` field on the sub-phase variants.
-		const afterForger: Phase =
-			curioPending.length > 0
-				? {
-						kind: 'curio_pick',
-						resume: mainPhase,
-						pending: curioPending,
-					}
-				: mainPhase
+		const curioWrap = wrapCurioPick(
+			mainPhase,
+			nextPlayers,
+			activeIdx,
+			curioThisRollActive
+		)
+		nextPlayers = curioWrap.players
+		const afterForger: Phase = curioWrap.phase
 		nextPhase =
 			forgerQueue.length > 0
 				? {
@@ -6904,7 +6969,7 @@ function autoActionFor(
 			return {
 				action: 'claim_curio',
 				game_id: gid,
-				take: ['brick', 'wood', 'sheep'],
+				take: new Array(phase.count).fill('brick' as Resource),
 			}
 		case 'forger_pick': {
 			const head = phase.queue[0]
@@ -7103,11 +7168,12 @@ async function applyAutopilotSkip(
 			}),
 		}
 	} else if (skip === 'curio' && phase.kind === 'curio_pick') {
-		const pending = phase.pending.filter((i) => i !== seat)
+		// Single-owner pick on the forfeited seat's own turn: dropped outright
+		// (the owed cards are forfeited), resuming straight through.
 		next = await resumeAfterReaction(
 			state,
 			state.players,
-			pending.length > 0 ? { ...phase, pending } : phase.resume,
+			phase.resume,
 			events
 		)
 	} else if (skip === 'forger' && phase.kind === 'forger_pick') {
@@ -9138,6 +9204,19 @@ async function exitRobberChain(
 			),
 		}
 	}
+
+	// Curio collector: a 7 produces no 2/12 gain, so there's nothing to
+	// accumulate here — but anything owed from prior turns is picked now, after
+	// the whole chain, so even the collector's own 7 can't discard it. Innermost
+	// (the roller is never also a magician, so the wrap above is a no-op here).
+	if (from7 && finalState.phase.kind === 'main') {
+		const curioWrap = wrapCurioPick(finalState.phase, finalState.players, roller, 0)
+		finalState = {
+			...finalState,
+			players: curioWrap.players,
+			phase: curioWrap.phase,
+		}
+	}
 	return finalState
 }
 
@@ -10117,11 +10196,12 @@ async function handleClaimCurio(
 		return err(400, 'expected curio_pick phase')
 	const meIdx = currentPlayerIndex(game, state, me)
 	if (meIdx === null) return err(403, 'not a participant')
-	if (!state.phase.pending.includes(meIdx))
-		return err(400, 'no curio pending for you')
+	if (state.phase.owner !== meIdx)
+		return err(400, 'not your curio pick')
+	const count = state.phase.count
 	const take = body.take
-	if (!Array.isArray(take) || take.length !== 3)
-		return err(400, 'must claim exactly 3 resources')
+	if (!Array.isArray(take) || take.length !== count)
+		return err(400, `must claim exactly ${count} resources`)
 	const resources: Resource[] = []
 	for (const t of take) {
 		const r = parseResource(t)
@@ -10134,11 +10214,7 @@ async function handleClaimCurio(
 		for (const x of resources) r[x] = r[x] + 1
 		return { ...p, resources: r }
 	})
-	const newPending = state.phase.pending.filter((i) => i !== meIdx)
-	const nextPhase: Phase =
-		newPending.length > 0
-			? { ...state.phase, pending: newPending }
-			: state.phase.resume
+	const nextPhase: Phase = state.phase.resume
 
 	const events: unknown[] = [
 		{

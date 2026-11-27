@@ -201,7 +201,7 @@ function waitLine(ctx: Ctx): string | null {
 		case 'discard':
 			return `Waiting for ${listOf(seats, ctx)} to discard`
 		case 'curio_pick':
-			return `Waiting for ${listOf(seats, ctx)} to claim resources`
+			return `${isPhrase(phase.owner, ctx)} collecting curios`
 		case 'move_robber':
 			return ctx.pickingVictim && gameState.currentTurn === ctx.meIdx
 				? 'Pick a player to steal from'

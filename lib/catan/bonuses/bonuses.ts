@@ -191,8 +191,10 @@ export const BONUS_POOL: readonly Bonus[] = [
 		id: 'curio_collector',
 		title: 'Curio Collector',
 		description:
-			'When you collect from a 2 or 12, gain three extra resources of your choice.',
-		clarifications: [],
+			'When you collect from a 2 or 12, gain three resources of your choice for each one.',
+		clarifications: [
+			'Your picks arrive at the start of your next turn, after you roll.',
+		],
 		icon: 'albums-outline',
 		set: '2',
 	},

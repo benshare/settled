@@ -31,6 +31,8 @@ import {
 	canBuildMoreSuperCities,
 	carpenterVPOf,
 	curioCollectorTriggers,
+	curioPickSize,
+	wrapCurioPick,
 	dicePairForTotal,
 	affordableScoutSwaps,
 	canScoutAffordDevCard,
@@ -103,6 +105,7 @@ import {
 	producersAt,
 	type GameSize,
 	type GameState,
+	type Phase,
 	type PlayerState,
 	type ResourceHand,
 	type SelectBonusHand,
@@ -851,6 +854,59 @@ function testCurioCollector() {
 		'wrong number → no trigger'
 	)
 	assert(!curioCollectorTriggers(undefined, 2, 1), 'non-curio → no trigger')
+
+	// Scaling: three picks per resource card gained (a city on a 2 pays 2 → 6).
+	equal(curioPickSize(0), 0, 'no gain → no picks')
+	equal(curioPickSize(1), 3, '1 card gained → 3 picks')
+	equal(curioPickSize(2), 6, '2 cards gained → 6 picks')
+
+	const main: Phase = { kind: 'main', roll: { a: 1, b: 1 }, trade: null }
+	const collector = setBonus(baseState(), 0, 'curio_collector')
+
+	// Deferred pick opens for what was owed BEFORE this roll; this roll's own
+	// 2/12 contribution carries to the collector's next turn.
+	const owedNine = collector.players.map((p, i) =>
+		i === 0 ? { ...p, curioOwed: 9 } : p
+	)
+	const wrapped = wrapCurioPick(main, owedNine, 0, 3)
+	assert(wrapped.phase.kind === 'curio_pick', 'owed → opens curio_pick')
+	if (wrapped.phase.kind === 'curio_pick') {
+		equal(wrapped.phase.count, 6, 'pick count = owed before this roll (9 − 3)')
+		equal(wrapped.phase.owner, 0, 'owner is the active collector')
+	}
+	equal(
+		wrapped.players[0].curioOwed,
+		3,
+		"this roll's contribution carries to next turn"
+	)
+
+	// Only this roll contributed (nothing from before) → no pick now.
+	const freshOnly = collector.players.map((p, i) =>
+		i === 0 ? { ...p, curioOwed: 3 } : p
+	)
+	const noPick = wrapCurioPick(main, freshOnly, 0, 3)
+	equal(noPick.phase.kind, 'main', 'only this roll owed → no pick now')
+	equal(noPick.players[0].curioOwed, 3, 'carried to next turn')
+
+	// A 7-chain exit (no contribution): everything owed pays out, field cleared.
+	const owedSix = collector.players.map((p, i) =>
+		i === 0 ? { ...p, curioOwed: 6 } : p
+	)
+	const sevenExit = wrapCurioPick(main, owedSix, 0, 0)
+	assert(sevenExit.phase.kind === 'curio_pick', '7 exit opens the owed pick')
+	if (sevenExit.phase.kind === 'curio_pick') {
+		equal(sevenExit.phase.count, 6, 'full owed count on a 7 exit')
+	}
+	equal(
+		sevenExit.players[0].curioOwed,
+		undefined,
+		'owed field cleared once drained'
+	)
+
+	// Nothing owed at all → no-op.
+	const none = wrapCurioPick(main, collector.players, 0, 0)
+	equal(none.phase.kind, 'main', 'nothing owed → no pick')
+	equal(none.players[0].curioOwed, undefined, 'no owed field')
 }
 
 function testMetropolitan() {

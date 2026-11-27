@@ -72,5 +72,11 @@
 			"Knight, Road Building and Year of Plenty can now be undone. A knight can be taken back until you place the robber.",
 			"Tapping Road Building goes straight to placing your free roads."
 		]
+	},
+	{
+		"id": "2026-11-27.1",
+		"notes": [
+			"Curio Collector now scales: you get three picks for each resource you collect on a 2 or 12. They arrive at the start of your next turn, after you roll, so a 7 can't take them first."
+		]
 	}
 ]

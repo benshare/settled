@@ -444,6 +444,13 @@ export type PlayerState = {
 	// only once the turn reaches `main`, which is what keeps them out of
 	// reach of a 7 (see `.claude/specs/shepherd-deferred-gain.md`).
 	shepherdPending?: [Resource, Resource]
+	// `curio_collector`: curio cards owed, accumulated across turns. Each 2/12
+	// on which the collector gains ≥1 card adds `3 × (cards gained)` here; the
+	// cards are picked once the collector's OWN next roll resolves (see
+	// `.claude/specs/curio-collector-deferred-scaling.md`). Deliberately NOT
+	// cleared on end_turn — it is designed to cross turns. Legacy hands with no
+	// field read as 0.
+	curioOwed?: number
 	// `forger`: hex where the forger token currently sits. Seeded to the
 	// robber's starting hex (the desert) when bonuses lock in, and moved by
 	// the forger alone — nothing else on the board relocates it. Undefined
@@ -632,19 +639,21 @@ export type Phase =
 			owner: number
 			cards: DevCardId[]
 	  }
-	// Curio collector trigger after a 2 or 12 original roll. Each
-	// curio_collector who gained ≥1 card from the roll is queued here and
-	// must claim their +3 resources via `claim_curio`. Picks are parallel
-	// (each pending entry resolves independently). Phase advances to
-	// `resume` when `pending` is empty.
+	// Curio collector's deferred pick. Opens on the collector's OWN turn once
+	// their roll resolves to `main`, draining the `curioOwed` accumulated from
+	// 2/12 rolls since their last pick. `owner` is the acting collector;
+	// `count` is how many resources of their choice they take via `claim_curio`
+	// (`3 × cards gained`, summed across the owed rolls). Single-seat: only the
+	// active roller is ever owed a pick at this point.
 	//
-	// `resume` accepts any Phase (recursive) so a roll that triggers both
-	// curio AND forger can chain: forger_pick(resume = curio_pick(resume =
-	// main)).
+	// `resume` accepts any Phase (recursive) so a forger reaction on the same
+	// roll can chain outside it: forger_pick(resume = curio_pick(resume =
+	// main)). See `.claude/specs/curio-collector-deferred-scaling.md`.
 	| {
 			kind: 'curio_pick'
 			resume: Phase
-			pending: number[]
+			owner: number
+			count: number
 	  }
 	// Forger token-hex production. Each forger whose token's hex rolled AND
 	// for whom two or more other players would gain from that hex is queued
