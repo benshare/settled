@@ -398,6 +398,7 @@ function PrimaryAction() {
 			<View style={[styles.actionCol, styles.actionSlot]}>
 				<Button
 					size="small"
+					variant="muted"
 					style={styles.phaseButton}
 					onPress={onEndTurn}
 					loading={submitting}
@@ -520,6 +521,7 @@ function PrimaryAction() {
 			) : phase.kind === 'main' ? (
 				<Button
 					size="small"
+					variant="muted"
 					style={styles.phaseButton}
 					onPress={onEndTurn}
 					loading={submitting && isMyActiveTurn}

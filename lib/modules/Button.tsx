@@ -11,7 +11,9 @@ import {
 import { useTheme } from '../ThemeContext'
 import { ColorScheme, font, radius, spacing } from '../theme'
 
-type ButtonVariant = 'primary' | 'secondary'
+// `muted` is a solid-fill, white-label button like `primary`, but in the faded
+// brown `brandMuted` — a lower-emphasis primary action (e.g. End turn vs Roll).
+type ButtonVariant = 'primary' | 'secondary' | 'muted'
 type ButtonSize = 'default' | 'small'
 
 interface ButtonProps extends PressableProps {
@@ -36,7 +38,9 @@ export function Button({
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const isDisabled = disabled || loading
-	const isPrimary = variant === 'primary'
+	// Secondary is the only outlined, dark-label variant; primary and muted are
+	// both solid fills with a white label.
+	const isSolid = variant !== 'secondary'
 	const isSmall = size === 'small'
 
 	return (
@@ -44,7 +48,7 @@ export function Button({
 			style={({ pressed }) => [
 				styles.base,
 				isSmall && styles.baseSmall,
-				isPrimary ? styles.primary : styles.secondary,
+				styles[variant],
 				isDisabled && styles.disabled,
 				pressed && !isDisabled && styles.pressed,
 				style,
@@ -54,7 +58,7 @@ export function Button({
 		>
 			{loading ? (
 				<ActivityIndicator
-					color={isPrimary ? colors.white : colors.text}
+					color={isSolid ? colors.white : colors.text}
 					size="small"
 				/>
 			) : (
@@ -62,7 +66,7 @@ export function Button({
 					style={[
 						styles.label,
 						isSmall && styles.labelSmall,
-						{ color: isPrimary ? colors.white : colors.text },
+						{ color: isSolid ? colors.white : colors.text },
 					]}
 				>
 					{children}
@@ -90,6 +94,9 @@ function makeStyles(colors: ColorScheme) {
 		},
 		primary: {
 			backgroundColor: colors.brand,
+		},
+		muted: {
+			backgroundColor: colors.brandMuted,
 		},
 		secondary: {
 			backgroundColor: colors.card,
