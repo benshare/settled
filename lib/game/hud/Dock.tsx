@@ -80,12 +80,13 @@ export function Dock({
 		onPlayDevCard,
 		onTapKnight,
 		onDiscard,
-		avariceDiscardOpen,
-		setAvariceDiscardOpen,
-		showAvariceDiscard,
-		canAvariceDiscard,
-		onAvariceDiscard,
-		onAvariceDiscardPress,
+		voluntaryDiscardOpen,
+		setVoluntaryDiscardOpen,
+		showVoluntaryDiscard,
+		canVoluntaryDiscard,
+		voluntaryDiscardCurseTitle,
+		onVoluntaryDiscard,
+		onVoluntaryDiscardPress,
 		shepherdOpen,
 		setShepherdOpen,
 		investOpen,
@@ -144,12 +145,13 @@ export function Dock({
 					isShepherd={gameState.players[meIdx].bonus === 'shepherd'}
 					onSubmit={onDiscard}
 				/>
-			) : avariceDiscardOpen ? (
+			) : voluntaryDiscardOpen ? (
 				<VoluntaryDiscardPanel
 					hand={gameState.players[meIdx].resources}
+					curseTitle={voluntaryDiscardCurseTitle}
 					submitting={submitting}
-					onSubmit={onAvariceDiscard}
-					onCancel={() => setAvariceDiscardOpen(false)}
+					onSubmit={onVoluntaryDiscard}
+					onCancel={() => setVoluntaryDiscardOpen(false)}
 				/>
 			) : scoutBuyOpen ? (
 				<ScoutBuyPanel
@@ -201,12 +203,12 @@ export function Dock({
 								investments={myPlayer.investments}
 							/>
 						)}
-						{showAvariceDiscard && (
+						{showVoluntaryDiscard && (
 							<Button
 								size="small"
 								variant="secondary"
-								onPress={onAvariceDiscardPress}
-								disabled={!canAvariceDiscard || submitting}
+								onPress={onVoluntaryDiscardPress}
+								disabled={!canVoluntaryDiscard || submitting}
 							>
 								Discard
 							</Button>

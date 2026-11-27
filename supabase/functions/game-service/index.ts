@@ -295,8 +295,10 @@ type SkipMagicBody = {
 	action: 'skip_magic'
 	game_id: string
 }
-type AvariceDiscardBody = {
-	action: 'avarice_discard'
+type VoluntaryDiscardBody = {
+	// Legacy `avarice_discard` is still accepted off the wire (older clients,
+	// queued drafts) and routed to the same handler.
+	action: 'voluntary_discard' | 'avarice_discard'
 	game_id: string
 	discard: unknown
 }
@@ -359,7 +361,7 @@ type Body =
 	| InvestBody
 	| CastMagicBody
 	| SkipMagicBody
-	| AvariceDiscardBody
+	| VoluntaryDiscardBody
 	| BatchBody
 	| RunTimeoutsBody
 	| SetForfeitBody
@@ -2034,13 +2036,19 @@ function ageCardLimitFor(size: GameSize): number {
 	return CURSE_SIZE_VARIANTS.age?.[size]?.cardLimit ?? AGE_CARD_LIMIT
 }
 
-// Avarice's escape valve: the cursed player may thin their hand at any time,
-// on anyone's turn, so a 7 doesn't take everything.
-const AVARICE_MIN_DISCARD = 2
+// The voluntary-discard escape valve, shared by the avarice and age curses:
+// the cursed player may thin their hand at any time, on anyone's turn, so a 7
+// doesn't take everything. Two curses never apply to one player, so a single
+// gate serves both.
+const VOLUNTARY_MIN_DISCARD = 2
+
+function canVoluntaryDiscard(curse: CurseId | undefined): boolean {
+	return curse === 'avarice' || curse === 'age'
+}
 
 // Exhaustive so a new phase is a deliberate decision. `discard` would stale
 // the owed count; `steal` would let the victim dump the card being taken.
-const AVARICE_DISCARD_PHASES: Record<Phase['kind'], boolean> = {
+const VOLUNTARY_DISCARD_PHASES: Record<Phase['kind'], boolean> = {
 	select_bonus: false,
 	initial_placement: false,
 	post_placement: true,
@@ -2060,16 +2068,17 @@ const AVARICE_DISCARD_PHASES: Record<Phase['kind'], boolean> = {
 
 // Why the player can't open a voluntary discard right now, or null. Turn is
 // deliberately not consulted.
-function avariceDiscardBlocked(
+function voluntaryDiscardBlocked(
 	state: GameState,
 	playerIdx: number
 ): string | null {
 	const p = state.players[playerIdx]
-	if (p?.curse !== 'avarice') return 'only the avarice curse may discard'
-	if (!AVARICE_DISCARD_PHASES[state.phase.kind])
+	if (!canVoluntaryDiscard(p?.curse))
+		return 'only an avarice or age curse may discard'
+	if (!VOLUNTARY_DISCARD_PHASES[state.phase.kind])
 		return 'cannot discard right now'
-	if (handSize(p.resources) < AVARICE_MIN_DISCARD)
-		return `need at least ${AVARICE_MIN_DISCARD} cards`
+	if (handSize(p.resources) < VOLUNTARY_MIN_DISCARD)
+		return `need at least ${VOLUNTARY_MIN_DISCARD} cards`
 	return null
 }
 
@@ -7501,7 +7510,7 @@ type LocalAction =
 	| { action: 'place_explorer_road'; edge: Edge }
 	| { action: 'cast_magic'; target: number; discard: ResourceHand }
 	| { action: 'skip_magic' }
-	| { action: 'avarice_discard'; discard: ResourceHand }
+	| { action: 'voluntary_discard'; discard: ResourceHand }
 	| {
 			action: 'play_dev_card'
 			id: QueueableDevCardId
@@ -7621,9 +7630,12 @@ function parseLocalAction(raw: unknown): LocalAction | null {
 		}
 		case 'skip_magic':
 			return { action: 'skip_magic' }
+		// Legacy `avarice_discard` (older clients, queued drafts) folds in as the
+		// generic action.
+		case 'voluntary_discard':
 		case 'avarice_discard': {
 			const discard = normalizeHand(o.discard)
-			return discard ? { action: 'avarice_discard', discard } : null
+			return discard ? { action: 'voluntary_discard', discard } : null
 		}
 		// Monopoly is deliberately absent: it reads opponents' hands, so it is
 		// never queueable and a batch carrying one is refused here.
@@ -7706,8 +7718,8 @@ export function applyLocalAction(
 			return applyCastMagic(state, meIdx, action, at)
 		case 'skip_magic':
 			return applySkipMagic(state, meIdx, at)
-		case 'avarice_discard':
-			return applyAvariceDiscard(state, meIdx, action, at)
+		case 'voluntary_discard':
+			return applyVoluntaryDiscard(state, meIdx, action, at)
 		case 'play_dev_card':
 			return applyPlayDevCard(state, meIdx, action, at)
 	}
@@ -8549,23 +8561,24 @@ function applySkipMagic(
 	})
 }
 
-// --- Avarice ----------------------------------------------------------------
+// --- Voluntary discard (avarice / age) --------------------------------------
 
 // No turn gate: the cursed player may thin their hand on anyone's turn, and
 // it never moves phase or turn. `finish` still runs so every reducer ends the
-// same way, though a discard can't change roads or VP.
-function applyAvariceDiscard(
+// same way, though a discard can't change roads or VP. Discarding is not
+// spending, so `cardsSpentThisTurn` (age's spend cap) is untouched.
+function applyVoluntaryDiscard(
 	state: GameState,
 	meIdx: number,
-	action: Extract<LocalAction, { action: 'avarice_discard' }>,
+	action: Extract<LocalAction, { action: 'voluntary_discard' }>,
 	at: string
 ): ApplyResult {
-	const blocked = avariceDiscardBlocked(state, meIdx)
+	const blocked = voluntaryDiscardBlocked(state, meIdx)
 	if (blocked) return { error: blocked }
 	const { discard } = action
 	const count = handSize(discard)
-	if (count < AVARICE_MIN_DISCARD)
-		return { error: `discard at least ${AVARICE_MIN_DISCARD} cards` }
+	if (count < VOLUNTARY_MIN_DISCARD)
+		return { error: `discard at least ${VOLUNTARY_MIN_DISCARD} cards` }
 	if (!canAfford(state.players[meIdx].resources, discard))
 		return { error: 'insufficient cards to discard' }
 
@@ -8574,7 +8587,7 @@ function applyAvariceDiscard(
 	)
 	return finish(
 		{ ...state, players },
-		[{ kind: 'avarice_discarded', player: meIdx, count, at }],
+		[{ kind: 'voluntary_discarded', player: meIdx, count, at }],
 		at,
 		{ recomputeRoads: false }
 	)
@@ -10510,15 +10523,15 @@ async function handleSkipMagic(
 	])
 }
 
-async function handleAvariceDiscard(
+async function handleVoluntaryDiscard(
 	admin: SupabaseClient,
 	me: string,
-	body: AvariceDiscardBody
+	body: VoluntaryDiscardBody
 ): Promise<Response> {
 	const discard = normalizeHand(body.discard)
 	if (!discard) return err(400, 'invalid discard hand')
 	return commitLocalActions(admin, me, body.game_id, [
-		{ action: 'avarice_discard', discard },
+		{ action: 'voluntary_discard', discard },
 	])
 }
 
@@ -10688,6 +10701,8 @@ const GAME_LOCK_WAIT_MS = 5_000
 const TIMEOUT_NEUTRAL_ACTIONS = new Set<string>([
 	'honk',
 	'send_message',
+	'voluntary_discard',
+	// Legacy wire name for the same action.
 	'avarice_discard',
 	'clear_timeout',
 ])
@@ -10792,8 +10807,9 @@ function dispatch(
 			return handleCastMagic(admin, me, body)
 		case 'skip_magic':
 			return handleSkipMagic(admin, me, body)
+		case 'voluntary_discard':
 		case 'avarice_discard':
-			return handleAvariceDiscard(admin, me, body)
+			return handleVoluntaryDiscard(admin, me, body)
 		case 'batch':
 			return handleBatch(admin, me, body)
 		case 'set_forfeit':

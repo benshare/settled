@@ -7,6 +7,7 @@ export const CURSE_POOL: readonly Curse[] = [
 		description: 'You can spend a maximum of six cards per turn.',
 		clarifications: [
 			"Cards spent on bank, port, or player trades don't count.",
+			'You may discard two or more cards at any time.',
 		],
 		icon: 'hourglass-outline',
 		set: 'base',

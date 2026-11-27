@@ -85,7 +85,9 @@ export type GameEvent =
 	| { kind: 'settlement_built'; player: number; vertex: string; at: string }
 	| { kind: 'city_built'; player: number; vertex: string; at: string }
 	| { kind: 'discarded'; player: number; count: number; at: string }
-	// Avarice's voluntary discard, any turn. Count only, like the 7's.
+	// The avarice/age voluntary discard, any turn. Count only, like the 7's.
+	| { kind: 'voluntary_discarded'; player: number; count: number; at: string }
+	// Legacy alias — games played before the generalization logged this kind.
 	| { kind: 'avarice_discarded'; player: number; count: number; at: string }
 	| { kind: 'robber_moved'; player: number; hex: string; at: string }
 	// `resource` is optional: steals logged before it was recorded read as
@@ -484,9 +486,9 @@ type GamesStore = {
 	setEndVote: (gameId: string, on: boolean) => Promise<ActionResult>
 
 	discard: (gameId: string, discard: ResourceHand) => Promise<ActionResult>
-	// Avarice's voluntary discard, sent straight away on someone else's turn
-	// (on your own it rides the local queue). Move-neutral server-side.
-	avariceDiscard: (
+	// The avarice/age voluntary discard, sent straight away on someone else's
+	// turn (on your own it rides the local queue). Move-neutral server-side.
+	voluntaryDiscard: (
 		gameId: string,
 		discard: ResourceHand
 	) => Promise<ActionResult>
@@ -1035,9 +1037,9 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		)
 	},
 
-	async avariceDiscard(gameId, discard) {
+	async voluntaryDiscard(gameId, discard) {
 		return callGameService(
-			{ action: 'avarice_discard', game_id: gameId, discard },
+			{ action: 'voluntary_discard', game_id: gameId, discard },
 			"Couldn't discard"
 		)
 	},

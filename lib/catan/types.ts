@@ -777,8 +777,9 @@ export const UNDOABLE_ACTIONS = [
 	'skip_magic',
 	// The only member with no turn gate: off-turn it is sent straight away
 	// rather than queued (see gameScreenContext), but on the player's own turn
-	// it is as solo and information-free as a bank trade.
-	'avarice_discard',
+	// it is as solo and information-free as a bank trade. Shared by the avarice
+	// and age curses; the legacy wire name `avarice_discard` is still parsed.
+	'voluntary_discard',
 	// Every card but Monopoly, whose haul reads opponents' hands — see
 	// `QueueableDevCardId` and `.claude/specs/reversible-dev-cards.md`.
 	'play_dev_card',
@@ -823,7 +824,7 @@ export type LocalAction =
 	| { action: 'place_explorer_road'; edge: Edge }
 	| { action: 'cast_magic'; target: number; discard: ResourceHand }
 	| { action: 'skip_magic' }
-	| { action: 'avarice_discard'; discard: ResourceHand }
+	| { action: 'voluntary_discard'; discard: ResourceHand }
 	| {
 			action: 'play_dev_card'
 			id: QueueableDevCardId

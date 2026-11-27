@@ -22,7 +22,7 @@ import {
 import {
 	AGE_CARD_LIMIT,
 	ageCardLimitFor,
-	avariceDiscardBlocked,
+	voluntaryDiscardBlocked,
 	BUILD_COST_SIZES,
 	POWER_HEX_LIMIT,
 	POWER_MAX_HEXES,
@@ -687,7 +687,40 @@ function testCurseSizeDescriptions() {
 	}
 }
 
-function testAvariceVoluntaryDiscard() {
+// The voluntary discard is shared by avarice and age with identical rules, so
+// the same battery runs for each curse.
+function testVoluntaryDiscard() {
+	for (const curse of ['avarice', 'age'] as const) {
+		runVoluntaryDiscardFor(curse)
+	}
+
+	// A curse without the affordance is rejected, whatever the phase.
+	const hand: ResourceHand = { brick: 3, wood: 0, sheep: 0, wheat: 0, ore: 0 }
+	const other: GameState = {
+		...setCurse(baseState(), 1, 'compaction'),
+		players: setCurse(baseState(), 1, 'compaction').players.map((p, i) =>
+			i === 1 ? { ...p, resources: hand } : p
+		),
+		phase: { kind: 'main', roll: { d1: 3, d2: 4 } as never, trade: null },
+		currentTurn: 0,
+	}
+	assert(
+		isApplyError(
+			applyLocalAction(
+				other,
+				1,
+				{
+					action: 'voluntary_discard',
+					discard: { ...emptyHand(), brick: 2 },
+				},
+				't'
+			)
+		),
+		'a non-voluntary curse may not discard'
+	)
+}
+
+function runVoluntaryDiscardFor(curse: 'avarice' | 'age') {
 	const hand: ResourceHand = { brick: 3, wood: 2, sheep: 0, wheat: 1, ore: 0 }
 	const withHand = (st: GameState, idx: number): GameState => ({
 		...st,
@@ -697,7 +730,7 @@ function testAvariceVoluntaryDiscard() {
 	})
 	// Seat 1 cursed while seat 0 holds the turn: there is no turn gate.
 	const main: GameState = {
-		...withHand(setCurse(baseState(), 1, 'avarice'), 1),
+		...withHand(setCurse(baseState(), 1, curse), 1),
 		phase: {
 			kind: 'main',
 			roll: { d1: 3, d2: 4 } as never,
@@ -709,17 +742,28 @@ function testAvariceVoluntaryDiscard() {
 	const res = applyLocalAction(
 		main,
 		1,
-		{ action: 'avarice_discard', discard: two },
+		{ action: 'voluntary_discard', discard: two },
 		't'
 	)
-	assert(!isApplyError(res), 'off-turn avarice discard applies')
-	equal(res.state.players[1].resources.brick, 1, 'brick deducted')
-	equal(res.state.phase, main.phase, 'phase untouched')
-	equal(res.state.currentTurn, 0, 'turn untouched')
+	assert(!isApplyError(res), `off-turn ${curse} discard applies`)
+	equal(res.state.players[1].resources.brick, 1, `${curse}: brick deducted`)
+	equal(res.state.phase, main.phase, `${curse}: phase untouched`)
+	equal(res.state.currentTurn, 0, `${curse}: turn untouched`)
+	// Discarding is not spending: age's per-turn spend cap is untouched.
+	equal(
+		res.state.players[1].cardsSpentThisTurn ?? 0,
+		0,
+		`${curse}: spend count untouched`
+	)
+	equal(
+		(res.events[0] as { kind: string; count: number }).kind,
+		'voluntary_discarded',
+		`${curse}: event kind`
+	)
 	equal(
 		(res.events[0] as { kind: string; count: number }).count,
 		2,
-		'event carries count'
+		`${curse}: event carries count`
 	)
 
 	const one = { ...emptyHand(), brick: 1 }
@@ -728,11 +772,11 @@ function testAvariceVoluntaryDiscard() {
 			applyLocalAction(
 				main,
 				1,
-				{ action: 'avarice_discard', discard: one },
+				{ action: 'voluntary_discard', discard: one },
 				't'
 			)
 		),
-		'one card is under the minimum'
+		`${curse}: one card is under the minimum`
 	)
 	assert(
 		isApplyError(
@@ -740,35 +784,35 @@ function testAvariceVoluntaryDiscard() {
 				main,
 				1,
 				{
-					action: 'avarice_discard',
+					action: 'voluntary_discard',
 					discard: { ...emptyHand(), sheep: 2 },
 				},
 				't'
 			)
 		),
-		"can't discard cards you don't hold"
+		`${curse}: can't discard cards you don't hold`
 	)
 	assert(
 		isApplyError(
 			applyLocalAction(
 				withHand(main, 0),
 				0,
-				{ action: 'avarice_discard', discard: two },
+				{ action: 'voluntary_discard', discard: two },
 				't'
 			)
 		),
-		'uncursed seat may not'
+		`${curse}: uncursed seat may not`
 	)
 	assert(
 		!isApplyError(
 			applyLocalAction(
 				main,
 				1,
-				{ action: 'avarice_discard', discard: hand },
+				{ action: 'voluntary_discard', discard: hand },
 				't'
 			)
 		),
-		'whole hand is allowed'
+		`${curse}: whole hand is allowed`
 	)
 
 	for (const kind of ['discard', 'steal'] as const) {
@@ -777,13 +821,14 @@ function testAvariceVoluntaryDiscard() {
 			phase: { kind, resume: { kind: 'roll' } } as never,
 		}
 		assert(
-			avariceDiscardBlocked(blockedPhase, 1) !== null,
-			`blocked during ${kind}`
+			voluntaryDiscardBlocked(blockedPhase, 1) !== null,
+			`${curse}: blocked during ${kind}`
 		)
 	}
 	assert(
-		avariceDiscardBlocked({ ...main, phase: { kind: 'roll' } }, 1) === null,
-		'allowed during roll'
+		voluntaryDiscardBlocked({ ...main, phase: { kind: 'roll' } }, 1) ===
+			null,
+		`${curse}: allowed during roll`
 	)
 }
 
@@ -799,7 +844,7 @@ const tests: [string, () => void][] = [
 	['asceticism effective counts', testAsceticismEffectiveCounts],
 	['nomadism road requirement', testNomadismRoadRequirement],
 	['avarice full hand discard', testAvariceFullHandDiscard],
-	['avarice voluntary discard', testAvariceVoluntaryDiscard],
+	['voluntary discard (avarice + age)', testVoluntaryDiscard],
 	['power pip caps', testPowerCaps],
 	['youth touched set', testYouthTouchedSet],
 	['provinciality 5:1', testProvincialityBankOption],

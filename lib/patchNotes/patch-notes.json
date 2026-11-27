@@ -72,5 +72,11 @@
 			"Knight, Road Building and Year of Plenty can now be undone. A knight can be taken back until you place the robber.",
 			"Tapping Road Building goes straight to placing your free roads."
 		]
+	},
+	{
+		"id": "2026-11-27.1",
+		"notes": [
+			"The Curse of Age can now discard two or more cards at any time, like the Curse of Avarice."
+		]
 	}
 ]
