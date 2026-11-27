@@ -547,11 +547,8 @@ type GamesStore = {
 		take: [Resource, Resource]
 	) => Promise<ActionResult>
 
-	// Curio collector: claim 3 chosen resources after a 2 or 12.
-	claimCurio: (
-		gameId: string,
-		take: [Resource, Resource, Resource]
-	) => Promise<ActionResult>
+	// Curio collector: claim the owed resources of choice on your own turn.
+	claimCurio: (gameId: string, take: Resource[]) => Promise<ActionResult>
 
 	// Forger: move the token to a vertex-adjacent hex, before rolling.
 	moveForgerToken: (gameId: string, hex: Hex) => Promise<ActionResult>

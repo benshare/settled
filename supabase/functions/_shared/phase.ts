@@ -27,7 +27,7 @@ export type PendingPhase =
 	| { kind: 'steal' }
 	| { kind: 'road_building' }
 	| { kind: 'scout_pick'; owner: number }
-	| { kind: 'curio_pick'; pending: number[] }
+	| { kind: 'curio_pick'; owner: number }
 	| { kind: 'forger_pick'; queue: { idx: number }[] }
 	| { kind: 'magician_pick'; roller: number }
 	| { kind: 'special_build'; queue: number[] }
@@ -65,7 +65,7 @@ export function pendingSeats(
 		case 'scout_pick':
 			return [phase.owner]
 		case 'curio_pick':
-			return [...phase.pending]
+			return [phase.owner]
 		case 'forger_pick':
 			return phase.queue.length > 0 ? [phase.queue[0].idx] : []
 		case 'magician_pick':

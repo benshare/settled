@@ -1118,7 +1118,7 @@ function useGameScreenState(gameId: string) {
 		else setShepherdOpen(false)
 	}
 
-	async function onClaimCurio(take: [Resource, Resource, Resource]) {
+	async function onClaimCurio(take: Resource[]) {
 		if (!game) return
 		if (!(await flushBeforeBarrier())) return
 		const res = await claimCurio(game.id, take)

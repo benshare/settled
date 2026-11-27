@@ -1,27 +1,31 @@
-// A curio_collector's +3 claim after a 2/12, as an inline banner over the
-// board (styled after `SpecialistDeclareBanner`) rather than a modal: the pick
-// is about what the player is short of, so the board and hand stay in view.
-// Tapping a resource adds one (duplicates allowed); Clear starts over.
+// A curio_collector's deferred pick, opened on their own turn once their roll
+// resolves (see `.claude/specs/curio-collector-deferred-scaling.md`). An inline
+// banner over the board (styled after `SpecialistDeclareBanner`) rather than a
+// modal: the pick is about what the player is short of, so the board and hand
+// stay in view. `count` (= 3 × resources gained from the owed 2/12 rolls) is how
+// many to take. Tapping a resource adds one (duplicates allowed); Clear starts
+// over.
 
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { ColorScheme, font, radius, spacing } from '../theme'
 import { useTheme } from '../ThemeContext'
 import { RESOURCES, type Resource } from './board'
-import { CURIO_PICK_SIZE } from './bonus'
 import { resourceColor } from './palette'
 
 export function CurioPickBanner({
+	count,
 	submitting,
 	onConfirm,
 }: {
+	count: number
 	submitting: boolean
-	onConfirm: (take: [Resource, Resource, Resource]) => void
+	onConfirm: (take: Resource[]) => void
 }) {
 	const { colors } = useTheme()
 	const styles = useMemo(() => makeStyles(colors), [colors])
 	const [picks, setPicks] = useState<Resource[]>([])
-	const full = picks.length >= CURIO_PICK_SIZE
+	const full = picks.length >= count
 	const canSubmit = full && !submitting
 
 	return (
@@ -29,7 +33,7 @@ export function CurioPickBanner({
 			<View style={styles.row}>
 				<View style={styles.body}>
 					<Text style={styles.text}>
-						{`Curio Collector: pick ${CURIO_PICK_SIZE} · ${picks.length}/${CURIO_PICK_SIZE}`}
+						{`Curio Collector: pick ${count} · ${picks.length}/${count}`}
 					</Text>
 					<View style={styles.circleRow}>
 						{RESOURCES.map((r) => {
@@ -65,10 +69,7 @@ export function CurioPickBanner({
 				</View>
 				<View style={styles.actions}>
 					<Pressable
-						onPress={() =>
-							canSubmit &&
-							onConfirm([picks[0], picks[1], picks[2]])
-						}
+						onPress={() => canSubmit && onConfirm(picks)}
 						disabled={!canSubmit}
 						style={({ pressed }) => [
 							styles.confirmBtn,

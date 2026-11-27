@@ -291,11 +291,26 @@ export function BoardArea({
 			)}
 			{/* In-tree, like the banners below, so it needs no `active` gate. */}
 			{gameState?.phase.kind === 'curio_pick' &&
-				gameState.phase.pending.includes(meIdx) && (
+				gameState.phase.owner === meIdx && (
 					<CurioPickBanner
+						count={gameState.phase.count}
 						submitting={submitting}
 						onConfirm={onClaimCurio}
 					/>
+				)}
+			{/* Persistent reminder that curio cards are owed — shown on and off
+			    turn (it may bear on trading mid-round) until they're collected at
+			    the start of the viewer's next turn. Hidden while the pick banner
+			    above is up, which is that payout moment. */}
+			{(myPlayer?.curioOwed ?? 0) > 0 &&
+				gameState?.phase.kind !== 'curio_pick' && (
+					<View style={styles.curioHint}>
+						<Text style={styles.curioHintText}>
+							{`Curio: collect ${myPlayer?.curioOwed} card${
+								myPlayer?.curioOwed === 1 ? '' : 's'
+							} at the start of your turn`}
+						</Text>
+					</View>
 				)}
 			{/* Post-placement bonus picks ride above the board like the trade
 			    banner rather than blocking it. Specialists declare first; until
@@ -559,6 +574,22 @@ const styles = StyleSheet.create({
 		right: spacing.sm,
 		bottom: spacing.sm,
 		zIndex: z.panel,
+	},
+	curioHint: {
+		marginHorizontal: spacing.md,
+		marginBottom: spacing.xs,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+		backgroundColor: colors.card,
+		borderRadius: radius.sm,
+		borderWidth: 1,
+		borderColor: colors.border,
+		alignSelf: 'center',
+	},
+	curioHintText: {
+		fontSize: font.xs,
+		fontWeight: '600',
+		color: colors.textSecondary,
 	},
 	confirmFloat: {
 		position: 'absolute',

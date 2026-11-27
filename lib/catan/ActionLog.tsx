@@ -609,7 +609,9 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 			}
 		case 'curio_collected':
 			return {
-				text: `${who(e.player)} collected 3 resources (curio collector)`,
+				text: `${who(e.player)} collected ${e.take.length} resource${
+					e.take.length === 1 ? '' : 's'
+				} (curio collector)`,
 				player: e.player,
 				detail: [{ label: 'Took', text: describeHand(e.take) }],
 			}

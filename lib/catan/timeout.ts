@@ -116,7 +116,7 @@ export function pendingSeats(
 		case 'scout_pick':
 			return [phase.owner]
 		case 'curio_pick':
-			return [...phase.pending]
+			return [phase.owner]
 		case 'forger_pick':
 			return phase.queue.length > 0 ? [phase.queue[0].idx] : []
 		case 'magician_pick':

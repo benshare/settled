@@ -100,5 +100,11 @@
 		"notes": [
 			"The Curse of Age can now discard two or more cards at any time, like the Curse of Avarice."
 		]
+	},
+	{
+		"id": "2026-11-27.6",
+		"notes": [
+			"Curio Collector now scales: you get three picks for each resource you collect on a 2 or 12. They arrive at the start of your next turn, after you roll, so a 7 can't take them first."
+		]
 	}
 ]
