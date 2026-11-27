@@ -22,6 +22,9 @@ export type ColorScheme = {
 	brand: string
 	brandLight: string
 	brandDim: string
+	// A faded, browner sibling to `brand`, for a primary-weight action that
+	// should read as secondary to the main one (e.g. End turn next to Roll).
+	brandMuted: string
 
 	accent: string
 	accentDim: string
@@ -50,6 +53,7 @@ export const lightColors: ColorScheme = {
 	brand: '#B94A2A',
 	brandLight: '#D06040',
 	brandDim: '#F3DCCF',
+	brandMuted: '#8A6A4A',
 
 	accent: '#3B7FBF',
 	accentDim: '#D4E4F1',
@@ -78,6 +82,7 @@ export const darkColors: ColorScheme = {
 	brand: '#D4623C',
 	brandLight: '#E88050',
 	brandDim: '#4A261A',
+	brandMuted: '#9A7A58',
 
 	accent: '#5BA0D8',
 	accentDim: '#1A2E42',

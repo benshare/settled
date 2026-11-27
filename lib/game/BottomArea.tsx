@@ -159,6 +159,7 @@ export function BottomArea() {
 							/>
 						)}
 						<Button
+							variant="muted"
 							style={styles.actionFill}
 							onPress={onEndTurn}
 							loading={submitting}
@@ -501,7 +502,11 @@ function MainLoopBar({
 					<UndoButton submitting={submitting} onPress={onUndo} />
 				)}
 				{isMyTurn && phase.kind === 'main' && (
-					<Button onPress={onEndTurn} loading={submitting}>
+					<Button
+						variant="muted"
+						onPress={onEndTurn}
+						loading={submitting}
+					>
 						End turn
 					</Button>
 				)}
