@@ -70,7 +70,8 @@ export const useLocalDraftStore = create<LocalDraftStore>((set, get) => ({
 		let draft = EMPTY_DRAFT
 		try {
 			const raw = await authStorage.getItem(storageKey(userId, gameId))
-			if (raw) draft = { ...EMPTY_DRAFT, ...JSON.parse(raw) }
+			if (raw)
+				draft = normalizeDraft({ ...EMPTY_DRAFT, ...JSON.parse(raw) })
 		} catch (err) {
 			// Unreadable is the same as nothing saved.
 			console.warn('[drafts] read failed', err)
@@ -104,6 +105,24 @@ export const useLocalDraftStore = create<LocalDraftStore>((set, get) => ({
 
 function storageKey(userId: string, gameId: string): string {
 	return `settled.draft.${userId}.${gameId}`
+}
+
+// A draft persisted before the avarice→voluntary rename may hold the legacy
+// `avarice_discard` action, which no longer matches `LocalAction`. Map it to
+// the generic action on read so the queue folds through `apply.ts` cleanly.
+function normalizeDraft(draft: GameDraft): GameDraft {
+	const rename = (a: LocalAction): LocalAction =>
+		(a.action as string) === 'avarice_discard'
+			? ({ ...a, action: 'voluntary_discard' } as LocalAction)
+			: a
+	return {
+		...draft,
+		queue: draft.queue.map(rename),
+		inFlight: draft.inFlight.map((b) => ({
+			...b,
+			actions: b.actions.map(rename),
+		})),
+	}
 }
 
 function isEmpty(draft: GameDraft): boolean {

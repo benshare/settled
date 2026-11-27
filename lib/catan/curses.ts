@@ -152,13 +152,21 @@ export function canSpendUnderAge(
 	return spent + costSize <= ageCardLimitFor(size)
 }
 
-// Avarice's escape valve: the cursed player may thin their hand at any time,
-// on anyone's turn, so a 7 doesn't take everything.
-export const AVARICE_MIN_DISCARD = 2
+// The voluntary-discard escape valve, shared by the avarice and age curses:
+// the cursed player may thin their hand at any time, on anyone's turn, so a 7
+// doesn't take everything (avarice loses its whole hand; age hoards cards it
+// can't spend fast enough).
+export const VOLUNTARY_MIN_DISCARD = 2
+
+// Curses that may voluntarily discard. Two curses never apply to one player, so
+// a single gate serves both.
+export function canVoluntaryDiscard(curse: CurseId | undefined): boolean {
+	return curse === 'avarice' || curse === 'age'
+}
 
 // Exhaustive so a new phase is a deliberate decision. `discard` would stale
 // the owed count; `steal` would let the victim dump the card being taken.
-const AVARICE_DISCARD_PHASES: Record<Phase['kind'], boolean> = {
+const VOLUNTARY_DISCARD_PHASES: Record<Phase['kind'], boolean> = {
 	select_bonus: false,
 	initial_placement: false,
 	post_placement: true,
@@ -176,22 +184,23 @@ const AVARICE_DISCARD_PHASES: Record<Phase['kind'], boolean> = {
 	game_over: false,
 }
 
-export function isAvariceDiscardPhase(kind: Phase['kind']): boolean {
-	return AVARICE_DISCARD_PHASES[kind]
+export function isVoluntaryDiscardPhase(kind: Phase['kind']): boolean {
+	return VOLUNTARY_DISCARD_PHASES[kind]
 }
 
 // Why the player can't open a voluntary discard right now, or null. Turn is
 // deliberately not consulted.
-export function avariceDiscardBlocked(
+export function voluntaryDiscardBlocked(
 	state: GameState,
 	playerIdx: number
 ): string | null {
 	const p = state.players[playerIdx]
-	if (p?.curse !== 'avarice') return 'only the avarice curse may discard'
-	if (!isAvariceDiscardPhase(state.phase.kind))
+	if (!canVoluntaryDiscard(p?.curse))
+		return 'only an avarice or age curse may discard'
+	if (!isVoluntaryDiscardPhase(state.phase.kind))
 		return 'cannot discard right now'
-	if (handSize(p.resources) < AVARICE_MIN_DISCARD)
-		return `need at least ${AVARICE_MIN_DISCARD} cards`
+	if (handSize(p.resources) < VOLUNTARY_MIN_DISCARD)
+		return `need at least ${VOLUNTARY_MIN_DISCARD} cards`
 	return null
 }
 

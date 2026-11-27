@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors, font, spacing } from '../theme'
 import { RESOURCES, type Resource } from './board'
 import { Button } from '../modules/Button'
-import { AVARICE_MIN_DISCARD } from './curses'
+import { VOLUNTARY_MIN_DISCARD } from './curses'
 import { handSize } from './robber'
 import { CardFan, type CardFanEntry, type CardFanSize } from './ResourceHand'
 import type { ResourceHand } from './types'
@@ -85,23 +85,26 @@ export function DiscardPanel({
 	)
 }
 
-// The avarice curse's voluntary discard: the same composer as a 7, but the
+// The avarice/age curse's voluntary discard: the same composer as a 7, but the
 // player opened it themselves, so it can be cancelled and takes any count
-// from the minimum up to the whole hand.
+// from the minimum up to the whole hand. `curseTitle` names the acting curse so
+// the hint reads "Curse of Age: …" / "Curse of Avarice: …".
 export function VoluntaryDiscardPanel({
 	hand,
+	curseTitle,
 	submitting,
 	onSubmit,
 	onCancel,
 }: {
 	hand: ResourceHand
+	curseTitle: string
 	submitting: boolean
 	onSubmit: (selection: ResourceHand) => void
 	onCancel: () => void
 }) {
 	const [sel, setSel] = useState<ResourceHand>(EMPTY)
 	const total = handSize(sel)
-	const ready = total >= AVARICE_MIN_DISCARD && !submitting
+	const ready = total >= VOLUNTARY_MIN_DISCARD && !submitting
 
 	function add(r: Resource) {
 		if (sel[r] >= hand[r]) return
@@ -128,7 +131,7 @@ export function VoluntaryDiscardPanel({
 				</Pressable>
 			</View>
 			<Text style={styles.hint}>
-				Curse of Avarice: discard {AVARICE_MIN_DISCARD} or more cards at
+				{curseTitle}: discard {VOLUNTARY_MIN_DISCARD} or more cards at
 				any time.
 			</Text>
 
@@ -145,8 +148,8 @@ export function VoluntaryDiscardPanel({
 				disabled={!ready}
 				loading={submitting}
 			>
-				{total < AVARICE_MIN_DISCARD
-					? `Pick at least ${AVARICE_MIN_DISCARD}`
+				{total < VOLUNTARY_MIN_DISCARD
+					? `Pick at least ${VOLUNTARY_MIN_DISCARD}`
 					: `Discard ${total}`}
 			</Button>
 		</View>

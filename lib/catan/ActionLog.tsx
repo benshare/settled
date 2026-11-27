@@ -67,6 +67,7 @@ const CATEGORIES = {
 	],
 	robber: [
 		'discarded',
+		'voluntary_discarded',
 		'avarice_discarded',
 		'robber_moved',
 		'stolen',
@@ -100,6 +101,7 @@ const CATEGORIES = {
 		'magic_cast',
 		'haunt_spots_set',
 		'ghost_spawned',
+		'voluntary_discarded',
 		'avarice_discarded',
 	],
 } satisfies Record<string, GameEvent['kind'][]>
@@ -399,6 +401,7 @@ export function describeEvent(e: GameEvent, ctx: LogContext): LogLine | null {
 				}`,
 				player: e.player,
 			}
+		case 'voluntary_discarded':
 		case 'avarice_discarded':
 			return {
 				text: `${who(e.player)} chose to discard ${e.count} cards`,

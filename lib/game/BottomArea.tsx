@@ -90,12 +90,13 @@ export function BottomArea() {
 		onTapKnight,
 		onShepherdSwap,
 		onDiscard,
-		avariceDiscardOpen,
-		setAvariceDiscardOpen,
-		showAvariceDiscard,
-		canAvariceDiscard,
-		onAvariceDiscard,
-		onAvariceDiscardPress,
+		voluntaryDiscardOpen,
+		setVoluntaryDiscardOpen,
+		showVoluntaryDiscard,
+		canVoluntaryDiscard,
+		voluntaryDiscardCurseTitle,
+		onVoluntaryDiscard,
+		onVoluntaryDiscardPress,
 		scoutBuyOpen,
 		setScoutBuyOpen,
 		submitBuyDevCard,
@@ -115,7 +116,7 @@ export function BottomArea() {
 	// Either discard composer, or the scout's dev-card payment, takes the
 	// hand's place, and with it the rows that hang off the hand.
 	const composingDiscard =
-		owedDiscard !== null || avariceDiscardOpen || scoutBuyOpen
+		owedDiscard !== null || voluntaryDiscardOpen || scoutBuyOpen
 
 	return (
 		<>
@@ -273,12 +274,13 @@ export function BottomArea() {
 								}
 								onSubmit={onDiscard}
 							/>
-						) : avariceDiscardOpen ? (
+						) : voluntaryDiscardOpen ? (
 							<VoluntaryDiscardPanel
 								hand={gameState.players[meIdx].resources}
+								curseTitle={voluntaryDiscardCurseTitle}
 								submitting={submitting}
-								onSubmit={onAvariceDiscard}
-								onCancel={() => setAvariceDiscardOpen(false)}
+								onSubmit={onVoluntaryDiscard}
+								onCancel={() => setVoluntaryDiscardOpen(false)}
 							/>
 						) : scoutBuyOpen ? (
 							<ScoutBuyPanel
@@ -331,13 +333,15 @@ export function BottomArea() {
 									/>
 								</View>
 							)}
-						{!composingDiscard && showAvariceDiscard && (
-							<View style={styles.avariceRow}>
+						{!composingDiscard && showVoluntaryDiscard && (
+							<View style={styles.voluntaryDiscardRow}>
 								<Button
 									size="small"
 									variant="secondary"
-									onPress={onAvariceDiscardPress}
-									disabled={!canAvariceDiscard || submitting}
+									onPress={onVoluntaryDiscardPress}
+									disabled={
+										!canVoluntaryDiscard || submitting
+									}
 								>
 									Discard
 								</Button>
@@ -637,7 +641,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.md,
 		paddingBottom: spacing.xs,
 	},
-	avariceRow: {
+	voluntaryDiscardRow: {
 		flexDirection: 'row',
 		justifyContent: 'flex-end',
 		paddingHorizontal: spacing.md,

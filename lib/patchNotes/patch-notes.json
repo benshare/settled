@@ -94,5 +94,11 @@
 		"notes": [
 			"You can now undo ending your turn, until the next player makes a move."
 		]
+	},
+	{
+		"id": "2026-11-27.5",
+		"notes": [
+			"The Curse of Age can now discard two or more cards at any time, like the Curse of Avarice."
+		]
 	}
 ]
