@@ -31,7 +31,7 @@ import {
 } from '@/lib/catan/ShepherdSwapPicker'
 import { TradePanel } from '@/lib/catan/TradePanel'
 import { monopolyCap } from '@/lib/catan/types'
-import { UndoButton } from '@/lib/game/gameScreenShared'
+import { UndoButton, UndoEndTurnButton } from '@/lib/game/gameScreenShared'
 import {
 	useGameScreen,
 	type PlacementStage,
@@ -387,6 +387,7 @@ function PrimaryAction() {
 		openRitual,
 		setShepherdOpen,
 		pendingWin,
+		canUndoEndTurn,
 	} = ctx
 	if (!game || !gameState) return null
 	const phase = gameState.phase
@@ -432,6 +433,17 @@ function PrimaryAction() {
 						needsNomination
 					)}
 				</Button>
+			</View>
+		)
+	}
+
+	// The seat that just ended its turn sees the take-back in place of the
+	// disabled, not-their-turn phase button, until the next player acts (roll
+	// or special build). See `.claude/specs/end-turn-undo.md`.
+	if (canUndoEndTurn) {
+		return (
+			<View style={[styles.actionCol, styles.actionSlot]}>
+				<UndoEndTurnButton size="small" style={styles.phaseButton} />
 			</View>
 		)
 	}

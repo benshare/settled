@@ -447,6 +447,9 @@ type GamesStore = {
 	confirmRoll: (gameId: string, which?: 0 | 1) => Promise<RollResult>
 	rerollDice: (gameId: string) => Promise<RollResult>
 	endTurn: (gameId: string) => Promise<ActionResult>
+	// Take back the most recent end_turn while the window is open (the next
+	// player hasn't acted). See `.claude/specs/end-turn-undo.md`.
+	undoEndTurn: (gameId: string) => Promise<ActionResult>
 	honk: (gameId: string) => Promise<ActionResult>
 	// `id` is the inserted row's, which is how chat reconciles its optimistic
 	// copy with the row when it arrives.
@@ -971,6 +974,13 @@ export const useGamesStore = create<GamesStore>((set, get) => ({
 		return callGameService(
 			{ action: 'end_turn', game_id: gameId },
 			"Couldn't end turn"
+		)
+	},
+
+	async undoEndTurn(gameId) {
+		return callGameService(
+			{ action: 'undo_end_turn', game_id: gameId },
+			"Couldn't undo end turn"
 		)
 	},
 

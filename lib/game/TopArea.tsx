@@ -28,6 +28,7 @@ import {
 	DieFaceView,
 	sharedStyles,
 	UndoButton,
+	UndoEndTurnButton,
 } from './gameScreenShared'
 
 export function TopArea() {
@@ -559,6 +560,9 @@ function SpecialBuildBar({
 				{canUndo && (
 					<UndoButton submitting={submitting} onPress={onUndo} />
 				)}
+				{/* Self-gates: the seat that ended the turn into this special-build
+				    phase can still take it back until someone acts. */}
+				<UndoEndTurnButton />
 				{isMe ? (
 					<Button onPress={onDone} loading={submitting}>
 						Done building

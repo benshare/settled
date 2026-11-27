@@ -246,6 +246,35 @@ export function UndoButton({
 	)
 }
 
+// The seat that just ended its turn can take it back until the next player
+// acts (`.claude/specs/end-turn-undo.md`). Unlike the in-turn `UndoButton`
+// arrow — a local, instant `slice(0, -1)` — this is a server round-trip that
+// reclaims the turn, so it reads as a labelled button and shows a spinner.
+// Self-gating on the screen context (the server snapshot names the ending
+// seat), so a bar just drops it in: it renders only for that seat, only while
+// the window is open.
+export function UndoEndTurnButton({
+	size = 'default',
+	style,
+}: {
+	size?: 'default' | 'small'
+	style?: StyleProp<ViewStyle>
+}) {
+	const { canUndoEndTurn, submitting, onUndoEndTurn } = useGameScreen()
+	if (!canUndoEndTurn) return null
+	return (
+		<Button
+			variant="secondary"
+			size={size}
+			onPress={onUndoEndTurn}
+			loading={submitting}
+			style={style}
+		>
+			Undo end turn
+		</Button>
+	)
+}
+
 // Bar chrome shared by the two zones. Anything only one zone uses lives in
 // that zone's own StyleSheet.
 export const sharedStyles = StyleSheet.create({

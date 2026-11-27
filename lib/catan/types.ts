@@ -742,6 +742,23 @@ export type GameState = {
 	// Monotonic turn counter. Increments on each `end_turn`. Used to enforce
 	// "can't play dev card on turn bought" (stamped on DevCardEntry.purchasedTurn).
 	round: number
+	// Snapshot the last `end_turn` left behind so the ending seat can take it
+	// back until the next player acts — null when no window is open. Surfaced here
+	// purely to drive the client's "Undo end turn" affordance; the rules layer
+	// ignores it and the edge function owns writing, clearing and reversing it as
+	// a plain column. See `.claude/specs/end-turn-undo.md`.
+	endTurnUndo?: EndTurnUndo | null
+}
+
+// The reversal record written on `end_turn` (`game_states.end_turn_undo`).
+// Mirror of the edge function's `EndTurnUndo`. The client only ever reads `by`;
+// the rest is the server's reversal payload, carried on the broadcast row.
+export type EndTurnUndo = {
+	by: number
+	prevPlayer: PlayerState
+	prevPhase: Phase
+	prevRound: number
+	eventsLen: number
 }
 
 // Actions the client holds in its **local queue** instead of sending when they

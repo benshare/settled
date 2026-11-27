@@ -88,5 +88,11 @@
 		"notes": [
 			"Some reserved words, like resource and game terms, can no longer be used as usernames."
 		]
+	},
+	{
+		"id": "2026-11-27.4",
+		"notes": [
+			"You can now undo ending your turn, until the next player makes a move."
+		]
 	}
 ]
