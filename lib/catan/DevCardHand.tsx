@@ -1,6 +1,7 @@
 // Viewer's dev-card hand. Compact row of grouped tiles rendered in the main
-// HUD, beside ResourceHand. Tapping a group opens a play sheet with the
-// card's description; tapping Play either dispatches directly (Knight,
+// HUD, beside ResourceHand. A playable Knight or Road Building tile dispatches
+// straight to board placement (no sheet); any other tile opens a play sheet
+// with the card's description, where Play dispatches (an unplayable Knight or
 // Road Building) or opens the resource picker (Monopoly, Year of Plenty).
 // VP cards are shown for information only — they're not playable.
 
@@ -106,11 +107,16 @@ export function DevCardHand({
 		? reasonUnplayable(groups.find((g) => g.id === openGroup)!)
 		: null
 
-	// Road Building's play is undoable and its effect is on the board, so a
-	// playable tile skips the sheet and goes straight to placing roads.
+	// Knight and Road Building are undoable and their effect is on the board, so
+	// a playable tile skips the sheet and goes straight to placement (the robber
+	// for a knight, free roads for Road Building). Unplayable tiles still open
+	// the sheet to explain why.
 	function onTilePress(group: Group) {
-		if (group.id === 'road_building' && reasonUnplayable(group) === null) {
-			onPlay({ id: 'road_building' })
+		if (
+			(group.id === 'knight' || group.id === 'road_building') &&
+			reasonUnplayable(group) === null
+		) {
+			onPlay({ id: group.id })
 			return
 		}
 		setOpenGroup(group.id)
