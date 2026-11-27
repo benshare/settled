@@ -78,5 +78,9 @@
 		"notes": [
 			"End turn now has its own muted color, so it's easier to tell apart from Roll."
 		]
+	},
+	{
+		"id": "2026-11-27.2",
+		"notes": ["Tapping Knight goes straight to moving the robber."]
 	}
 ]
