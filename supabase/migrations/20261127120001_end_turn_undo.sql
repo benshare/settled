@@ -11,5 +11,11 @@
 --
 -- No RLS change: the existing game_states select policy already covers everyone
 -- who can read the live row, and the snapshot holds nothing the row doesn't.
+--
+-- `if not exists`: this file originally shared the 20261127120000 version with the
+-- banned_usernames migration, so a first `db push` applied the column but failed
+-- to record the tracker row (duplicate version key). The file was renumbered to
+-- 20261127120001; the guard makes re-pushing a no-op on a DB that already has the
+-- column while still creating it on one that doesn't.
 alter table public.game_states
-    add column end_turn_undo jsonb null;
+    add column if not exists end_turn_undo jsonb null;

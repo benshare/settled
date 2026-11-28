@@ -378,6 +378,7 @@ export type Database = {
           current_turn: number | null
           dev_deck: Json
           edges: Json
+          end_turn_undo: Json | null
           fence_tokens: Json | null
           game_id: string
           hexes: Json
@@ -396,6 +397,7 @@ export type Database = {
           current_turn?: number | null
           dev_deck: Json
           edges?: Json
+          end_turn_undo?: Json | null
           fence_tokens?: Json | null
           game_id: string
           hexes: Json
@@ -414,6 +416,7 @@ export type Database = {
           current_turn?: number | null
           dev_deck?: Json
           edges?: Json
+          end_turn_undo?: Json | null
           fence_tokens?: Json | null
           game_id?: string
           hexes?: Json
